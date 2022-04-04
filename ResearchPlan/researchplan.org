@@ -1,0 +1,30 @@
+#+title: Australian Fast Ice Model
+#+subtitle: Research Plan 2.0
+#+date: <2022-04-04 Mon>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+* Table of Contents
+
+* Document Background
+
+* Scientific Background
+
+* Rationale
+
+* Methodology
+
+* Outputs
+
+* Ethical Approval
+
+* Work, Health and Safety
+
+* Intellectual Property
+
+* Project Infrastructure
+
+* Skills
+
+* References

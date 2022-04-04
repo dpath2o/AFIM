@@ -1,0 +1,117 @@
+% This LaTeX style file (package) is intended for my own use in writing
+% my Research Plan at the University of Tasmania under the College of
+% Science and Engineering and Institute of Antarctic and Marine Science.
+% However, it may be of benefit to others. As there is no definition
+% of formatting of a Research Plan one should be be able to edit or add
+% to this document to customise for their own needs.
+%
+% When this package was created it used the material on the following
+% website as a guide:
+% https://www.utas.edu.au/research-admin/graduate-research/current-candidates/your-candidature-milestones
+% The document is referenced for the templated:
+% https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwi8_b-siNLxAhVb7XMBHa7qDUkQFjAAegQIBxAD&url=https%3A%2F%2Fwww.utas.edu.au%2F__data%2Fassets%2Fword_doc%2F0005%2F1169033%2FResearch-Plan_20180821.docx&usg=AOvVaw3-0QbWH5bSaooi_NTXdsXD
+%
+% This package and its contents are freely distributed.
+%
+% Author: DP@H2O
+% Date: 2021-07-05
+%
+%% This program can be redistributed and/or modified under the terms
+%% of the LaTeX Project Public License Distributed from CTAN archives
+%% in directory macros/latex/base/lppl.txt.
+% 
+\NeedsTeXFormat{LaTeX2e}[1994/06/01]
+\ProvidesPackage{ResearchPlan}[2021/07/05 v0.01 LaTeX package for writing a Research Plan at UTas]
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% PACKAGES
+\RequirePackage[type={CC},modifier={by-nc-sa},version={3.0}]{doclicense}
+\RequirePackage{shadowtext}
+\RequirePackage{fixltx2e}
+\RequirePackage[normalem]{ulem}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage[T1]{fontenc}
+\RequirePackage[font=small, labelfont=bf]{caption}
+\RequirePackage{fourier}
+\RequirePackage[protrusion=true, expansion=true]{microtype}
+\RequirePackage{amsmath,bm,amssymb,marvosym,mathpazo,mathtools}
+\RequirePackage{tabularx,longtable,array,boldline,makecell,booktabs}
+\RequirePackage[table,dvipsnames]{xcolor}
+\RequirePackage{tikz}
+\RequirePackage{siunitx,soul,textcomp,enumerate,parskip,sectsty,url,lipsum,dashrule,epigraph,enumitem}
+\RequirePackage[top=1cm,bottom=1cm,left=1cm,right=1cm]{geometry}
+\RequirePackage[myheadings]{fullpage}
+\RequirePackage{totpages,fancyhdr}
+\RequirePackage{hyperref}
+\RequirePackage{graphicx,float,wrapfig,rotating}
+\RequirePackage{pgfgantt}
+\RequirePackage[final]{pdfpages}
+\RequirePackage{pdflscape}
+\RequirePackage{titling}
+\RequirePackage[english]{babel}
+\RequirePackage[round]{natbib}
+\bibliographystyle{abbrvnat}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TITLING
+\title{Research Plan}
+\author{Daniel Patrick Atwater}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% HEADER & FOOTER
+\def\ORGTITLE  {Research Plan}
+\def\ORGAUTHOR {DP@H$_2$O}
+\pagestyle{fancy}
+\fancyhf{}
+\setlength\headheight{1cm}
+\fancyhead[L]{\LARGE \ORGTITLE  }
+\fancyhead[R]{\large \ORGAUTHOR }
+\fancyfoot[C]{\small Page \thepage}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% GLOBAL DEFINITIONS
+\hypersetup{
+  colorlinks=true,
+  linktoc=all,
+  linkcolor=blue,
+  filecolor=magenta,
+  urlcolor=cyan,
+  citecolor=magenta
+}
+\definecolor{bg}{rgb}{0.95,0.95,0.95}
+\linespread{1.1}
+\renewcommand{\arraystretch}{1.5}
+% small colour box for various purposes
+\newcommand\crule[3][black]{\textcolor{#1}{\rule{#2}{#3}}}
+% sources of figures
+\newcommand{\source}[1]{\caption*{\hfill Source: {#1}} }
+% horizontal line for 
+\newcommand{\HRule}[1]{\rule{\linewidth}{#1}}
+% \onehalfspacing
+\setcounter{tocdepth}{5}
+\setcounter{secnumdepth}{5}
+% some helpful definitions
+\newcommand{\latlonDec}[2]{$\ang{#1}$ \textbf{#2}}
+\newcommand{\htwoo}{H$_2$O}
+\newcommand{\otwo}{O$_2$}
+\newcommand{\cotwo}{CO$_2$}
+\newcommand{\chfour}{CH$_4$}
+\newcommand{\ntwo}{N$_2$}
+\newcommand{\sip}{\textit{SIP}} %Sea ice production
+\newcommand{\dsw}{\textit{DSW}} %Dense Shelf Water
+\newcommand{\aabw}{\textit{AABW}} %Antarctic Bottom Water
+\newcommand{\fastice}{fast ice}
+\newcommand{\Fastice}{Fast ice} 
+\newcommand{\cdp}{\textit{CDP}} %Cape Darnley Peninsula
+\newcommand{\ais}{\textit{AIS}} %Amery Ice Shelf
+
+
+
+\RequirePackage{whateverwe need}
+
+
+\newcommand{\hi}{Hello, this is my own package}
+\let\myDate\date
+\newcommand\GoodBye[1][\bfseries]{{#1Good Bye}}
+
+
+                \endinput
+                %%
+                %% End of file `mypackage.sty'.
