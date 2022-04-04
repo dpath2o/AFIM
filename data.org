@@ -1,0 +1,81 @@
+#+title: Australian Fast Ice Model
+#+subtitle: Data
+#+date: <2022-04-05 Tue>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+* Grids
+** Ole Richter's Work                                       :bathy:grid:code:
+[[https://github.com/kuechenrole/antarctic_melting/tree/master/notebooks/preprocessing][GitHub Link]]
+***** DONE Download and put onto my google drive
+CLOSED: [2021-06-18 Fri 13:59]
+- CLOSING NOTE [2021-06-18 Fri 13:59]
+Wilma downloaded data from gadi for me and put it on my google drive
+* Atmospheric Reanalysis                              :data:model:reanalysis:
+** [[https://www.ncep.noaa.gov][NCEP]]
+#+NAME: NCEP
+National Center for Environmental Prediction
+** [[https://www.ncdc.noaa.gov/data-access/model-data/model-datasets/climate-forecast-system-version2-cfsv2][CFS]]
+#+NAME: CFS
+Climate Forecast System Reanalysis
+** [[https://climatedataguide.ucar.edu/climate-data/nasas-merra2-reanalysis][MERRA2]]
+#+NAME: MERRA2
+Modern-Era Retrospective analysis for Research and Applications version 2
+***** Key Attributes
++ 0.5∘ latitude
++ 0.625∘ longitude
++ 72 levels
++ hourly resolution
++ incorporates observations from more recent satellite observations – more
+  recent than what?
++ improved estimates for surface mass balance and /surface temperature over ice
+  sheets/
+***** Key Limitations
++ discontinuities occur in sea ice and SST boundary that affect certain time
+  series
++ magnitude of precipitation over polar regions is too high (not correct) and
+  excessive over high topography in tropical latitudes
+* Fast Ice Distribution                         :data:derived:remote_sensing:
+Based on [[./references/journal_articles/FRASER_2019_Landfast ice controls on sea-ice production in the Cape Darnley PolynyaLandfast ice controls on sea-ice production in the Cape Darnley Polynya.pdf][Fraser2019]] a high resolution (1km) time series of 15-day
+composite maps of fast-ice distribution for the period of
+[2000-03-01 Wed]--[2014-03-01 Sat] via [[MODIS]] and [[AMSR-E]] derived satellite data.
+* Bathymetry and Topography                                 :bathy:topo:data:
+** Bedmachine                                                    :bathy:data:
+[[https://sites.uci.edu/morlighem/dataproducts/bedmachine-antarctica/][website link]]
+** Jodie Smith Data                                              :bathy:data:
+:LOGBOOK:
+CLOCK: [2021-06-17 Thu 18:54]--[2021-06-17 Thu 23:49] =>  4:55
+CLOCK: [2021-06-17 Thu 06:04]--[2021-06-17 Thu 09:35] =>  3:31
+CLOCK: [2021-06-16 Wed 19:52]--[2021-06-16 Wed 20:52] =>  1:00
+:END:
+** [[https://www.gebco.net][GEBCO]]                                                         :bathy:data:
+** [[https://www.scar.org/science/ibcso/ibcso/][IBCSO]]                                                         :bathy:data:
+#+NAME: IBCSO
+International Bathymetric Chart of the Southern Ocean
+* Sea Ice Remote Sensing                            :data:obs:remote_sensing:
+** Satellite                                        :data:obs:remote_sensing:
+***** [[http://south.seaice.dk/2016//][Seaice website]] with daily composite images
+developed routine to download images and make monthly composite images
+***** NASA
+****** Terra
+****** [[https://terra.nasa.gov/about/terra-instruments/modis][MODIS]]
+#+NAME: MODIS
+Moderate Resolution Imaging Spectroradiometer
+****** Aqua
+****** [[https://aqua.nasa.gov/amsr-e][AMSR-E]]
+#+NAME: AMSR-E
+Advanced Microwave Scanning Radiometer -- Earth Observing System (EOS)
+daily estimates of thin sea ice thickness 6.25km resolution
+***** ESA
+****** Sentinel-1A-B
+****** List of Files from UTas
+[[/Volumes/SEASONG/PHD/data/satellite/sentinel/list_of_files_from_UTas_harddrive.txt]]
+** University of Bremen                         :data:bookmark:obs:satellite:
+[[https://seaice.uni-bremen.de/sea-ice-concentration/amsre-amsr2/][Sea Ice Concentration]]
+* Australian Antarctic Data Centre (AADC)                 :data:obs:bookmark:
+[[https://data.aad.gov.au/aadc/about/data_policy.cfm#SummaryAADC][website]]
+* Southern Ocean Observing System (SOOS)                :data:system:network:
+[[https://www.soos.aq][website homepage]]
+** [[https://www.soosmap.aq/#][SOOSMap]]                      :data:map:bookmark:obs:insitu:remote_sensing:
+** Marine Mammals Exploring the Ocean Pole to Pole (MEOP) :data:insitu:bookmark:

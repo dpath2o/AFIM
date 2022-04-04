@@ -47,7 +47,7 @@ interest boxes. I can't recall exactly where or when in I was introduced to the 
 [[https://en.wikipedia.org/wiki/Sea_ice][sea ice]] and [[https://tos.org/oceanography/issue/volume-24-issue-03][its role in polar oceanography]] but I do remember it
 being very [[http://nsidc.org/arcticseaicenews/][Arctic-centric]] with this vague concept that [[https://arctic.noaa.gov/Report-Card/Report-Card-2018/ArtMID/7878/ArticleID/788/Landfast-Sea-Ice-in-a-Changing-Arctic][landfast sea ice (fast ice)]] played an important role in Arctic sea ice. So when Alex
 provided me with a rough outline of the project he wanted to pursue
-modelling fast ice and it being [[https://www.sciencedirect.com/user/identity/landing?code=2QD--DJX9fNQGcwrhJdFSQcbTnjTstfb_oMPFrXr&state=retryCounter%3D0%26csrfToken%3D282ae9df-d109-4361-a158-7399407fb2cd%26idpPolicy%3Durn%253Acom%253Aelsevier%253Aidp%253Apolicy%253Aproduct%253Ainst_assoc%26returnUrl%3D%252Fscience%252Farticle%252Fpii%252FS1463500321001712%26prompt%3Dnone%26cid%3Darp-05cb79cb-d88b-43bd-92e0-7af2740528af][largely neglected thus far]] in
+modelling fast ice and it being [[https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwiWo5bfuPv2AhWTjeYKHSlPCycQFnoECCcQAQ&url=https%3A%2F%2Fdipot.ulb.ac.be%2Fdspace%2Fbitstream%2F2013%2F336850%2F1%2Fdoi_320494.pdf&usg=AOvVaw3fsCaFuWB9oz-dzVqWsQUW][largely neglected thus far]] in
 circumpolar modelling efforts, I knew the meat on this bone was likely
 well marbled.
 
