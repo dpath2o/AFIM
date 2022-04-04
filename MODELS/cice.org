@@ -1,0 +1,13 @@
+#+title: Australian Fast Ice Model
+#+subtitle: Modelling
+#+subtitle: CICE
+#+date: <2022-04-05 Tue>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+* Source Code Repository
+[[https://github.com/CICE-Consortium]]
+* Resource Index
+[[ https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index ]]
+* Stand-alone Sandboxing -- My personal setup

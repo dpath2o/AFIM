@@ -1,0 +1,251 @@
+#+title: Australian Fast Ice Model
+#+subtitle: Modelling
+#+subtitle: ROMS and METROMS
+#+date: <2022-04-05 Tue>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+* ROMS
+:LOGBOOK:
+CLOCK: [2021-09-10 Fri 07:05]--[2021-09-10 Fri 12:00] =>  4:55
+CLOCK: [2021-09-09 Sat 20:05]--[2021-09-09 Sat 23:35] =>  3:30
+:END:
+Regional Oceanographic Model System (ROMS)
+#+NAME: ROMS
+**** Compiling a test ROMS on CentOS 7.4 -- /sealion/
+**** Created SSH Key on NECTAR and downloaded to local machine
+#+begin_src bash
+  mv ~/Downloads/NECTARprivate_key.pem ~/.ssh/sealion.pem
+  chmod 0600 ~/.ssh/sealion.pem
+#+end_src
+***** Created NECTAR CentOS Instance
++ NAME :: sealion
++ ID :: 6caeb392-4773-4b4b-86a2-ff96cff1ef49
++ Description :: hear the lion roar
++ Project ID :: [d404319b1cca4f10ab265e607a129616]
++ Status :: Active
++ Locked :: False
++ Availability Zone :: QRIScloud
++ Created ::  15 Sep 2021, 7:11 p.m.
++ Age :: 7 hours, 3 minutes
+****** Specs
++ Flavor Name :: r3.xxlarge
++ RAM :: 128GB
++ VCPUs :: 32 VCPU
++ Disk :: 30GB
+******* IP Addresses
++ qld-data :: 10.255.132.204
++ qld :: 203.101.231.127
+****** Security Groups
+******* http
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 443/tcp from :: 0.0.0.0/0
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 80/tcp from :: 0.0.0.0/0
+******* icmp
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 icmp from :: 0.0.0.0/0
++ ALLOW IPv6 to :: ::/0
+******* ssh
++ ALLOW IPv4 22/tcp from :: 0.0.0.0/0
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 to :: 0.0.0.0/0
+******* default
++ ALLOW IPv4 from :: default
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv6 from :: default
++ ALLOW IPv4 to :: 0.0.0.0/0
+******* test
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 22/tcp from :: 0.0.0.0/0
+****** Metadata
++ Key Name :: Sealion
++ Image Name :: NeCTAR CentOS 7 x86_64
++ Image ID :: 0efe8a7e-5a3b-4428-853e-08ab780af042
+******* Volumes Attached
++ Volume :: No volumes attached.
+***** Created useful aliases and functions on local machines shell
+#+begin_src bash
+  nano .zshrc_me
+  #+end_src
+    #+begin_src bash
+  SEALION_IP=[NECTAR ASSIGNED IP]
+  alias sealion="ssh -i ~/.ssh/sealion.pem ec2-user@${SEALION_IP}"
+  sealion_scp_from () {
+                   scp -i ~/.ssh/sealion.pem ec2-user@${SEALION_IP}:$1 $2
+  }
+  sealion_scp_to () {
+                   scp -i ~/.ssh/sealion.pem $1 ec2-user@${SEALION_IP}:$2
+  }
+#+end_src
+***** SSH to /sealion/ and changed root password
+#+begin_src bash
+  sudo passwd [NECTAR DEFAULT CENTOS USERNAME]
+#+end_src
+***** Download ROMS via git
+****** Use =git-credential-store=
+#+BEGIN_SRC text
+git config --global credential.helper 'store --file ~/.my-credentials'
+#+END_SRC
+****** Store ROMS passcode in cryptographic file
+#+begin_src text
+      cd ~
+      gpg --gen-key
+#+end_src
+Creating an /RSA/ of =4096= with indefinite key expiry and then my UTas email
+address and name
+****** Created key file using /nano/ editor
+#+begin_src text
+    nano .netrc
+#+end_src
+and file contents
+#+begin_src text
+  machine www.myroms.org
+  login [ROMS USNAME]
+  password [ROMS PASSWORD]
+  protocol https
+#+end_src
+****** Download the =git-credential-stor=
+#+begin_src text
+  mkdir ~/bin
+  curl -o ~/bin/git-credential-netrc https://raw.githubusercontent.com/git/git/master/contrib/credential/netrc/git-credential-netrc
+  gpg -e -r [My UTas EMAIL] .netrc
+  git config --global credential.helper "netrc -f ~/.netrc.gpg -v"
+#+end_src
+****** Download ROMS
+#+begin_src text
+mkdir ~/ROMS
+git clone https://[ROMS USERNAME]@www.myroms.org/git/src ~/ROMS
+cd ~/ROMS
+git config filter.id.smudge ".git_filters/id.smudge %f"
+git config filter.id.clean ".git_filters/id.clean %f"
+rm .git/index
+git checkout HEAD -- "$(git rev-parse --show-toplevel)"
+#+end_src
+****** Download ROMS Documentation
+#+begin_src text
+    git clone https://github.com/kshedstrom/roms_manual
+#+end_src
+***** Install critical software
+#+begin_src bash
+  sudo yum group install "Development Tools"
+  sudo yum install texlive-*
+  sudo yum install openmpi
+  sudo yum install netcdf-devel
+#+end_src
+The first command critically installs =gcc=, =gfortran=, =cpp=, =make= and a number of other
+libraries and software tools that are useful. The second installs latex. The
+third install [[https://www.open-mpi.org][OpenMPI]] , which has not been fully tested and may require to be
+installed from source.
+The last installs =nc-config= and associated netcdf binaries required, however,
+it does not compile due to the following dependency error.
+#+begin_src text
+   Error: Package: netcdf-4.3.3.1-5.el7.x86_64 (epel)
+           Requires: hdf5(x86-64) = 1.8.12
+           Available: hdf5-1.8.12-12.el7.x86_64 (epel)
+               hdf5(x86-64) = 1.8.12-12.el7
+           Installing: hdf5-1.8.13-7.el7.x86_64 (centos-openstack)
+               hdf5(x86-64) = 1.8.13-7.el7
+ You could try using --skip-broken to work around the problem
+ You could try running: rpm -Va --nofiles --nodigest
+#+end_src
+***** Download and build ROMS documentation
+#+begin_src text
+  cd ~/ROMS
+  git clone https://github.com/kshedstrom/roms_manual
+  cd roms_manual
+  pdflatex roms_manual.tex
+  pdflatex roms_manual.tex
+#+end_src
+Stored locally as
+****** ROMS Manual
+#+NAME: ROMS Manual
+[[file:/Volumes/SEASONG/PHD/references/modelling/roms_manual.pdf][ROMS Manual]]
+***** ROMS =nc-config= Dependency
+As per page.6 of the [[ROMS Manual]] having this tool is nearly essential, hence,
+I'll now attempt to build NetCDF from source
+***** Building NetCDF from source
+Following [[https://www.unidata.ucar.edu/software/netcdf/documentation/NUG/getting_and_building_netcdf.html][NETCDF]] build instructions
+#+begin_src bash
+  cd ~
+  mkdir source_builds
+  cd source_builds
+  wget https://downloads.unidata.ucar.edu/netcdf-c/4.8.1/src/netcdf-c-4.8.1.tar.gz
+  wget https://www.unidata.ucar.edu/downloads/netcdf/ftp/netcdf-fortran-4.5.3.tar.gz
+  wget http://www.zlib.net/zlib-1.2.11.tar.gz
+#+end_src
+Downloaded =hdf5= source code locally and securely copied to /sealion/
+****** building =zlib=
+#+begin_src bash
+  tar xvf zlib.tgz
+  cd zlib
+    ZDIR=/usr/local
+   ./configure --prefix=${ZDIR}
+   make check
+  sudo make install
+  cd ..
+#+end_src
+****** building =hdf5=
+#+begin_src bash
+  tar xvf hd5.tgz
+  cd hdf5
+  H5DIR=/usr/local
+  ./configure --with-zlib=${ZDIR} --prefix=${H5DIR} --enable-hl
+  make test
+  sudo make install
+  cd ..
+#+end_src
+****** building of =netcdf-c=
+#+begin_src bash
+  tar xvf netcdf-c.tgz
+  cd netcdf-c
+  NCDIR=/usr/local
+  CPPFLAGS='-I${H5DIR}/include -I${ZDIR}/include' LDFLAGS='-L${H5DIR}/lib -L${ZDIR}/lib' ./configure --prefix=${NCDIR}
+  make test
+  cd ~
+#+end_src
+This fails with logged failure in [[file:/Volumes/SEASONG/PHD/modelling/log/test-suite.log][netcdf-c build log failure]]
+****** building =cmake=
+#+begin_src bash
+  wget https://github.com/Kitware/CMake/releases/download/v3.21.2/cmake-3.21.2.tar.gz
+  tar xvf cmake-3.21.2
+  cd cmake-3.21.2
+  ./bootstrap --prefix=/usr/local
+  make -j$(nproc)
+  make install
+#+end_src
+
+**** Compiling a test ROMS on Ubuntu 20.04
+following [[https://www.myroms.org/wiki/ROMS_UNSW2008#Customize_the_Build_Script][ROMS customise build script]]
+1. first need to ensure ~EMACS~ can ~TRAMP~ into 
+2. copied
+  ssh:ubuntu@131.217.175.244:/home/ubuntu/projects/upwelling/build_roms.sh
+3. running /upwelling/ idealised test with =./romsG < roms_upwelling.in > my_upwelling.log=
+4. Unable to /openMPI/ version of ROMS compiled on /seaclub/ , opened an IT
+   ticket with TPAC helpdesk
+**** ROMS Code                                             :bookmark:code:
+[[https://www.myroms.org/wiki/Git][GitHub Link and Information]]
+**** [[https://www.myroms.org/forum/index.php][ROMS Forum]]                                           :bookmark:forum:
+**** [[https://www.myroms.org][ROMS Working Group]]                                       :acct:admin:
+***** Account Information                                      :noexport:
+- username :: dpath2o
+- passcode :: Passw0rds1Suck
+* [[https://github.com/metno/metroms][METROMS]]                                      :coupled:atmo:ocean:modelling:
+Coupled ROMS-CICE through MCT ; For citing of the code, see:
+https://doi.org/10.5281/zenodo.597679
+**** Setup Curvilinear Grid
+***** Ole Richter's Circumpolar Antarctic Grid
+[[https://github.com/kuechenrole/antarctic_melting/blob/master/notebooks/preprocessing/make_grid.ipynb]]
+**** Curvilinear Definition                                             :def:
+A curvilinear grid or structured grid is a grid with the same combinatorial
+structure as a regular grid, in which the cells are quadrilaterals or (general)
+cuboids, rather than rectangles or rectangular cuboids.
+**** Bathymetry                                                  :grid:bathy:
+***** GEBCO2020
+[[https://www.gebco.net]]
+***** Bedmachine
+[[https://sites.uci.edu/morlighem/dataproducts/bedmachine-antarctica/]]
+***** Extrapolate and Merge new GA grid
+[[https://ecat.ga.gov.au/geonetwork/srv/eng/catalog.search#/metadata/135334][this]] grid, from [[mailto:Jodie.Smith@ga.gov.au][Jodi Smith (Geosciences Australia)]] westward at ~2km using [[https://www.scar.org/science/ibcso/home/][IBCSO]]
