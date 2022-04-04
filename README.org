@@ -4,13 +4,24 @@
 #+email: daniel.atwater@utas.edu.au
 #+STARTUP: indent , overview
 
-_Technical Note_: This file is written in [[https://orgmode.org][Emacs-Org]] (which, as an
+_Technical Note 1_: This file is written in [[https://orgmode.org][Emacs-Org]] (which, as an
 aside, I have been enamoured with for more years than I care to
 admit). As such it is exported to the [[https://www.markdownguide.org][markdown]] language that is
 favoured by [[https://github.com]]. However if one would like a slightly
-more native experience to Emacs-Org then go [[./README.org][here]]. Irrespective, this
-README.md will be clobbered with each edit of its parent org file and
-so if you are wanting to edit, edit the org file :) 
+more native experience then go [[./README.org][here]]. Irrespective, this README.md will
+be clobbered with each edit of its parent org file and so if you are
+wanting to edit, edit the org file. All subsequent/derivative files
+are org-only-flavoured.
+
+_Technical Note 2_: With the first note in mind, I have broken most of
+this information into separate files. One for a reduction of clutter
+in this README file and, two, for the separation of sensitive material
+into files that can be later individually removed should there be a
+need at some point to bring this information to a wider audience.
+
+_Technical Note 3_: In separating the files into various sub-org files
+I noticed that the export from org to markdown does not translate for
+internal links. Hence beyond the background information *please use README.org file above to navigate*. 
 
 * Background                                                       :personal:
 

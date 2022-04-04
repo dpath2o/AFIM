@@ -1,44 +1,55 @@
 
 # Table of Contents
 
-1.  [Background](#orgba38d4f):personal:
-2.  [Administration](#orgce534f4)
-3.  [Research](#orgded9e8d):res:
-    1.  [UTas Library Services](#org097d2c2):bookmarks:
-    2.  [Modelling](#org2bb8890):modelling:
-        1.  [CICE](#orgfb12bc2):coupled:seaice:modelling:
-        2.  [WAVEWATCH III](#orge8bceea):bookmark:modelling:ocean:
-        3.  [SWAN (Simulating WAves Nearshore)](#orgc7ca88c):bookmark:modelling:ocean:
-        4.  [Weather Research & Forecasting (WRF) Model](#orgd8641cf):bookmark:modelling:atmo:
-        5.  [Model Coupling Toolkit (MCT)](#orga32fc3e):bookmark:modelling:atmo:
-        6.  [COAWST](#orgfaec473):modelling:ocean:coupled:
-        7.  [ROMS](#org926b2c9):ocean:modelling:
-    3.  [Data](#org8dc835f):data:
-    4.  [Research Plan 2.0](#org21e5ac1):plan:
-    5.  [Candidature](#org781c4c5):report:
-        1.  [Meetings](#orgf8326cd)
-        2.  [Ethics Approval](#org351a2f5)
-        3.  [Confirmation of Candidature](#org763433d)
-        4.  [Annual Review of Candidature](#org07ffddb)
-        5.  [Thesis Submission and Examination](#org76c432d)
-        6.  [Step 1: Abstract](#org3907061)
-        7.  [Step 2: Thesis/Exegesis Submission](#org443df34)
-        8.  [Step 3: Examiner Reports](#org0745770)
-        9.  [Step 4: Final Thesis/Exegesis Submission](#orgd060575)
-        10. [Step 5: Graduation](#orgbf8fed8)
-4.  [Meetings and Correspondence](#org3a8f892):mtg:email:
-5.  [Computing](#orgf5ae7f9):comp:
+1.  [Background](#orgd9bbd6f):personal:
+2.  [Administration](#orgbc1013b)
+3.  [Research](#orgc286871):res:
+    1.  [UTas Library Services](#orgc1059c3):bookmarks:
+    2.  [Modelling](#org40f9f03):modelling:
+        1.  [CICE](#org71a97db):coupled:seaice:modelling:
+        2.  [WAVEWATCH III](#org60d4040):bookmark:modelling:ocean:
+        3.  [SWAN (Simulating WAves Nearshore)](#orgdb92e33):bookmark:modelling:ocean:
+        4.  [Weather Research & Forecasting (WRF) Model](#org24d6eef):bookmark:modelling:atmo:
+        5.  [Model Coupling Toolkit (MCT)](#org76459b4):bookmark:modelling:atmo:
+        6.  [COAWST](#org7d3c775):modelling:ocean:coupled:
+        7.  [ROMS](#orga767837):ocean:modelling:
+    3.  [Data](#orgd7d28ac):data:
+    4.  [Research Plan 2.0](#org3c93f5f):plan:
+    5.  [Candidature](#orgb2ad0ff):report:
+        1.  [Meetings](#org07195f6)
+        2.  [Ethics Approval](#orge94db11)
+        3.  [Confirmation of Candidature](#orga5c3971)
+        4.  [Annual Review of Candidature](#orgca23cdd)
+        5.  [Thesis Submission and Examination](#org5673e14)
+        6.  [Step 1: Abstract](#orgc728df5)
+        7.  [Step 2: Thesis/Exegesis Submission](#org6e1cc5a)
+        8.  [Step 3: Examiner Reports](#orgdab6800)
+        9.  [Step 4: Final Thesis/Exegesis Submission](#org77cf998)
+        10. [Step 5: Graduation](#org14fb077)
+4.  [Meetings and Correspondence](#org3e226fc):mtg:email:
+5.  [Computing](#orgf8a324a):comp:
 
-<span class="underline">Technical Note</span>: This file is written in [Emacs-Org](https://orgmode.org) (which, as an
+<span class="underline">Technical Note 1</span>: This file is written in [Emacs-Org](https://orgmode.org) (which, as an
 aside, I have been enamoured with for more years than I care to
 admit). As such it is exported to the [markdown](https://www.markdownguide.org) language that is
 favoured by <https://github.com>. However if one would like a slightly
-more native experience to Emacs-Org then go [here](./README.md). Irrespective, this
-README.md will be clobbered with each edit of its parent org file and
-so if you are wanting to edit, edit the org file :) 
+more native experience then go [here](./README.md). Irrespective, this README.md will
+be clobbered with each edit of its parent org file and so if you are
+wanting to edit, edit the org file. All subsequent/derivative files
+are org-only-flavoured.
+
+<span class="underline">Technical Note 2</span>: With the first note in mind, I have broken most of
+this information into separate files. One for a reduction of clutter
+in this README file and, two, for the separation of sensitive material
+into files that can be later individually removed should there be a
+need at some point to bring this information to a wider audience.
+
+<span class="underline">Technical Note 3</span>: In separating the files into various sub-org files
+I noticed that the export from org to markdown does not translate for
+internal links. Hence beyond the background information **please use README.org file above to navigate**. 
 
 
-<a id="orgba38d4f"></a>
+<a id="orgd9bbd6f"></a>
 
 # Background     :personal:
 
@@ -82,87 +93,87 @@ After a brief interlude in the first quarter of 2022 I'm now pursuing
 fast ice modelling with an eye towards incorporating it into [COSIMA](http://cosima.org.au).
 
 
-<a id="orgce534f4"></a>
+<a id="orgbc1013b"></a>
 
 # Administration
 
 <./admin/admin.md>
 
 
-<a id="orgded9e8d"></a>
+<a id="orgc286871"></a>
 
 # Research     :res:
 
 
-<a id="org097d2c2"></a>
+<a id="orgc1059c3"></a>
 
 ## UTas Library Services     :bookmarks:
 
 [UTas Research](https://www.utas.edu.au/library/research)
 
 
-<a id="org2bb8890"></a>
+<a id="org40f9f03"></a>
 
 ## Modelling     :modelling:
 
 
-<a id="orgfb12bc2"></a>
+<a id="org71a97db"></a>
 
 ### CICE     :coupled:seaice:modelling:
 
 <./MODELS/cice.md>
 
 
-<a id="orge8bceea"></a>
+<a id="org60d4040"></a>
 
 ### WAVEWATCH III     :bookmark:modelling:ocean:
 
 <./MODELS/wwIII.md>
 
 
-<a id="orgc7ca88c"></a>
+<a id="orgdb92e33"></a>
 
 ### SWAN (Simulating WAves Nearshore)     :bookmark:modelling:ocean:
 
 <./MODELS/swan.md>
 
 
-<a id="orgd8641cf"></a>
+<a id="org24d6eef"></a>
 
 ### Weather Research & Forecasting (WRF) Model     :bookmark:modelling:atmo:
 
 <./MODELS/wrf.md>
 
 
-<a id="orga32fc3e"></a>
+<a id="org76459b4"></a>
 
 ### Model Coupling Toolkit (MCT)     :bookmark:modelling:atmo:
 
 <./MODELS/mct.md>
 
 
-<a id="orgfaec473"></a>
+<a id="org7d3c775"></a>
 
 ### COAWST     :modelling:ocean:coupled:
 
 <./MODELS/coawst.md>
 
 
-<a id="org926b2c9"></a>
+<a id="orga767837"></a>
 
 ### ROMS     :ocean:modelling:
 
 <./MODELS/metroms.md>
 
 
-<a id="org8dc835f"></a>
+<a id="orgd7d28ac"></a>
 
 ## Data     :data:
 
 <./data.md>
 
 
-<a id="org21e5ac1"></a>
+<a id="org3c93f5f"></a>
 
 ## Research Plan 2.0     :plan:
 
@@ -171,12 +182,12 @@ plan. As it should it will be kept separate from this document and can
 be found [here](./researchplan/researchplan.md) (as an Emacs-Org)
 
 
-<a id="org781c4c5"></a>
+<a id="orgb2ad0ff"></a>
 
 ## Candidature     :report:
 
 
-<a id="orgf8326cd"></a>
+<a id="org07195f6"></a>
 
 ### Meetings
 
@@ -192,7 +203,7 @@ Meeting date/attendees
 -   Any other business
 
 
-<a id="org351a2f5"></a>
+<a id="orge94db11"></a>
 
 ### Ethics Approval
 
@@ -201,7 +212,7 @@ It is essential that you discuss with your supervisors at the very outset whethe
 The Research Integrity and Ethics Unit is there to support researchers at UTAS. Please contact them with any questions relating to an ethics application, a clinical trial or a research integrity issue.
 
 
-<a id="org763433d"></a>
+<a id="orga5c3971"></a>
 
 ### Confirmation of Candidature
 
@@ -236,7 +247,7 @@ Interim HDR Candidature Management procedure and Interim HDR Reviews of Progress
 procedure.
 
 
-<a id="org07ffddb"></a>
+<a id="orgca23cdd"></a>
 
 ### Annual Review of Candidature
 
@@ -257,12 +268,12 @@ Interim HDR Candidature Management procedure and Interim HDR Reviews of Progress
 procedure.
 
 
-<a id="org76c432d"></a>
+<a id="org5673e14"></a>
 
 ### Thesis Submission and Examination
 
 
-<a id="org3907061"></a>
+<a id="orgc728df5"></a>
 
 ### Step 1: Abstract
 
@@ -281,7 +292,7 @@ is also a member of your supervisory team, the relevant College Dean or
 Institute Director will appoint the Chair of Examiners.
 
 
-<a id="org443df34"></a>
+<a id="org6e1cc5a"></a>
 
 ### Step 2: Thesis/Exegesis Submission
 
@@ -317,7 +328,7 @@ iGRad. This will inform you of when examiners have been nominated, when your
 thesis/exegesis has been sent and the due dates for examiner reports.
 
 
-<a id="org0745770"></a>
+<a id="orgdab6800"></a>
 
 ### Step 3: Examiner Reports
 
@@ -334,7 +345,7 @@ When you have completed any required revisions, please submit your corrected the
 After the Graduate Research Office receive this approval, we can then advise you of the identity of your examiners and invite you to upload your final thesis and graduation requirements by completing the Examination > Graduation Requirements tab in iGRad.
 
 
-<a id="orgd060575"></a>
+<a id="org77cf998"></a>
 
 ### Step 4: Final Thesis/Exegesis Submission
 
@@ -356,19 +367,19 @@ For PhD or Professional Doctorate candidates only: A 40-word summary of your the
 Once you have fulfilled the above requirements, the Graduate Research Office will request Academic Senate approval to award your degree. We will advise you when this approval has been received.
 
 
-<a id="orgbf8fed8"></a>
+<a id="org14fb077"></a>
 
 ### Step 5: Graduation
 
 
-<a id="org3a8f892"></a>
+<a id="org3e226fc"></a>
 
 # Meetings and Correspondence     :mtg:email:
 
 <./admin/meetings.md>
 
 
-<a id="orgf5ae7f9"></a>
+<a id="orgf8a324a"></a>
 
 # Computing     :comp:
 
