@@ -1,0 +1,1492 @@
+#+title: Australian Fast Ice Model
+#+date: <2022-04-02 Sat>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+_Technical Note_: This file is written in [[https://orgmode.org][Emacs-Org]] (which, as an
+aside, I have been enamoured with for more years than I care to
+admit). As such it is exported to the [[https://www.markdownguide.org][markdown]] language that is
+favoured by [[https://github.com]]. However if one would like a slightly
+more native experience to Emacs-Org then go [[./README.org][here]]. Irrespective, this
+README.md will be clobbered with each edit of its parent org file and
+so if you are wanting to edit, edit the org file :) 
+
+* Background                                                       :personal:
+At the start of 2020 I decided to pursue a PhD in oceanography that
+comprised [[http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf][ocean modelling]], the [[https://tos.org/oceanography/issue/volume-25-issue-03][Southern Ocean]] and [[https://www.scar.org][Antarctica]]. This was
+spurned largely from my [[https://www.cencoos.org][previous]] [[http://imos.org.au][professional life]]
+[[https://scripps.ucsd.edu/research/topics/coastal-oceanography][coastal oceanographer]]. That previous pursuit centred mainly around a remote
+sensing technology called [[https://tos.org/oceanography/assets/docs/10-2_paduan1.pdf][high frequency radar]] which is, and I used, in a
+broad number of ways to understand the dynamics (the motion of the
+of the upper ocean) through the digital application of signal
+processing of the Physical representaiton of a Doppler shifted Bragg
+frequency. After roughly 15 years in that field I left to diversify my
+career skillset while ticking some service-related philosophies about
+being [[https://en.wikipedia.org/wiki/National_service][contributing to a new nation]]. After four years of [[https://www.navy.gov.au/sites/default/files/documents/Warfare_Officers_Career_Handbook.pdf][learning how-to drive Navy ships]] I
+specialised as a [[https://www.defencejobs.gov.au/jobs/reserves/navy/meteorologist-and-oceanographer][Meteorologic and Oceanographic Officer]] in that
+[[https://www.navy.gov.au][organisation]] and [[https://www.youtube.com/watch?v=_1roFUwV7ss][operational-ised]] my [[https://oceansci.ucsc.edu/academics/graduate/ms.html][scientific skillset]]. At about the
+same time I became fascinated with Antarctica and its criticality both
+[[https://tos.org/oceanography/article/southern-ocean-warming][climatically]] and [[https://www.antarctica.gov.au/about-us/antarctic-strategy-and-action-plan/][strategically]]. Hence I began searching for a PhD
+project that would fulfil my interest.
+
+Fortunately, it did not take too long before I was introduced to [[https://tasmanian.com.au/stories/alex-fraser/][Alex Fraser]] and [[./ResearchPlan/project_proposal/PROJECT_PROPOSAL.pdf][a project]] that he had on his digital shelf that from the outset ticked all my
+interest boxes. I can't recall exactly where or when in I was introduced to the various forms of
+[[https://en.wikipedia.org/wiki/Sea_ice][sea ice]] and [[https://tos.org/oceanography/issue/volume-24-issue-03][its role in polar oceanography]] but I do remember it
+being very [[http://nsidc.org/arcticseaicenews/][Arctic-centric]] with this vague concept that [[https://arctic.noaa.gov/Report-Card/Report-Card-2018/ArtMID/7878/ArticleID/788/Landfast-Sea-Ice-in-a-Changing-Arctic][landfast sea ice (fast ice)]] played an important role in Arctic sea ice. So when Alex
+provided me with a rough outline of the project he wanted to pursue
+modelling fast ice and it being [[https://www.sciencedirect.com/user/identity/landing?code=2QD--DJX9fNQGcwrhJdFSQcbTnjTstfb_oMPFrXr&state=retryCounter%3D0%26csrfToken%3D282ae9df-d109-4361-a158-7399407fb2cd%26idpPolicy%3Durn%253Acom%253Aelsevier%253Aidp%253Apolicy%253Aproduct%253Ainst_assoc%26returnUrl%3D%252Fscience%252Farticle%252Fpii%252FS1463500321001712%26prompt%3Dnone%26cid%3Darp-05cb79cb-d88b-43bd-92e0-7af2740528af][largely neglected thus far]] in
+circumpolar modelling efforts, I knew the meat on this bone was likely
+well marbled.
+
+So in mid-2021 I was accepted and enrolled as a part-time PhD student at
+the [[https://www.googleadservices.com/pagead/aclk?sa=L&ai=DChcSEwjb1_Cu-_j2AhWFmmYCHS-oCUAYABAAGgJzbQ&ohost=www.google.com&cid=CAESbeD2zyC-aH5iZzoJORucLfQbhrhY_ooy9py4o71TC_kz3xRqKOproNUbUwtZtC5573rDHXbolu_5OSzJ1IBTOd5vLU41bby25TJOXU74Xos06Noqir-L1xomT419-70EUgr0C5r7Znshu44t3TM&sig=AOD64_2ugbp2WvnZ4lnJ32JarlVkJGBBcA&q&adurl&ved=2ahUKEwjJxumu-_j2AhXm63MBHchuCCMQ0Qx6BAgDEAE][University of Tasmania]] [[https://www.imas.utas.edu.au][Institute of Marine Science]] through the
+[[https://aappartnership.org.au][Australian Antarctic Partnership Program]]. I spent the second-half of
+that year [[./references][reading]] and constructing an initial [[./ResearchPlan/doc/researchplan.pdf][Reasearch Plan]]. However, as all good
+projects evolve, it became apparent that I should be aligning my
+project with a well-supported Australian sea ice modelling effort, not
+only for my own support, but also to aim for a more impactful goal of
+incorporating fast ice into a nationally recognised/supported
+model.
+
+After a brief interlude in the first quarter of 2022 I'm now pursuing
+fast ice modelling with an eye towards incorporating it into [[http://cosima.org.au][COSIMA]].
+
+
+* Administrative                                                      :admin:
+** Student Number                                            :admin:numbers:
+175611
+** Student Universal Identifier (USI)                        :admin:numbers:
+DJVW9ZANU3
+** Supervisors/Advisors/GRC                                       :contacts:
+*** Primary
+[[mailto:alexandar.fraser@utas.edu.au][Alex Fraser]]
+*** Secondary
+[[mailto:will.hobbs@utas.edu.au][Will Hobbs]]
+[[mailto:paul.spence@utas.edu.au][Paul Spence]]
+*** Graduate Research Coordinator
+[[mailto:maximum.nikurashin@utas.edu.au][Max Nikurashin]]
+** [[https://www.utas.edu.au/research-admin/graduate-research/current-candidates/support-services][Student Systems and Support Servies]]                            :bookmark:
+*** [[https://researchstudent.utas.edu.au/login.aspx?ReturnUrl=%2f][iGrad]]                                             :bookmark:admin:utas:
+iGRad is the electronic Candidature Management system.
+This system gives you, your supervisors and Graduate Research Coordinator (GRC) an overview of your
+candidature, monitors your progress and is where you will submit your Research Plans, Annual Review
+Progress Reports and Thesis for Examination.
+*** [[https://estudent.utas.edu.au/T1SMProduction/WebApps/eStudent/login.aspx?ReturnUrl=%2fT1SMProduction%2fWebApps%2feStudent%2fdefault.aspx][eStudent Login]]                                    :bookmark:admin:utas:
+Access the eStudent self-service portal to manage your personal details, enrol in your coursework
+units and monitor your current enrolment and academic progress. Fees information is also accessed
+via eStudent. 
+For Domestic candidates, the eStudent portal is where you will complete your electronic Commonwealth
+Assistance Form (eCAF) and pay your Student Services and Amenities Fees (SSAF). 
+*** [[https://www.utas.edu.au/mylo][My Learning Online (MyLO)]]                         :bookmark:admin:utas:
+MyLO is the online learning environment at UTAS. MyLO stands for My Learning Online.
+Units that you can access via MyLO include any Induction modules you are required to complete and
+the compulsory units of the Graduate Certificate in Research (X5A): 
+- XGR501: Introduction to Higher Degree by Research
+- XGR502: Communicating Research
+*** [[https://www.utas.edu.au/students/admin/ssaf][Student Services and Amenities Fee (SSAF)]]               :bookmark:utas:
+** Graduate Research Office                                  :contact:admin:
+[[mailto:GraduateResearch.CoSE@utas.edu.au][Graduate Research Office for College of Science and Engineering]]
+telephone :: +61(0)362268559
+Sandy Bay Campus
+Centenary Building
+Level 3, Room 303
+SANDY BAY TAS 7005
+[[/Users/dpath2o/Documents/orgs/figs/Sandy-Bay-Campus-Guide.pdf][Sandy Bay Campus Map]]
+** Institute of Marine and Antarctic Studies (IMAS)
+*** Key Personnel
+**** Director of IMAS
+- Terry Bailey
+**** Head of Oceans and Cryosphere
+- Neil Holbrook
+*** Commencement
+**** IMAS Induction Guide [[https://drive.google.com/file/d/1oDS4qBfGMTNy7of3XoXOIR770i-lU0jt/view?usp=sharing][Online PDF]] :bookmark:
+**** IMAS New Student Checklist [[https://drive.google.com/file/d/1WUM0ZtpzSG2RPsk_n7yCUUA2wrmxeFAY/view?usp=sharing][Online PDF]] :bookmark:
+** Degree                                                          :noexport:
+*** Doctorate of Philosophy (Natural and Physical Sciences)   :bookmark:utas:
+[[https://www.utas.edu.au/courses/dvc-research/courses/s9s-doctor-of-philosophy-natural-and-physical-sciences][UTas link to degree]]
+*** PhD Commencement Date
+<2021-03-05 Fri>
+%%(org-date 2021 05 03) PhD Commencement Anniversary %d
+*** Anticipated Completion Date
+<2026-11-03 Tue>
+** Funding                                                           :admin:
+*** ADF                                                           :adf:admin:
+**** CSS (Civil Schooling Scheme)
+***** Apply to CSS
+***** DONE Send CSS Draft Application to [[mailto:karen.thomson@defence.gov.au][Karen Thomson]]
+CLOSED: [2021-05-12 Wed 09:03]
+:PROPERTIES:
+:DEADLINE: <2021-05-15 Sat>
+:END:
+- CLOSING NOTE [2021-05-12 Wed 09:03] \\
+  email sent [2021-05-11 Tue]
+**** CDF Fellowship
+*** Scholarships
+**** RTP
+see here for details [[https://drive.google.com/file/d/1hFuX_UWDZJjOI3CbTUE5Vub5vQnrqbr7/view?usp=sharing]]
+**** AAPP Top-Up
+- [[https://universitytasmania.sharepoint.com/:w:/r/sites/AustralianAntarcticProgramPartnership/_layouts/15/Doc.aspx?sourcedoc=%7BD4678FC5-A847-4219-AC35-A9D8E68D830A%7D&file=AAPP%20top-up%20scholarship_FINAL_20200501.docx&action=default&mobileredirect=true][link to document on AAPP Scholarship]]
+***** Decision by AAPP panel on [2021-06-24 Thu]
++ application has been withdrawn due to my full time employment
++ should my employment status change I am encouraged to re-submit my application
++ see email from Wen
+***** DONE AAPP Scholarship Online Application
+CLOSED: [2021-05-10 Mon 13:32] SCHEDULED: <2021-05-07 Fri>
+- CLOSING NOTE [2021-05-10 Mon 13:32] \\
+  applied on-line after sending Alex the drafting wording and receiving his thumbs-up
+[[https://forms.office.com/Pages/ResponsePage.aspx?id=VV3rFZEZvEaNp6slI03uCDs11aTj99RDrN_ronIHAR1UQlJBTFhPNFBBTUtQSVRGVzA3UzI0RFM2My4u][link to application]]
+***** Form Contents
+IOT draft the content of the online form I've pulled out the fields and
+translated them to org headers
+***** Candidate Name
+Daniel Patrick Atwater
+***** Project Title
+East Antarctic Fast Ice Model
+***** AAPP Project
+- [X] Sea Ice
+***** Supervisors
+- Alex Fraser
+- Paul Sandery
+- Phil Reid
+- Will Hobbs
+- Wilma Huneke
+***** Current Scholarship
+- RTP
+***** Date Commenced
+<2021-05-03 Mon>
+***** Anticipated Completion Date
+<2025-11-03 Mon>
+***** State how your project is related to the AAPP objectives (max 150 words)
+One of three key questions of Theme 3 - Project 6 is addressed by this
+research. Specifically the aim of this project is to model fast ice in the East
+Antarctic which will elucidate the primary mechanism for the observed variation
+and changes of the continental shelf sea-ice mass while laying the ground work
+for building a long-range forecasting model. The focus of this project will be
+to re-design an existing ice-ocean model to include realistic Antarctic fast
+ice. Then using this new East Antarctic Fast Ice Model, I will perform a series
+of synthetic experiments to determine the drivers of this fast ice and the role
+of dense water formation along the continental shelf. This should elucidate the
+recent shift in sea-ice mass extent and allow for future models to better
+incorporate sea-ice into Earth system models with a higher degree of confidence.
+***** Describe your current progress, including demonstration of any outputs including publications, presentations, etc. (max 250 words)
+My current progress is limited to successful enrolment as a remote part-time PhD
+candidate with UTas - IMAS - AAPP. I am presently working full-time as a
+Meteorological & Oceanographic Officer with the Royal Australian Navy and I am
+applying through my employer, in June, for formal recognition of a 20% release rate (i.e. one-day-per-week) to pursue my PhD. At present I
+have an informal agreement with my unit of one-day-per-week (and at other times
+as work requirements allow); hence they are supportive of this academic
+pursuit. However, a formal agreement would carry more weight should I need to be
+moved elsewhere in the Navy (i.e. under a different command). It has been
+indicated to me that in the merit process of assessing the formal agreement any
+additional awards, grants and scholarships that I have been successful in
+receiving will help to increase my merit application score with the Navy. In
+this same vein I will be applying to the Chief of Defence Force Fellowship. This
+is an annual Fellowship that releases ADF members from full-time service to
+pursue post-graduate degrees, while still remunerating the member at their
+present rate. That application also gives significant weight to additional
+grants and scholarships that an applicant presents. Given the strategic
+importance of Antartica to our nation and the relevance of understanding AABW
+formation as a key driver of the Earth climate system there is a direct
+strategic security linkage to this project.
+***** I certify that I am not receiving any other form of top-up scholarship
+- [X] affirmative
+**** Fulbright
+used as a travel scholarship to travel and live at an international university for a period of time
+*** Fellowships
+**** SCAR
+** Travel                                                    :admin:
+*** DONE [#A] Call Wen about July Travel Bookings
+CLOSED: [2021-05-21 Fri 14:03]
+- CLOSING NOTE [2021-05-21 Fri 14:03] \\
+  decided to defer travel
+<2021-05-17 Mon 10:00>
+*** Reoccurring
+**** BLUF
+Total nominal cost $2500
+**** Justification
+There is an on-going (twice yearly) need for me to travel from my place of
+residence in Bomaderry, NSW to UTas-IMAS offices in Hobart, TAS. This will be to
+meet with supervisors and attend courses as required. As such it is envisioned
+that travel periods will be no longer than one to two weeks. With this in
+mind it is my intention here to provide the generalised costings for such travel
+using the least expensive method.
+***** Considerations
+- face-to-face meeting with supervisor(s) which promotes/allows for a more lasting
+  human bond to be established/formed/fostered
+- physical presence allows for spontaneous networking with other post-graduate
+  students and researchers not otherwise achieved
+***** Example of Tasks
+- intensive residential short-course(s)
+- attendance at meetings/conferences/symposiums
+- prepare/practice/present a talk/brief
+- confirmation of candidature
+**** Ground Transport
+***** Home to SYD (RTN)
+$50
+***** HOB to IMAS (RTN)
+$40
+**** Airfares
+***** SYD to HOB (RTN) discount fare
+$500
+**** Accommodation
+***** [[https://www.salamancaterraces.com.au][Salamanca Terraces]]
+$1700 weekly rate
+***** rationale
+- preferred
+- my own meal prep/cook
+***** weekly food cost grocer
+$200
+***** Travelodge Hobart
+$1300 weekly rate
+***** rationale
+- save $400 on accommodation, but weekly foot cost of eating out is twice this
+***** weekly food cost eating out
+$791 (as per ATO daily allowance rate of $113)
+*** July 2021
+**** Justification
+There is a need to meet face-to-face with my supervisors within the first
+90-days (FTE) after commencing candidancy. This week (see below) has been identified as a week
+in which all supervisors have availablity. The plan will be to drive to Tasmania
+as it will be less expensive than to fly. This is with the view that I will be
+travelling with my family, wife and two children. The reason for travelling with
+family is that they would like to see potentially where we would be living when
+I switch to a full-time PhD student. There is a psychological rationale behind
+incorporating my family and especially my kids in the trip is that it gives them
+a sense of ownership or rather that the entire family is invested in this
+academic pursuit that I am embarking upon. This will pay dividends when I am in
+the thick of research and looking for their understanding as to why I am doing
+this project.
+***** Dates
+[2021-07-03 Sat]-[2021-07-11 Sun]
+***** Kennels
+[[https://www.valleykennels.com.au/new_index.htm][Valley Kennels]]
+- cost is to come from personal budget
+- approximate cost $450
+****** CANCELLED contact Valley Kennels to enquire on availability :phone:CANCELLED:
+CLOSED: [2021-05-21 Fri 14:04]
+- State "CANCELLED"  from "TODO"       [2021-05-21 Fri 14:04]
+***** Driving
+- Approximate driving time Home to Melbourne 8.5 hr
+****** Spirit of Tasmania
+- Departs at 1930
+- Approximate cost $1500 with cabin each way
+- Approximate cost $1100 without cabin
+***** Flying
+****** Qantas
+- Approximate cost $2000; Red E-Deals
+***** Accommodation
+****** Hotels
+$1500 based on Salamanca Terraces rate for six nights
+****** Air BnB / Short-term Rental
+$1200 - $1800 based on search conducted
+****** House-sitting
+******* DONE Post to FB IMAS Postgrads
+CLOSED: [2021-04-28 Wed 20:52]
+- CLOSING NOTE [2021-05-02 Sun 20:52]
+
+
+* Research                                                              :res:
+** UTas Library Services                                         :bookmarks:
+[[https://www.utas.edu.au/library/research][UTas Research]]
+
+** Modelling                                                 :modelling:
+*** CICE                                              :coupled:seaice:modelling:
+
+*** WAVEWATCH III                                     :bookmark:modelling:ocean:
+[[https://polar.ncep.noaa.gov/waves/wavewatch/license.shtml][NOAA NCEP Homepage]]
+*** SWAN (Simulating WAves Nearshore)                 :bookmark:modelling:ocean:
+[[http://swanmodel.sourceforge.net][Maintainers Homepage]]
+*** Weather Research & Forecasting (WRF) Model         :bookmark:modelling:atmo:
+[[https://forum.wrfforum.com][Forum]]
+*** Model Coupling Toolkit (MCT)                       :bookmark:modelling:atmo:
+[[https://www.mcs.anl.gov/research/projects/mct/][US DOE Hosted wesbite]]
+*** COAWST                                             :modelling:ocean:coupled:
+[[https://www.usgs.gov/software/coupled-ocean-atmosphere-wave-sediment-transport-coawst-modeling-system][USGS Brief Description]] of the model
+*** ROMS                                                       :ocean:modelling:
+:LOGBOOK:
+CLOCK: [2021-09-10 Fri 07:05]--[2021-09-10 Fri 12:00] =>  4:55
+CLOCK: [2021-09-09 Sat 20:05]--[2021-09-09 Sat 23:35] =>  3:30
+:END:
+Regional Oceanographic Model System (ROMS)
+#+NAME: ROMS
+**** Compiling a test ROMS on CentOS 7.4 -- /sealion/
+**** Created SSH Key on NECTAR and downloaded to local machine
+#+begin_src bash
+  mv ~/Downloads/NECTARprivate_key.pem ~/.ssh/sealion.pem
+  chmod 0600 ~/.ssh/sealion.pem
+#+end_src
+***** Created NECTAR CentOS Instance
++ NAME :: sealion
++ ID :: 6caeb392-4773-4b4b-86a2-ff96cff1ef49
++ Description :: hear the lion roar
++ Project ID :: [d404319b1cca4f10ab265e607a129616]
++ Status :: Active
++ Locked :: False
++ Availability Zone :: QRIScloud
++ Created ::  15 Sep 2021, 7:11 p.m.
++ Age :: 7 hours, 3 minutes
+****** Specs
++ Flavor Name :: r3.xxlarge
++ RAM :: 128GB
++ VCPUs :: 32 VCPU
++ Disk :: 30GB
+******* IP Addresses
++ qld-data :: 10.255.132.204
++ qld :: 203.101.231.127
+****** Security Groups
+******* http
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 443/tcp from :: 0.0.0.0/0
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 80/tcp from :: 0.0.0.0/0
+******* icmp
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 icmp from :: 0.0.0.0/0
++ ALLOW IPv6 to :: ::/0
+******* ssh
++ ALLOW IPv4 22/tcp from :: 0.0.0.0/0
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 to :: 0.0.0.0/0
+******* default
++ ALLOW IPv4 from :: default
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv6 from :: default
++ ALLOW IPv4 to :: 0.0.0.0/0
+******* test
++ ALLOW IPv6 to :: ::/0
++ ALLOW IPv4 to :: 0.0.0.0/0
++ ALLOW IPv4 22/tcp from :: 0.0.0.0/0
+****** Metadata
++ Key Name :: Sealion
++ Image Name :: NeCTAR CentOS 7 x86_64
++ Image ID :: 0efe8a7e-5a3b-4428-853e-08ab780af042
+******* Volumes Attached
++ Volume :: No volumes attached.
+***** Created useful aliases and functions on local machines shell
+#+begin_src bash
+  nano .zshrc_me
+  #+end_src
+    #+begin_src bash
+  SEALION_IP=[NECTAR ASSIGNED IP]
+  alias sealion="ssh -i ~/.ssh/sealion.pem ec2-user@${SEALION_IP}"
+  sealion_scp_from () {
+                   scp -i ~/.ssh/sealion.pem ec2-user@${SEALION_IP}:$1 $2
+  }
+  sealion_scp_to () {
+                   scp -i ~/.ssh/sealion.pem $1 ec2-user@${SEALION_IP}:$2
+  }
+#+end_src
+***** SSH to /sealion/ and changed root password
+#+begin_src bash
+  sudo passwd [NECTAR DEFAULT CENTOS USERNAME]
+#+end_src
+***** Download ROMS via git
+****** Use =git-credential-store=
+#+BEGIN_SRC text
+git config --global credential.helper 'store --file ~/.my-credentials'
+#+END_SRC
+****** Store ROMS passcode in cryptographic file
+#+begin_src text
+      cd ~
+      gpg --gen-key
+#+end_src
+Creating an /RSA/ of =4096= with indefinite key expiry and then my UTas email
+address and name
+****** Created key file using /nano/ editor
+#+begin_src text
+    nano .netrc
+#+end_src
+and file contents
+#+begin_src text
+  machine www.myroms.org
+  login [ROMS USNAME]
+  password [ROMS PASSWORD]
+  protocol https
+#+end_src
+****** Download the =git-credential-stor=
+#+begin_src text
+  mkdir ~/bin
+  curl -o ~/bin/git-credential-netrc https://raw.githubusercontent.com/git/git/master/contrib/credential/netrc/git-credential-netrc
+  gpg -e -r [My UTas EMAIL] .netrc
+  git config --global credential.helper "netrc -f ~/.netrc.gpg -v"
+#+end_src
+****** Download ROMS
+#+begin_src text
+mkdir ~/ROMS
+git clone https://[ROMS USERNAME]@www.myroms.org/git/src ~/ROMS
+cd ~/ROMS
+git config filter.id.smudge ".git_filters/id.smudge %f"
+git config filter.id.clean ".git_filters/id.clean %f"
+rm .git/index
+git checkout HEAD -- "$(git rev-parse --show-toplevel)"
+#+end_src
+****** Download ROMS Documentation
+#+begin_src text
+    git clone https://github.com/kshedstrom/roms_manual
+#+end_src
+***** Install critical software
+#+begin_src bash
+  sudo yum group install "Development Tools"
+  sudo yum install texlive-*
+  sudo yum install openmpi
+  sudo yum install netcdf-devel
+#+end_src
+The first command critically installs =gcc=, =gfortran=, =cpp=, =make= and a number of other
+libraries and software tools that are useful. The second installs latex. The
+third install [[https://www.open-mpi.org][OpenMPI]] , which has not been fully tested and may require to be
+installed from source.
+The last installs =nc-config= and associated netcdf binaries required, however,
+it does not compile due to the following dependency error.
+#+begin_src text
+   Error: Package: netcdf-4.3.3.1-5.el7.x86_64 (epel)
+           Requires: hdf5(x86-64) = 1.8.12
+           Available: hdf5-1.8.12-12.el7.x86_64 (epel)
+               hdf5(x86-64) = 1.8.12-12.el7
+           Installing: hdf5-1.8.13-7.el7.x86_64 (centos-openstack)
+               hdf5(x86-64) = 1.8.13-7.el7
+ You could try using --skip-broken to work around the problem
+ You could try running: rpm -Va --nofiles --nodigest
+#+end_src
+***** Download and build ROMS documentation
+#+begin_src text
+  cd ~/ROMS
+  git clone https://github.com/kshedstrom/roms_manual
+  cd roms_manual
+  pdflatex roms_manual.tex
+  pdflatex roms_manual.tex
+#+end_src
+Stored locally as
+****** ROMS Manual
+#+NAME: ROMS Manual
+[[file:/Volumes/SEASONG/PHD/references/modelling/roms_manual.pdf][ROMS Manual]]
+***** ROMS =nc-config= Dependency
+As per page.6 of the [[ROMS Manual]] having this tool is nearly essential, hence,
+I'll now attempt to build NetCDF from source
+***** Building NetCDF from source
+Following [[https://www.unidata.ucar.edu/software/netcdf/documentation/NUG/getting_and_building_netcdf.html][NETCDF]] build instructions
+#+begin_src bash
+  cd ~
+  mkdir source_builds
+  cd source_builds
+  wget https://downloads.unidata.ucar.edu/netcdf-c/4.8.1/src/netcdf-c-4.8.1.tar.gz
+  wget https://www.unidata.ucar.edu/downloads/netcdf/ftp/netcdf-fortran-4.5.3.tar.gz
+  wget http://www.zlib.net/zlib-1.2.11.tar.gz
+#+end_src
+Downloaded =hdf5= source code locally and securely copied to /sealion/
+****** building =zlib=
+#+begin_src bash
+  tar xvf zlib.tgz
+  cd zlib
+    ZDIR=/usr/local
+   ./configure --prefix=${ZDIR}
+   make check
+  sudo make install
+  cd ..
+#+end_src
+****** building =hdf5=
+#+begin_src bash
+  tar xvf hd5.tgz
+  cd hdf5
+  H5DIR=/usr/local
+  ./configure --with-zlib=${ZDIR} --prefix=${H5DIR} --enable-hl
+  make test
+  sudo make install
+  cd ..
+#+end_src
+****** building of =netcdf-c=
+#+begin_src bash
+  tar xvf netcdf-c.tgz
+  cd netcdf-c
+  NCDIR=/usr/local
+  CPPFLAGS='-I${H5DIR}/include -I${ZDIR}/include' LDFLAGS='-L${H5DIR}/lib -L${ZDIR}/lib' ./configure --prefix=${NCDIR}
+  make test
+  cd ~
+#+end_src
+This fails with logged failure in [[file:/Volumes/SEASONG/PHD/modelling/log/test-suite.log][netcdf-c build log failure]]
+****** building =cmake=
+#+begin_src bash
+  wget https://github.com/Kitware/CMake/releases/download/v3.21.2/cmake-3.21.2.tar.gz
+  tar xvf cmake-3.21.2
+  cd cmake-3.21.2
+  ./bootstrap --prefix=/usr/local
+  make -j$(nproc)
+  make install
+#+end_src
+
+**** Compiling a test ROMS on Ubuntu 20.04
+following [[https://www.myroms.org/wiki/ROMS_UNSW2008#Customize_the_Build_Script][ROMS customise build script]]
+1. first need to ensure ~EMACS~ can ~TRAMP~ into 
+2. copied
+  ssh:ubuntu@131.217.175.244:/home/ubuntu/projects/upwelling/build_roms.sh
+3. running /upwelling/ idealised test with =./romsG < roms_upwelling.in > my_upwelling.log=
+4. Unable to /openMPI/ version of ROMS compiled on /seaclub/ , opened an IT
+   ticket with TPAC helpdesk
+**** ROMS Code                                             :bookmark:code:
+[[https://www.myroms.org/wiki/Git][GitHub Link and Information]]
+**** [[https://www.myroms.org/forum/index.php][ROMS Forum]]                                           :bookmark:forum:
+**** [[https://www.myroms.org][ROMS Working Group]]                                       :acct:admin:
+***** Account Information                                      :noexport:
+- username :: dpath2o
+- passcode :: Passw0rds1Suck
+*** [[https://github.com/metno/metroms][METROMS]]                                       :coupled:atmo:ocean:modelling:
+Coupled ROMS-CICE through MCT ; For citing of the code, see:
+https://doi.org/10.5281/zenodo.597679
+**** Setup Curvilinear Grid
+***** Ole Richter's Circumpolar Antarctic Grid
+[[https://github.com/kuechenrole/antarctic_melting/blob/master/notebooks/preprocessing/make_grid.ipynb]]
+**** Curvilinear Definition                                             :def:
+A curvilinear grid or structured grid is a grid with the same combinatorial
+structure as a regular grid, in which the cells are quadrilaterals or (general)
+cuboids, rather than rectangles or rectangular cuboids.
+**** Bathymetry                                                  :grid:bathy:
+***** GEBCO2020
+[[https://www.gebco.net]]
+***** Bedmachine
+[[https://sites.uci.edu/morlighem/dataproducts/bedmachine-antarctica/]]
+***** Extrapolate and Merge new GA grid
+[[https://ecat.ga.gov.au/geonetwork/srv/eng/catalog.search#/metadata/135334][this]] grid, from [[mailto:Jodie.Smith@ga.gov.au][Jodi Smith (Geosciences Australia)]] westward at ~2km using [[https://www.scar.org/science/ibcso/home/][IBCSO]]
+** Data                                                      :data:
+*** Grids
+**** Ole Richter's Work                                  :bathy:grid:code:
+[[https://github.com/kuechenrole/antarctic_melting/tree/master/notebooks/preprocessing][GitHub Link]]
+***** DONE Download and put onto my google drive
+CLOSED: [2021-06-18 Fri 13:59]
+- CLOSING NOTE [2021-06-18 Fri 13:59]
+Wilma downloaded data from gadi for me and put it on my google drive
+*** Atmospheric Reanalysis                          :data:model:reanalysis:
+**** [[https://www.ncep.noaa.gov][NCEP]]
+#+NAME: NCEP
+National Center for Environmental Prediction
+**** [[https://www.ncdc.noaa.gov/data-access/model-data/model-datasets/climate-forecast-system-version2-cfsv2][CFS]]
+#+NAME: CFS
+Climate Forecast System Reanalysis
+**** [[https://climatedataguide.ucar.edu/climate-data/nasas-merra2-reanalysis][MERRA2]]
+#+NAME: MERRA2
+Modern-Era Retrospective analysis for Research and Applications version 2
+***** Key Attributes
++ 0.5∘ latitude
++ 0.625∘ longitude
++ 72 levels
++ hourly resolution
++ incorporates observations from more recent satellite observations – more
+  recent than what?
++ improved estimates for surface mass balance and /surface temperature over ice
+  sheets/
+***** Key Limitations
++ discontinuities occur in sea ice and SST boundary that affect certain time
+  series
++ magnitude of precipitation over polar regions is too high (not correct) and
+  excessive over high topography in tropical latitudes
+*** Fast Ice Distribution                     :data:derived:remote_sensing:
+Based on [[./references/journal_articles/FRASER_2019_Landfast ice controls on sea-ice production in the Cape Darnley PolynyaLandfast ice controls on sea-ice production in the Cape Darnley Polynya.pdf][Fraser2019]] a high resolution (1km) time series of 15-day
+composite maps of fast-ice distribution for the period of
+[2000-03-01 Wed]--[2014-03-01 Sat] via [[MODIS]] and [[AMSR-E]] derived satellite data.
+*** Bathymetry and Topography                             :bathy:topo:data:
+**** Bedmachine                                               :bathy:data:
+[[https://sites.uci.edu/morlighem/dataproducts/bedmachine-antarctica/][website link]]
+**** Jodie Smith Data                                         :bathy:data:
+:LOGBOOK:
+CLOCK: [2021-06-17 Thu 18:54]--[2021-06-17 Thu 23:49] =>  4:55
+CLOCK: [2021-06-17 Thu 06:04]--[2021-06-17 Thu 09:35] =>  3:31
+CLOCK: [2021-06-16 Wed 19:52]--[2021-06-16 Wed 20:52] =>  1:00
+:END:
+**** [[https://www.gebco.net][GEBCO]]                                                    :bathy:data:
+**** [[https://www.scar.org/science/ibcso/ibcso/][IBCSO]]                                                    :bathy:data:
+#+NAME: IBCSO
+International Bathymetric Chart of the Southern Ocean
+*** Sea Ice Remote Sensing                        :data:obs:remote_sensing:
+**** Satellite                                   :data:obs:remote_sensing:
+***** [[http://south.seaice.dk/2016//][Seaice website]] with daily composite images
+developed routine to download images and make monthly composite images
+***** NASA
+****** Terra
+****** [[https://terra.nasa.gov/about/terra-instruments/modis][MODIS]]
+#+NAME: MODIS
+Moderate Resolution Imaging Spectroradiometer
+****** Aqua
+****** [[https://aqua.nasa.gov/amsr-e][AMSR-E]]
+#+NAME: AMSR-E
+Advanced Microwave Scanning Radiometer -- Earth Observing System (EOS)
+daily estimates of thin sea ice thickness 6.25km resolution
+***** ESA
+****** Sentinel-1A-B
+****** List of Files from UTas
+[[/Volumes/SEASONG/PHD/data/satellite/sentinel/list_of_files_from_UTas_harddrive.txt]]
+**** University of Bremen                    :data:bookmark:obs:satellite:
+[[https://seaice.uni-bremen.de/sea-ice-concentration/amsre-amsr2/][Sea Ice Concentration]]
+*** Australian Antarctic Data Centre (AADC)             :data:obs:bookmark:
+[[https://data.aad.gov.au/aadc/about/data_policy.cfm#SummaryAADC][website]]
+*** Southern Ocean Observing System (SOOS)            :data:system:network:
+[[https://www.soos.aq][website homepage]]
+**** [[https://www.soosmap.aq/#][SOOSMap]]                 :data:map:bookmark:obs:insitu:remote_sensing:
+**** Marine Mammals Exploring the Ocean Pole to Pole (MEOP) :data:insitu:bookmark:
+
+** Research Plan 2.0                                                  :plan:
+Being a dynamic document this simply a new version of the previous
+plan. As it should it will be kept separate from this document and can
+be found [[./researchplan/researchplan.org][here]] (as an Emacs-Org)
+** Candidature                                             :report:
+*** Meetings
+
+You are encouraged to meet with your supervisory team on a regular basis (e.g. fortnightly) to discuss project progress, troubleshoot issues and develop action plans for future research. These regular meetings support fruitful communication between you and your team, and assists all parties to manage their expectations.
+Meeting Agendas: You are responsible for preparing the agenda for your meetings and documenting the discussion and outcomes. This record provides clarity for all parties. The agenda can include:
+Meeting date/attendees
+- Progress on matters arising from the last meeting
+- Other project progress since the last meeting
+- Matters for discussion/troubleshooting
+- Progress towards your next candidature milestone(s)
+- Actions/outcomes arising from current meeting
+- Any other business
+*** Ethics Approval
+The University of Tasmania (UTAS) is dedicated to creating and maintaining an environment that promotes the responsible and ethical conduct of research in accordance with the Australian Code for the Responsible Conduct of Research.
+It is essential that you discuss with your supervisors at the very outset whether ethics approval is needed and how to obtain it. Many research projects, including Doctor of Philosophy and Master of Research projects, require Human Ethics or Animal Ethics approval to proceed.
+The Research Integrity and Ethics Unit is there to support researchers at UTAS. Please contact them with any questions relating to an ethics application, a clinical trial or a research integrity issue.
+*** Confirmation of Candidature
+The purpose of Confirmation of Candidature is to assess:
+- Your academic preparedness and whether you have developed a clearly defined,
+  coherent and feasible research project and whether you have documented this
+  adequately in your research plan
+- Whether you have met coursework requirements as specified in your letter of offer
+- Whether other specific requirements (e.g. obtaining ethics approval) have been met
+- The suitability of the supervisory team to support you to completion
+- Whether your oral and written skills are sufficient for undertaking a Higher Degree by Research
+- The likelihood of you completing your Higher Degree by Research within the maximum degree period
+- Discuss the requirements of your Confirmation of Candidature with your
+  supervisors and Graduate Research Coordinator (GRC) as early as possible
+
+In order to have your candidature confirmed, you must fulfil the following
+requirements:
+- Research Plan
+- Ethics Requirements
+- Data Management Plan
+- Written Work
+- Oral Presentation
+- Peer Review
+- Supervisor-Candidate meetings
+- Coursework
+- Any additional criteria required by your school or specified in your letter of offer
+
+Detailed information can be found in the Research Training Ordinance and the
+Interim HDR Candidature Management procedure and Interim HDR Reviews of Progress
+procedure.
+*** Annual Review of Candidature
+Following successful Confirmation of Candidature, your progress will be formally
+reviewed every 12 calendar months through candidature until submission.
+The purpose of the annual review is to make an assessment of:
+- Your academic performance consistent with your research plan
+- The adequacy of research infrastructure and resources (including the
+  supervisory team relationship) needed to complete your research project within
+  the maximum degree period
+You will be required to complete the Annual Review tab in iGRad. This allows you
+to fill out information and upload documents regarding your Annual Review,
+before a meeting is held with your Graduate Research Coordinator (GRC).
+Detailed information can be found in the Research Training Ordinance and the
+Interim HDR Candidature Management procedure and Interim HDR Reviews of Progress
+procedure.
+*** Thesis Submission and Examination
+*** Step 1: Abstract
+At least eight weeks (8) prior to submitting your thesis/exegesis for
+examination, you will need to upload your abstract by completing the Examination
+Intention to Submit tab in iGRad.
+On receipt of your abstract, a request will be sent to your supervisory team and
+Head of School, from the Graduate Research Office, asking them to nominate
+examiners for your thesis/exegesis.
+The nomination of examiners process is confidential. You are permitted to
+provide the names of examiners that you do not want to examine your work (and
+accompanying reasons), but that is the extent to which you are involved.
+A Chair of Examiners will also be appointed by the Head of School to act as an
+independent Chair throughout the examination process. Where the Head of School
+is also a member of your supervisory team, the relevant College Dean or
+Institute Director will appoint the Chair of Examiners.
+*** Step 2: Thesis/Exegesis Submission
+Before the maximum expiry date of your candidature, you will need to submit your
+thesis/exegesis (and supplementary material if relevant) for examination by
+completing the Examination > Thesis Submission tab in iGRad.
+If your thesis is less than 60MB in size, and you are only submitting a thesis,
+please upload your thesis to the Thesis Submission tab in iGRad.
+If your thesis is greater than 60MB in size, or you have supplementary material,
+please generate a link to your thesis (and supplementary material) via CloudStor
+and then embed the URL link generated via CloudStor onto your title page. Once
+completed, please upload the title page (only) to the Thesis Submission tab in
+iGRad. To access CloudStor, you can use your UTAS login.
+Supplementary material may include, but not be limited to, appendices, research
+publications, books, a portfolio of audio/video musical recordings,
+documentaries or art works e.g., photos of exhibited items produced during your
+work. Please do not duplicate copies of the supplementary material that is
+already incorporated into your thesis material.
+The thesis/exegesis must include all relevant and signed statements and
+declarations before uploading. For further information on these, and other
+general requirements, please access the General Requirements of a Higher Degree
+by Research Thesis document. Specific details about formatting, length and
+referencing will also be dependent upon the discipline in which you have
+conducted your research. Please consult with your supervisory team about these
+details.
+Printed copies of your thesis/exegesis are no longer required, unless
+specifically requested by an examiner. In this case, the Graduate Research
+Office will request these from you via the School.
+Upon receipt of your thesis/exegesis notice will be sent to your Head of School
+requesting their approval of your submission.
+You will be able to track the examination process via the Examination tab in
+iGRad. This will inform you of when examiners have been nominated, when your
+thesis/exegesis has been sent and the due dates for examiner reports.
+*** Step 3: Examiner Reports
+
+Examiners are requested to return their reports to the Graduate Research Office within six weeks of receiving the thesis/exegesis, however this often takes longer due to workload and personal circumstances. The Graduate Research Office has procedures in place to follow-up on overdue examiner reports.
+
+Once all of the examiner reports have been received, they are sent to the Chair of Examiners. The Chair of Examiners are responsible for providing a recommendation to the Graduate Research Office on the reports, who will then submit their comments and recommendation on the examination outcome to the Dean of Graduate Research.
+
+The Dean of Graduate Research shall consider the recommendations of the examiners and the Chair of Examiners before determining how to proceed to the next stage.
+
+Once determined, we will inform you of the outcome of your examination and send you the examiner reports.
+
+When you have completed any required revisions, please submit your corrected thesis to the Chair of Examiners. They will review your final thesis and, if approved, recommend to the Graduate Research Office that your degree be awarded.
+
+After the Graduate Research Office receive this approval, we can then advise you of the identity of your examiners and invite you to upload your final thesis and graduation requirements by completing the Examination > Graduation Requirements tab in iGRad.
+*** Step 4: Final Thesis/Exegesis Submission
+
+After the Graduate Research Office have invited you to upload your final thesis and graduation requirements, you will need to submit your final thesis/exegesis (including all supplementary material if relevant) by completing the Examination > Graduation Requirements tab in iGRad.
+
+If your thesis is less than 60MB in size, and you are only submitting you’re a thesis, please upload your thesis to the Graduation Requirements tab in iGRad.
+
+If your thesis is greater than 60MB in size, or you have supplementary material, please generate a link to your thesis (and supplementary material) via CloudStor and then embed the URL link generated via CloudStor onto your title page. Once completed, please upload the title page (only) to the Graduation Requirements tab in iGRad. To access CloudStor, you can use your UTAS login.
+
+The thesis/exegesis must include all relevant and signed statements and declarations before uploading. Please be advised that printed copies are no longer required.
+
+To fulfil our graduation requirements, you will need to provide:
+
+Your Final Thesis
+All supplementary material (which may include, but not be limited to, appendices, research publications, books, a portfolio of audio/video musical recordings, documentaries or art works e.g., photos of exhibited items produced during your work).
+A Thesis Access Form
+A thesis abstract for the purpose of AHEGS. This abstract must be strictly 2000 characters (including spaces) or less: This is required for the Australian Higher Education Graduation Statement (AHEGS), a Commonwealth requirement.
+For PhD or Professional Doctorate candidates only: A 40-word summary of your thesis to be read at the ceremony to a general audience. Please refer to the 40 Word Summary Guidelines.
+Once you have fulfilled the above requirements, the Graduate Research Office will request Academic Senate approval to award your degree. We will advise you when this approval has been received.
+*** Step 5: Graduation
+
+
+* Courses and Seminars                                      :course:
+** AAD Seminar Series                                       :seminar:virtual:
+*** Andrew Kelly -- CEO Antarctic Science Foundation
+:SCHEDULED: <2021-06-10 Thu 11:00-12:00>
+[[https://protect-au.mimecast.com/s/9u8fCZYM5DF5VxwZxSjDcge?domain=teams.microsoft.com][GovTeams Link]]
+** MyLO                                                            :OLcourse:
+*** DONE Getting Started with MyLO
+CLOSED: [2021-06-03 Thu 16:37]
+- CLOSING NOTE [2021-06-03 Thu 16:37]
+:LOGBOOK:
+CLOCK: [2021-06-03 Thu 13:36]--[2021-06-03 Thu 16:36] =>  3:00
+CLOCK: [2021-05-25 Tue 20:03]--[2021-05-25 Tue 22:37] =>  2:34
+CLOCK: [2021-05-24 Mon 20:08]--[2021-05-24 Mon 22:17] =>  2:09
+:END:
+*** DONE Academic Integrity
+CLOSED: [2021-06-03 Thu 16:37]
+- CLOSING NOTE [2021-06-03 Thu 16:37]
+:LOGBOOK:
+END:
+*** DONE Turnitin and Academic Writing
+CLOSED: [2021-06-04 Fri 13:16]
+
+- CLOSING NOTE [2021-06-04 Fri 13:16]
+** CORE UNITS
+*** XGR501                                                  :xgr501:OLcourse:
+:LOGBOOK:
+CLOCK: [2021-08-23 Mon 06:23]--[2021-08-23 Mon 09:23] =>  3:00
+CLOCK: [2021-06-25 Fri 07:57]--[2021-06-25 Fri 15:58] =>  8:01
+:END:
+#+NAME: XGR501
+SCHEDULED: <2021-06-21 Mon>-<2021-09-09 Thu>
+**** [[https://www.utas.edu.au/courses/dvc-research/units/xgr501-introduction-to-higher-degree-by-research][UTas Webpage General Course Info]]
+**** Two-Day Initial Residency Component                          :mylo:zoom:
+[[https://mylo.utas.edu.au/d2l/lms/news/main.d2l?ou=456486&d2l_change=0][Schedule]]
+***** Online Residency Day 01
+[[https://utas.zoom.us/j/83820294373][UTas Zoom Link]]
+****** DONE Watch XGR501 Residency Day 01 Recording
+CLOSED: [2021-07-05 Mon 08:35] SCHEDULED: <2021-07-02 Fri 10:00-15:00>
+- CLOSING NOTE [2021-07-05 Mon 08:35]
+***** Online Residency Day 02
+:LOGBOOK:
+CLOCK: [2021-06-23 Wed 08:34]--[2021-06-23 Wed 17:23] =>  8:49
+:END:
+[[https://utas.zoom.us/j/83820294373][UTas Zoom Link]]
+****** DONE Watch XGR501 Residency Day 02 Recording
+CLOSED: [2021-06-23 Wed 09:07] SCHEDULED: <2021-07-02 Fri 08:00-13:00>
++ participated in real-time
+**** DONE Enroll
+:LOGBOOK:
+CLOCK: [2021-05-21 Fri 14:31]--[2021-05-21 Sun 16:43] =>  2:12
+:END:
+CLOSED: [2021-05-21 Fri 14:30]
+- CLOSING NOTE [2021-05-21 Fri 14:30] \\
+  enrolled in Winter (Late) offering
+*** XGR502                                                  :xgr502:OLcourse:
+[[https://www.utas.edu.au/courses/dvc-research/units/xgr502-communicating-research][General Course Info]]
+enrol after [[Research Plan]] submitted
+*** QMS510 (Intro to QMS)
+[[https://www.utas.edu.au/courses/cse/units/qms510-introduction-to-quantitative-marine-science][UTas Course Description]]
+Possible enrolment in Semester 1 of 2022 with a start date of [2022-02-21 Mon]
+**** TODO Enrol                                               :qms510:course:
+DEADLINE: <2022-02-02 Wed>
+*** QMS517 (Data Analysis Methods)
+[[https://www.utas.edu.au/courses/cse/units/qms517-data-analysis-methods][UTas Course Description]]
+Possible enrolment in Winter Semester 2022 with a start date of [2022-05-30 Mon]
+**** TODO Enrol                                               :qms517:course:
+DEADLINE: <2022-05-05 Thu>
+** ELECTIVE UNITS
+*** KSM310
+[[https://drive.google.com/file/d/15aDpU9iGqeOHztlSwot2An4c0BuUIWCI/view?usp=sharing][Course Description (PDF)]]
+*** Glacier Dynamics
+not at IMAS *yet* but likely to develop course in the future [[https://www.emantelli.com/][Elisa Mantelli]]
+** GRANT Seminar
+
+* Meetings and Correspondence                                           :mtg:email: 
+** Introduction to Andrew Kiss :email:
+Simple introductory email so that he's aware that I exist. Andrew
+provided me with [[./reference/modelling/COSIMA_Hogg_ARC_submitted_220420_project_description.pdf][PDF ARC Proposal of COSIMA]] and this [[https://protect-au.mimecast.com/redirect/eNqtlm1vE0cQx7-Kda9je58frKrCcUBFhUCh9EXr6jT7ZB_47izfHhRQvnvnzgnYIbxLJCvend3Zmd_8d8dfi4Pf52JRBGiquJtB_gQ5Hp70GbpZDP0M-uKi2LW-WJCL4hB9rPY5V3UsFlQJoy23ghIy2NALuyggZ_DbqkktOv26vh3Xscndulj8gzOp2sVrqCMO18WL14wQdCCIKn9rN5ty-WZVdr2rq5xjKBkjgpFyf2jfR5_LEDt_wACqtpntQ1oXF-ui2wIdXfmgGLOMG-MIs1bp5JRXHDQPKTiXKNdAOVF3u5hU4z5KwbAEQInQngbijKKSgLUBiMPsRJSWOxqNVZ5rRbQQFh0mAyoEwePorw5ydOYsc4YJ5hMjNphoCQjGlOKeKc-IGxcf2ja_fewAsCZ_ft4fqcJ-v6s8DJzW82-gqi-D1QpNiLm5uF8J14bPs_xfPofKMaqkidYhgjLSC05d9AnDtITaQJQEQsHR-1AVNdHgKgUJrPCCyZAM8Y5hsb0mMXGu0YFjwbKoklU2QjISuLJeCkhnUC2mqglQaxIEKTTgWuZZSNFFQ8KDUB8ngFOoOSKc-X4HVXPKk0vGfkJzm-tzmkYq50NwVicRHRiJ5bNMaEaFBeGUodFLY-N9msCtSgSDI5RRH5lJSVusipPayog50gROckdC8EoKqwVoaZ1QLDnjuT2jCQIReglJRulBSktjEDYopy1eFMIfovk4AfxIEwntTmFKZeWPMPMBmq6uum649_FuxzeJ-oQoo9GesaA0F5RpD0CsC1EbrC8wYwyD-1CdNSwKn7glJpHACBeMS52Ijd4nS3jyzKL6Pep9mNXBR-mSi3ifgTt1BlUbQFlJis8NajQKjMTRoFlChSkZ4kNQHyeAU6h17DrYxPX8kLxhbNrl3rkYTglTYqW--fcGX_VQ4Xs-vP3PGxztqzBY9UXhumKhOc4AvvrFavnOLo3AFTAuXm2j__DuzYvjBFYE55be47CrodviSCUlPXHUexcBBGqMO5Q93jyvMTUbtEGZkTBsacIBdwD-i59mH7DET6Dpvzce7ATv0f4mLiavt1eTt7kP2EkmVfMxdrna4AvXbCbPoMuT5z5O6jbE3Q6ncGeu88u2b8LgvceOVtNiyMyfpzQ0v--9CnFU--qkVTV3Crwau-NkeeyOI89YQ7UbjT9vnePC0Nbjk4Erz0zHIsRu4K4kExz_KD8y-R7TtxCWI6PJ78jo3vkP07t_9j1LtR9nBZlhzfFj8CNHy7bt8lFNeMC0jhz6jtC2Ybhg1vbZDVhn2JJzHOs_zO3a9sPMt_jc3RzZX2MpMAHsNDiu9vj1_CScrbvNkHrxi7lcrdilXE4v5dPLqTBcTC17djVlTxVZsqW4skt9ktivw96j0DMqtWBk-JVAKNUU7wz-lkB7f9ihZZvzvlus5-v5psrb3o0Rzlev3j5_uVzPwXv0Mm1rtp4juj526zl27qEmg843pZ_GEnpCS11-DHpKWXkrnPLuyJKUt-KaYqZTLSzX2rIxvU0_Zvdq9Vcp4cunV82KXYv-79cmbF_8gXbfd7mt48EfSZ1oMm6Ot-oW8RT62XDLPcp8yKC4-R8alOfF][GitHub gem]] of a
+link 
+** [2022-03-31 Thu]
+   Meeting with Alex, Will and Paul
+*** Discussion Topics:
+    - immediate investigations into CICE and sandboxing
+    - literature review paper in compliance with XGR502 – a revision and expansion of my XGR501 document, which went beyond the requirements of that course
+    - revised 2022 schedule, with hands on
+    - PhD work plan integrated into work and annual leave plan
+      - travel engage Wen
+	- how to form fast ice in icepack
+	  - can it withstand an offshore wind
+	  - what is the low hanging fruit without an ocean
+	  - test that we don't get fast ice breakout without waves ; this might be done in a prescribed manner
+** With Laura H-B
+:LOGBOOK:
+CLOCK: [2021-08-23 Mon 12:30]--[2021-08-23 Mon 13:31] =>  1:01
+:END:
+MEOP data specifically discussed with
+post-doc 
+Investigator deployments
+Nuyina deployments
+** Nicole Hill potential PhD project                           :mtg:
+:LOGBOOK:
+CLOCK: [2021-05-20 Thu 10:30]--[2021-05-20 Thu 11:26] =>  0:56
+:END:
+<2021-05-20 Thu 10:30-11:15>
+Benthic
+Originally interested incorportating the ROMS model
+Would like to get where icebergs have been in the recent past
+PhD project put together for effects on sedimentation
+At 10nm icebergs get named
+Scouring of icebergs form imagery is highly uncertain
+Shadow of iceberg to indentify grounded icebergs
+** People To Meet In Hobart                             :mtg:hobart:
+*** Staff                                                    :ppl:mtg:hobart:
+- Annie Foppert
+- Ben Galton-Fenzi (will probably still be on zoom)
+- Nathan B
+- Wen t-H
+- Steve Rintoul
+- Max N
+- Pat Wongpan
+- Petra Heil
+- Rob Massom
+- Klaus Meiners
+- Ed Dodderidge
+- Laura Herraiz-Borreguero
+*** Students                                                 :ppl:mtg:hobart:
+- Zhaohui Wang
+- Tian Tian
+- Matt Corkill
+- Denisse Fiero Arcos
+- Devi Veytia
+- Guillaume Liniger
+** IMAS Monthly Sea Ice                                            
+<2021-05-10 Mon 11:00-12:00 +4w>
+[[https://utas.zoom.us/j/89647011945?from=addon][Zoom In]]
+*** Jul21
+:LOGBOOK:
+CLOCK: [2021-07-05 Mon 11:05]--[2021-07-05 Mon 12:05] =>  1:00
+:END:
+**** Updates
++ COSIMA Oct/Nov workshop reminder
++ Wang's paper submitted
+**** Presentation
+**** Antarctic Sea Ice Predictability and Ice-Ocean Interaction
+***** Presenter
+Stephy Libera
+***** Notes
++ ACCESS-OM2-01
+*** Jun21
+:LOGBOOK:
+CLOCK: [2021-06-07 Mon 11:00]--[2021-06-07 Mon 12:02] =>  1:02
+:END:
+- fascinating presentation on
+  [[https://drive.google.com/file/d/1rdUApYikEpPg3CeARsNYcSrEY12L6hk_/view?usp=sharing][BAMS 2019 State of The Climate]] given by Phil Reid looking at Sea Ice
+  Excitement Index
+- late 2020 winter very negative SIA event around CDP
+- Phil interested in other papers of 1980 associated with Antarctic Sea Ice
+- Impact of MJO on Antarctic Sea Ice
+  [[https://drive.google.com/file/d/1rSpl0DcHxBxu3uTS_e_1LwJSEd9eSzZS/view?usp=sharing][link to paper]]
+*** May21                                                              :zoom:
+:LOGBOOK:
+CLOCK: [2021-05-10 Mon 10:56]--[2021-05-10 Mon 12:02] =>  1:06
+:END:
+SCHEDULED:<2021-05-10 Mon 11:00-12:00>
+**** Antarctic Fast Ice presentation
+Alex gave an hour long presentation and highlight of recently accepted paper
+that looked at an 18 year period of satellite-mapped Fast Ice extent and novel
+correlation techniques. These correlation techniques elucidate a statistical
+categorisation of Fast Ice around Antarctica that appears to have physical
+significance and be more aligned with trends than with previous, more
+historical, geographical delineation of fast ice regional extent.
+
+He also provided an overview of where my PhD will be focused on.
+** EAFIM Regular Meeting                                           
+:LOGBOOK:
+CLOCK: [2021-08-13 Fri 13:33]--[2021-08-13 Fri 15:21] =>  1:48
+CLOCK: [2021-07-02 Fri 08:14]--[2021-07-02 Fri 12:25] =>  4:11
+CLOCK: [2021-06-18 Fri 09:00]--[2021-06-18 Fri 10:12] =>  1:12
+:END:
+#+NAME: EAFIM Regular Meeting
+<2021-05-21 Fri 09:00 +2w>
+zoom meeting link [[https://utas.zoom.us/j/84174022653]]
+*** Agenda [2021-07-02 Fri]                                        :noexport:
+**** Catch-up
+**** Outstanding Items
+NIL
+**** Updates
++ AAPP top-up splash down
++ XGR501 residential phase complete -- deliverable for the course is Research Plan
++ I got an iPad to read and annotate as I found my laptop cumbersome and inefficient. I can say the iPad is fantastic! It's also making me re-think the Overleaf subscription! Possible Purchase?
+**** Paper(s) discussion
++ [[https://drive.google.com/file/d/1RYfiSYff2AWwPkE8WQZbteV42F2AKH8C/view?usp=sharing][Van Achter]]
++ Also, it might be good to discuss [[https://drive.google.com/file/d/1sL54KWits86fMtLGFeq5l9Jxm2paIR_d/view?usp=sharing][Naughten2018]] or at least the setup of METROMS and CICE that the paper covers
++ Remember notes in OneNote [[https://universitytasmania-my.sharepoint.com/personal/daniel_atwater_utas_edu_au/_layouts/15/Doc.aspx?sourcedoc={938d5305-bcdd-40c1-8eda-8b40dad4dfa0}&action=edit&wd=target%28Research%20Plan.one%7C0ccfb50f-620e-3543-9071-595f383d6984%2FSome%20Notes%7C04998743-b2b8-7a4e-9189-7a987d1e3f75%2F%29]]
+**** Sentinel-1 Data Download Discussion
+**** Next Week
++ Read lots and skeleton of Research Plan by next meeting 
+*** Agenda [2021-06-18 Fri]                                          :noexport:
+**** DONE Create Agenda for [[EAFIM.FtNt.Pri.Mtg]] [2021-06-18 Fri] :noexport:
+CLOSED: [2021-06-30 Wed 11:36]
+- CLOSING NOTE [2021-06-30 Wed 11:36]
+<2021-06-16 Wed>
+**** Previous Action Items
+***** Will
++ [X] confirm with [[AAPP Director]] that my Graduate Certificate in Research ([[https://www.utas.edu.au/courses/dvc-research/courses/x5a-graduate-certificate-in-research][X5A]])
+  listed on my [[https://drive.google.com/file/d/17MwUJgkSC_vIE05SayEjxGU4o4hyXjzs/view?usp=sharing][Offer Letter]] needs to fall within the [[https://www.imas.utas.edu.au/qms/qms-unit-information][QMS PhD Course Unit
+  requirements]] to meet AAPP requirements.
++ if it does need to fall within, then my follow-on question is whether my Offer
+  Letter needs to be changed from X5A to [[https://www.utas.edu.au/courses/cse/courses/s6o-graduate-diploma-of-marine-and-antarctic-science][S6O]] so that iGrad then incorporates this as
+  well. As it stands currently my [[https://sm.utas.edu.au/T1Prod/CiAnywhere/Web/PROD/StudentStudies/StudyProfileMyMaintenance?f=%24SST.STUDYPRFL.MNT&h=YSIQxNYOoC&t=1165D943&suite=SM][eStudent]] has X5A
++ email thread indicates X5A is OK for AAPP support
+***** Alex
++ [X] establish informal linkage with Canucks (Lemieux et.al) and Danes
+  (Rasmussen et.al)
++ [X] introduce myself to Ben Galton-Fenzi
+***** Dan
+****** DONE confirm MyLO intro courses are registered on iGrad
+CLOSED: [2021-06-11 Fri 10:59] DEADLINE: <2021-06-18 Fri>
+- CLOSING NOTE [2021-06-11 Fri 10:59] \\
+  emailed GRO
+**** Updates
++ Ole Richter grid and grid generation offered; Wilma thought she might be able
+  to provide grids as they are on gadi
++ brief email exchanges with Canadians with willingness to collaborate indicated
+  and a few references offered
++ brief email exchange with Ben Galton-Fenzi
++ some progress on creating grid for METROMS-CICE by loading/inspecting/plotting
+  bathymetry data from Jodie Smith at GA; see figure
+  [[/Users/dpath2o/PhD/figures/sandbox/CDP_bathy_cstLineResPoor.png]]
+**** Re-occurring
++ reading; last week read most of BAMS annual state of the climate reports and
+  the parts that pertain to Antarctica
+**** Future Action Items
+**** Notes
+Paul: if bathymetry in grid is too steep then hydrostatic conditioning cannot be
+met and the grid is
+*** Agenda [2021-06-04 Fri]                                        :noexport:
+**** DONE [#A] Create Agenda for FtNt.Pri.PhD.Mtg [2021-06-04 Fri] :noexport:
+CLOSED: [2021-06-03 Thu 20:14] DEADLINE: <2021-06-03 Thu>
+- CLOSING NOTE [2021-06-03 Thu 20:14]
+**** Calendar
+- [[https://asof2020.ieee.org][ASOF]] (IEEE Antarctic and Souther Ocean Research Forum) 2021
+  [2021-08-04 Wed]--[2021-08-06 Fri] ; virtual attendance
+- COSIMA Workshop 2021 [2021-09-01 Wed]--[2021-09-02 Thu] ; virtual attendance ;
+  science portion of workshop
+- Machine Learning Workshop [2021-08-30 Mon]--[2021-08-31 Tue] ; Alex leading ;
+  virtual attendance TBD
+**** Literature Review
+- [X] created bibtex reference and began incorporating annotations into this
+  emacs-org file
+**** Science
+- [X] Linkage with Kay Ohshima as potential mooring and CTD data source in the future
+**** Computing
+- [X] registered with [[https://www.myroms.org]]
+- [X] created sandbox virtual machine on NECTAR and successfully logged-in
+- [X] installed X2Go client on local machine
+- [X] installed X2Go server on sandbox (possible guidance here
+  [[https://github.com/NeCTAR-RC/nectar-training/blob/master/package07/sections/connectWithX2Go.markdown]])
+***** Training
+- [X] NECTAR Cloud Start Series
+- [X] X11 Forwarding
+**** Administration
+- [X] [[https://www.scar.org/awards/fellowships/overview/][SCAR Fellowship]] application postponed to 2022
+- [X] [[https://drive.google.com/file/d/1-2wZja6Nj3zzZxrOnTDRgfMRbIv7jtV2/view?usp=sharing][IMAS Checklist]] completed after previous mtg
+- [X] Travel to Hobart postponed for [2021-07-05 Mon]--[2021-07-09 Fri]
+**** Courses
+- [X] XGR501 Registered for Winter Session 2021
+- [X] XGR502 scheduled for registration post [[Research Plan]] being submitted
+  (i.e. [2021-11-04 Thu])
+- [X] Identified two potential additional courses:
+  - KSM310 next offering [2022-03-01 Tue]
+  - Glacier Dynamics (yet to be created) by [[https://www.emantelli.com/][Elisa Mantelli]]
+***** MyLO
+- [X] Getting Started with MyLO
+- [X] Academic Integrity
+- [X] Turnitin and Academic Writing
+*** Agenda [2021-05-21 Fri]                                        :noexport:
+:LOGBOOK:
+CLOCK: [2021-05-21 Fri 08:55]--[2021-05-21 Fri 10:18] =>  1:23
+:END:
+**** new enrolment administrative tasks (detail can be provided), 75% complete
+- [[https://drive.google.com/file/d/1-2wZja6Nj3zzZxrOnTDRgfMRbIv7jtV2/view?usp=sharing][IMAS Checklist]] needs Alex's signature and then email to Gail
+**** Download METROMS and compile on local machine
+- downloaded and begun reading compile notes/documentation
+  - Paul noticed that METROMs has Rutgers-ROMs built into which has the 4d
+    version
+  - get in contact with METROMs dev team and just let them know I'm beginning a
+    research project
+**** Define a curvilinear grid compatible with METROMS; start playing
+- beyond email discussion re. bathy, I have not actually started defining a grid
+- Ben Galton-Fenzi likely good source for grid
+**** Register for NECTAR Cloud starter training (one day course)
+- see [[Cloud Starter Series]]
+  - liaise with Wilma on core (CPU) requirements
+  - most likely 32 core and 64 GB machine will suffice in the first instance
+  - request a project allocation first
+  - having an additional cores and RAM is probably a good idea
+**** Begin compiling and reviewing literature
+- compiled list and downloaded 30 papers
+**** Data
+- I have begun reviewing [[https://data.aad.gov.au/aadc/about/data_policy.cfm#SummaryAADC][AADC documentation]] as per Rob Jennings (AAPP) workshop
+  - just consider config files as primary for archiving and version controls
+  - documentation of machine configuration that goes with metadata / model results
+**** Discuss international collaborators work
+- probable paper to be distributed prior to research plan
+- jean-francois has shown a good way to parameterise basal stress into the sea
+  iceberg
+- idea is to have an informal discussion with these collaborators before the
+  research plan is finalised
+- aim would be for parameterisation to be less than the grid spacing
+- jean-francois lemieux ; andrea gienrisch ; till soya ramussen ; phillepe blain
+***** Belgians - van Achter work (reviews in).
+***** Canadians/Danish - a quick run through of their plans/contacts
+**** Discuss bathymetry
+- new Cape Darnley bathymetry dataset from new Japanese multibeam measurements;
+  EAFIM grid should definitely incorporate these
+- Colleague from Geoscience Australia is lead-author; Jodie Smith. Paper
+  accepted for publication.
+- a comparison, down the track, between bathymetry data sets will be worthwhile
+**** Literature
+- Thesis
+- IGS presentation
+**** DONE Formulate Agenda and Disseminate                      :noexport:
+CLOSED: [2021-05-10 Mon 13:37] DEADLINE: <2021-05-19 Wed>
+- CLOSING NOTE [2021-05-10 Mon 13:37] \\
+  email sent to Alex and Paul additions now entered into agenda below
+**** DONE [#A] Zoom Meeting Invitation Repromulgate through UTas Acct :noexport:
+CLOSED: [2021-05-23 Sun 16:33] DEADLINE: <2021-06-01 Tue>
+- CLOSING NOTE [2021-05-23 Sun 16:33]
+*** Agenda [2021-07-30 Fri 14:30-15:30]                          :noexport:
+:LOGBOOK:
+CLOCK: [2021-07-30 Fri 14:15]--[2021-07-30 Fri 15:54] =>  1:39
+:END:
+**** Attendees
+- Alex, Paul, Phil, Myself
+**** Topics
+- Research Plan
+*** Agenda [2021-08-13 Fri 14:00-15:00]
+**** Research Plan
+**** ACCESS Attendance
+**** [[http://www.dcrs.dtu.dk]] image downloads
+**** ICSHMO 2022 Poster
+**** Laura Herraiz-Borreguero meeting [2021-08-23 Mon 13:00-14:00]
+** DONE PCC Welcome Meeting                :admin:
+CLOSED: [2021-07-05 Mon 08:34] SCHEDULED: <2021-05-10 Mon 12:30>
+:PROPERTIES:
+:DEADLINE: <2021-05-14 Fri>
+:END:
+- CLOSING NOTE [2021-07-05 Mon 08:34]
+:LOGBOOK:
+CLOCK: [2021-05-10 Mon 12:43]--[2021-05-10 Mon 13:03] =>  0:20
+:END:
+- CLOSING NOTE [2021-05-12 Wed 09:02]
+[X] emailed Karen on <2021-05-06 Thu> requesting meeting
+- check emails for Zoom information
+*** DONE Meet with PCC (Karen Alexander)
+CLOSED: [2021-05-10 Mon 15:37]
+- CLOSING NOTE [2021-05-10 Mon 15:37] \\
+  met discussed PCC
+*** Discuss following topics
+**** The role of the PCC
+- [X] discussed
+**** The available UTAS support services
+- [X] discussed
+** GRC Welcome Meeting                           :admin:
+:LOGBOOK:
+CLOCK: [2021-05-04 Tue 10:00]--[2021-05-04 Tue 11:16] =>  1:16
+:END:
+#+NAME: GRC Welcome Meeting
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-22 Sat>
+:SCHEDULED: <2021-05-04 Tue 10:00>
+:STATUS: nil
+:COMPLETED: nil
+:ASSIGN: Dan, Max
+:END:
+*** The role of the GRC
+- [x] discussed
+*** The research plan, confirmation and annual review processes
+- [x] discussed
+*** Leave entitlements
+- [X] discussed
+*** Candidature timelines and scholarship requirements
+- [X] discussed
+*** Access to iGrad and action items
+- [X] discussed
+*** The Graduate Research website (forms, policies, procedures, etc.)
+- [X] discussed
+*** Meeting requirements and meeting records
+- [X] discussed
+*** Compulsory and elective course work
+- [X] discussed
+** Supervisor Welcome Meeting                  :admin:
+:LOGBOOK:
+CLOCK: [2021-05-03 Mon 08:43]--[2021-05-03 Fri 10:29] =>  1:46
+:END:
+#+NAME: Supervisor Welcome Meeting
+:SCHEDULED: <2021-05-03 Mon 09:00>--<2021-05-03 Mon 11:00>
+*** Attendees
+- [X] Dan
+- [X] Alex
+- [X] Paul
+- [] Will
+- [X] Phil
+- [] Wilma
+*** Agenda
+**** Administrative Tasks
+***** DONE HDR Commencement of Cadidature Form           :phd:admin:dan:alex:
+CLOSED: [2021-05-03 Mon 20:25]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-03 Mon>
+:STATUS: partial
+:COMPLETED: nil
+:ASSIGN: Dan, Alex
+:END:
+- CLOSING NOTE [2021-05-03 Mon 20:25] \\
+  submitted via email
+[X] complete
+[X] Dan sign
+[X] Alex sign
+[X] submit [[mailto:GraduateResearcg.CoSE@utas.edu.au][GRO CoSE]]
+***** DONE GRO Banking Details Form completed and submittd    :phd:admin:dan:
+CLOSED: [2021-05-03 Mon 20:26]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-03 Mon>
+:STATUS: partial
+:COMPLETED: nil
+:assign: Dan
+:END:
+- CLOSING NOTE [2021-05-03 Mon 20:26] \\
+  submitted via email
+[X] complete
+[X] Dan sign
+[X] submit [[mailto:GraduateResearch.CoSE@utas.edu.au][GRO CoSE]]
+***** DONE IMAS Student Checklist Remote Start (complete, sign, submit) :phd:admin:dan:
+CLOSED: [2021-05-24 Mon 06:20]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-22 Sat>
+:STATUS: nil
+:COMPLETED: nil
+:ASSIGN: Dan, Alex
+:END:
+- [X] complete (see [[https://drive.google.com/file/d/1WUM0ZtpzSG2RPsk_n7yCUUA2wrmxeFAY/view?usp=sharing][GDrive PDF]] and below)
+- [X] Dan sign
+- [] Alex sign
+- [] submit to [[mailto:IMAS.teaching-students@utas.edu.au][Gail Eagle Group Inbox]]
+****** DONE Read the online Commencing Candidates information [[https://www.utas.edu.au/research-admin/graduate-research/commencing-candidates][UTas HDR Commencement]] and the IMAS Postgarduate Student Information Booklet :phd:admin:dan:
+CLOSED: [2021-04-30 Fri 11:44]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-03 Mon>
+:STATUS: complete
+:COMPLETED: <2021-04-17 Sat>
+:ASSIGN: Dan
+:END:
+- CLOSING NOTE [2021-04-30 Fri 11:44]
+[X] complete
+****** WAITING University laptop                 :phd:admin:dan:alex:WAITING:
+:PROPERTIES:
+:PRIORITY: B
+:STATUS: partial
+:COMPLETED: nil
+:ASSIGN: Dan, Alex
+:END:
+- State "WAITING"    from "TODO"       [2021-05-06 Thu 16:07] \\
+  see email thread
+- speak to Gail Eagle
+- MLCOA, hold-off on purchasing until necessary
+- confirmed with Gail that funds can be held for 1-2 years until required
+- see relevant email thread
+****** DONE Meet with my supervisors and discuss         :phd:admin:dan:alex:
+CLOSED: [2021-05-05 Wed 14:16]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-03 Mon>
+:SCHEDULED: <2021-05-03 Mon 09:00>
+:STATUS: nil
+:COMPLETED: nil
+:ASSIGN: Dan, Alex
+:END:
+******* Their roles and expertise
+- [X] discussed
+******* Project details, available resources, work load, meeting requirements and producivity expectations
+- [X] discussed
+******* We have completed the Candidate/Supervisor Expectations Role Perception Scale [[https://www.utas.edu.au/research-admin/graduate-research/commencing-candidates/resources-you-can-access][URL link to PDF]]
+:PROPERTIES:
+:PRIORITY: A
+:DEADLINE: <2021-05-03 Mon>
+:SCHEDULED: <2021-05-03 Mon 09:00>
+:STATUS: nil
+:COMPLETED: nil
+:ASSIGN: Dan, Alex
+:END:
+- [X] [[https://drive.google.com/file/d/1OJaGW32rN3kdsKpLyD0yAFmr-YKsiB0c/view?usp=sharing][Dan'scompleted form]]
+- [X] Alex completed form
+******* Human and animal ethic requirements and procedures
+- [X] discussed -- N/A
+******* Funding for conferences and career development opportunies
+- [X] discussed
+******* Data storage requirements and resources
+- [X] discussed
+******* Work Health and Safety (WHS) regulations and requirements
+- [X] discussed
+******* Publication and authorship expectations
+- [X] discussed
+******* Introduced to the Centre Director and wider research team including other students in the team
+- [X] discussed
+******* My primary supervisor has introduced me to another student who will act as my peer mentor
+- [X] discussed
+****** DONE Acknowledge that a Risk Assessment through Field Friendly must be completed before I commence my studies/work or enter the field
+CLOSED: [2021-05-06 Thu 16:12]
+- CLOSING NOTE [2021-05-06 Thu 16:12]
+- [X] discussed
+**** Temporal Structure
+***** three-months FTE
+****** Research Plan
+five-six plages
+bulk is literature
+***** twelve-months FTE
+****** Confirmation
+******* Seminar
+******* Written Work
+******* Meetings
+******* Progress
+******* Cumpulsory Courses
+******** XGR501
+******** XGR502
+******* Elective Courses
+******** XGR505
+this will not be applicable after discussing with Alex, and I'll need to find
+another course later
+**** AAPP Top-Up Scholarship
+**** Supervisor Fund Pool
+**** Science
+***** Setup of Curcivlinear
+***** Ice Pump on Ice Shelf
+***** The
+***** METROMS
+benefit of ROMS has been coupled to ice shelves before
+***** MOM
+global model being used by the BOM
+** Initial Meetings                                               
+*** Meeting with Alex Fraser and Paul Sandery
+<2020-11-19 Thu>
+*** met with Richard Matear and Paul Sandery
+**** Paul and I discussed the broad scope of the project being centred on most likely the [[https://www.nemo-ocean.eu][NEMO-LIM]]
+**** DEFERRED Download NEMO-LIM
+- State "DEFERRED"   from "DEFERRED"   [2021-04-19 Mon 21:15]
+- State "DEFERRED"   from "TODO"       [2021-04-19 Mon 21:14]
+**** DEFERRED Compile NEMO-LIM
+- State "DEFERRED"   from "TODO"       [2021-04-19 Mon 21:15]
+**** DEFERRED Muck-around with NEMO-LIM
+- State "DEFERRED"   from "TODO"       [2021-04-19 Mon 21:15]
+
+* Computing                                                   :comp:
+** GitHub
+:LOGBOOK:
+CLOCK: [2021-07-10 Sat 13:37]--[2021-07-10 Sat 16:39] =>  3:02
+CLOCK: [2021-07-05 Mon 12:06]--[2021-07-05 Mon 16:27] =>  4:21
+CLOCK: [2021-07-05 Mon 09:59]--[2021-07-05 Mon 11:04] =>  1:05
+:END:
+*** Repository Initialisation [2021-07-05 Mon]
+** CloudStor
+** Remote Desktop                         :vnc:remote_desktop:computer_admin:
+*** X2Go
+[[https://wiki.x2go.org/doku.php/doc:newtox2go][X2Go]]
+** Microsoft                                                :bookmark:office:
+- [[https://www.office.com/?auth=2&home=1][Office 365]]
+- [[https://myanalytics.microsoft.com][Analytics]]
+** Tasmanian Partnership for Advancing Computing (TPAC)            :bookmark:
+*** Contact
+[[mailto:xiao.fu@utas.edu.au][Ming]]
+*** Nectar Cloud Starter Training
+[[https://www.tpac.org.au/training/][online information]]
+**** DONE Work through this TPAC material
+CLOSED: [2021-08-18 Wed 10:28] DEADLINE: <2021-07-12 Mon>
+[[https://protect-au.mimecast.com/s/jYHACr8DKNfB6xBxh7U3m5?domain=tutorials.rc.nectar.org.au]]
+**** DONE Register for one-day course
+CLOSED: [2021-05-10 Mon 17:07]
+:PROPERTIES:
+:DEADLINE: <2021-05-15 Sat>
+:PRIORITY: A
+:END:
+- CLOSING NOTE [2021-05-10 Mon 17:07] \\
+  interest has been registered; see email thread. No current course listings
+  available. They will contact me once a date has been promulgated.
+- CASE ID: INC0868693
+** National eResearch Colloboration Tools And Resources (NECTAR)  :bookmark:
+[[https://nectar.org.au][Homepage]]
+*** Compile METROMs in Sandbox
+:LOGBOOK:
+CLOCK: [2021-06-03 Thu 08:57]--[2021-06-03 Thu 11:44] =>  2:47
+:END:
+*** Attempting to login and play around
+:LOGBOOK:
+CLOCK: [2021-05-28 Fri 21:59]--[2021-05-28 Fri 22:28] =>  0:29
+:END:
+- Stuck on remote login using SSH
+- success after ensuring that my Key Pair is associated with Instance at the
+configuration of that Instance
+- logging in
+#+begin_src
+ssh -i ~/.ssh/ubuntu.pem ubuntu@115.146.85.105
+#+end_src
+*** Training
+:LOGBOOK:
+CLOCK: [2021-05-23 Sun 21:15]--[2021-05-23 Sun 21:47] =>  0:32
+:END:
+[[https://tutorials.rc.nectar.org.au][Self-paced online tutorials]]
+**** TODO X11 Forwarding
+**** DONE [#B] Cloud Starter Series
+CLOSED: [2021-05-23 Sun 21:11]
+- CLOSING NOTE [2021-05-23 Sun 21:11]
+#+NAME: Cloud Starter Series
+DEADLINE: <2021-06-11 Fri>
+[[https://tutorials.rc.nectar.org.au/cloud-starter/02-tutorials][website]]
+***** Security Groups, the absolute basics
+:LOGBOOK:
+CLOCK: [2021-05-23 Sun 20:03]--[2021-05-23 Sun 21:10] =>  1:07
+:END:
+As of [2021-05-23 Sun] Cannot SSH into instance
+*** SEACLUB
+:LOGBOOK:
+CLOCK: [2021-09-09 Thu 10:23]--[2021-09-09 Thu 15:47] =>  5:24
+:End:
+Created new instance called /seaclub/ for a lack of a better name and began
+installing software
+*** SEACLUB IP           :seaclub:ip:address:
+131.217.175.244
+*** Linked *CLOUDSTOR* to /seaclub/
+**** Steps
+1. login into *CLOUDSTOR* and go user settings
+2. generate an /app/ password
+3. copy password to notepad
+4. open /ssh/ to /seaclub/ or whatever the name of the NECTAR machine is and run
+   the command =cloudstor-setup= and following the bouncing ball
+*** Installed Software
+**** NetCDF
+=sudo apt-get install libnetcdf-dev libnetcdff-dev=
+**** ROMS
+:PROPERTIES:
+:ID:       43E7649C-F3BE-4BE0-877F-BFE34DA00639
+:END:
+1. Logged into [[https://www.myroms.org][ROMS]] and followed [[https://www.myroms.org/wiki/Git][ROMS GIT Wiki]]
+2. Created and stored login credentials securely via: =gpg --gen-key= and used
+   =daniel.atwater@utas.edu.au= as my /host/
+3. Then =curl -o ~/bin/git-credential-netrc https://raw.githubusercontent.com/git/git/master/contrib/credential/netrc/git-credential-netrc=
+4. Created file =nano ~/.netrc= with this format:
+   #+BEGIN_SRC text
+   machine www.myroms.org
+   login dpath2o
+   password [PASSCODE]
+   protocol https
+   #+END_SRC
+5. Then ran the command =gpg -e -r daniel.atwater@utas.edu.au .netrc= and
+   deleted =rm ~/.netrc=
+6. Enabled =git= awareness of this new file via =git config --global credential.helper "netrc -f ~/.netrc.gpg -v"=
+7. Cloned ROMS via =git clone https://dpath2o@www.myroms.org/git/src bin/ROMS=
+8. In order to synchronize the Git and Subversion repository revision
+   information, we have created a Git filter that will insert the git hash of
+   the last time a file was modified, similar to the Subversion $Id$ keyword. In
+   order for the filter to work, it has to be explicitly enabled by the user.
+   After the git clone command from above completes change into MyDir and
+   execute the following:
+   #+BEGIN_SRC shell
+     cd ~/bin/ROMS
+     git config filter.id.smudge ".git_filters/id.smudge %f"
+     git config filter.id.clean ".git_filters/id.clean %f"
+     rm .git/index
+     git checkout HEAD -- "$(git rev-parse --show-toplevel)"
+     git config --global user.name "dpath2o"
+     git config --global uers.email "dpath2o@mac.com"
+   #+END_SRC
+**** Anaconda
+***** Created new environment /EAFIM/
+**** Texlive
+**** Python
+***** Additional Libraries
+****** PyGMT
+****** GDAL
+****** Cartopy
+****** MetPy
+** Kunanyi
+
+* Affiliations and Linkages                                    :colab:
+** Antarctic and Sea Ice Experts
++ Robert Massom
++ Petra Heil
+** Modelling Experts
++ Phil Reid
++ Paul Sandery
++ Andrew Kiss
+** Institute of Low Temperature Science Hokkaido University
+[[http://www.lowtem.hokudai.ac.jp/en/index.html]]
+*** Kay Ohshima                                    :moorings:CTD:data:source:
+[[http://www.lowtem.hokudai.ac.jp/wwwod/~ohshima/index_e.html]]
+** Australian Antarctic Program Project (AAPP)                     :bookmark:
+#+NAME: AAPP
+[[http://aappartnership.org.au][Australian Antarctic Program Project]]
+*** [[AAPP]] [[https://aappartnership.org.au/theme-3/][Theme 3]]
+**** Leaders
+- Petra Heil
+- [[https://www.utas.edu.au/profiles/staff/imas/philip-boyd][Phillip Boyd]]
+**** Project 6: Sea Ice
+***** Leaders
+- [[https://aappartnership.org.au/our-researchers/#hobbs][Will Hobbs]]
+- [[https://www.antarctica.gov.au/science/meet-our-scientists/dr-klaus-meiners/][Klaus Meiners]]
+**** Associated PhD Projects
+***** Zhaohui Wang
+analysisng effect of including realistic sea ice in a NWP
+*** Personnel
+**** AAPP Director
+***** [[mailto:n.bindoff@utas.edu.au][Nathan Bindoff]]
+**** Specific Administration Manager
+***** [[mailto:wenneke.tenhout@utas.edu.au][Wenneke Ten Hout]]
+**** General Administration
+***** Clair Rutherford
+** Consortium on Ocean-Sea Ice Modelling in Australia (COSIMA) :bookmark:
+#+NAME: COSIMA
+[[http://cosima.org.au][COSIMA]]
+*** ARC plan proposal                                           :ref:pivotal:
+[[./references/modelling/COSIMA_Hogg_ARC_submitted_220420_project_description.pdf][ARC plan proposal]]
