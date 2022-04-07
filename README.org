@@ -2,7 +2,7 @@
 #+date: <2022-04-02 Sat>
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
-#+STARTUP: indent , overview
+#+STARTUP: overview
 
 _Technical Note 1_: This file is written in [[https://orgmode.org][Emacs-Org]] (which, as an
 aside, I have been enamoured with for more years than I care to
@@ -21,7 +21,7 @@ need at some point to bring this information to a wider audience.
 
 _Technical Note 3_: In separating the files into various sub-org files
 I noticed that the export from org to markdown does not translate for
-internal links. Hence beyond the background information *please use README.org file above to navigate*. 
+internal links. Hence beyond the background information *please use README.org file above to navigate*.
 
 * Background                                                       :personal:
 
@@ -39,11 +39,12 @@ being [[https://en.wikipedia.org/wiki/National_service][contributing to a new na
 specialised as a [[https://www.defencejobs.gov.au/jobs/reserves/navy/meteorologist-and-oceanographer][Meteorologic and Oceanographic Officer]] in that
 [[https://www.navy.gov.au][organisation]] and [[https://www.youtube.com/watch?v=_1roFUwV7ss][operational-ised]] my [[https://oceansci.ucsc.edu/academics/graduate/ms.html][scientific skillset]]. At about the
 same time I became fascinated with Antarctica and its criticality both
-[[https://tos.org/oceanography/article/southern-ocean-warming][climatically]] and [[https://www.antarctica.gov.au/about-us/antarctic-strategy-and-action-plan/][strategically]]. Hence I began searching for a PhD
+[[https://tos.org/oceanography/article/southern-ocean-warming][climatically]] and [[https://defence.gov.au/adc/Publications/AJDSS/documents/volume3-number2/Where-to-from-here-The-Australian-Defence-Forces-pursuit-of-national-security-and-the-2020-Defence-Strategic-update.pdf][strategically]] (and [[https://www.antarctica.gov.au/about-us/antarctic-strategy-and-action-plan/][here]]). Hence I began searching for a PhD
 project that would fulfil my interest.
 
-Fortunately, it did not take too long before I was introduced to [[https://tasmanian.com.au/stories/alex-fraser/][Alex Fraser]] and [[./ResearchPlan/project_proposal/PROJECT_PROPOSAL.pdf][a project]] that he had on his digital shelf that from the outset ticked all my
-interest boxes. I can't recall exactly where or when in I was introduced to the various forms of
+Fortunately, it did not take too long before I was introduced to [[https://tasmanian.com.au/stories/alex-fraser/][Alex Fraser]] and [[./ResearchPlan/project_proposal/PROJECT_PROPOSAL.pdf][a project]] that he
+had on his digital shelf that from the outset ticked all my interest boxes. I can't recall exactly
+where or when in I was introduced to the various forms of 
 [[https://en.wikipedia.org/wiki/Sea_ice][sea ice]] and [[https://tos.org/oceanography/issue/volume-24-issue-03][its role in polar oceanography]] but I do remember it
 being very [[http://nsidc.org/arcticseaicenews/][Arctic-centric]] with this vague concept that [[https://arctic.noaa.gov/Report-Card/Report-Card-2018/ArtMID/7878/ArticleID/788/Landfast-Sea-Ice-in-a-Changing-Arctic][landfast sea ice (fast ice)]] played an important role in Arctic sea ice. So when Alex
 provided me with a rough outline of the project he wanted to pursue
@@ -64,10 +65,8 @@ model.
 After a brief interlude in the first quarter of 2022 I'm now pursuing
 fast ice modelling with an eye towards incorporating it into [[http://cosima.org.au][COSIMA]].
 
-
 * Administration
 [[./admin/admin.org]]
-
 * Research                                                              :res:
 ** UTas Library Services                                         :bookmarks:
 [[https://www.utas.edu.au/library/research][UTas Research]]
@@ -233,11 +232,9 @@ For PhD or Professional Doctorate candidates only: A 40-word summary of your the
 Once you have fulfilled the above requirements, the Graduate Research Office will request Academic Senate approval to award your degree. We will advise you when this approval has been received.
 *** Step 5: Graduation
 
-
-
-* Meetings and Correspondence                                           :mtg:email:
+* Meetings and Correspondence                                     :mtg:email:
 [[./admin/meetings.org]]
 
-* Computing                                                   :comp:
+* Computing                                                            :comp:
 [[./admin/computing.org]]
 
