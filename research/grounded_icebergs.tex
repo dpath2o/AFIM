@@ -1,0 +1,222 @@
+% Created 2022-04-08 Fri 12:22
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt,a4paper]{article}
+    \usepackage[utf8]{inputenc}
+    \usepackage[T1]{fontenc}
+    \usepackage{fixltx2e}
+    \usepackage{graphicx}
+    \usepackage{longtable}
+    \usepackage{float}
+    \usepackage{wrapfig}
+    \usepackage{rotating}
+    \usepackage[normalem]{ulem}
+    \usepackage{amsmath}
+    \usepackage{textcomp}
+    \usepackage{marvosym}
+    \usepackage{wasysym}
+    \usepackage{amssymb}
+    \usepackage{hyperref}
+    \usepackage{mathpazo}
+    \usepackage{color}
+    \usepackage{enumerate}
+    \definecolor{bg}{rgb}{0.95,0.95,0.95}
+    \tolerance=1000
+          \usepackage{minted}
+          \def\ORGTITLE      {AFIM}
+\def\ORGAUTHOR     {DP@H$_2$O}
+\usepackage{minted}
+\usepackage[margin=0.5in]{geometry}
+\usepackage[x11names]{xcolor}
+\hypersetup{linktoc = all, colorlinks = true, urlcolor = DodgerBlue4, citecolor = PaleGreen1, linkcolor = black}
+
+    \linespread{1.1}
+    \hypersetup{pdfborder=0 0 0}
+\author{Daniel Patrick Atwater}
+\date{\today}
+\title{Australian Fast Ice Modelling\\\medskip
+\large Grounded Icebergs}
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+
+\section{Concept}
+\label{sec:org8837014}
+
+ It is understood that grounded icebergs act as a focal point for fast ice to anchor \cite{} and
+hence act as potential stabilisation platform and buttressing for polynya formation \cite{}. It is
+therefore important to understand the seasonal distribution of icebergs. It may be only a
+distribution that is needed and not exact map locations with iceberg shapes (volumes) and
+orientations. So that a model is not dynamically applying a grounded iceberg field but using the
+statistical knowledge of their distribution as an initial condition. The logic of this is based on
+model resolution and treating icebergs as islands. Another factor is that the underlying
+bathymetry on which icebergs ground is not changing on the same timescale as the
+ice-ocean-atmosphere and hence a seasonal approximation of locations will be valid over decadal
+scales. However, as the temporal scale shifts to centuries and millennia this approach will no
+longer be valid. The concentration of this work is considering temporal scales less than a century
+and hence the effort here is to work on the statistical distribution as method to gain a more
+robust methodology (dynamical) on future iterations of this work.
+
+\section{Methodology}
+\label{sec:org497d03d}
+
+Examine sequential temporal Sentinel-1/2 images and determine which icebergs are not moving. These
+\uline{could} be mapped and form the prescribed field of grounded bergs for AFIM or they could form the
+basis on which to determine a seasonal distribution. In beginning this effort the simplest
+approach and one that will give me a better understanding of the remote sensing technology and one
+aspect of the sea ice dynamics is to utilised \href{https://coastwatch.noaa.gov/cw\_html/cw\_polygon\_search.html}{NOAA's Coastwatch Polygon Search}. Look through pairs
+of images. Each pair is separated by 12-days which provides nearly exact geographic domain and
+aspect angle of incident Sentinel SAR images. When using NOAA's Coastwatch website it allows for
+one to open up several tabs of sequential (12-day images) and 'flick' between them to see the
+ocean-sea ice dynamics. In this manner I can select a pair of images to then trace the common
+grounded icebergs. This should end with a grounded iceberg occupying at least one pixel. 
+
+\subsection{Why SAR?}
+\label{sec:org39cc7ec}
+
+Sentinel-1/2 is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
+sufficient resolution to see iceberg shapes down to the scale that is required of \href{https://github.com/dpath2o/AFIM}{AFIM}, which
+gives the potential for us to unequivocally state which bergs are truly grounded.
+
+\section{Mechanics}
+\label{sec:orgcca796f}
+
+In the following I use python code to walk through the mechanics of extracting and rasterising
+two potential SAR images.
+
+\subsection{Image Pair}
+\label{sec:org65df3a7}
+
+\begin{enumerate}
+\item Go to \href{https://coastwatch.noaa.gov/cw\_html/cw\_polygon\_search.html}{NOAA's Coastwatch Website}
+\item On that page select ``S-1A/B NRCS'' radio button and draw a polygon around a region. In this
+case (example) I'm using Cape Darnley
+\item Examine sequential (12-day) Sentinel-1/2 images and see which icebergs aren't moving.
+\item Note the date/time/platform (S1a or b) of the image pair
+\item image 1:
+\begin{center}
+\includegraphics[width=15cm]{../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png}
+\end{center}
+\url{https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/079/S1A\_ESA\_2022\_03\_20\_15\_21\_00\_0701104860\_072.90E\_68.49S\_HH\_C\_nrcs\_level2.png}
+\item image 2:
+\begin{center}
+\includegraphics[width=15cm]{../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png}
+\end{center}
+\url{https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/091/S1A\_ESA\_2022\_04\_01\_15\_21\_00\_0702141660\_072.90E\_68.49S\_HH\_C\_nrcs\_level2.png}
+\end{enumerate}
+
+\subsection{Download the image pair}
+\label{sec:orgbabb94a}
+
+\begin{enumerate}
+\item Before downloading the python environment needs to be loaded to recognise the required python
+modules -- assuming local buffer configuration
+\item Also it very beneficial to understand \href{https://sentinelsat.readthedocs.io/en/master/api\_overview.html}{python module sentinalsat} , which in my particular case
+I've opted to use \url{file:///Users/dpath2o/.netrc} file to store my sensitive login information
+\item One must create a \href{https://geojson.org}{GeoJSON} file and edit this code to work on that file
+\item For this particular instance (example) I'm using \url{file:///Users/dpath2o/PHD/etc/Mawson.geojson}
+\begin{minted}[breaklines=true,breakanywhere=true,frame=single]{python}
+#LIBRARY IMPORT
+import os
+import pprint
+from sentinelsat import SentinelAPI, read_geojson, geojson_to_wkt
+# HARDWIRED PARAMETERS -- need a better way of putting a passocde in here
+Dbase  = os.path.join('/','Users','dpath2o')
+Ddata  = os.path.join(Dbase,'DATA','Satellite','Sentinel','MawsonCoast')
+Fgeoj  = os.path.join(Dbase,'PHD','etc','Mawson.geojson')
+# The geojson file makes this a bit transferable and easier to setup different regions
+# later on, but it requires that sentinalsat can use and we use to functions from the
+# sentinelsat API
+ftprt  = geojson_to_wkt(read_geojson(Fgeoj))
+# IMAGE 1 -- using a narrow 
+qkwar  = {'platformname': 'Sentinel-1',
+	  'producttype': 'GRD',
+	  'date': ('2022-03-20T15:20:00.000Z','2022-03-20T15:25:00.000Z' ),
+	  'instrumentshortname': 'SAR-C SAR',
+	  'sensoroperationalmode': 'EW'}
+apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
+Qresults = apic.query(ftprt,**qkwar)
+Qdf      = apic.to_dataframe(Qresults)
+for f in Qresults:
+    print('Filename {}'.format(Qdf.title[f]))
+    online_test = apic.get_product_odata(f)
+    if not online_test['Online']:
+	print('{} is NOT online ... skipping'.format(Qdf.title[f]))
+	continue
+    apic.download(f,Ddata)
+# IMAGE 2 -- only changing the datetime to 12 days later as this will give us the exact
+#            same image
+qkwar  = {'platformname': 'Sentinel-1',
+	  'producttype': 'GRD',
+	  'date': ('2022-04-01T15:20:00.000Z','2022-04-01T15:25:00.000Z' ),
+	  'instrumentshortname': 'SAR-C SAR',
+	  'sensoroperationalmode': 'EW'}
+apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
+Qresults = apic.query(ftprt,**qkwar)
+Qdf      = apic.to_dataframe(Qresults)
+for f in Qresults:
+    print('Filename {}'.format(Qdf.title[f]))
+    online_test = apic.get_product_odata(f)
+    if not online_test['Online']:
+	print('{} is NOT online ... skipping'.format(Qdf.title[f]))
+	continue
+apic.download(f,Ddata)
+\end{minted}
+\end{enumerate}
+
+\subsection{Rasterise}
+\label{sec:orgd1c5950}
+
+Rasterisation is similarly performed using pre-configured python environment that has python
+module \href{https://rasterio.readthedocs.io/en/latest/}{rasterio}
+
+\begin{minted}[breaklines=true,breakanywhere=true,frame=single]{python}
+import rasterio
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+import glob
+import os
+import zipfile
+import tempfile
+Dbase  = os.path.join('/','Users','dpath2o')
+Ddata  = os.path.join(Dbase,'DATA','Satellite','Sentinel','MawsonCoast')
+Dproc  = os.path.join(Ddata,'proc')
+if not os.path.exists(Dproc): os.makedirs(Dproc)
+Fnames = glob.glob("{}/*.zip".format(Ddata))
+CRS    = 'EPSG:3031'
+for f in Fnames:
+    DFin,Fin = os.path.split(f)
+    Ftmp     = os.path.join(Dproc,"{}.SAFE".format(os.path.splitext(Fin)[0]))
+    Fout     = os.path.join(Dproc,'{}.tif'.format(os.path.splitext(Fin)[0]))
+    with zipfile.ZipFile(f, 'r') as zip_ref:
+	zip_ref.extractall(Dproc)
+    with rasterio.open(Ftmp) as src:
+	gcps,gcp_crs = src.gcps
+	xfrm,w,h     = calculate_default_transform( gcp_crs , CRS , src.width , src.height ,  gcps=gcps )
+	kwargs       = src.meta.copy()
+	kwargs.update({ 'crs'      : CRS,
+			'transform': xfrm,
+			'width'    : w,
+			'height'   : h,
+			'driver'   : 'GTIFF',
+			'compress' : 'lzw',
+			'NBITS'    : 10 })
+	with rasterio.open(Fout, 'w', **kwargs) as dst:
+	    for i in range(1, src.count + 1):
+		reproject( source        = rasterio.band(src, i),
+			   destination   = rasterio.band(dst, i),
+			   src_transform = src.transform,
+			   src_crs       = src.crs,
+			   dst_transform = xfrm,
+			   dst_crs       = CRS,
+			   resampling    = Resampling.nearest)
+\end{minted}
+
+\subsubsection{Rasterised Image 1}
+\label{sec:org40dd71c}
+\url{file:///Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A\_EW\_GRDM\_1SDH\_20220320T152028\_20220320T152132\_042406\_050E6B\_5B1F.tif}
+
+\subsubsection{Rasterised Image 2}
+\label{sec:org05d58b0}
+\url{file:///Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A\_EW\_GRDM\_1SDH\_20220401T152028\_20220401T152132\_042581\_051456\_30AE.tif}
+\end{document}

@@ -1,0 +1,41 @@
+\begin{Verbatim}[commandchars=\\\{\}]
+\PYG{k+kn}{import} \PYG{n+nn}{rasterio}
+\PYG{k+kn}{from} \PYG{n+nn}{rasterio.warp} \PYG{k+kn}{import} \PYG{n}{calculate\PYGZus{}default\PYGZus{}transform}\PYG{p}{,} \PYG{n}{reproject}\PYG{p}{,} \PYG{n}{Resampling}
+\PYG{k+kn}{import} \PYG{n+nn}{glob}
+\PYG{k+kn}{import} \PYG{n+nn}{os}
+\PYG{k+kn}{import} \PYG{n+nn}{zipfile}
+\PYG{k+kn}{import} \PYG{n+nn}{tempfile}
+\PYG{n}{Dbase}  \PYG{o}{=} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{l+s+s1}{\PYGZsq{}/\PYGZsq{}}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}Users\PYGZsq{}}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}dpath2o\PYGZsq{}}\PYG{p}{)}
+\PYG{n}{Ddata}  \PYG{o}{=} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{Dbase}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}DATA\PYGZsq{}}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}Satellite\PYGZsq{}}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}Sentinel\PYGZsq{}}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}MawsonCoast\PYGZsq{}}\PYG{p}{)}
+\PYG{n}{Dproc}  \PYG{o}{=} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{Ddata}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}proc\PYGZsq{}}\PYG{p}{)}
+\PYG{k}{if} \PYG{o+ow}{not} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{exists}\PYG{p}{(}\PYG{n}{Dproc}\PYG{p}{):} \PYG{n}{os}\PYG{o}{.}\PYG{n}{makedirs}\PYG{p}{(}\PYG{n}{Dproc}\PYG{p}{)}
+\PYG{n}{Fnames} \PYG{o}{=} \PYG{n}{glob}\PYG{o}{.}\PYG{n}{glob}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}\PYGZcb{}}\PYG{l+s+s2}{/*.zip\PYGZdq{}}\PYG{o}{.}\PYG{n}{format}\PYG{p}{(}\PYG{n}{Ddata}\PYG{p}{))}
+\PYG{n}{CRS}    \PYG{o}{=} \PYG{l+s+s1}{\PYGZsq{}EPSG:3031\PYGZsq{}}
+\PYG{k}{for} \PYG{n}{f} \PYG{o+ow}{in} \PYG{n}{Fnames}\PYG{p}{:}
+    \PYG{n}{DFin}\PYG{p}{,}\PYG{n}{Fin} \PYG{o}{=} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{split}\PYG{p}{(}\PYG{n}{f}\PYG{p}{)}
+    \PYG{n}{Fout}     \PYG{o}{=} \PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{Dproc}\PYG{p}{,}\PYG{l+s+s1}{\PYGZsq{}}\PYG{l+s+si}{\PYGZob{}\PYGZcb{}}\PYG{l+s+s1}{.tif\PYGZsq{}}\PYG{o}{.}\PYG{n}{format}\PYG{p}{(}\PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{splitext}\PYG{p}{(}\PYG{n}{Fin}\PYG{p}{)[}\PYG{l+m+mi}{0}\PYG{p}{]))}
+    \PYG{k}{with} \PYG{n}{tempfile}\PYG{o}{.}\PYG{n}{TemporaryDirectory}\PYG{p}{()} \PYG{k}{as} \PYG{n}{Dtmp}\PYG{p}{:}
+	\PYG{k}{with} \PYG{n}{zipfile}\PYG{o}{.}\PYG{n}{ZipFile}\PYG{p}{(}\PYG{n}{f}\PYG{p}{,} \PYG{l+s+s1}{\PYGZsq{}r\PYGZsq{}}\PYG{p}{)} \PYG{k}{as} \PYG{n}{zip\PYGZus{}ref}\PYG{p}{:}
+	    \PYG{n}{zip\PYGZus{}ref}\PYG{o}{.}\PYG{n}{extractall}\PYG{p}{(}\PYG{n}{Dtmp}\PYG{p}{)}
+	\PYG{k}{with} \PYG{n}{rasterio}\PYG{o}{.}\PYG{n}{open}\PYG{p}{(}\PYG{n}{os}\PYG{o}{.}\PYG{n}{path}\PYG{o}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{Dtmp}\PYG{p}{,}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}\PYGZcb{}}\PYG{l+s+s2}{.SAFE\PYGZdq{}}\PYG{o}{.}\PYG{n}{format}\PYG{p}{(}\PYG{n}{Fout}\PYG{p}{)))} \PYG{k}{as} \PYG{n}{src}\PYG{p}{:}
+	    \PYG{n}{gcps}\PYG{p}{,}\PYG{n}{gcp\PYGZus{}crs} \PYG{o}{=} \PYG{n}{src}\PYG{o}{.}\PYG{n}{gcps}
+	    \PYG{n}{xfrm}\PYG{p}{,}\PYG{n}{w}\PYG{p}{,}\PYG{n}{h}     \PYG{o}{=} \PYG{n}{calculate\PYGZus{}default\PYGZus{}transform}\PYG{p}{(} \PYG{n}{gcp\PYGZus{}crs} \PYG{p}{,} \PYG{n}{CRS} \PYG{p}{,} \PYG{n}{src}\PYG{o}{.}\PYG{n}{width} \PYG{p}{,} \PYG{n}{src}\PYG{o}{.}\PYG{n}{height} \PYG{p}{,}  \PYG{n}{gcps}\PYG{o}{=}\PYG{n}{gcps} \PYG{p}{)}
+	    \PYG{n}{kwargs}       \PYG{o}{=} \PYG{n}{src}\PYG{o}{.}\PYG{n}{meta}\PYG{o}{.}\PYG{n}{copy}\PYG{p}{()}
+	    \PYG{n}{kwargs}\PYG{o}{.}\PYG{n}{update}\PYG{p}{(\PYGZob{}} \PYG{l+s+s1}{\PYGZsq{}crs\PYGZsq{}}      \PYG{p}{:} \PYG{n}{CRS}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}transform\PYGZsq{}}\PYG{p}{:} \PYG{n}{xfrm}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}width\PYGZsq{}}    \PYG{p}{:} \PYG{n}{w}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}height\PYGZsq{}}   \PYG{p}{:} \PYG{n}{h}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}driver\PYGZsq{}}   \PYG{p}{:} \PYG{l+s+s1}{\PYGZsq{}GTIFF\PYGZsq{}}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}compress\PYGZsq{}} \PYG{p}{:} \PYG{l+s+s1}{\PYGZsq{}lzw\PYGZsq{}}\PYG{p}{,}
+			    \PYG{l+s+s1}{\PYGZsq{}NBITS\PYGZsq{}}    \PYG{p}{:} \PYG{l+m+mi}{10} \PYG{p}{\PYGZcb{})}
+	    \PYG{n+nb}{print}\PYG{p}{(}\PYG{n}{kwargs}\PYG{p}{)}
+	    \PYG{k}{with} \PYG{n}{rasterio}\PYG{o}{.}\PYG{n}{open}\PYG{p}{(}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+si}{\PYGZob{}\PYGZcb{}}\PYG{l+s+s2}{/}\PYG{l+s+si}{\PYGZob{}\PYGZcb{}}\PYG{l+s+s2}{.tif\PYGZdq{}}\PYG{o}{.}\PYG{n}{format}\PYG{p}{(}\PYG{n}{dest\PYGZus{}path}\PYG{p}{,}\PYG{n}{dst\PYGZus{}name}\PYG{p}{),} \PYG{l+s+s1}{\PYGZsq{}w\PYGZsq{}}\PYG{p}{,} \PYG{o}{**}\PYG{n}{kwargs}\PYG{p}{)} \PYG{k}{as} \PYG{n}{dst}\PYG{p}{:}
+		\PYG{k}{for} \PYG{n}{i} \PYG{o+ow}{in} \PYG{n+nb}{range}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,} \PYG{n}{src}\PYG{o}{.}\PYG{n}{count} \PYG{o}{+} \PYG{l+m+mi}{1}\PYG{p}{):}
+		    \PYG{n}{reproject}\PYG{p}{(} \PYG{n}{source}        \PYG{o}{=} \PYG{n}{rasterio}\PYG{o}{.}\PYG{n}{band}\PYG{p}{(}\PYG{n}{src}\PYG{p}{,} \PYG{n}{i}\PYG{p}{),}
+			       \PYG{n}{destination}   \PYG{o}{=} \PYG{n}{rasterio}\PYG{o}{.}\PYG{n}{band}\PYG{p}{(}\PYG{n}{dst}\PYG{p}{,} \PYG{n}{i}\PYG{p}{),}
+			       \PYG{n}{src\PYGZus{}transform} \PYG{o}{=} \PYG{n}{src}\PYG{o}{.}\PYG{n}{transform}\PYG{p}{,}
+			       \PYG{n}{src\PYGZus{}crs}       \PYG{o}{=} \PYG{n}{src}\PYG{o}{.}\PYG{n}{crs}\PYG{p}{,}
+			       \PYG{n}{dst\PYGZus{}transform} \PYG{o}{=} \PYG{n}{xfrm}\PYG{p}{,}
+			       \PYG{n}{dst\PYGZus{}crs}       \PYG{o}{=} \PYG{n}{CRS}\PYG{p}{,}
+			       \PYG{n}{resampling}    \PYG{o}{=} \PYG{n}{Resampling}\PYG{o}{.}\PYG{n}{nearest}\PYG{p}{)}
+\end{Verbatim}

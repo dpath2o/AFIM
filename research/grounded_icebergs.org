@@ -3,39 +3,76 @@
 #+BIND: org-export-latex-title-command ""
 #+LATEX_HEADER: \def\ORGTITLE      {AFIM}
 #+LATEX_HEADER: \def\ORGAUTHOR     {DP@H$_2$O}
+#+LaTeX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage[margin=0.5in]{geometry}
+#+LaTeX_HEADER: \usepackage[x11names]{xcolor}
+#+LaTeX_HEADER: \hypersetup{linktoc = all, colorlinks = true, urlcolor = DodgerBlue4, citecolor = PaleGreen1, linkcolor = black}
 
 * Concept
-  Examine sequential Sentinel-1/2 images and see which icebergs aren't moving. These could be mapped
-  and form the prescribed field of grounded bergs for AFIM.
-  I recommend you point your browser to https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html
-  Hit the "S-1A/B NRCS" radio button and draw a polygon around Cape D.
-  Then choose some fairly recent dates (Within the past 2 years). If you do a 1-month window, you
-  should be rewarded with quite a few SAR snapshots of Cape Darnley and its glorious icebergs.
-  E.g., see if you can find this guy by entering appropriate search parameters:
-  https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2020/261/S1A_ESA_2020_09_17_15_45_35_0653672735_068.47E_68.33S_HH_C_nrcs_level2.png
-  Sentinel-1 (which is the S-1A/B entered above) is a synthetic aperture radar. Long story short:
-  great at discriminating between icebergs and sea ice. Sentinel-1 gives us sufficient resolution to
-  see iceberg shape, which gives the potential for us to unequivocally state which bergs are truly
-  grounded.
   
-* Alex's PoA
+   It is understood that grounded icebergs act as a focal point for fast ice to anchor \cite{} and
+  hence act as potential stabilisation platform and buttressing for polynya formation \cite{}. It is
+  therefore important to understand the seasonal distribution of icebergs. It may be only a
+  distribution that is needed and not exact map locations with iceberg shapes (volumes) and
+  orientations. So that a model is not dynamically applying a grounded iceberg field but using the
+  statistical knowledge of their distribution as an initial condition. The logic of this is based on
+  model resolution and treating icebergs as islands. Another factor is that the underlying
+  bathymetry on which icebergs ground is not changing on the same timescale as the
+  ice-ocean-atmosphere and hence a seasonal approximation of locations will be valid over decadal
+  scales. However, as the temporal scale shifts to centuries and millennia this approach will no
+  longer be valid. The concentration of this work is considering temporal scales less than a century
+  and hence the effort here is to work on the statistical distribution as method to gain a more
+  robust methodology (dynamical) on future iterations of this work.
+
+* Methodology
+  
+  Examine sequential temporal Sentinel-1/2 images and determine which icebergs are not moving. These
+  _could_ be mapped and form the prescribed field of grounded bergs for AFIM or they could form the
+  basis on which to determine a seasonal distribution. In beginning this effort the simplest
+  approach and one that will give me a better understanding of the remote sensing technology and one
+  aspect of the sea ice dynamics is to utilised [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch Polygon Search]]. Look through pairs
+  of images. Each pair is separated by 12-days which provides nearly exact geographic domain and
+  aspect angle of incident Sentinel SAR images. When using NOAA's Coastwatch website it allows for
+  one to open up several tabs of sequential (12-day images) and 'flick' between them to see the
+  ocean-sea ice dynamics. In this manner I can select a pair of images to then trace the common
+  grounded icebergs. This should end with a grounded iceberg occupying at least one pixel. 
+
+** Why SAR?
+   
+  Sentinel-1/2 is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
+  sufficient resolution to see iceberg shapes down to the scale that is required of [[https://github.com/dpath2o/AFIM][AFIM]], which
+  gives the potential for us to unequivocally state which bergs are truly grounded.
+  
+* Mechanics
+  
+   In the following I use python code to walk through the mechanics of extracting and rasterising
+   two potential SAR images.
+   
 ** Image Pair
+   
    1. Go to [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch Website]]
    2. On that page select ``S-1A/B NRCS'' radio button and draw a polygon around a region. In this
-      case (example) I'm using [[Cape Darnley]]
+      case (example) I'm using Cape Darnley
    3. Examine sequential (12-day) Sentinel-1/2 images and see which icebergs aren't moving.
    4. Note the date/time/platform (S1a or b) of the image pair
-   5. possible image 1:
-	https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/079/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png
-   6. possible image 2:
-	https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/091/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png 
-*** Download the image pair
+   5. image 1:
+      #+ATTR_LATEX: :width 15cm
+      [[../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png]]
+      https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/079/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png
+   6. image 2:
+      #+ATTR_LATEX: :width 15cm
+      [[../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png]]
+      https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/091/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png
+	
+** Download the image pair
+   
     1. Before downloading the python environment needs to be loaded to recognise the required python
-       modules -- assuming [[local buffer configuration]]
+       modules -- assuming local buffer configuration
     2. Also it very beneficial to understand [[https://sentinelsat.readthedocs.io/en/master/api_overview.html][python module sentinalsat]] , which in my particular case
 	I've opted to use [[~/.netrc]] file to store my sensitive login information
     3. One must create a [[https://geojson.org][GeoJSON]] file and edit this code to work on that file
     4. For this particular instance (example) I'm using [[~/PHD/etc/Mawson.geojson]]
+       #+ATTR_LATEX: :options frame=single
        #+BEGIN_SRC python
 	 #LIBRARY IMPORT
 	 import os
@@ -85,7 +122,13 @@
 	 #+END_SRC
 	 #+RESULTS:
 	 : None
+
 ** Rasterise
+
+   Rasterisation is similarly performed using pre-configured python environment that has python
+   module [[https://rasterio.readthedocs.io/en/latest/][rasterio]]
+   
+   #+ATTR_LATEX: :options frame=single
    #+BEGIN_SRC python
      import rasterio
      from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -101,44 +144,41 @@
      CRS    = 'EPSG:3031'
      for f in Fnames:
 	 DFin,Fin = os.path.split(f)
+	 Ftmp     = os.path.join(Dproc,"{}.SAFE".format(os.path.splitext(Fin)[0]))
 	 Fout     = os.path.join(Dproc,'{}.tif'.format(os.path.splitext(Fin)[0]))
-	 with tempfile.TemporaryDirectory() as Dtmp:
-	     with zipfile.ZipFile(f, 'r') as zip_ref:
-		 zip_ref.extractall(Dtmp)  
-	     with rasterio.open(os.path.join(Dtmp,"{}.SAFE".format(Fout))) as src:
-		 gcps,gcp_crs = src.gcps
-		 xfrm,w,h     = calculate_default_transform( gcp_crs , CRS , src.width , src.height ,  gcps=gcps )
-		 kwargs       = src.meta.copy()
-		 kwargs.update({ 'crs'      : CRS,
-				 'transform': xfrm,
-				 'width'    : w,
-				 'height'   : h,
-				 'driver'   : 'GTIFF',
-				 'compress' : 'lzw',
-				 'NBITS'    : 10 })
-		 print(kwargs)
-		 with rasterio.open("{}/{}.tif".format(dest_path,dst_name), 'w', **kwargs) as dst:
-		     for i in range(1, src.count + 1):
-			 reproject( source        = rasterio.band(src, i),
-				    destination   = rasterio.band(dst, i),
-				    src_transform = src.transform,
-				    src_crs       = src.crs,
-				    dst_transform = xfrm,
-				    dst_crs       = CRS,
-				    resampling    = Resampling.nearest)
+	 with zipfile.ZipFile(f, 'r') as zip_ref:
+	     zip_ref.extractall(Dproc)
+	 with rasterio.open(Ftmp) as src:
+	     gcps,gcp_crs = src.gcps
+	     xfrm,w,h     = calculate_default_transform( gcp_crs , CRS , src.width , src.height ,  gcps=gcps )
+	     kwargs       = src.meta.copy()
+	     kwargs.update({ 'crs'      : CRS,
+			     'transform': xfrm,
+			     'width'    : w,
+			     'height'   : h,
+			     'driver'   : 'GTIFF',
+			     'compress' : 'lzw',
+			     'NBITS'    : 10 })
+	     with rasterio.open(Fout, 'w', **kwargs) as dst:
+		 for i in range(1, src.count + 1):
+		     reproject( source        = rasterio.band(src, i),
+				destination   = rasterio.band(dst, i),
+				src_transform = src.transform,
+				src_crs       = src.crs,
+				dst_transform = xfrm,
+				dst_crs       = CRS,
+				resampling    = Resampling.nearest)
    #+END_SRC
    #+RESULTS:
-** Notes:
-   + For Step 1, I reckon we just choose a pair (temporal pair, sorry!) using the NOAA
-     coastview. Then note the date/time/platform (S1a or b) and download the appropriate files from
-     the sentinel hub. I think I gave you python code to do this earlier - let me know if not.
-   + Basically, we should be able to find one high-res swath, then 12 days later we should be able
-     to find the corresponding swath from exactly one orbit later (thus finding a pair).  One pair
-     should be enough if it's chosen well (i.e., with no surrounding fast ice).  (but we'll need a
-     second, low-res "pair" (again separated by 12 days) to cover the northern part of the study area).
-   + I have a workflow for SNAP -> geotiffs but first we should find a good pair (couple of pairs -
-     one high res, one low res). 
-(These could be mapped and form the prescribed field of grounded bergs for [[AFIM]])
+   : None
+
+*** Rasterised Image 1
+    #+ATTR_LATEX: :width 15cm
+    [[/Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A_EW_GRDM_1SDH_20220320T152028_20220320T152132_042406_050E6B_5B1F.tif]]
+    
+*** Rasterised Image 2
+    #+ATTR_LATEX: :width 15cm
+    [[/Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A_EW_GRDM_1SDH_20220401T152028_20220401T152132_042581_051456_30AE.tif]]
 # Local Variables:
 # org-babel-python-command: "/Users/dpath2o/opt/anaconda3/envs/icepack/bin/python"
 # End:
