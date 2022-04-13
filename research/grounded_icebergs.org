@@ -6,11 +6,12 @@
 #+LaTeX_HEADER: \usepackage{minted}
 #+LATEX_HEADER: \usepackage[margin=0.5in]{geometry}
 #+LaTeX_HEADER: \usepackage[x11names]{xcolor}
+#+LaTeX_HEADER: \usepackage{siunitx}
 #+LaTeX_HEADER: \hypersetup{linktoc = all, colorlinks = true, urlcolor = DodgerBlue4, citecolor = PaleGreen1, linkcolor = black}
 
 * Concept
-  
-   It is understood that grounded icebergs act as a focal point for fast ice to anchor \cite{} and
+
+  It is understood that grounded icebergs act as a focal point for fast ice to anchor \cite{} and
   hence act as potential stabilisation platform and buttressing for polynya formation \cite{}. It is
   therefore important to understand the seasonal distribution of icebergs. It may be only a
   distribution that is needed and not exact map locations with iceberg shapes (volumes) and
@@ -26,6 +27,8 @@
 
 * Methodology
   
+  Topographically sea ice
+
   Examine sequential temporal Sentinel-1/2 images and determine which icebergs are not moving. These
   _could_ be mapped and form the prescribed field of grounded bergs for AFIM or they could form the
   basis on which to determine a seasonal distribution. In beginning this effort the simplest
@@ -48,22 +51,28 @@
    In the following I use python code to walk through the mechanics of extracting and rasterising
    two potential SAR images.
    
-** Image Pair
+** Image Pairs
    
    1. Go to [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch Website]]
    2. On that page select ``S-1A/B NRCS'' radio button and draw a polygon around a region. In this
       case (example) I'm using Cape Darnley
    3. Examine sequential (12-day) Sentinel-1/2 images and see which icebergs aren't moving.
    4. Note the date/time/platform (S1a or b) of the image pair
-   5. image 1:
+*** High Resolution
+   + image 1
       #+ATTR_LATEX: :width 15cm
-      [[../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png]]
-      https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/079/S1A_ESA_2022_03_20_15_21_00_0701104860_072.90E_68.49S_HH_C_nrcs_level2.png
-   6. image 2:
+      [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_09_15_45_25_0637083925_068.47E_68.33S_HH_C_nrcs_level2.png]]
+   + image 2
       #+ATTR_LATEX: :width 15cm
-      [[../GRAPHICAL/grounded_icebergs/preliminary_work/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png]]
-      https://www.star.nesdis.noaa.gov//data/socd3/coastwatch/products/nrcs/L2/browse/2022/091/S1A_ESA_2022_04_01_15_21_00_0702141660_072.90E_68.49S_HH_C_nrcs_level2.png
-	
+      [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_21_15_45_26_0638120726_068.47E_68.33S_HH_C_nrcs_level2.png]]
+*** Low Resolution
+   + image 1
+     #+ATTR_LATEX: :width 15cm
+     [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_13_15_12_43_0637427563_074.19E_68.08S_HH_C_nrcs_level2.png]]
+   + image 2
+     #+ATTR_LATEX: :width 15cm
+     [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
+
 ** Download the image pair
    
     1. Before downloading the python environment needs to be loaded to recognise the required python
@@ -86,10 +95,10 @@
 	 # later on, but it requires that sentinalsat can use and we use to functions from the
 	 # sentinelsat API
 	 ftprt  = geojson_to_wkt(read_geojson(Fgeoj))
-	 # IMAGE 1 -- using a narrow 
+	 # Hi-Res IMAGE 1 -- using a narrow 
 	 qkwar  = {'platformname': 'Sentinel-1',
 		   'producttype': 'GRD',
-		   'date': ('2022-03-20T15:20:00.000Z','2022-03-20T15:25:00.000Z' ),
+		   'date': ('2019-02-19T15:40:00.000Z','2019-02-19T15:50:00.000Z' ),
 		   'instrumentshortname': 'SAR-C SAR',
 		   'sensoroperationalmode': 'EW'}
 	 apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
@@ -102,11 +111,44 @@
 		 print('{} is NOT online ... skipping'.format(Qdf.title[f]))
 		 continue
 	     apic.download(f,Ddata)
-	 # IMAGE 2 -- only changing the datetime to 12 days later as this will give us the exact
+	 # Hi-Res IMAGE 2 -- only changing the datetime to 12 days later as this will give us the exact
 	 #            same image
 	 qkwar  = {'platformname': 'Sentinel-1',
 		   'producttype': 'GRD',
-		   'date': ('2022-04-01T15:20:00.000Z','2022-04-01T15:25:00.000Z' ),
+		   'date': ('2019-03-15T15:40:00.000Z','2019-03-15T15:50:00.000Z' ),
+		   'instrumentshortname': 'SAR-C SAR',
+		   'sensoroperationalmode': 'EW'}
+	 apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
+	 Qresults = apic.query(ftprt,**qkwar)
+	 Qdf      = apic.to_dataframe(Qresults)
+	 for f in Qresults:
+	     print('Filename {}'.format(Qdf.title[f]))
+	     online_test = apic.get_product_odata(f)
+	     if not online_test['Online']:
+		 print('{} is NOT online ... skipping'.format(Qdf.title[f]))
+		 continue
+	 apic.download(f,Ddata)
+	 # Low-Res IMAGE 1 -- using a narrow 
+	 qkwar  = {'platformname': 'Sentinel-1',
+		   'producttype': 'GRD',
+		   'date': ('2019-02-26T15:30:00.000Z','2019-02-26T15:40:00.000Z' ),
+		   'instrumentshortname': 'SAR-C SAR',
+		   'sensoroperationalmode': 'EW'}
+	 apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
+	 Qresults = apic.query(ftprt,**qkwar)
+	 Qdf      = apic.to_dataframe(Qresults)
+	 for f in Qresults:
+	     print('Filename {}'.format(Qdf.title[f]))
+	     online_test = apic.get_product_odata(f)
+	     if not online_test['Online']:
+		 print('{} is NOT online ... skipping'.format(Qdf.title[f]))
+		 continue
+	     apic.download(f,Ddata)
+	 # Low-Res IMAGE 2 -- only changing the datetime to 12 days later as this will give us the exact
+	 #            same image
+	 qkwar  = {'platformname': 'Sentinel-1',
+		   'producttype': 'GRD',
+		   'date': ('2019-03-10T15:30:00.000Z','2019-03-10T15:40:00.000Z' ),
 		   'instrumentshortname': 'SAR-C SAR',
 		   'sensoroperationalmode': 'EW'}
 	 apic     = SentinelAPI(None, None, 'https://scihub.copernicus.eu/dhus')
@@ -121,7 +163,6 @@
 	 apic.download(f,Ddata)
 	 #+END_SRC
 	 #+RESULTS:
-	 : None
 
 ** Rasterise
 
