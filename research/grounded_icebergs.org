@@ -7,7 +7,7 @@
 #+LATEX_HEADER: \usepackage[margin=0.5in]{geometry}
 #+LaTeX_HEADER: \usepackage[x11names]{xcolor}
 #+LaTeX_HEADER: \usepackage{siunitx}
-#+LaTeX_HEADER: \hypersetup{linktoc = all, colorlinks = true, urlcolor = DodgerBlue4, citecolor = PaleGreen1, linkcolor = black}
+#+LaTeX_HEADER: \hypersetup{linktoc=all, colorlinks=true, urlcolor=DodgerBlue4, citecolor=PaleGreen1, linkcolor=black}
 
 * Concept
 
@@ -73,7 +73,7 @@
      #+ATTR_LATEX: :width 15cm
      [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
 
-** Download the image pair
+** Download the image pair via python
    
     1. Before downloading the python environment needs to be loaded to recognise the required python
        modules -- assuming local buffer configuration
@@ -164,7 +164,9 @@
 	 #+END_SRC
 	 #+RESULTS:
 
-** Rasterise
+** Download the image pair via [[file:~/PHD/admin/computing.org::RDI_CDASO][RDI_CDASO]]
+** Download the image pair via [[https://apps.sentinel-hub.com/eo-browser/?zoom=10&lat=41.9&lng=12.5&themeId=DEFAULT-THEME&toTime=2022-04-13T20%3A52%3A55.350Z][SentinelHub]]
+** Rasterise via python
 
    Rasterisation is similarly performed using pre-configured python environment that has python
    module [[https://rasterio.readthedocs.io/en/latest/][rasterio]]
@@ -213,13 +215,15 @@
    #+RESULTS:
    : None
 
-*** Rasterised Image 1
-    #+ATTR_LATEX: :width 15cm
-    [[/Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A_EW_GRDM_1SDH_20220320T152028_20220320T152132_042406_050E6B_5B1F.tif]]
-    
-*** Rasterised Image 2
-    #+ATTR_LATEX: :width 15cm
-    [[/Users/dpath2o/DATA/Satellite/sentinel/MawsonCoast/proc/S1A_EW_GRDM_1SDH_20220401T152028_20220401T152132_042581_051456_30AE.tif]]
-# Local Variables:
-# org-babel-python-command: "/Users/dpath2o/opt/anaconda3/envs/icepack/bin/python"
-# End:
+** Rasterise via [[https://step.esa.int/main/download/snap-download/][SNAP]]
+
+   1. Follow the directions for downloading and installing SNAP
+   2. Load zip files (image pairs) into SNAP
+   3. Select Radar -> Geometric -> Elipsoid Correction -> Geolocation-Grid
+   4. Use EPSG:3031 as the new projection
+
+** Use [[https://www.gimp.org][GIMP]] for layering and merging
+
+   In the first instance two ~merged~ figures were created and can be
+   found on my Google hard drive: [[https://drive.google.com/file/d/12rBVi-qdNDChf6J3M1tdehBGgWYahPi4/view?usp=sharing][Cape Darnley]] (high resolution)and
+   [[https://drive.google.com/file/d/1n-bSFUpUhzv7L2_1GMLRy7NRP9oeFEXM/view?usp=sharing][Prydz Bay]] (low resolution)
