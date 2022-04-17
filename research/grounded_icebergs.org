@@ -61,17 +61,17 @@
 *** High Resolution
    + image 1
       #+ATTR_LATEX: :width 15cm
-      [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_09_15_45_25_0637083925_068.47E_68.33S_HH_C_nrcs_level2.png]]
+      [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_09_15_45_25_0637083925_068.47E_68.33S_HH_C_nrcs_level2.png]]
    + image 2
       #+ATTR_LATEX: :width 15cm
-      [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_21_15_45_26_0638120726_068.47E_68.33S_HH_C_nrcs_level2.png]]
+      [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_21_15_45_26_0638120726_068.47E_68.33S_HH_C_nrcs_level2.png]]
 *** Low Resolution
    + image 1
      #+ATTR_LATEX: :width 15cm
-     [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_13_15_12_43_0637427563_074.19E_68.08S_HH_C_nrcs_level2.png]]
+     [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_13_15_12_43_0637427563_074.19E_68.08S_HH_C_nrcs_level2.png]]
    + image 2
      #+ATTR_LATEX: :width 15cm
-     [[/Users/dpath2o/PHD/GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
+     [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
 
 ** Download the image pair via python
    
@@ -225,5 +225,14 @@
 ** Use [[https://www.gimp.org][GIMP]] for layering and merging
 
    In the first instance two ~merged~ figures were created and can be
-   found on my Google hard drive: [[https://drive.google.com/file/d/12rBVi-qdNDChf6J3M1tdehBGgWYahPi4/view?usp=sharing][Cape Darnley]] (high resolution)and
-   [[https://drive.google.com/file/d/1n-bSFUpUhzv7L2_1GMLRy7NRP9oeFEXM/view?usp=sharing][Prydz Bay]] (low resolution)
+   found on my Google hard drive: [[https://drive.google.com/file/d/12rBVi-qdNDChf6J3M1tdehBGgWYahPi4/view?usp=sharing][Cape Darnley]] (high resolution, ~100MB) and
+   [[https://drive.google.com/file/d/1n-bSFUpUhzv7L2_1GMLRy7NRP9oeFEXM/view?usp=sharing][Prydz Bay]] (low resolution, ~50MB). These two PNGs were merged in GIMP from
+   their source geotiff files where are available below.
+
+*** [[https://drive.google.com/file/d/1n39IWX_VriVqEc3Dnr65nqIvBzBSVOhi/view?usp=sharing][Cape Darnley (higher resolution) geotiff 09 Mar 2020 (~3GB)]]
+
+*** [[https://drive.google.com/file/d/1n7ltcEQMj62ggmRoHuCI3_toXb4tI65B/view?usp=sharing][Cape Darnley (higher resolution) geotiff 21 Mar 2020 (~3GB)]]
+
+*** [[https://drive.google.com/file/d/1n91zwi_NVX_pkzerxvoOw9oGFZ-ypAWP/view?usp=sharing][Prydz Bay (lower resolution) geotiff 13 Mar 2020 (~1GB)]]
+
+*** [[https://drive.google.com/file/d/1nHceOG3D_eweceIcVhg6Ex5nviDYZ09l/view?usp=sharing][Prydz Bay (lower resolution) geotiff 25 Mar 2020 (~1GB)]]
