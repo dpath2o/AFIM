@@ -25,6 +25,12 @@
   and hence the effort here is to work on the statistical distribution as method to gain a more
   robust methodology (dynamical) on future iterations of this work.
 
+** Why SAR?
+   
+  Sentinel-1/2 is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
+  sufficient resolution to see iceberg shapes down to the scale that is required of [[https://github.com/dpath2o/AFIM][AFIM]], which
+  gives the potential for us to unequivocally state which bergs are truly grounded.
+
 * Methodology
   
   Topographically sea ice
@@ -38,20 +44,24 @@
   aspect angle of incident Sentinel SAR images. When using NOAA's Coastwatch website it allows for
   one to open up several tabs of sequential (12-day images) and 'flick' between them to see the
   ocean-sea ice dynamics. In this manner I can select a pair of images to then trace the common
-  grounded icebergs. This should end with a grounded iceberg occupying at least one pixel. 
+  grounded icebergs. This should end with a grounded iceberg occupying
+  at least one pixel.
 
-** Why SAR?
-   
-  Sentinel-1/2 is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
-  sufficient resolution to see iceberg shapes down to the scale that is required of [[https://github.com/dpath2o/AFIM][AFIM]], which
-  gives the potential for us to unequivocally state which bergs are truly grounded.
+  After reviewing a number of images from NOAA's Coastwatch webpage, I
+  decided to make a year's animation from the NOAA processed SAR data
+  that are comprised of 28 images for each region that I called:
+
+  + Cape Darnley
+    #+ATTR_LATEX: :width 15cm
+    [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley_NOAA_CoastWatch_Animation_2019-2020.gif]]
+  + Mawson Coast (high resolution)
+    #+ATTR_LATEX: :width 15cm
+    [[../GRAPHICAL/grounded_icebergs/preliminary_work/MawsonCoast_NOAA_CoastWatch_Animation_2019-2020.gif]]
+  + Prydz Bay (lower resolution)
+    #+ATTR_LATEX: :width 15cm
+    [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay_NOAA_CoastWatch_Animation_2019-2020.gif]]
   
-* Mechanics
-  
-   In the following I use python code to walk through the mechanics of extracting and rasterising
-   two potential SAR images.
-   
-** Image Pairs
+* Current Image Pairs
    
    1. Go to [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch Website]]
    2. On that page select ``S-1A/B NRCS'' radio button and draw a polygon around a region. In this
@@ -73,6 +83,14 @@
      #+ATTR_LATEX: :width 15cm
      [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
 
+
+* Methods of Downloading Level 1 Sentinel SAR Data
+
+  As I ran into delays with python method I chose to download the data
+  from RDI/CDASO. The delay with the python method was that the online
+  archive was not making the data available at 24 or 48 or 72 hours
+  after the initial request.
+  
 ** Download the image pair via python
    
     1. Before downloading the python environment needs to be loaded to recognise the required python
