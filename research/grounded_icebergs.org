@@ -85,10 +85,10 @@
 *** Medium Resolution
     + image 1
 #+ATTR_LATEX: :width 15cm
-[[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
+[[../GRAPHICAL/grounded_icebergs/unmerged_tiffs/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
 + image 2
 #+ATTR_LATEX: :width 15cm
-[[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
+[[../GRAPHICAL/grounded_icebergs/unmerged_tiffs/S1A_EW_GRDM_1SSH_20150402T152013_20150402T152101_005306_006B78_0527.png]]
 *** Low Resolution
    + image 1
      #+ATTR_LATEX: :width 15cm
