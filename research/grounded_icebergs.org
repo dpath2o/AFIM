@@ -11,7 +11,9 @@
 
 * Concept
 
-  It is understood that grounded icebergs act as a focal point for fast ice to anchor \cite{} and
+  It is understood that grounded icebergs act as a focal point for
+ fast ice to anchor cite:zotero://select/items/1_6DH4IZVS
+ and
   hence act as potential stabilisation platform and buttressing for polynya formation \cite{}. It is
   therefore important to understand the seasonal distribution of icebergs. It may be only a
   distribution that is needed and not exact map locations with iceberg shapes (volumes) and
@@ -27,9 +29,10 @@
 
 ** Why SAR?
    
-  Sentinel-1/2 is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
+  [[https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/overview][Sentinel-1/2 SAR]] is great at discriminating between icebergs and sea ice. Sentinel-1 gives us
   sufficient resolution to see iceberg shapes down to the scale that is required of [[https://github.com/dpath2o/AFIM][AFIM]], which
-  gives the potential for us to unequivocally state which bergs are truly grounded.
+  gives the potential for us to unequivocally state which bergs are
+  truly grounded.
 
 * Methodology
   
@@ -49,9 +52,12 @@
 
   After reviewing a number of images from NOAA's Coastwatch webpage, I
   decided to make a year's animation from the NOAA processed SAR data
-  that are comprised of 28 images for each region that I called:
+  that are comprised of 28 images for each region that I called: Cape
+  Darnley, Mawson Coast and Prydz Bay. The animations are displad
+  in-line with the text below and indicate a number of probable
+  grounded icebergs in each region. 
 
-  + Cape Darnley
+  + Cape Darnley (high resolution)
     #+ATTR_LATEX: :width 15cm
     [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley_NOAA_CoastWatch_Animation_2019-2020.gif]]
   + Mawson Coast (high resolution)
@@ -62,30 +68,35 @@
     [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay_NOAA_CoastWatch_Animation_2019-2020.gif]]
   
 * Current Image Pairs
-   
-   1. Go to [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch Website]]
-   2. On that page select ``S-1A/B NRCS'' radio button and draw a polygon around a region. In this
-      case (example) I'm using Cape Darnley
-   3. Examine sequential (12-day) Sentinel-1/2 images and see which icebergs aren't moving.
-   4. Note the date/time/platform (S1a or b) of the image pair
+
+  My first go at choosing a pair of high and low resolution images for
+  Cape Darnley and Prydz Bay did provide any usual info on grounded
+  icebergs as the fast ice that year did not melt. The same was true
+  for 2021 and 2022 as well as 2019 and 2018. However, 2017, 2016 and
+  2015 were fast ice breakout years. Unfortunately, [[https://coastwatch.noaa.gov/cw_html/cw_polygon_search.html][NOAA's Coastwatch
+  Polygon Search]] came up empty for those years. Even expanding the
+  search area did generate any hits on that website. 
+
 *** High Resolution
    + image 1
       #+ATTR_LATEX: :width 15cm
-      [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_09_15_45_25_0637083925_068.47E_68.33S_HH_C_nrcs_level2.png]]
    + image 2
       #+ATTR_LATEX: :width 15cm
-      [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_ESA_2020_03_21_15_45_26_0638120726_068.47E_68.33S_HH_C_nrcs_level2.png]]
+*** Medium Resolution
+    + image 1
+#+ATTR_LATEX: :width 15cm
+[[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
++ image 2
+#+ATTR_LATEX: :width 15cm
+[[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
 *** Low Resolution
    + image 1
      #+ATTR_LATEX: :width 15cm
-     [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_13_15_12_43_0637427563_074.19E_68.08S_HH_C_nrcs_level2.png]]
    + image 2
      #+ATTR_LATEX: :width 15cm
-     [[../GRAPHICAL/grounded_icebergs/preliminary_work/PrydzBay/S1A_ESA_2020_03_25_15_12_43_0638464363_074.18E_68.08S_HH_C_nrcs_level2.png]]
 
 
 * Methods of Downloading Level 1 Sentinel SAR Data
-
   As I ran into delays with python method I chose to download the data
   from RDI/CDASO. The delay with the python method was that the online
   archive was not making the data available at 24 or 48 or 72 hours
@@ -183,74 +194,129 @@
 	 #+RESULTS:
 
 ** Download the image pair via [[file:~/PHD/admin/computing.org::RDI_CDASO][RDI_CDASO]]
-** Download the image pair via [[https://apps.sentinel-hub.com/eo-browser/?zoom=10&lat=41.9&lng=12.5&themeId=DEFAULT-THEME&toTime=2022-04-13T20%3A52%3A55.350Z][SentinelHub]]
-** Rasterise via python
+   This method requires access to the above link the repository can be
+   found in ~/cdaso/PRIVATE/sentinel1/SAR_L1_GRD/~. Using ~rsync -aP
+   [RDI_CDASO] [LOCAL_DIRECTORY]~ can be used to download the files
 
-   Rasterisation is similarly performed using pre-configured python environment that has python
-   module [[https://rasterio.readthedocs.io/en/latest/][rasterio]]
-   
+** Download the image pair via [[https://apps.sentinel-hub.com/eo-browser/?zoom=10&lat=41.9&lng=12.5&themeId=DEFAULT-THEME&toTime=2022-04-13T20%3A52%3A55.350Z][SentinelHub]]
+   Initially, I avoided this method, 
+
+* Processing Sentinel Level 1 
+  Sentinel Level 1 SAR Data is not provided in a geo-referenced
+  projection and hence to manually analyse the data with respect to grounded
+  icebergs it is necessary to re-project (map) the data. As geotiffs
+  can be vectorised (i.e. each pixel can be accessed for information)
+  and geographical/mapping information travels with the file
+  (header/metadata) then this is the obvious file format to rasterise
+  the SAR Level 1 data. There are number of ways to do this and some
+  toolboxes that could be explored for future automation.
+
+  One method via python is provided below as wellas another method,
+  the one that I used to rasterise the four separate SAR Level 1
+  sweeps, via Sentinal SNAP toolbox.
+
+I did some background reading on SAR and the Amery Ice Shelf calving
+event of 2019 — the later being something I observed while looking
+through NOAA Coastwatch images. On Monday, after SentinelHub still had not released
+the products, I decided to go through our previous email discussion in
+August of last year. I found that Glenn had given me access to
+RDSI/CDASO, which I had completely forgot about. By that stage on
+Monday I had identified these three domains (hi-res CD, hi-res MC,
+low-res PB) and took the liberty to download the corresponding data
+from RDSI/CDASO. By then it was Tuesday and I had a crack at
+processing a pair of images using the code provided here. However,
+after several attempts and variations I only get a blank (black) image
+as a result, albeit a 1.5GB blank image. As I wanted to have a better
+understanding of the tif (data) I found this little chestnut , as well
+as these two bodies of work: ASF and GMTSAR. The later describe
+working with raw interferometry SAR (InSAR) sentinel-1 and an example
+of Larsen Ice Shelf (which is a link at the bottom of that page, but
+be warned the download is 4GB). 
+
+** python script
+
    #+ATTR_LATEX: :options frame=single
    #+BEGIN_SRC python
-     import rasterio
-     from rasterio.warp import calculate_default_transform, reproject, Resampling
-     import glob
-     import os
-     import zipfile
-     import tempfile
-     Dbase  = os.path.join('/','Users','dpath2o')
-     Ddata  = os.path.join(Dbase,'DATA','Satellite','Sentinel','MawsonCoast')
-     Dproc  = os.path.join(Ddata,'proc')
-     if not os.path.exists(Dproc): os.makedirs(Dproc)
-     Fnames = glob.glob("{}/*.zip".format(Ddata))
-     CRS    = 'EPSG:3031'
-     for f in Fnames:
-	 DFin,Fin = os.path.split(f)
-	 Ftmp     = os.path.join(Dproc,"{}.SAFE".format(os.path.splitext(Fin)[0]))
-	 Fout     = os.path.join(Dproc,'{}.tif'.format(os.path.splitext(Fin)[0]))
-	 with zipfile.ZipFile(f, 'r') as zip_ref:
-	     zip_ref.extractall(Dproc)
-	 with rasterio.open(Ftmp) as src:
-	     gcps,gcp_crs = src.gcps
-	     xfrm,w,h     = calculate_default_transform( gcp_crs , CRS , src.width , src.height ,  gcps=gcps )
-	     kwargs       = src.meta.copy()
-	     kwargs.update({ 'crs'      : CRS,
-			     'transform': xfrm,
-			     'width'    : w,
-			     'height'   : h,
-			     'driver'   : 'GTIFF',
-			     'compress' : 'lzw',
-			     'NBITS'    : 10 })
-	     with rasterio.open(Fout, 'w', **kwargs) as dst:
-		 for i in range(1, src.count + 1):
-		     reproject( source        = rasterio.band(src, i),
-				destination   = rasterio.band(dst, i),
-				src_transform = src.transform,
-				src_crs       = src.crs,
-				dst_transform = xfrm,
-				dst_crs       = CRS,
-				resampling    = Resampling.nearest)
+      import rasterio
+      import xarray as xr
+      import rioxarray
+      import pygmt
+      import os
+      F1 = os.path.join('/','Users','dpath2o','DATA','Satellite','Sentinel','CapeDarnley','EW','2015',
+			'S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867.SAFE',
+			'measurement',
+			's1a-ew-grd-hh-20150321t152013-20150321t152101-005131-006765-001.tiff')
+      ras1           = rasterio.open(F1)
+      gcps1,ras_crs1 = ras1.get_gcps()
+      da1            = xr.open_rasterio(F1)
+      ds1            = da1.to_dataset('band')
+      ds1            = ds1.rename({1:'sar'})
+      destination1   = ds1.sar.values
+      dest1,trans1   = rasterio.warp.reproject(ras1.read(1),
+					       destination1,
+					       gcps=gcps1,
+					       src_crs=ras_crs1,
+					       dst_crs=ras_crs1)
+      dn1            = xr.DataArray(dest1, dims=['y','x'])
+      dn1            = dn1.rio.write_crs(ras_crs1)
+      dn1            = dn1.rio.write_transform(trans1)
+      dn1            = dn1.assign_coords( x=(trans1*(dn1.x,dn1.y[0]))[0],
+					  y=(trans1*(dn1.x[0],dn1.y))[1] )
+      dn1            = dn1.astype(float)
+      region         = [dn1.x.min().values,dn1.x.max().values,dn1.y.min().values,dn1.y.max().values]
+      fig            = pygmt.Figure()
+      fig.basemap( region=region , projection="M10i" , frame=["af",'+t"S1A SAR GRDM 1SSH 2015-03-21 1520Z"'] )
+      pygmt.makecpt( cmap="gray" , series=(0,dn1.max().values,1) )
+      fig.grdimage( dn1 , cmap=True , transparency=20 )
+      fig.coast(shorelines=".5p,blue")
+      fig.savefig(os.path.join('/','Users','dpath2o','PHD','GRAPHICAL','grounded_icebergs','unmerged_tiffs',
+			       'S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png'))
+      F2 = os.path.join('/','Users','dpath2o','DATA','Satellite','Sentinel','CapeDarnley','EW','2015',
+			'S1A_EW_GRDM_1SSH_20150402T152013_20150402T152101_005306_006B78_0527.SAFE',
+			'measurement',
+			's1a-ew-grd-hh-20150402t152013-20150402t152101-005306-006b78-001.tiff')
+      ras2           = rasterio.open(F2)
+      gcps2,ras_crs2 = ras2.get_gcps()
+      da2            = xr.open_rasterio(F2)
+      ds2            = da2.to_dataset('band')
+      ds2            = ds2.rename({1:'sar'})
+      destination2   = ds2.sar.values
+      dest2,trans2   = rasterio.warp.reproject(ras2.read(1),
+					       destination2,
+					       gcps=gcps2,
+					       src_crs=ras_crs2,
+					       dst_crs=ras_crs2)
+      dn2            = xr.DataArray(dest2, dims=['y','x'])
+      dn2            = dn2.rio.write_crs(ras_crs2)
+      dn2            = dn2.rio.write_transform(trans2)
+      dn2            = dn2.assign_coords( x=(trans2*(dn2.x,dn2.y[0]))[0],
+					  y=(trans2*(dn2.x[0],dn2.y))[1] )
+      dn2            = dn2.astype(float)
+      region         = [dn2.x.min().values,dn2.x.max().values,dn2.y.min().values,dn2.y.max().values]
+      fig            = pygmt.Figure()
+      fig.basemap( region=region , projection="M10i" , frame=["af",'+t"S1A SAR GRDM 1SSH 2015-04-02 1520Z"'] )
+      pygmt.makecpt( cmap="gray" , series=(0,dn2.max().values,1) )
+      fig.grdimage( dn2 , cmap=True , transparency=20 )
+      fig.coast(shorelines=".5p,blue")
+      fig.savefig(os.path.join('/','Users','dpath2o','PHD','GRAPHICAL','grounded_icebergs','unmerged_tiffs',
+			       'S1A_EW_GRDM_1SSH_20150402T152013_20150402T152101_005306_006B78_0527.png'))
+
+      tmp2 = dn2.isel(x=slice(0,10360),y=slice(0,8145))
+      tmp1 = dn1.isel(x=slice(0,10360),y=slice(0,8145))
+      dd   = xr.DataArray(tmp2.values-tmp1.values, dims=['y','x'])
+      dd = dd.assign_coords(y=tmp2.y.values,x=tmp2.x.values)
+      fig  = pygmt.Figure()
+      fig.basemap( region=region , projection="M10i" , frame=["af",'+t"S1A Difference (2105-04-02T1520Z - 2015-03-21T1520Z)"'] )
+      pygmt.makecpt( cmap="gray" , series=(0,dd.max().values,1) )
+      fig.grdimage( dd , cmap=True , transparency=20 )
+      fig.coast(shorelines=".5p,blue")
+      fig.savefig(os.path.join('/','Users','dpath2o','PHD','GRAPHICAL','grounded_icebergs',
+			       'CapeDarnley_S1A_EW_GRDM_1SSH_20150402_diff_20150321.png'))
    #+END_SRC
    #+RESULTS:
-   : None
 
-** Rasterise via [[https://step.esa.int/main/download/snap-download/][SNAP]]
-
-   1. Follow the directions for downloading and installing SNAP
-   2. Load zip files (image pairs) into SNAP
-   3. Select Radar -> Geometric -> Elipsoid Correction -> Geolocation-Grid
-   4. Use EPSG:3031 as the new projection
-
-** Use [[https://www.gimp.org][GIMP]] for layering and merging
-
-   In the first instance two ~merged~ figures were created and can be
-   found on my Google hard drive: [[https://drive.google.com/file/d/12rBVi-qdNDChf6J3M1tdehBGgWYahPi4/view?usp=sharing][Cape Darnley]] (high resolution, ~100MB) and
-   [[https://drive.google.com/file/d/1n-bSFUpUhzv7L2_1GMLRy7NRP9oeFEXM/view?usp=sharing][Prydz Bay]] (low resolution, ~50MB). These two PNGs were merged in GIMP from
-   their source geotiff files where are available below.
-
-*** [[https://drive.google.com/file/d/1n39IWX_VriVqEc3Dnr65nqIvBzBSVOhi/view?usp=sharing][Cape Darnley (higher resolution) geotiff 09 Mar 2020 (~3GB)]]
-
-*** [[https://drive.google.com/file/d/1n7ltcEQMj62ggmRoHuCI3_toXb4tI65B/view?usp=sharing][Cape Darnley (higher resolution) geotiff 21 Mar 2020 (~3GB)]]
-
-*** [[https://drive.google.com/file/d/1n91zwi_NVX_pkzerxvoOw9oGFZ-ypAWP/view?usp=sharing][Prydz Bay (lower resolution) geotiff 13 Mar 2020 (~1GB)]]
-
-*** [[https://drive.google.com/file/d/1nHceOG3D_eweceIcVhg6Ex5nviDYZ09l/view?usp=sharing][Prydz Bay (lower resolution) geotiff 25 Mar 2020 (~1GB)]]
+*** [[https://drive.google.com/file/d/1OMP5BERm2sNMZ3B1ZY2Di5phhe9jbfHv/view?usp=sharing][Cape Darnley (medium resolution)]]
+    This image was created by taking the difference of
+    [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
+and [[../GRAPHICAL/grounded_icebergs/preliminary_work/CapeDarnley/S1A_EW_GRDM_1SSH_20150321T152013_20150321T152101_005131_006765_4867_EC.png]]
+    . 
