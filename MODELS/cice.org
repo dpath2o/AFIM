@@ -279,8 +279,33 @@ Edited ~ice_in~ file replacing ~gx3~ enteries with ~gx1~ . While this ran
 through to competion the results were garbarge
 *** GX1 success [2022-05-23 Mon 14:00]
 #+BEGIN_SRC sh
-./cice.setup -m conda -e macos -c sandbox -g gx1 -s diag1,thread -p 8x1
+./cice.setup -m conda -e macos -c sandbox_gx1 -g gx1
 cd sandbox
 ./cice.build
 ./cice.run
 #+END_SRC
+#+CAPTION: This is the 'sice' field for GX1 vanilla
+#+NAME:   fig:gx1_vanilla
+[[./CICE_runs/sandbox_gx1_bin/cice6-gx1_sice.png]]
+*** GX3 success [2022-05-23 Mon 14:30]
+#+BEGIN_SRC sh
+./cice.setup -m conda -e macos -c sandbox_gx3 -g gx3
+cd sandbox
+./cice.build
+./cice.run
+#+END_SRC
+#+CAPTION: This is the 'sice' field for GX3 vanilla
+#+NAME:   fig:gx1_vanilla
+[[./CICE_runs/sandbox_gx3_bin/cice6-gx3_sice.png]]
+*** TX1 (Binary Grid) partial success [2022-06-06 Mon]
+#+BEGIN_SRC sh
+./cice.setup -m conda -e macos -c sandbox_tx1 -g tx1
+cd sandbox
+./cice.build
+./cice.run
+#+END_SRC
+#+CAPTION: This is the 'sice' field for TX1 vanilla
+#+NAME:   fig:gx1_vanilla
+[[./CICE_runs/sandbox_tx1_bin/cice6-tx1_sice_BINgrid.png]]
+*** TX1 (NetCDF Grid -- ACCESS-OM) partial success [2022-06-06 Mon]
+
