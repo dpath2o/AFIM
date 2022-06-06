@@ -1,0 +1,698 @@
+ (input_data) Reading setup_nml
+ (input_data) Reading grid_nml
+ (input_data) Reading tracer_nml
+ (input_data) Reading thermo_nml
+ (input_data) Reading dynamics_nml
+ (input_data) Reading shortwave_nml
+ (input_data) Reading ponds_nml
+ (input_data) Reading snow_nml
+ (input_data) Reading forcing_nml
+ --------------------------------
+    (input_data)
+   CICE model diagnostic output  
+ --------------------------------
+  
+ (input_data)NOTE: ice_ic = none or default, setting restart flags to .false.
+ (input_data)NOTE: ice_ic = none or default, setting use_restart_time=.false.
+  
+  Overview of model configuration with relevant parameters
+ =========================================================
+ For details, compare namelist output below with the
+ Case Settings section in the model documentation.
+  
+  Calendar
+ --------------------------------
+ days_per_year    =            365  : number of days in a model year
+ use_leap_years   =              T  : leap days are included
+ dt               =        3600.00  : model time step
+  
+  Grid, Discretization
+ --------------------------------
+ grid_type        =        tripole  : user-defined grid with northern hemisphere zipper
+ use_bathymetry   =              F  : bathymetric input data is not used
+ bathymetry_format=        default
+ nilyr            =              7  : number of ice layers (equal thickness)
+ nslyr            =              1  : number of snow layers (equal thickness)
+ nblyr            =              1  : number of bio layers (equal thickness)
+ dEdd interior and sfc scattering layers are used in both ice, snow (unequal)
+ ncat             =              5  : number of ice categories
+ kcatbound        =              0  : original ITD category bounds
+ kitd             =              1  : linear remapping ITD approx
+ tr_fsd           =              F  : floe size distribution is disabled
+ nfsd             =              1  : number of floe size categories
+  
+  Horizontal Dynamics
+ --------------------------------
+ kdyn             =              1  : elastic-viscous-plastic dynamics
+ revised_evp      =              F  : revised EVP formulation not used
+ evp_algorithm    =  standard_2d : standard 2d EVP solver
+ ndtd             =              1  : number of dynamics/advection/ridging/steps per thermo timestep
+ ndte             =            240  : number of EVP or EAP subcycles
+ yield_curve      =        ellipse
+ e_yieldcurve     =           2.00  : aspect ratio of yield curve
+ e_plasticpot     =           2.00  : aspect ratio of plastic potential
+ coriolis         =       latitude  : latitude-dependent Coriolis parameter
+ ssh_stress       =    geostrophic  : from ocean velocity
+ advection        =          remap  : linear remapping advection
+ seabed_stress    =              F  : no seabed stress parameterization
+ Ktens            =           0.00  : tensile strength factor
+  
+  Mechanical Deformation (Ridging) and Ice Strength
+ --------------------------------------------------
+ tr_lvl           =              T  : ridging related tracers
+ kridge           =              1  : ridging enabled
+ krdg_partic      =              1  : new participation function
+ mu_rdg           =           3.00  : e-folding scale of ridged ice
+ krdg_redist      =              1  : new redistribution function
+ kstrength        =              1  : Rothrock (1975)
+ Cf               =          17.00  : ratio of ridging work to PE change
+  
+  Thermodynamics
+ --------------------------------
+ ktherm           =              2  : mushy-layer thermo
+ dt               =        3600.00  : thermodynamic time step
+ ksno             =           0.30  : snow thermal conductivity
+ a_rapid_mode     =           0.00  : brine channel diameter
+ Rac_rapid_mode   =          10.00  : critical Rayleigh number
+ aspect_rapid_mode=           1.00  : brine convection aspect ratio
+ dSdt_slow_mode   =  -0.500000D-07  : drainage strength parameter
+ phi_c_slow_mode  =           0.05  : critical liquid fraction
+ phi_i_mushy      =           0.85  : solid fraction at lower boundary
+ hfrazilmin       =           0.05  : minimum new frazil ice thickness
+  
+  Radiation
+ --------------------------------
+ shortwave        =           dEdd  : delta-Eddington multiple-scattering method
+ R_ice            =           0.00  : tuning parameter for sea ice albedo
+ R_pnd            =           0.00  : tuning parameter for ponded sea ice albedo
+ R_snw            =           1.50  : tuning parameter for snow broadband albedo
+ dT_mlt           =           1.50  : change in temperature per change in snow grain radius
+ rsnw_mlt         =        1500.00  : maximum melting snow grain radius
+ kalg             =           0.60  : absorption coefficient for algae
+ emissivity       =       0.985000  : emissivity of snow and ice
+ sw_redist        =              F  : redistribute internal shortwave to surface
+  
+  Atmospheric Forcing / Coupling
+ --------------------------------
+ calc_Tsfc        =              T  : calculate surface temperature as part of thermo
+ calc_strair      =              T  : calculate wind stress and speed
+ rotate_wind      =              T  : rotate wind/stress to computational grid
+ formdrag         =              F  : use form drag parameterization
+ iceruf           =       0.000500  : ice surface roughness at atmosphere interface (m)
+ highfreq         =              F  : high-frequency atmospheric coupling
+ natmiter         =              5  : number of atmo boundary layer iterations
+ atmiter_conv     =           0.00  : convergence criterion for ustar
+ atmbndy          =     similarity  : stability-based boundary layer
+  
+  Oceanic Forcing / Coupling
+ --------------------------------
+ oceanmixed_ice   =              T  : ocean mixed layer calculation (SST) enabled
+      WARNING: ocean mixed layer ON
+      WARNING: will impact ocean forcing interaction
+      WARNING: coupled forcing will be modified by mixed layer routine
+ tfrz_option      =          mushy  : Assur (1958) as in mushy-layer thermo (ktherm=2)
+ update_ocn_f     =              F  : frazil water/salt fluxes not included in ocean fluxes
+ l_mpond_fresh    =              F  : pond water not retained on ice (virtual only)
+ fbot_xfer_type   =       constant  : ocean heat transfer coefficient is constant
+ ustar_min        =       0.000500  : minimum value of ocean friction velocity
+    calc_dragio   =              F  : dragio hard-coded
+  
+  Age related tracers
+ --------------------------------
+ tr_iage          =              T  : chronological ice age
+ tr_FY            =              T  : first-year ice area
+  
+  Melt ponds
+ --------------------------------
+ tr_pond_lvl      =              T  : level-ice pond formulation
+ pndaspect        =           0.80  : ratio of pond depth to area fraction
+ dpscale          =       0.001000  : time scale for flushing in permeable ice
+ frzpnd           =           hlid  : Stefan refreezing with pond ice thickness
+ hs1              =           0.03  : snow depth of transition to pond ice
+ hs0              =           0.00  : snow depth of transition to bare sea ice
+ rfracmin         =           0.15  : minimum fraction of melt water added to ponds
+ rfracmax         =           1.00  : maximum fraction of melt water added to ponds
+  
+  Snow redistribution/metamorphism tracers
+ -----------------------------------------
+  
+  Primary state variables, tracers
+    (excluding biogeochemistry)
+ ---------------------------------
+ Conserved properties (all tracers are conserved):
+ ice concentration, volume and enthalpy
+ snow volume and enthalpy
+        ice salinity
+ tr_lvl           =              T  : ridging related tracers
+ tr_pond_lvl      =              T  : level-ice pond formulation
+ tr_iage          =              T  : chronological ice age
+ tr_FY            =              T  : first-year ice area
+ Non-conserved properties:
+ ice surface temperature
+ ice velocity components and internal stress
+  
+  Other ice_in namelist parameters:
+ ===================================== 
+ runtype          =  initial
+ year_init        =    2005
+ month_init       =       1
+ day_init         =       1
+ sec_init         =       0
+ istep0           =       0
+ npt_unit         =  1
+ npt              =      24
+ diagfreq         =       1
+ print_global     =       T
+ print_points     =       T
+ debug_model      =       F
+ debug_model_step =             0
+ debug_model_i    =      -1
+ debug_model_i    =      -1
+ debug_model_iblk =      -1
+ debug_model_task =      -1
+ timer_stats      =       F
+ bfbflag          =  off
+ numin            =      21
+ numax            =      89
+ histfreq         =       m     x     x     x     x
+ histfreq_n       =       1     1     1     1     1
+ histfreq_base    =  zero
+ hist_avg         =       T
+ history_dir      =  ./history/
+ history_file     =  iceh
+ history_precision=       4
+ history_format   =  default
+ Initial condition will be written in  ./history/
+ dumpfreq         =  d
+ dumpfreq_n       =       1
+ dumpfreq_base    =  init
+ dump_last        =       F
+ restart          =       F
+ restart_dir      =  ./restart/
+ restart_ext      =       F
+ restart_coszen   =       F
+ restart_format   =  default
+ lcdf64           =       F
+ restart_file     =  iced
+ pointer_file     =  ./ice.restart_file
+ use_restart_time =       F
+ ice_ic           =  default
+ grid_file        =  /Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.bin
+ gridcpl_file     =  unknown_gridcpl_file
+ bathymetry_file  =  unknown_bathymetry_file
+ kmt_file         =  /Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1/kmt_tx1.bin
+ orca_halogrid    =       F
+ conserv_check    =       F
+ fyear_init       =    2005
+ ycycle           =       1
+ atm_data_type    =  JRA55_tx1
+ atm_data_dir     =  /Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1/JRA55
+ precip_units     =  mm_per_month
+ BGC coupling is switched OFF
+ bgc_data_type    =  default
+ fe_data_type     =  default
+ ice_data_type    =  default
+ bgc_data_dir     =  unknown_bgc_data_dir
+ ocn_data_type    =  default
+ restore_ice      =       F
+  
+ Diagnostic point 1: lat, lon =   90.00    0.00
+ Diagnostic point 2: lat, lon =  -65.00  -45.00
+  
+ restart_age      =       F
+ restart_FY       =       F
+ restart_lvl      =       F
+ restart_pond_cesm=       F
+ restart_pond_lvl =       F
+ restart_pond_topo=       F
+ restart_snow     =       F
+ restart_iso      =       F
+ restart_aero     =       F
+ restart_fsd      =       F
+ n_iso            =       0
+ n_aero           =       1
+ n_zaero          =       0
+ n_algae          =       0
+ n_doc            =       0
+ n_dic            =       0
+ n_don            =       0
+ n_fed            =       0
+ n_fep            =       0
+  
+ (input_zbgc) Reading zbgc_nml
+ (input_zbgc) WARNING: restart = false, setting bgc restart flags to false
+  tr_brine                  =        F
+  solve_zsal                =        F
+  skl_bgc                   =        F
+  restart_bgc               =        F
+  tr_bgc_N                  =        F
+  tr_bgc_C                  =        F
+  tr_bgc_chl                =        F
+  tr_bgc_Nit                =        F
+  tr_bgc_Am                 =        F
+  tr_bgc_Sil                =        F
+  tr_bgc_hum                =        F
+  tr_bgc_DMS                =        F
+  tr_bgc_PON                =        F
+  tr_bgc_DON                =        F
+  tr_bgc_Fe                 =        F
+  n_aero                    =        1
+  n_zaero                   =        0
+  n_algae                   =        0
+  n_doc                     =        0
+  n_dic                     =        0
+  n_don                     =        0
+  n_fed                     =        0
+  n_fep                     =        0
+  
+  ntrcr                     =       24
+  nbtrcr                    =        0
+  nbtrcr_sw                 =        0
+  
+  nt_sice                   =       10
+  nt_qice                   =        2
+  nt_qsno                   =        9
+  
+ (icepack_write_tracer_flags):
+   tr_iage =  T
+   tr_FY   =  T
+   tr_lvl  =  T
+   tr_pond =  T
+   tr_pond_cesm =  F
+   tr_pond_lvl  =  T
+   tr_pond_topo =  F
+   tr_snow    =  F
+   tr_fsd     =  F
+   tr_iso     =  F
+   tr_aero    =  F
+   tr_brine   =  F
+   tr_zaero   =  F
+   tr_bgc_Nit =  F
+   tr_bgc_N   =  F
+   tr_bgc_DON =  F
+   tr_bgc_C   =  F
+   tr_bgc_chl =  F
+   tr_bgc_Am  =  F
+   tr_bgc_Sil =  F
+   tr_bgc_DMS =  F
+   tr_bgc_Fe  =  F
+   tr_bgc_hum =  F
+   tr_bgc_PON =  F
+ (icepack_write_tracer_sizes):
+   fixed parameters: 
+   max_algae_out =           3
+   max_dic_out   =           1
+   max_doc_out   =           3
+   max_don_out   =           1
+   max_fe_out    =           2
+   nmodal1_out   =          10
+   nmodal2_out   =           8
+   max_iso_out   =           3
+   max_aero_out  =           6
+   max_nbtrcr_out=          29
+   model defined parameters: 
+   ncat      =            5
+   nilyr     =            7
+   nslyr     =            1
+   nblyr     =            1
+   nfsd      =            1
+   n_algae   =            0
+   n_DOC     =            0
+   n_DON     =            0
+   n_DIC     =            0
+   n_fed     =            0
+   n_fep     =            0
+   n_zaero   =            0
+   n_aero    =            1
+   n_iso     =            0
+   ntrcr     =           24
+   ntrcr_o   =           23
+   nbtrcr    =            0
+   nbtrcr_sw =            0
+ (icepack_write_tracer_indices):
+   nt_Tsfc =            1
+   nt_qice =            2
+   nt_qsno =            9
+   nt_sice =           10
+   nt_fbri =           24
+   nt_iage =           17
+   nt_FY   =           18
+   nt_alvl =           19
+   nt_vlvl =           20
+   nt_apnd =           21
+   nt_hpnd =           22
+   nt_ipnd =           23
+   nt_fsd  =           24
+   nt_smice      =           24
+   nt_smliq      =           24
+   nt_rhos       =           24
+   nt_rsnw       =           24
+   nt_isosno     =           24
+   nt_isoice     =           24
+   nt_aero       =           24
+   nt_bgc_Nit    =            0
+   nt_bgc_Am     =            0
+   nt_bgc_Sil    =            0
+   nt_bgc_DMSPp  =            0
+   nt_bgc_DMSPd  =            0
+   nt_bgc_DMS    =            0
+   nt_bgc_hum    =            0
+   nt_bgc_PON    =            0
+   nlt_bgc_Nit   =            0
+   nlt_bgc_Am    =            0
+   nlt_bgc_Sil   =            0
+   nlt_bgc_DMSPp =            0
+   nlt_bgc_DMSPd =            0
+   nlt_bgc_DMS   =            0
+   nlt_bgc_hum   =            0
+   nlt_bgc_PON   =            0
+   nlt_chl_sw    =            0
+   nt_zbgc_frac  =            0
+   nt_bgc_S      =           24
+   max_nbtrcr =           29
+   bio_index_o(k) =            1           0
+   bio_index(k)   =            1           0
+   bio_index_o(k) =            2           0
+   bio_index(k)   =            2           0
+   bio_index_o(k) =            3           0
+   bio_index(k)   =            3           0
+   bio_index_o(k) =            4           0
+   bio_index(k)   =            4           0
+   bio_index_o(k) =            5           0
+   bio_index(k)   =            5           0
+   bio_index_o(k) =            6           0
+   bio_index(k)   =            6           0
+   bio_index_o(k) =            7           0
+   bio_index(k)   =            7           0
+   bio_index_o(k) =            8           0
+   bio_index(k)   =            8           0
+   bio_index_o(k) =            9           0
+   bio_index(k)   =            9           0
+   bio_index_o(k) =           10           0
+   bio_index(k)   =           10           0
+   bio_index_o(k) =           11           0
+   bio_index(k)   =           11           0
+   bio_index_o(k) =           12           0
+   bio_index(k)   =           12           0
+   bio_index_o(k) =           13           0
+   bio_index(k)   =           13           0
+   bio_index_o(k) =           14           0
+   bio_index(k)   =           14           0
+   bio_index_o(k) =           15           0
+   bio_index(k)   =           15           0
+   bio_index_o(k) =           16           0
+   bio_index(k)   =           16           0
+   bio_index_o(k) =           17           0
+   bio_index(k)   =           17           0
+   bio_index_o(k) =           18           0
+   bio_index(k)   =           18           0
+   bio_index_o(k) =           19           0
+   bio_index(k)   =           19           0
+   bio_index_o(k) =           20           0
+   bio_index(k)   =           20           0
+   bio_index_o(k) =           21           0
+   bio_index(k)   =           21           0
+   bio_index_o(k) =           22           0
+   bio_index(k)   =           22           0
+   bio_index_o(k) =           23           0
+   bio_index(k)   =           23           0
+   bio_index_o(k) =           24           0
+   bio_index(k)   =           24           0
+   bio_index_o(k) =           25           0
+   bio_index(k)   =           25           0
+   bio_index_o(k) =           26           0
+   bio_index(k)   =           26           0
+   bio_index_o(k) =           27           0
+   bio_index(k)   =           27           0
+   bio_index_o(k) =           28           0
+   bio_index(k)   =           28           0
+   bio_index_o(k) =           29           0
+   bio_index(k)   =           29           0
+   max_algae =            3
+   nt_bgc_N(k)  =            1           0
+   nlt_bgc_N(k) =            1           0
+   nt_bgc_C(k)  =            1           0
+   nlt_bgc_C(k) =            1           0
+   nt_bgc_chl(k)  =            1           0
+   nlt_bgc_chl(k) =            1           0
+   nt_bgc_N(k)  =            2           0
+   nlt_bgc_N(k) =            2           0
+   nt_bgc_C(k)  =            2           0
+   nlt_bgc_C(k) =            2           0
+   nt_bgc_chl(k)  =            2           0
+   nlt_bgc_chl(k) =            2           0
+   nt_bgc_N(k)  =            3           0
+   nlt_bgc_N(k) =            3           0
+   nt_bgc_C(k)  =            3           0
+   nlt_bgc_C(k) =            3           0
+   nt_bgc_chl(k)  =            3           0
+   nlt_bgc_chl(k) =            3           0
+   max_DOC =            3
+   nt_bgc_DOC(k)  =            1           0
+   nlt_bgc_DOC(k) =            1           0
+   nt_bgc_DOC(k)  =            2           0
+   nlt_bgc_DOC(k) =            2           0
+   nt_bgc_DOC(k)  =            3           0
+   nlt_bgc_DOC(k) =            3           0
+   max_DON =            1
+   nt_bgc_DON(k)  =            1           0
+   nlt_bgc_DON(k) =            1           0
+   max_DIC =            1
+   nt_bgc_DIC(k)  =            1           0
+   nlt_bgc_DIC(k) =            1           0
+   max_fe =            2
+   nt_bgc_Fed(k)  =            1           0
+   nlt_bgc_Fed(k) =            1           0
+   nt_bgc_Fep(k)  =            1           0
+   nlt_bgc_Fep(k) =            1           0
+   nt_bgc_Fed(k)  =            2           0
+   nlt_bgc_Fed(k) =            2           0
+   nt_bgc_Fep(k)  =            2           0
+   nlt_bgc_Fep(k) =            2           0
+   max_aero =            6
+   nt_zaero(k)     =            1           0
+   nlt_zaero(k)    =            1           0
+   nlt_zaero_sw(k) =            1           0
+   nt_zaero(k)     =            2           0
+   nlt_zaero(k)    =            2           0
+   nlt_zaero_sw(k) =            2           0
+   nt_zaero(k)     =            3           0
+   nlt_zaero(k)    =            3           0
+   nlt_zaero_sw(k) =            3           0
+   nt_zaero(k)     =            4           0
+   nlt_zaero(k)    =            4           0
+   nlt_zaero_sw(k) =            4           0
+   nt_zaero(k)     =            5           0
+   nlt_zaero(k)    =            5           0
+   nlt_zaero_sw(k) =            5           0
+   nt_zaero(k)     =            6           0
+   nlt_zaero(k)    =            6           0
+   nlt_zaero_sw(k) =            6           0
+ (init_domain_blocks) Reading domain_nml
+
+Domain Information
+
+  Horizontal domain: nx =    360
+                     ny =    240
+  No. of categories: nc =      5
+  No. of ice layers: ni =      7
+  No. of snow layers:ns =      1
+  Processors:  total    =      8
+  Processor shape       = slenderX2
+  Distribution type     = cartesian
+  Distribution weight   = latitude
+  Distribution wght file= unknown
+  ew_boundary_type      = cyclic
+  ns_boundary_type      = tripole
+  maskhalo_dyn          =      F
+  maskhalo_remap        =      F
+  maskhalo_bound        =      F
+  add_mpi_barriers      =      F
+  debug_blocks          =      F
+  block_size_x,_y       =     90    60
+  max_blocks            =      2
+  Number of ghost cells =      1
+
+ (ice_read_global) read_global           11           1  -1.3638850788513424        1.5707961618406623        1790.1451976671240     
+ (ice_read_global) read_global           12           1   0.0000000000000000        40.000000000000000        1641455.0000000000     
+ ice_domain work_unit, max_work_unit =        31354          10
+ ice_domain nocn =        29278      313536     2322886
+ ice_domain work_per_block =            2          11          96
+(proc_decomposition)  Processors (X x Y) =    4 x    2
+ ice: total number of blocks is          16
+  Block size:  nx_block =     92
+               ny_block =     62
+ (ice_read_xyt) read_global           12           1   0.0000000000000000        40.000000000000000        1641455.0000000000     
+ (ice_read_global) read_global           11           1  -1.3638850788513424        1.5707961618406623        1790.1451976671240     
+ (ice_read_global) read_global           11           2  -3.1415600160454229        3.1415926535897931       -3319.9653031436728     
+ (ice_read_global) read_global           11           7  -1.5707963267948966        1.5707963267948966       -4.4408920985006262E-014
+ (ice_read_global) read_global           11           3   63430.922904398933        11117747.335204601        611479763491.34363     
+ (ice_read_global) read_global           11           4   42288.315154167693        11197804.327927062        627209405382.93005     
+ 
+ (init_grid2) OpenMP runtime thread schedule:
+ (init_grid2)  omp schedule =            1           1
+ (init_grid2) block, thread =            1           0
+ (init_grid2) block, thread =            2           0
+  
+ min/max ULON:  -179.99813000645392        180.00000000000000     
+ min/max ULAT:  -77.722240497308718        89.999990548818559     
+ min/max TLON:  -179.98153267479159        179.97813690682287     
+ min/max TLAT:  -77.933995617237443        89.680441944716634     
+  
+istep1:         0    idate:  20050101    sec:         0
+ (init_hist) Reading icefields_nml
+ (init_hist_mechred_2D) Reading icefields_mechred_nml
+ (init_hist_pond_2D) Reading icefields_pond_nml
+ (init_hist_bgc_2D) Reading icefields_bgc_nml
+ (init_hist_drag_2D) Reading icefields_drag_nml
+  
+ total number of history fields =           74
+ max number of history fields   =          800
+ The following variables will be written to the history tape: 
+          description                     units             variable  frequency   x
+ grid cell mean ice thickness              m                 hi           m       1
+ grid cell mean snow thickness             m                 hs           m       1
+ snow/ice surface temperature              C                 Tsfc         m       1
+ ice area  (aggregate)                     1                 aice         m       1
+ ice velocity (x)                          m/s               uvel         m       1
+ ice velocity (y)                          m/s               vvel         m       1
+ atm velocity (x)                          m/s               uatm         m       1
+ atm velocity (y)                          m/s               vatm         m       1
+ atmosphere wind speed                     m/s               atmspd       m       1
+ atmosphere wind direction                 deg               atmdir       m       1
+ bulk ice salinity                         ppt               sice         m       1
+ down solar flux                           W/m^2             fswdn        m       1
+ down longwave flux                        W/m^2             flwdn        m       1
+ snowfall rate                             cm/day            snow_ai      m       1
+ rainfall rate                             cm/day            rain_ai      m       1
+ sea surface temperature                   C                 sst          m       1
+ sea surface salinity                      ppt               sss          m       1
+ ocean current (x)                         m/s               uocn         m       1
+ ocean current (y)                         m/s               vocn         m       1
+ ocean current speed                       m/s               ocnspd       m       1
+ ocean current direction                   deg               ocndir       m       1
+ freeze/melt potential                     W/m^2             frzmlt       m       1
+ shortwave scaling factor                  1                 scale_factor m       1
+ shortwave absorbed in ice interior        W/m^2             fswint_ai    m       1
+ snow/ice/ocn absorbed solar flux          W/m^2             fswabs_ai    m       1
+ snow/ice broad band albedo                %                 albsni       m       1
+ latent heat flux                          W/m^2             flat_ai      m       1
+ sensible heat flux                        W/m^2             fsens_ai     m       1
+ upward longwave flux                      W/m^2             flwup_ai     m       1
+ evaporative water flux                    cm/day            evap_ai      m       1
+ air temperature                           C                 Tair         m       1
+ congelation ice growth                    cm/day            congel       m       1
+ frazil ice growth                         cm/day            frazil       m       1
+ snow-ice formation                        cm/day            snoice       m       1
+ top ice melt                              cm/day            meltt        m       1
+ top snow melt                             cm/day            melts        m       1
+ basal ice melt                            cm/day            meltb        m       1
+ lateral ice melt                          cm/day            meltl        m       1
+ freshwtr flx ice to ocn                   cm/day            fresh_ai     m       1
+ salt flux ice to ocean                    kg/m^2/s          fsalt_ai     m       1
+ heat flux ice to ocean (fbot)             W/m^2             fbot         m       1
+ heat flux ice to ocean (fhocn_ai)         W/m^2             fhocn_ai     m       1
+ SW flux thru ice to ocean                 W/m^2             fswthru_ai   m       1
+ atm/ice stress (x)                        N/m^2             strairx      m       1
+ atm/ice stress (y)                        N/m^2             strairy      m       1
+ compressive ice strength                  N/m               strength     m       1
+ strain rate (divergence)                  %/day             divu         m       1
+ strain rate (shear)                       %/day             shear        m       1
+ norm. principal stress 1                  1                 sig1         m       1
+ norm. principal stress 2                  1                 sig2         m       1
+ ice pressure                              1                 sigP         m       1
+ volume tendency thermo                    cm/day            dvidtt       m       1
+ volume tendency dynamics                  cm/day            dvidtd       m       1
+ area tendency thermo                      %/day             daidtt       m       1
+ area tendency dynamics                    %/day             daidtd       m       1
+ age tendency thermo                       day/day           dagedtt      m       1
+ age tendency dynamics                     day/day           dagedtd      m       1
+ melt onset date                           day of year       mlt_onset    m       1
+ freeze onset date                         day of year       frz_onset    m       1
+ internal stress tensor trace              N/m               trsig        m       1
+ fraction of time-avg interval that ice i  1                 ice_present  m       1
+ sea ice age                               years             iage         m       1
+ level ice area fraction                   1                 alvl         m       1
+ level ice volume                          m                 vlvl         m       1
+ ridged ice area fraction                  1                 ardg         m       1
+ ridged ice volume                         m                 vrdg         m       1
+ melt pond fraction of sea ice             1                 apond        m       1
+ melt pond fraction of grid cell           1                 apond_ai     m       1
+ mean melt pond depth over sea ice         m                 hpond        m       1
+ mean melt pond depth over grid cell       m                 hpond_ai     m       1
+ mean pond ice thickness over sea ice      m                 ipond        m       1
+ mean pond ice thickness over grid cell    m                 ipond_ai     m       1
+ radiation-effective pond area fraction o  1                 apeff        m       1
+ radiation-effective pond area fraction o  1                 apeff_ai     m       1
+  
+ arlx, arlxi, brlx, denom1   172.79999999999998        5.7870370370370376E-003   240.00000000000000       0.99424626006904493     
+ dt  =    3600.0000000000000     
+ dte =    15.000000000000000     
+ tdamp =   1296.0000000000000     
+ 
+  (icepack_init_itd_hist)
+  hin_max(n-1) < Cat n < hin_max(n)
+    0.0000000000000000       < Cat            1  <   0.64450721681942580
+   0.64450721681942580       < Cat            2  <    1.3914334975763036
+    1.3914334975763036       < Cat            3  <    2.4701793819598885
+    2.4701793819598885       < Cat            4  <    4.5672879188504911
+    4.5672879188504911       < Cat            5  <    9.3338418158681744
+ 
+ tracer          index  depend  type has_dependents
+ hi                 1       0     1       T
+ hs                 2       0     1       T
+ nt_Tsfc            3       0     1       F
+ nt_qice            4       1     2       F
+ nt_qsno           11       2     2       F
+ nt_sice           12       1     2       F
+ nt_iage           19       1     2       F
+ nt_FY             20       0     1       F
+ nt_alvl           21       0     1       T
+ nt_vlvl           22       1     2       F
+ nt_apnd           23      21     2       T
+ nt_hpnd           24      23     3       F
+ nt_ipnd           25      23     3       F
+ nt_fbri           26       0     1       F
+ nt_smice          26       0     1       F
+ nt_smliq          26       0     1       F
+ nt_rhos           26       0     1       F
+ nt_rsnw           26       0     1       F
+ nt_fsd            26       0     1       F
+ nt_isosno         26       0     1       F
+ nt_isoice         26       0     1       F
+ nt_bgc_S          26       0     1       F
+  
+  
+  Find indices of diagnostic points 
+  
+ found point   1
+   lat    lon   TLAT   TLON     i     j   block  task
+  90.0    0.0   89.7   20.9     2    61     2     5
+  
+ found point   2
+   lat    lon   TLAT   TLON     i     j   block  task
+ -65.0  -45.0  -64.8  -45.5    66    34     1     0
+  
+ (calc_timesteps) modified npt from        24 1 with dt=       3600.00
+ (calc_timesteps)                to        24 1 with dt=       3600.00
+ (calc_timesteps) start time is  2005-01-01:00000
+ (calc_timesteps)   end time is  2005-01-02:00000
+  
+  
+istep1:         1    idate:  20050101    sec:      3600
+  Initial forcing data year =         2005
+  Final   forcing data year =         2005
+  
+ Atmospheric data files:
+ /Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1/JRA55/8XDAILY/JRA55_03hr_forcing_tx1_2005.nc
+  Set current forcing data year =         2005
+ (JRA55_data) reading forcing file 1st ts = /Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1/JRA55/8XDAILY/JRA55_03hr_forcing_tx1_2005.nc
+  
+ Finished writing ./history/iceh_ic.2005-01-01-03600.nc
+--------------------------------------------------------------------------
+Primary job  terminated normally, but 1 process returned
+a non-zero exit code. Per user-direction, the job has been aborted.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun noticed that process rank 6 with PID 0 on node 10-200-203-86-eduroam exited on signal 11 (Segmentation fault: 11).
+--------------------------------------------------------------------------
