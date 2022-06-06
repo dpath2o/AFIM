@@ -26,7 +26,7 @@
     dumpfreq_base  = 'init'
     dump_last      = .false.
     bfbflag        = 'off'
-    diagfreq       = 1
+    diagfreq       = 24
     diag_type      = 'stdout'
     diag_file      = 'ice_diag.d'
     debug_model    = .false.
@@ -267,12 +267,12 @@
 /
 
 &domain_nml
-    nprocs = 8
+    nprocs = 4
     nx_global         = 360
     ny_global         = 240
     block_size_x      = 90
     block_size_y      = 60
-    max_blocks        = 2
+    max_blocks        = 4
     processor_shape   = 'slenderX2'
     distribution_type = 'cartesian'
     distribution_wght = 'latitude'
