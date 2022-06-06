@@ -15,6 +15,8 @@
 #+LaTeX_HEADER: \let\description\compactdesc
 #+LaTeX_HEADER: \let\enumerate\compactenum
 
+* Python Notebook
+[[../src/py/cice_analysis.ipynb][AFIM CICE Analysis]]
 * Source Code Repository
 [[https://github.com/CICE-Consortium]]
 ** Resource Index
@@ -261,8 +263,7 @@ bibliography:/Users/dpath2o/PHD/references/refs_bbt.bib
 
 ** Test Run ``Vanilla''
 A successful test run of a ``vanilla'' setup of CICE. Test directory
-setup is preserved in [[/Users/dpath2o/PHD/MODELS/src/CICE/case1]] and
-output is preserved in [[/Users/dpath2o/cice-dirs/runs/case1]]. What I
+setup is preserved in [[/Users/dpath2o/PHD/MODELS/src/CICE/case1][case1]] and output is preserved in [[/Users/dpath2o/cice-dirs/runs/case1][case1]]. What I
 mean by ``vanilla'' is that I made no changes to any internal files
 and simply ran the following (as per the instructions):
 #+BEGIN_SRC bash
@@ -280,7 +281,7 @@ through to competion the results were garbarge
 *** GX1 success [2022-05-23 Mon 14:00]
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_gx1 -g gx1
-cd sandbox
+cd sandbox_gx1
 ./cice.build
 ./cice.run
 #+END_SRC
@@ -290,7 +291,7 @@ cd sandbox
 *** GX3 success [2022-05-23 Mon 14:30]
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_gx3 -g gx3
-cd sandbox
+cd sandbox_gx3
 ./cice.build
 ./cice.run
 #+END_SRC
@@ -300,7 +301,7 @@ cd sandbox
 *** TX1 (Binary Grid) partial success [2022-06-06 Mon]
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_tx1 -g tx1
-cd sandbox
+cd sandbox_tx1
 ./cice.build
 ./cice.run
 #+END_SRC
@@ -308,4 +309,25 @@ cd sandbox
 #+NAME:   fig:gx1_vanilla
 [[./CICE_runs/sandbox_tx1_bin/cice6-tx1_sice_BINgrid.png]]
 *** TX1 (NetCDF Grid -- ACCESS-OM) partial success [2022-06-06 Mon]
-
+#+BEGIN_SRC sh
+  ./cice.setup -m conda -e macos -c sandbox_tx1_nc -g tx1
+  cd sandbox_tx1_nc
+#+end_src
+After initial setup I edited [[./CICE_runs/sandbox_tx1_nc/ice_in]] file
+changing the following lines
+#+BEGIN_SRC text
+    grid_format  = 'nc'
+    grid_type    = 'tripole'
+    grid_file    = '/Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.nc'
+    kmt_file     = 'unknown_kmt_file'
+#+END_SRC
+The header of the [[./CICE_runs/grids/cice_1deg_grid_from_paul.nc]] file looks like
+#+BEGIN_SRC text
+#+END_SRC
+#+BEGIN_SRC sh
+  ./cice.build
+  ./cice.run
+#+END_SRC
+#+CAPTION: This is the 'sice' field for TX1 vanilla
+#+NAME:   fig:gx1_vanilla
+[[./CICE_runs/sandbox_tx1_nc/cice6-tx1_sice_NCgrid.png]]
