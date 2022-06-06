@@ -1,13 +1,286 @@
 #+title: Australian Fast Ice Model
 #+subtitle: Modelling
 #+subtitle: CICE
-#+date: <2022-04-05 Tue>
+#+date: <2022-05-21 Sat>
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
 #+STARTUP: indent , overview
+#+OPTIONS: tex:t toc:nil author:nil
+#+LaTeX_CLASS: article
+#+LaTeX_CLASS_OPTIONS: [a4paper]
+#+LaTeX_HEADER: \author{DP@H$_2$O}
+#+LaTeX_HEADER: \usepackage[backend=biber,style=authoryear-comp]{biblatex}
+#+LaTeX_HEADER: \affiliation{University of Tasmania}
+#+LaTeX_HEADER: \let\itemize\compactitem
+#+LaTeX_HEADER: \let\description\compactdesc
+#+LaTeX_HEADER: \let\enumerate\compactenum
 
 * Source Code Repository
 [[https://github.com/CICE-Consortium]]
-* Resource Index
-[[ https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index ]]
-* Stand-alone Sandboxing -- My personal setup
+** Resource Index
+[[https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index]]
+** Forcing Data
+[[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data]]
+* MacOS Trials
+** CICE Installation
+[[Source Code Repository]] was cloned onto local machine
+*** Grid, Forcing and Initial Conditions
+Downloaded [[Forcing Data]], unzipped and copied data into directory
+structure that matched [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#directory-structure][CICE github online setup guide]]
+**** Local Directory Structure                                  :noexport:
+#+BEGIN_SRC text
+total 0
+drwxr-xr-x  5 dpath2o  staff   160B 22 May 19:21 CICE_data
+
+/Users/dpath2o/cice-dirs/input/CICE_data:
+total 0
+drwxr-xr-x  7 dpath2o  staff   224B 21 May 04:46 forcing
+drwxr-xr-x  5 dpath2o  staff   160B 22 May 19:22 grid
+drwxr-xr-x  5 dpath2o  staff   160B 20 May 16:18 ic
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing:
+total 840
+drwxr-xr-x@ 6 dpath2o  staff   192B 21 May 04:44 gx1
+drwxr-xr-x  6 dpath2o  staff   192B 20 May 16:14 gx3
+-rw-r--r--@ 1 dpath2o  staff    65K 10 Jun  2021 snicar_drdt_bst_fit_60_c04262019.nc
+-rw-r--r--@ 1 dpath2o  staff   351K  1 Jun  2021 snicar_optics_5bnd_snow_and_aerosols.nc
+drwxr-xr-x@ 3 dpath2o  staff    96B 21 May 04:44 tx1
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1:
+total 0
+drwxr-xr-x@ 3 dpath2o  staff    96B 20 May 16:07 CESM
+drwxr-xr-x@ 4 dpath2o  staff   128B 19 Oct  2017 COREII
+drwxr-xr-x@ 3 dpath2o  staff    96B 19 Sep  2019 JRA55
+drwxr-xr-x@ 3 dpath2o  staff    96B 21 Sep  2018 WOA
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/CESM:
+total 0
+drwxr-xr-x@ 4 dpath2o  staff   128B  2 Apr  2021 MONTHLY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/CESM/MONTHLY:
+total 191056
+-rw-r--r--@ 1 dpath2o  staff    45M 31 Mar  2021 ocean_forcing_clim_2D_gx1.20210330.nc
+-rw-r--r--@ 1 dpath2o  staff    48M 31 Mar  2021 ocean_forcing_clim_2D_gx1.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/COREII:
+total 0
+drwxr-xr-x@ 22 dpath2o  staff   704B 19 Oct  2017 4XDAILY
+drwxr-xr-x@  4 dpath2o  staff   128B 19 Oct  2017 MONTHLY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/COREII/4XDAILY:
+total 56064000
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2005.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2006.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2007.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2008.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2009.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2005.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2006.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2007.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2008.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2009.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2005.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2006.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2007.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2008.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 31 Aug  2017 u_10.2009.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2005.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2006.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2007.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2008.dat
+-rwxr-xr-x@ 1 dpath2o  staff   1.3G 31 Aug  2017 v_10.2009.dat
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/COREII/MONTHLY:
+total 46080
+-rw-r--r--@ 1 dpath2o  staff    11M 12 Jul  2012 cldf.omip.dat
+-rw-r--r--@ 1 dpath2o  staff    11M 12 Jul  2012 prec.nmyr.dat
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/JRA55:
+total 0
+drwxr-xr-x@ 7 dpath2o  staff   224B 19 Sep  2019 8XDAILY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/JRA55/8XDAILY:
+total 98199136
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2005.nc
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2006.nc
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2007.nc
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2008.nc
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2009.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/WOA:
+total 0
+drwxr-xr-x@ 4 dpath2o  staff   128B 21 Sep  2018 MONTHLY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx1/WOA/MONTHLY:
+total 38416
+-rwxr-xr-x@ 1 dpath2o  staff    12M 28 Aug  2018 nitrate_climatologyWOA_gx1v6f_20150107.nc
+-rwxr-xr-x@ 1 dpath2o  staff   6.6M 28 Aug  2018 silicate_climatologyWOA_gx1v6f_20150107.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3:
+total 0
+drwxr-xr-x  3 dpath2o  staff    96B 22 Feb  2020 JRA55
+drwxr-xr-x  4 dpath2o  staff   128B 19 Oct  2017 NCAR_bulk
+drwxr-xr-x@ 3 dpath2o  staff    96B  6 Mar  2020 WW3
+lrwxrwxrwx@ 1 dpath2o  staff    34B  6 Mar  2020 ww3.20100101_efreq_remapgx3.nc -> WW3/ww3.20100101_efreq_remapgx3.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/JRA55:
+total 0
+drwxr-xr-x  7 dpath2o  staff   224B 22 Feb  2020 8XDAILY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/JRA55/8XDAILY:
+total 9268000
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2005.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2006.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2007.nc
+-rw-r-xr--  1 dpath2o  staff   907M 22 Feb  2020 JRA55_gx3_03hr_forcing_2008.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2009.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk:
+total 0
+drwxr-xr-x  7 dpath2o  staff   224B 19 Oct  2017 4XDAILY
+drwxr-xr-x  5 dpath2o  staff   160B 19 Oct  2017 MONTHLY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/4XDAILY:
+total 1323160
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 dn10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 q_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 t_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 u_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 v_10.1997.dat
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/MONTHLY:
+total 6528
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 cldf.1997.dat
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 prec.1997.dat
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 swdn.1997.dat
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/gx3/WW3:
+total 9320
+-rw-r--r--@ 1 dpath2o  staff   4.5M 10 Dec  2019 ww3.20100101_efreq_remapgx3.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1:
+total 0
+drwxr-xr-x@ 3 dpath2o  staff    96B 21 May 04:44 JRA55
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1/JRA55:
+total 0
+drwxr-xr-x@ 7 dpath2o  staff   224B 15 Apr  2020 8XDAILY
+
+/Users/dpath2o/cice-dirs/input/CICE_data/forcing/tx1/JRA55/8XDAILY:
+total 69086880
+-rw-r--r--@ 1 dpath2o  staff   6.6G 15 Apr  2020 JRA55_03hr_forcing_tx1_2005.nc
+-rw-r--r--@ 1 dpath2o  staff   6.6G 15 Apr  2020 JRA55_03hr_forcing_tx1_2006.nc
+-rw-r--r--@ 1 dpath2o  staff   6.6G 15 Apr  2020 JRA55_03hr_forcing_tx1_2007.nc
+-rw-r--r--@ 1 dpath2o  staff   6.6G 15 Apr  2020 JRA55_03hr_forcing_tx1_2008.nc
+-rw-r--r--@ 1 dpath2o  staff   6.6G 15 Apr  2020 JRA55_03hr_forcing_tx1_2009.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/grid:
+total 0
+drwxrwxr-x  6 dpath2o  staff   192B 20 May 16:11 gx1
+drwxr-xr-x  7 dpath2o  staff   224B 22 May 19:19 gx3
+drwxrwxr-x@ 5 dpath2o  staff   160B 12 Feb  2021 tx1
+
+/Users/dpath2o/cice-dirs/input/CICE_data/grid/gx1:
+total 22104
+-rw-rw-r--@ 1 dpath2o  staff   2.3M 22 May  2021 cice62_gx1_wghtmask.nc
+-rwxrwxr-x@ 1 dpath2o  staff   1.4M 27 Apr  2020 global_gx1.bathy.nc
+-rwxrwxr-x@ 1 dpath2o  staff   6.6M 19 Oct  2017 grid_gx1.bin
+-rwxrwxr-x@ 1 dpath2o  staff   480K 19 Oct  2017 kmt_gx1.bin
+
+/Users/dpath2o/cice-dirs/input/CICE_data/grid/gx3:
+total 3024
+-rwxr-xr-x  1 dpath2o  staff   138K 22 May 19:19 global_gx3.bathy.nc
+-rwxr-xr-x  1 dpath2o  staff   634K 22 May 19:19 grid_gx3.bin
+-rw-r-xr--  1 dpath2o  staff   637K 22 May 19:19 grid_gx3.nc
+-rwxr-xr-x  1 dpath2o  staff    45K 22 May 19:19 kmt_gx3.bin
+-rw-r-xr--  1 dpath2o  staff    46K 22 May 19:19 kmt_gx3.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1:
+total 14192
+-r--rwxr--@ 1 dpath2o  staff   4.6M  6 Oct  2018 grid_tx1.bin
+-r--rwxr--@ 1 dpath2o  staff   338K  6 Oct  2018 kmt_tx1.bin
+-rw-r--r--@ 1 dpath2o  staff   2.0M 12 Feb  2021 tx1_bathy.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/ic:
+total 0
+drwxrwxr-x  15 dpath2o  staff   480B 20 May 16:11 gx1
+drwxrwxr-x  15 dpath2o  staff   480B  3 Apr  2021 gx3
+drwxr-xr-x@  3 dpath2o  staff    96B 13 May  2020 tx1
+
+/Users/dpath2o/cice-dirs/input/CICE_data/ic/gx1:
+total 4393064
+-rw-rwxr--@ 1 dpath2o  staff   165M 14 Oct  2017 iced_gx1_v5.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-01-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-02-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-03-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-04-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-05-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-06-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-07-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-08-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-09-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-10-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-11-01.nc
+-r--r--r--@ 1 dpath2o  staff   165M  3 Apr  2021 iced_gx1_v6.2005-12-01.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/ic/gx3:
+total 413040
+-rw-rwxr--  1 dpath2o  staff    15M 13 Oct  2017 iced_gx3_v5.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-01-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-02-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-03-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-04-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-05-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-06-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-07-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-08-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-09-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-10-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-11-01.nc
+-rw-r--r--  1 dpath2o  staff    16M  8 Apr  2021 iced_gx3_v6.2005-12-01.nc
+
+/Users/dpath2o/cice-dirs/input/CICE_data/ic/tx1:
+total 243008
+-rw-r--r--@ 1 dpath2o  staff   119M 13 May  2020 iced_tx1_v5.nc
+#+END_SRC
+** Notes and Comments
+*** Wave Forcing (WW3)
+The [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files][CICE GitHub online setup guide]] explains that this forcing data is
+from just one day with the only variable present from [[https://github.com/NOAA-EMC/WW3][WaveWatch III]]
+being ~efreq~ with units \(m^2/s\), which is necessary for floe size
+distribution (FSD). As the [[https://cice-consortium-cice.readthedocs.io/en/main/#][CICE Documentation]] clearly states the basic
+problem in sea ice modelling, the one CICE aims to model, is ice
+thickness distribution (ITD). However, CICE can optionally attempt to
+model FSD. It does this via a probability distribution function that
+charcacterises the variability of the horizontal floe size through
+vertical and lateral growth, new freezing, breaking waves and welding
+of floes. This work is based on citep:horvatPrognosticModelSeaice2015
+
+bibliographystyle:authoryear-comp
+bibliography:/Users/dpath2o/PHD/references/refs_bbt.bib
+
+** Test Run ``Vanilla''
+A successful test run of a ``vanilla'' setup of CICE. Test directory
+setup is preserved in [[/Users/dpath2o/PHD/MODELS/src/CICE/case1]] and
+output is preserved in [[/Users/dpath2o/cice-dirs/runs/case1]]. What I
+mean by ``vanilla'' is that I made no changes to any internal files
+and simply ran the following (as per the instructions):
+#+BEGIN_SRC bash
+cd ~/PHD/MODELS/src/CICE/
+./cice.setup --case case1 --mach conda --env macos
+cd case1
+./cice.build
+./cice.run
+#+END_SRC
+
+** Sandbox
+*** GX1 fail [2022-05-23 Mon 06:00]
+Edited ~ice_in~ file replacing ~gx3~ enteries with ~gx1~ . While this ran
+through to competion the results were garbarge
+*** GX1 success [2022-05-23 Mon 14:00]
+#+BEGIN_SRC sh
+./cice.setup -m conda -e macos -c sandbox -g gx1 -s diag1,thread -p 8x1
+cd sandbox
+./cice.build
+./cice.run
+#+END_SRC
