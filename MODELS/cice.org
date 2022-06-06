@@ -299,6 +299,7 @@ cd sandbox_gx3
 #+NAME:   fig:gx1_vanilla
 [[./CICE_runs/sandbox_gx3_bin/cice6-gx3_sice.png]]
 *** TX1 (Binary Grid) partial success [2022-06-06 Mon]
+This run through to completion with the following commands.
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_tx1 -g tx1
 cd sandbox_tx1
@@ -306,9 +307,10 @@ cd sandbox_tx1
 ./cice.run
 #+END_SRC
 #+CAPTION: This is the 'sice' field for TX1 vanilla
-#+NAME:   fig:gx1_vanilla
+#+NAME:   fig:tx1_vanilla
 [[./CICE_runs/sandbox_tx1_bin/cice6-tx1_sice_BINgrid.png]]
 *** TX1 (NetCDF Grid -- ACCESS-OM) partial success [2022-06-06 Mon]
+The grid file can be viewed on the jupyter notebook [[../src/py/cice_analysis.ipynb][here]]
 #+BEGIN_SRC sh
   ./cice.setup -m conda -e macos -c sandbox_tx1_nc -g tx1
   cd sandbox_tx1_nc
@@ -321,13 +323,14 @@ changing the following lines
     grid_file    = '/Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.nc'
     kmt_file     = 'unknown_kmt_file'
 #+END_SRC
-The header of the [[./CICE_runs/grids/cice_1deg_grid_from_paul.nc]] file looks like
-#+BEGIN_SRC text
-#+END_SRC
+This runs through to completion with the following commands but the
+results (see [[fig:tx1_access-om2]], below)
 #+BEGIN_SRC sh
   ./cice.build
   ./cice.run
 #+END_SRC
-#+CAPTION: This is the 'sice' field for TX1 vanilla
-#+NAME:   fig:gx1_vanilla
+#+CAPTION: This is the 'sice' field for ACCESS-OM2 grid
+#+NAME:   fig:tx1_access-om2
 [[./CICE_runs/sandbox_tx1_nc/cice6-tx1_sice_NCgrid.png]]
+*** Using MOM6 grid
+Going off the example from the [[https://gallery.pangeo.io/repos/xgcm/xgcm-examples/03_MOM6.html][pangeo webpage]], I create my grid file [[../src/py/cice_analysis.ipynb][cice analysis notebook]]
