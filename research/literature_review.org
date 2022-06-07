@@ -5,6 +5,7 @@
 #+email: daniel.atwater@utas.edu.au
 #+LaTeX_class: article
 #+LaTeX_CLASS_OPTIONS: [11pt,a4paper]
+#+LaTeX_HEADER: \usepackage{setspace} \doublespacing
 #+LaTeX_HEADER: \usepackage[type={CC},modifier={by-nc-sa},version={3.0}]{doclicense}
 #+LaTeX_HEADER: \usepackage[top=1cm,bottom=1cm,left=1cm,right=1cm]{geometry}
 #+LaTeX_HEADER: \usepackage{pdflscape}
@@ -63,7 +64,6 @@
 #+LaTeX_HEADER: \usepackage{booktabs}
 #+LaTeX_HEADER: \usepackage{hyperref}
 #+LaTeX_HEADER: \hypersetup{colorlinks=true,linktoc=all,linkcolor=blue,filecolor=magenta,urlcolor=cyan,citecolor=magenta}
-#+LaTeX_HEADER: \usepackage{setspace}
 #+LaTeX_HEADER: \usepackage{titling}
 #+LaTeX_HEADER: \title{\textsc{Research Plan}}
 #+LaTeX_HEADER: \author{\href{mailto:daniel.atwater@utas.edu.au}{Daniel Patrick Atwater}}
