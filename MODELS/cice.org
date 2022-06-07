@@ -45,7 +45,7 @@ which converts the input data fields to model forcing fields.
 
 *** List of Atmosphere Fields required for forcing
 
-- zlvl  :: atmosphere level height (m)
+- zlvl  :: atmosphere level height ($m$)
 - uatm  :: model grid i-direction wind velocity component (m/s)
 - vatm  :: model grid j-direction wind velocity component (m/s)
 - strax :: model grid i-direction wind stress (N/m^2)
@@ -65,19 +65,19 @@ which converts the input data fields to model forcing fields.
   
 *** List of Ocean Fields required for forcing
 
-- uocn = ocean current, x-direction (m/s)
-- vocn = ocean current, y-direction (m/s)
-- ss_tltx = sea surface slope, x-direction (m/m)
-- ss_tlty = sea surface slope, y-direction (m/m)
-- hwater = water depth for basal stress calc (landfast ice)
-- sss = sea surface salinity (ppt)
-- sst = sea surface temperature (C)
-- frzmlt = freezing/melting potential (W/m^2)
-- frzmlt_init= frzmlt used in current time step (W/m^2)
-- Tf = freezing temperature (C)
-- qdp = deep ocean heat flux (W/m^2), negative upward
-- hmix = mixed layer depth (m)
-- daice_da= data assimilation concentration increment rate (concentration s-1)(only used in hadgem drivers)
+- uocn        :: ocean current, x-direction (m/s)
+- vocn        :: ocean current, y-direction (m/s)
+- ~ss_tltx~     :: sea surface slope, x-direction (m/m)
+- ~ss_tlty~     :: sea surface slope, y-direction (m/m)
+- hwater      :: water depth for basal stress calc (landfast ice)
+- sss         :: sea surface salinity (ppt)
+- sst         :: sea surface temperature (C)
+- frzmlt      :: freezing/melting potential (W/m^2)
+- ~frzmlt_init~ :: frzmlt used in current time step (W/m^2)
+- Tf          :: freezing temperature (C)
+- qdp         :: deep ocean heat flux (W/m^2), negative upward
+- hmix        :: mixed layer depth (m)
+- ~daice_da~    :: data assimilation concentration increment rate (concentration s-1)(only used in hadgem drivers)
 
 *** Wave Forcing (WW3)
 
