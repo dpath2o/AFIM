@@ -333,4 +333,6 @@ results (see [[fig:tx1_access-om2]], below)
 #+NAME:   fig:tx1_access-om2
 [[./CICE_runs/sandbox_tx1_nc/cice6-tx1_sice_NCgrid.png]]
 *** Using MOM6 grid
-Going off the example from the [[https://gallery.pangeo.io/repos/xgcm/xgcm-examples/03_MOM6.html][pangeo webpage]], I create my grid file [[../src/py/cice_analysis.ipynb][cice analysis notebook]]
+**** First considered effort
+[2022-06-07 Tue 09:00]
+See post on [[https://bb.cgd.ucar.edu/cesm/threads/cice6-sandboxing.7412/post-45021][CICE Consortium Forum]] for details
