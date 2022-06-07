@@ -5,7 +5,7 @@
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
 #+STARTUP: indent , overview
-#+OPTIONS: tex:t toc:nil author:nil
+#+OPTIONS: tex:t 
 #+LaTeX_CLASS: article
 #+LaTeX_CLASS_OPTIONS: [a4paper]
 #+LaTeX_HEADER: \author{DP@H$_2$O}
@@ -16,20 +16,96 @@
 #+LaTeX_HEADER: \let\enumerate\compactenum
 
 * Python Notebook
+
 [[../src/py/cice_analysis.ipynb][AFIM CICE Analysis]]
+
 * Source Code Repository
+
 [[https://github.com/CICE-Consortium]]
+
 ** Resource Index
+
 [[https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index]]
+
+
 ** Forcing Data
+
+The /default/ forcing data can be obtained here:
 [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data]]
+
+[[https://cice-consortium-cice.readthedocs.io/en/master/developer_guide/dg_forcing.html][Standalone Forcing]] is described in detail and will be helpful when
+pulling in more forcing data than the /default/. The following two lists
+show the fields that are required for forcing. The documentation
+states that all the variables have reasonable static defaults that
+will be used in /default/ mode. To advance the forcing, the subroutines
+~get_forcing_atmo~ and ~get_forcing_ocn~ are called each timestep from the
+step loop. That subroutine computes the forcing year (~fyear~), calls
+the appropriate forcing data method, and then calls ~prepare_forcing~
+which converts the input data fields to model forcing fields. 
+
+*** List of Atmosphere Fields required for forcing
+
+- zlvl  :: atmosphere level height (m)
+- uatm  :: model grid i-direction wind velocity component (m/s)
+- vatm  :: model grid j-direction wind velocity component (m/s)
+- strax :: model grid i-direction wind stress (N/m^2)
+- stray :: model grid j-direction wind stress (N/m^2)
+- potT  :: air potential temperature (K)
+- Tair  :: air temperature (K)
+- Qa    :: specific humidity (kg/kg)
+- rhoa  :: air density (kg/m^3)
+- flw   :: incoming longwave radiation (W/m^2)
+- fsw   :: incoming shortwave radiation (W/m^2)
+- swvdr :: sw down, visible, direct (W/m^2)
+- swvdf :: sw down, visible, diffuse (W/m^2)
+- swidr :: sw down, near IR, direct (W/m^2)
+- swidf :: sw down, near IR, diffuse (W/m^2)
+- frain :: rainfall rate (kg/m^2 s)
+- fsnow :: snowfall rate (kg/m^2 s)
+  
+*** List of Ocean Fields required for forcing
+
+- uocn = ocean current, x-direction (m/s)
+- vocn = ocean current, y-direction (m/s)
+- ss_tltx = sea surface slope, x-direction (m/m)
+- ss_tlty = sea surface slope, y-direction (m/m)
+- hwater = water depth for basal stress calc (landfast ice)
+- sss = sea surface salinity (ppt)
+- sst = sea surface temperature (C)
+- frzmlt = freezing/melting potential (W/m^2)
+- frzmlt_init= frzmlt used in current time step (W/m^2)
+- Tf = freezing temperature (C)
+- qdp = deep ocean heat flux (W/m^2), negative upward
+- hmix = mixed layer depth (m)
+- daice_da= data assimilation concentration increment rate (concentration s-1)(only used in hadgem drivers)
+
+*** Wave Forcing (WW3)
+
+The [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files][CICE GitHub online setup guide]] explains that this forcing data is
+from just one day with the only variable present from [[https://github.com/NOAA-EMC/WW3][WaveWatch III]]
+being ~efreq~ with units \(m^2/s\), which is necessary for floe size
+distribution (FSD). As the [[https://cice-consortium-cice.readthedocs.io/en/main/#][CICE Documentation]] clearly states the basic
+problem in sea ice modelling, the one CICE aims to model, is ice
+thickness distribution (ITD). However, CICE can optionally attempt to
+model FSD. It does this via a probability distribution function that
+charcacterises the variability of the horizontal floe size through
+vertical and lateral growth, new freezing, breaking waves and welding
+of floes. This work is based on \citep:horvatPrognosticModelSeaice2015
+
+
 * MacOS Trials
+
 ** CICE Installation
+
 [[Source Code Repository]] was cloned onto local machine
+
 *** Grid, Forcing and Initial Conditions
+
 Downloaded [[Forcing Data]], unzipped and copied data into directory
 structure that matched [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#directory-structure][CICE github online setup guide]]
+
 **** Local Directory Structure                                  :noexport:
+
 #+BEGIN_SRC text
 total 0
 drwxr-xr-x  5 dpath2o  staff   160B 22 May 19:21 CICE_data
@@ -245,23 +321,10 @@ total 413040
 total 243008
 -rw-r--r--@ 1 dpath2o  staff   119M 13 May  2020 iced_tx1_v5.nc
 #+END_SRC
-** Notes and Comments
-*** Wave Forcing (WW3)
-The [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files][CICE GitHub online setup guide]] explains that this forcing data is
-from just one day with the only variable present from [[https://github.com/NOAA-EMC/WW3][WaveWatch III]]
-being ~efreq~ with units \(m^2/s\), which is necessary for floe size
-distribution (FSD). As the [[https://cice-consortium-cice.readthedocs.io/en/main/#][CICE Documentation]] clearly states the basic
-problem in sea ice modelling, the one CICE aims to model, is ice
-thickness distribution (ITD). However, CICE can optionally attempt to
-model FSD. It does this via a probability distribution function that
-charcacterises the variability of the horizontal floe size through
-vertical and lateral growth, new freezing, breaking waves and welding
-of floes. This work is based on citep:horvatPrognosticModelSeaice2015
 
-bibliographystyle:authoryear-comp
-bibliography:/Users/dpath2o/PHD/references/refs_bbt.bib
 
 ** Test Run ``Vanilla''
+
 A successful test run of a ``vanilla'' setup of CICE. Test directory
 setup is preserved in [[/Users/dpath2o/PHD/MODELS/src/CICE/case1][case1]] and output is preserved in [[/Users/dpath2o/cice-dirs/runs/case1][case1]]. What I
 mean by ``vanilla'' is that I made no changes to any internal files
@@ -274,11 +337,16 @@ cd case1
 ./cice.run
 #+END_SRC
 
+
 ** Sandbox
+
 *** GX1 fail [2022-05-23 Mon 06:00]
+
 Edited ~ice_in~ file replacing ~gx3~ enteries with ~gx1~ . While this ran
 through to competion the results were garbarge
+
 *** GX1 success [2022-05-23 Mon 14:00]
+
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_gx1 -g gx1
 cd sandbox_gx1
@@ -288,7 +356,9 @@ cd sandbox_gx1
 #+CAPTION: This is the 'sice' field for GX1 vanilla
 #+NAME:   fig:gx1_vanilla
 [[./CICE_runs/sandbox_gx1_bin/cice6-gx1_sice.png]]
+
 *** GX3 success [2022-05-23 Mon 14:30]
+
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_gx3 -g gx3
 cd sandbox_gx3
@@ -298,7 +368,9 @@ cd sandbox_gx3
 #+CAPTION: This is the 'sice' field for GX3 vanilla
 #+NAME:   fig:gx1_vanilla
 [[./CICE_runs/sandbox_gx3_bin/cice6-gx3_sice.png]]
+
 *** TX1 (Binary Grid) partial success [2022-06-06 Mon]
+
 This run through to completion with the following commands.
 #+BEGIN_SRC sh
 ./cice.setup -m conda -e macos -c sandbox_tx1 -g tx1
@@ -309,7 +381,9 @@ cd sandbox_tx1
 #+CAPTION: This is the 'sice' field for TX1 vanilla
 #+NAME:   fig:tx1_vanilla
 [[./CICE_runs/sandbox_tx1_bin/cice6-tx1_sice_BINgrid.png]]
+
 *** TX1 (NetCDF Grid -- ACCESS-OM) partial success [2022-06-06 Mon]
+
 The grid file can be viewed on the jupyter notebook [[../src/py/cice_analysis.ipynb][here]]
 #+BEGIN_SRC sh
   ./cice.setup -m conda -e macos -c sandbox_tx1_nc -g tx1
@@ -332,7 +406,12 @@ results (see [[fig:tx1_access-om2]], below)
 #+CAPTION: This is the 'sice' field for ACCESS-OM2 grid
 #+NAME:   fig:tx1_access-om2
 [[./CICE_runs/sandbox_tx1_nc/cice6-tx1_sice_NCgrid.png]]
+
 *** Using MOM6 grid
+
 **** First considered effort
+
 [2022-06-07 Tue 09:00]
 See post on [[https://bb.cgd.ucar.edu/cesm/threads/cice6-sandboxing.7412/post-45021][CICE Consortium Forum]] for details
+
+**** 
