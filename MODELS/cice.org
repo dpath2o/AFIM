@@ -1,19 +1,10 @@
 #+title: Australian Fast Ice Model
 #+subtitle: Modelling
 #+subtitle: CICE
-#+date: <2022-05-21 Sat>
+#+date: <2022-06-07 Tue>
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
-#+STARTUP: indent , overview, align
-#+OPTIONS: tex:t 
-#+LaTeX_CLASS: article
-#+LaTeX_CLASS_OPTIONS: [a4paper]
-#+LaTeX_HEADER: \author{DP@H$_2$O}
-#+LaTeX_HEADER: \usepackage[backend=biber,style=authoryear-comp]{biblatex}
-#+LaTeX_HEADER: \affiliation{University of Tasmania}
-#+LaTeX_HEADER: \let\itemize\compactitem
-#+LaTeX_HEADER: \let\description\compactdesc
-#+LaTeX_HEADER: \let\enumerate\compactenum
+#+STARTUP: indent, overview, align
 
 * Python Notebook
 
@@ -29,7 +20,7 @@
 [[https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index]]
 
 
-** Forcing Data
+** Forcing and Initial Conditions Data
 
 The /default/ forcing data can be obtained here:
 [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data]]
@@ -42,84 +33,37 @@ will be used in /default/ mode. To advance the forcing, the subroutines
 ~get_forcing_atmo~ and ~get_forcing_ocn~ are called each timestep from the
 step loop. That subroutine computes the forcing year (~fyear~), calls
 the appropriate forcing data method, and then calls ~prepare_forcing~
-which converts the input data fields to model forcing fields. 
+which converts the input data fields to model forcing fields.
 
-*** List of Atmosphere Fields required for forcing
+*** COREv2
+[[https://data1.gfdl.noaa.gov/nomads/forms/core/COREv2/CIAF_v2.html][Description and GFDL website]]
 
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-| CICE6 Field Short Name | CICE6 Field Long Name | CICE6 units | ERA5 Short Name | ERA5 Long Name | ERA5 GRIB Code | ERA5 units | JRA55 Short Name | JRA55 Long Name | JRA55 GRIB Code | JRA55 units |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|~zlvl~ |atmosphere|m    |     |model|     |     |     |     |     |     |
-|     |level     |     |     |level|     |     |     |     |     |     |
-|     |height    |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|utam     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|vatm     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|strax     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
-|     |          |     |     |     |     |     |     |     |     |     |
-+-----+----------+-----+-----+-----+-----+-----+-----+-----+-----+-----+
+*** ERA5
 
-- ~zlvl~  :: atmosphere level height (m) \rightarrow maps to ERA5  
-- ~uatm~  :: model grid i-direction wind velocity component (m/s)
-- ~vatm~  :: model grid j-direction wind velocity component (m/s)
-- ~strax~ :: model grid i-direction wind stress (N/m^2)
-- ~stray~ :: model grid j-direction wind stress (N/m^2)
-- ~potT~  :: air potential temperature (K)
-- ~Tair~  :: air temperature (K)
-- ~Qa~    :: specific humidity (kg/kg)
-- ~rhoa~  :: air density (kg/m^3)
-- ~flw~   :: incoming longwave radiation (W/m^2)
-- ~fsw~   :: incoming shortwave radiation (W/m^2)
-- ~swvdr~ :: sw down, visible, direct (W/m^2)
-- ~swvdf~ :: sw down, visible, diffuse (W/m^2)
-- ~swidr~ :: sw down, near IR, direct (W/m^2)
-- ~swidf~ :: sw down, near IR, diffuse (W/m^2)
-- ~frain~ :: rainfall rate (kg/m^2 s)
-- ~fsnow~ :: snowfall rate (kg/m^2 s)
-  
-*** List of Ocean Fields required for forcing
+[[https://github.com/COSIMA/access-om2/issues/242][COSIMA GitHub Working Group/Issue]]. For a comprehensive list on GADI of mapped ERA5 fields [[https://github.com/COSIMA/access-om2/issues/242#issuecomment-913908910][see Andrew Kiss's]] helpful table -- that thread also contains other helpful for information re. ERA5 setup for CICE6. 
 
-- ~uocn~        :: ocean current, x-direction (m/s)
-- ~vocn~        :: ocean current, y-direction (m/s)
-- ~ss_tltx~     :: sea surface slope, x-direction (m/m)
-- ~ss_tlty~     :: sea surface slope, y-direction (m/m)
-- ~hwater~      :: water depth for basal stress calc (landfast ice)
-- ~sss~         :: sea surface salinity (ppt)
-- ~sst~         :: sea surface temperature (C)
-- ~frzmlt~      :: freezing/melting potential (W/m^2)
-- ~frzmlt_init~ :: frzmlt used in current time step (W/m^2)
-- ~Tf~          :: freezing temperature (C)
-- ~qdp~         :: deep ocean heat flux (W/m^2), negative upward
-- ~hmix~        :: mixed layer depth (m)
-- ~daice_da~    :: data assimilation concentration increment rate (concentration s-1)(only used in hadgem drivers)
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
 
-*** Wave Forcing (WW3)
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
 
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
+
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
+
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
+
+**** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
+
+
+*** JRA55do
+
+*** [[https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/][MERRAv2]]
+
+*** [[http://www.ecco.ucsd.edu][SOSE]]
+
+*** [[https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718][BRAN]]
+
+*** [[https://protect-au.mimecast.com/s/tZdCCmOxBVhjGZ3PxcGDjNQ?domain=data-cbr.csiro.au][CAWCR]]
 The [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files][CICE GitHub online setup guide]] explains that this forcing data is
 from just one day with the only variable present from [[https://github.com/NOAA-EMC/WW3][WaveWatch III]]
 being ~efreq~ with units \(m^2/s\), which is necessary for floe size
@@ -130,6 +74,121 @@ model FSD. It does this via a probability distribution function that
 charcacterises the variability of the horizontal floe size through
 vertical and lateral growth, new freezing, breaking waves and welding
 of floes. This work is based on \citep:horvatPrognosticModelSeaice2015
+
+
+*** Table of Stand-alone CICE6 Forcing Fields
+
+| <6>              | <15>                                           | <10>            |            | <10>       | <15>                                          | <4>        | <10>                                         | <15>                   |
+| CICE6 Short Name | CICE6 Field Long Name                          | Units           | Reanalysis | Short Name | Long Name                                     | Derivation | Derivation                                   | Notes                  |
+|                  |                                                |                 | Dataset    |            |                                               | Required   | Requirements                                 |                        |
+|------------------+------------------------------------------------+-----------------+------------+------------+-----------------------------------------------+------------+----------------------------------------------+------------------------|
+| zlvl             | atmosphere level height                        | m               | ERA5       | -          | -                                             | yes        | set to 10m                                   |                        |
+| uatm             | model grid i-direction wind velocity component | m/s             | ERA5       | 10u        | 10 metre U wind component                     | no         |                                              |                        |
+| vatm             | model grid j-direction wind velocity component | m/s             | ERA5       | 10v        | 10 metre V wind component                     | no         |                                              |                        |
+| strax            | model grid i-direction wind stress             | N/m^2           | ERA5       | metss      | Mean eastward turbulent surface stress        | no         |                                              | *confirm this at 10m*  |
+| stray            | model grid j-direction wind stress             | N/m^2           | ERA5       | mntss      | Mean northward turbulent surface stress       | no         |                                              | *confirm this at 10m*  |
+| potT             | air potential temperature                      | K               | ERA5       | -          | -                                             | yes        | ~sp~ and ~2t~, bring to 10m then compute     |                        |
+| Tair             | air termperature                               | K               | ERA5       | 2t         | 2 metre temperature                           | partial    | use formula to get 10m temperature           |                        |
+| Qa               | specific humidity                              | kg/kg           | ERA5       | -          |                                               | yes        | [[https://confluence.ecmwf.int/pages/viewpage.action?pageId=171411214][refer to this link]]                           |                        |
+| rhoa             | air density                                    | kg/m^3          | ERA5       | -          | -                                             | yes        | compute ~RH~ then ~mixing ratio~ then ~\rho~ |                        |
+| flw              | incoming longwave radiation                    | W/m^2           | ERA5       | msnlwrf    | Mean surface net long-wave radiation flux     | no         |                                              |                        |
+| fsw              | incoming shortwave radiation                   | W/m^2           | ERA5       | msnswrf    | Mean surface net short-wave radiation flux    | no         |                                              |                        |
+| swvdr            | sw down, visible, direct                       | W/m^2           | ERA5       | msdrswrfcs | Mean surface direct short-wave radiation flux | no         |                                              |                        |
+| swvdf            | sw down, visible, diffuse                      | W/m^2           | ERA5       | -          | -                                             | yes        | $msdrswrf - msdrswrfcs$                      | *confirm this correct* |
+| swidr            | sw down, near IR, direct                       | W/m^2           | ERA5       | alnip      | Near IR albedo for direct radiation           | no         |                                              |                        |
+| swidf            | sw down, near IR, diffuse                      | W/m^2           | ERA5       | alnid      | Near IR albedo for diffuse radiation          | no         |                                              |                        |
+| frain            | rainfall rate                                  | kg/(m^2 s)      | ERA5       | mtpr       | Mean total precipitation rate                 | no         |                                              |                        |
+| fsnow            | snowfall rate                                  | kg/(m^2 s)      | ERA5       |            | Mean snowfall rate                            | no         |                                              |                        |
+| uocn             | ocean current, x-direction                     | m/s             |            |            |                                               |            |                                              |                        |
+| vocn             | ocean current, y-direction                     | m/s             |            |            |                                               |            |                                              |                        |
+| ss_tltx          | sea surface slope, x-direction                 | m               | CAWCR      | mssx       | eastward mean square slope                    | no         |                                              |                        |
+| ss_tlty          | sea surface slope, y-direction                 | m               | CAWCR      | mssy       | northward mean square slope                   | no         |                                              |                        |
+| sss              | sea surface salinity                           | ppt             |            |            |                                               |            |                                              |                        |
+| sst              | sea surface temperature                        | C               |            |            |                                               |            |                                              |                        |
+| frzmlt           | freezing/melting potential                     | W/m^2           |            |            |                                               |            |                                              |                        |
+| frzmlt_init      | frzmlt used in current time step               | W/m^2           |            |            |                                               |            |                                              |                        |
+| Tf               | freezing temperature                           | C               |            |            |                                               |            |                                              |                        |
+| qdp              | deep ocean heat flux                           | W/m^2           |            |            |                                               |            |                                              |                        |
+| hmix             | mixed layer depth                              | m               |            |            |                                               |            |                                              |                        |
+| daice_da         | data assimilation concentration increment rate | concentration/s |            |            |                                               |            |                                              |                        |
+
+*** Tracking Data Downloads
+| Downloaded | Mandatory | Might  | Reanalysis |         |            |      |                                               | Download |                                                            |                       |
+|            | CICE      | Be     | or         | Version | Field      | Time | Time                                          | Location | Field                                                      |                       |
+|            | Field     | Useful | Gridded    |         | Short      | Step | Coveage                                       |          | Long                                                       | Units                 |
+|            |           |        | Model      |         | Name       |      |                                               |          | Name                                                       |                       |
+|------------+-----------+--------+------------+---------+------------+------+-----------------------------------------------+----------+------------------------------------------------------------+-----------------------|
+| X          | x         |        | ERA5       |         | 2d         | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | 2 metre dewpoint temperature                               | K                     |
+| X          | x         |        | ERA5       |         | 2t         | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | 2 metre temperature                                        | K                     |
+| x          | x         |        | ERA5       |         | 10u        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[https://rda.ucar.edu][RDA UCAR]] | 10 metre u wind component                                  | m/s                   |
+| x          | x         |        | ERA5       |         | 10v        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[https://rda.ucar.edu][RDA UCAR]] | 10 metre v wind component                                  | m/s                   |
+|            |           | x      | ERA5       |         | 100u       | 1h   |                                               |          | 100 metre u wind component                                 | m/s                   |
+|            |           | x      | ERA5       |         | 100v       | 1h   |                                               |          | 100 metre v wind component                                 | m/s                   |
+| x          | x         |        | ERA5       |         | alnid      | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Near IR albedo for diffuse radiation                       | %                     |
+|            |           | x      | ERA5       |         | alnip      | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Near IR albedo for direct radiation                        | %                     |
+|            |           | x      | ERA5       |         | aluvd      | 1h   |                                               |          | UV visible albedo for diffuse radiation                    | %                     |
+|            |           | x      | ERA5       |         | aluvp      | 1h   |                                               |          | UV visible albedo for direct radiation                     | %                     |
+|            |           | x      | ERA5       |         | cdir       | 1h   |                                               |          | Clear-sky direct solar radiation at surface                | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | cp         | 1h   |                                               |          | Convective precipitation                                   | m                     |
+| partial    |           | x      | ERA5       |         | crr        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[https://rda.ucar.edu][RDA UCAR]] | Convective rain rate                                       | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | csf        | 1h   |                                               |          | Convective snowfall                                        | m of water equivalent |
+| partial    |           | x      | ERA5       |         | csfr       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[https://rda.ucar.edu][RDA UCAR]] | Convective snowfall rate water equivalent                  | kg/(m^2 s)            |
+| x          |           | x      | ERA5       |         | ewss       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Eastward turbulent surface stress                          | N/(m^2 s)             |
+|            |           | x      | ERA5       |         | i10fg      | 1h   |                                               |          | Instantaneous 10 metre wind gust                           | m/s                   |
+| x          |           | x      | ERA5       |         | iews       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Instantaneous eastward turbulent surface stress            | N/m^2                 |
+|            |           | x      | ERA5       |         | inss       | 1h   |                                               |          | Instantaneous northward turbulent surface stress           | N/m^2                 |
+|            |           | x      | ERA5       |         | lsf        | 1h   |                                               |          | Large-scale snowfall                                       | m of water equivalent |
+|            |           | x      | ERA5       |         | lsp        | 1h   |                                               |          | Large-scale precipitation                                  | m                     |
+|            |           | x      | ERA5       |         | lsrr       | 1h   |                                               |          | Large scale rain rate                                      | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | lssfr      | 1h   |                                               |          | Large scale snowfall rate water equivalent                 | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | mcpr       | 1h   |                                               |          | Mean convective precipitation rate                         | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | mcsr       | 1h   |                                               |          | Mean convective snowfall rate                              | kg/(m^2 s)            |
+| x          | x         |        | ERA5       |         | metss      | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Mean eastward turbulent surface stress                     | N/m^2                 |
+|            |           | x      | ERA5       |         | mlspr      | 1h   |                                               |          | Mean large-scale precipitation rate                        | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | mlssr      | 1h   |                                               |          | Mean large-scale snowfall rate                             | kg/(m^2 s)            |
+| x          | x         |        | ERA5       |         | mntss      | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Mean northward turbulent surface stress                    | N/m^2                 |
+|            |           | x      | ERA5       |         | mror       | 1h   |                                               |          | Mean runoff rate                                           | kg/(m^2 s)            |
+| x          | x         |        | ERA5       |         | msdrswrf   | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[https://rda.ucar.edu][RDA UCAR]] | Mean surface direct short-wave radiation flux              | W/m^2                 |
+|            |           | x      | ERA5       |         | msdrswrfcs | 1h   |                                               |          | Mean surface direct short-wave radiation flux, clear sky   | W/m^2                 |
+|            |           | x      | ERA5       |         | msdwlwrf   | 1h   |                                               |          | Mean surface downward long-wave radiation flux             | W/m^2                 |
+|            |           | x      | ERA5       |         | msdwlwrfcs | 1h   |                                               |          | Mean surface downward long-wave radiation flux, clear sky  | W/m^2                 |
+| x          |           | x      | ERA5       |         | msdwswrf   | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Mean surface downward short-wave radiation flux            | W/m^2                 |
+|            |           | x      | ERA5       |         | msdwswrfcs | 1h   |                                               |          | Mean surface downward short-wave radiation flux, clear sky | W/m^2                 |
+| x          | x         |        | ERA5       |         | msl        | 1h   |                                               |          | Mean sea level pressure                                    | Pa                    |
+| x          | x         |        | ERA5       |         | msnlwrf    | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Mean surface net long-wave radiation flux                  | W/m^2                 |
+|            |           | x      | ERA5       |         | msnlwrfcs  | 1h   |                                               |          | Mean surface net long-wave radiation flux, clear sky       | W/m^2                 |
+| x          | x         |        | ERA5       |         | msnswrf    | 1h   |                                               |          | Mean surface net short-wave radiation flux                 | W/m^2                 |
+|            |           | x      | ERA5       |         | msnswrfcs  | 1h   |                                               |          | Mean surface net short-wave radiation flux, clear sky      | W/m^2                 |
+| x          | x         |        | ERA5       |         | msr        | 1h   |                                               |          | Mean snowfall rate                                         | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | msror      | 1h   |                                               |          | Mean surface runoff rate                                   | kg/(m^2 s)            |
+| x          | x         |        | ERA5       |         | mtpr       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Mean total precipitation rate                              | kg/(m^2 s)            |
+|            |           | x      | ERA5       |         | nsss       | 1h   |                                               |          | Northward turbulent surface stress                         | N/(m^2 s)             |
+|            |           | x      | ERA5       |         | ro         | 1h   |                                               |          | Runoff                                                     | m                     |
+|            |           | x      | ERA5       |         | sf         | 1h   |                                               |          | Snowfall                                                   | m or water equivalent |
+|            |           | x      | ERA5       |         | slhf       | 1h   |                                               |          | Surface latent heat flux                                   | W/(m^2 s)             |
+| x          | x         |        | ERA5       |         | sp         | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Surface pressure                                           | Pa                    |
+|            |           | x      | ERA5       |         | sro        | 1h   |                                               |          | Surface runoff                                             | m                     |
+|            |           | x      | ERA5       |         | sshf       | 1h   |                                               |          | Surface sensible heat flux                                 | W/(m^2 s)             |
+| x          |           | x      | ERA5       |         | ssr        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Surface net solar radiation                                | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | ssrc       | 1h   |                                               |          | Surface net solar radiation, clear sky                     | W/(m^2 s)             |
+| x          |           | x      | ERA5       |         | ssrd       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Surface solar radiation downwards                          | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | ssrdc      | 1h   |                                               |          | Surface solar radiation downward clear-sky                 | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | ssro       | 1h   |                                               |          | Sub-surface runoff                                         | m                     |
+| x          | x         |        | ERA5       |         | sst        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Sea surface temperature                                    | K                     |
+| x          |           | x      | ERA5       |         | str        | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Surface net thermal radiation                              | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | strc       | 1h   |                                               |          | Surface net thermal radiation, clear sky                   | W/(m^2 s)             |
+| x          |           | x      | ERA5       |         | strd       | 1h   | [2010-01-01 Fri 00:00]-[2019-12-31 Tue 23:00] | [[gadi-dm.nci.org.au][GADI]]     | Surface thermal radiation downwards                        | W/(m^2 s)             |
+|            |           | x      | ERA5       |         | strdc      | 1h   |                                               |          | Surface thermal radiation downwards, clear sky             | W/(m^2 s)             |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
+|            |           |        |            |         |            |      |                                               |          |                                                            |                       |
 
 
 * MacOS Trials
