@@ -101,7 +101,7 @@ and $SW_{TOA}$ is the short-wave at the top-of-the-atmosphere
 **** Computing two-metre wind speed components
 #+NAME: eqn:u10to2
 \begin{equation}
-u2 = u10 * 4 . 87 / ln ( 67 . 8 * 10 − 5 . 42 )
+u2 = (u10 * 4.87) / ln ((67.8 * 10) − 5.42)
 \end{equation}
 
 **** Computing sea surface slope
@@ -128,7 +128,7 @@ where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitu
 | flw         | incoming longwave radiation                    | W/m^2      | ERA5    | msnlwrf    | Mean surface net long-wave radiation flux     | no         |                                       |
 | fsw         | incoming shortwave radiation                   | W/m^2      | ERA5    | msnswrf    | Mean surface net short-wave radiation flux    | no         |                                       |
 | swvdr       | sw down, visible, direct                       | W/m^2      | ERA5    | msdrswrfcs | Mean surface direct short-wave radiation flux | no         |                                       |
-| swvdf       | sw down, visible, diffuse                      | W/m^2      | ERA5    | -          | -                                             | yes        | see [[eqn:swvdf]]                         |
+| swvdf       | sw down, visible, diffuse                      | W/m^2      | -       | -          | -                                             | yes        | see [[eqn:swvdf]]                         |
 | swidr       | sw down, near IR, direct                       | W/m^2      | -       | -          | -                                             | yes        | ?                                     |
 | swidf       | sw down, near IR, diffuse                      | W/m^2      | -       | -          | -                                             | yes        | ?                                     |
 | frain       | rainfall rate                                  | kg/(m^2 s) | ERA5    | mtpr       | Mean total precipitation rate                 | no         |                                       |
