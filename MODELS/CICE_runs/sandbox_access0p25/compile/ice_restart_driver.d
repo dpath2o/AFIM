@@ -1,0 +1,21 @@
+ice_restart_driver.o ice_restart_driver.d : ice_restart_driver.F90
+ice_restart_driver.o : ice_kinds_mod.o
+ice_restart_driver.o : ice_arrays_column.o
+ice_restart_driver.o : ice_constants.o
+ice_restart_driver.o : ice_restart_shared.o
+ice_restart_driver.o : ice_restart.o
+ice_restart_driver.o : ice_exit.o
+ice_restart_driver.o : ice_fileunits.o
+ice_restart_driver.o : icepack_intfc.o
+ice_restart_driver.o : ice_blocks.o
+ice_restart_driver.o : ice_domain.o
+ice_restart_driver.o : ice_domain_size.o
+ice_restart_driver.o : ice_flux.o
+ice_restart_driver.o : ice_state.o
+ice_restart_driver.o : ice_boundary.o
+ice_restart_driver.o : ice_calendar.o
+ice_restart_driver.o : ice_communicate.o
+ice_restart_driver.o : ice_grid.o
+ice_restart_driver.o : ice_broadcast.o
+ice_restart_driver.o : ice_gather_scatter.o
+ice_restart_driver.o : ice_read_write.o

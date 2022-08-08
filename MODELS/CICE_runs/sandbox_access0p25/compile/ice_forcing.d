@@ -1,0 +1,23 @@
+ice_forcing.o ice_forcing.d : ice_forcing.F90
+ice_forcing.o : ice_kinds_mod.o
+ice_forcing.o : ice_blocks.o
+ice_forcing.o : ice_domain_size.o
+ice_forcing.o : ice_communicate.o
+ice_forcing.o : ice_calendar.o
+ice_forcing.o : ice_fileunits.o
+ice_forcing.o : ice_exit.o
+ice_forcing.o : ice_read_write.o
+ice_forcing.o : ice_timers.o
+ice_forcing.o : ice_arrays_column.o
+ice_forcing.o : ice_constants.o
+ice_forcing.o : icepack_intfc.o
+ice_forcing.o : ice_domain.o
+ice_forcing.o : ice_flux.o
+ice_forcing.o : ice_boundary.o
+ice_forcing.o : ice_state.o
+ice_forcing.o : ice_grid.o
+ice_forcing.o : ice_diagnostics.o
+ice_forcing.o : ice_global_reductions.o
+ice_forcing.o : ice_restart_shared.o
+ice_forcing.o : ice_broadcast.o
+ice_forcing.o : ice_gather_scatter.o
