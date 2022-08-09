@@ -1,171 +1,144 @@
 
 import os
-import xarray as xr
-import numpy  as np
-import pandas as pd
+import pdb
+import xarray     as xr
+import numpy      as np
+import pandas     as pd
+import metpy.calc as mpc
 from afim import regrid_netcdf_with_cdo
 
-#
+# Directories, files and switches
+compute_sw_diffuse = False
+compute_u2v2       = False
+compute_rho        = False
+compute_qsat       = False
+Gtype  = '0p25'
+regrd  = False
+sttdt  = '2010-01-01'
+months = 12
+years  = 1
 D02    = os.path.join('/','Volumes','ioa02')
 D_ERA5 = os.path.join(D02,'reanalysis','ERA5')
-Ftgrd  = os.path.join(D02,'model_input','grids','0p25','g0p25_cice_tgrid.nc')
-Fugrd  = os.path.join(D02,'model_input','grids','0p25','g0p25_cice_ugrid.nc')
-D_reG  = os.path.join(D02,'model_input','grids','0p25','regrid','ERA5')
-D_frce = os.path.join('/','Users','dpath2o','cice-dirs','input','CICE_data','forcing','0p25','hourly')
+Ftgrd  = os.path.join(D02,'model_input','grids',Gtype,'g{:s}_cice_tgrid.nc'.format(Gtype))
+Fugrd  = os.path.join(D02,'model_input','grids',Gtype,'g{:s}_cice_ugrid.nc'.format(Gtype))
+D_reG  = os.path.join(D02,'model_input','grids',Gtype,'regrid','ERA5')
+D_frce = os.path.join('/','Users','dpath2o','cice-dirs','input','CICE_data','forcing',Gtype,'hourly')
 
-#
-G025u = xr.open_dataset(os.path.join(D02,'model_input','grids','0p25','g0p25_cice_ugrid.nc'))
-G025t = xr.open_dataset(os.path.join(D02,'model_input','grids','0p25','g0p25_cice_tgrid.nc'))
+# Load grid files
+Gu = xr.open_dataset(os.path.join(D02,'model_input','grids',Gtype,'g{:s}_cice_ugrid.nc'.format(Gtype)))
+Gt = xr.open_dataset(os.path.join(D02,'model_input','grids',Gtype,'g{:s}_cice_tgrid.nc'.format(Gtype)))
 
-#
-Fin   = os.path.join(D_ERA5, '2d', '2010', '2d_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG, 'g0p25_d2m.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mror','2010','mror_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mror.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'2t','2010','2t_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_t2m.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msdrswrf','2010','msdrswrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msdrswrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msdwlwrf','2010','msdwlwrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msdwlwrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msdwswrf','2010','msdwswrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msdwswrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msl','2010','msl_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msl.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msnlwrf','2010','msnlwrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msnlwrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msnswrf','2010','msnswrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msnswrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msr','2010','msr_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_msr.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'msror','e5.oper.fc.sfc.meanflux.235_020_msror.ll025sc.2009121606_2010010106.nc')
-Fout  = os.path.join(D_reG,'g0p25_msror.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mtdwswrf','2010','mtdwswrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mtdwswrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mtnlwrf','2010','mtnlwrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mtnlwrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mtnswrf','2010','mtnswrf_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mtnswrf.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mtpr','2010','mtpr_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mtpr.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'sp','2010','sp_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_sp.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Ftgrd, cdo_options='-f nc -b F64')
-
-# ERA5 u-grid re-gridding
-#
-Fin   = os.path.join(D_ERA5,'metss','2010','metss_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_metss.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Fugrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'10v','e5.oper.an.sfc.128_166_10v.ll025sc.2010010100_2010013123.nc')
-Fout  = os.path.join(D_reG,'g0p25_v10.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Fugrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'mntss','2010','mntss_era5_oper_sfc_20100101-20100131.nc')
-Fout  = os.path.join(D_reG,'g0p25_mntss.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Fugrd, cdo_options='-f nc -b F64')
-
-#
-Fin   = os.path.join(D_ERA5,'10u','e5.oper.an.sfc.128_165_10u.ll025sc.2010010100_2010013123.nc')
-Fout  = os.path.join(D_reG,'g0p25_u10.nc')
-regrid_netcdf_with_cdo(Fin, Fout, Fugrd, cdo_options='-f nc -b F64')
-
-##################
-# 
-msdrswrf = xr.open_dataset(os.path.join(D_reG,'g0p25_msdrswrf.nc'))
-mtnswrf  = xr.open_dataset(os.path.join(D_reG,'g0p25_mtnswrf.nc'))
-k_t      = msdrswrf.msdrswrf / mtnswrf.mtnswrf
-SW_diff  = 0.952 - 1.041 * np.exp(np.exp((2.3 - 4.702*k_t)))
-SW_diff.to_netcdf(os.path.join(D_reG,'g0p25_swvisdf.nc'))
+# regridding
+tvars = ['2d','2t','msdrswrf','msdwlwrf','sp','mtpr','mtnswrf']
+uvars = ['10u','10v']
+varss = tvars+uvars
+stdts = pd.date_range(sttdt, freq='MS', periods=months*years)
+spdts = pd.date_range(sttdt, freq='M', periods=months*years)
+Fstrs = 'era5_oper_sfc'
+if regrd:
+    for i in tvars:
+        for j in np.arange(0,len(stdts),1):
+            if spdts[j].is_year_end:
+                DS = xr.open_mfdataset( os.path.join(D_reG,stdts[i].strftime('%Y'),i,'*.nc') )
+                DS.to_netcdf( os.path.join(D_reG,stdts[i].strftime('%Y'),'g{Gtype:s}_{field:s}.nc'.format(Gtype=Gtype,field=i)) )
+            Fin = '{field:s}_{Fstrs:s}_{stt:s}-{stp:s}.nc'.format(field=j,
+                                                                  Fstrs=Fstrs,
+                                                                  stt=stdts[j].strftime('%Y%M%d'),
+                                                                  stp=spdts[j].strftime('%Y%M%d'))
+            Pin  = os.path.join(D_ERA5,j,stdts[i].strftime('%Y'),Fin)
+            Dout = os.path.join(D_reG,stdts[i].strftime('%Y'),i)
+            if not(os.path.exists(Dout)): os.mkdir(Dout)
+            Fout = 'g{Gtype:s}_{field:s}_{yrmo:s}'.format(Gtype=Gtype,field=i,yrmo=stdts[j].strftime('%Y%M'))
+            Pout = os.path.join(Dout,Fout)
+            regrid_netcdf_with_cdo(Pin, Pout, Ftgrd, cdo_options='-f nc -b F64')
+    for i in uvars:
+        for j in np.arange(0,len(stdts),1):
+            if spdts[j].is_year_end:
+                DS = xr.open_mfdataset( os.path.join(D_reG,stdts[i].strftime('%Y'),i,'*.nc') )
+                DS.to_netcdf( os.path.join(D_reG,stdts[i].strftime('%Y'),'g{Gtype:s}_{field:s}.nc'.format(Gtype=Gtype,field=i)) )
+            Fin = '{field:s}_{Fstrs:s}_{stt:s}-{stp:s}.nc'.format(field=j,
+                                                                  Fstrs=Fstrs,
+                                                                  stt=stdts[j].strftime('%Y%M%d'),
+                                                                  stp=spdts[j].strftime('%Y%M%d'))
+            Pin  = os.path.join(D_ERA5,j,stdts[i].strftime('%Y'),Fin)
+            Dout = os.path.join(D_reG,stdts[i].strftime('%Y'),i)
+            if not(os.path.exists(Dout)): os.mkdir(Dout)
+            Fout = 'g{Gtype:s}_{field:s}_{yrmo:s}'.format(Gtype=Gtype,field=i,yrmo=stdts[j].strftime('%Y%M'))
+            Pout = os.path.join(Dout,Fout)
+            regrid_netcdf_with_cdo(Pin, Pout, Fugrd, cdo_options='-f nc -b F64')
 
 
-#
-u10 = xr.open_dataset(os.path.join(D_reG,'g0p25_u10.nc'))
-u2  = (u10.VAR_10U * 4.87) / np.log((67.8 * 10) - 5.42)
-u2.to_netcdf(os.path.join(D_reG,'g0p25_u2.nc'))
+####################################################
+# shortwave diffuse calculation
+if compute_sw_diffuse:
+    msdrswrf = xr.open_dataset(os.path.join(D_reG,'g0p25_msdrswrf.nc'))
+    mtnswrf  = xr.open_dataset(os.path.join(D_reG,'g0p25_mtnswrf.nc'))
+    k_t      = msdrswrf.msdrswrf / mtnswrf.mtnswrf
+    SW_diff  = 0.952 - 1.041 * np.exp(np.exp((2.3 - 4.702*k_t)))
+    SW_diff.to_netcdf(os.path.join(D_reG,'g0p25_swvisdf.nc'))
+    SW_diff  = ''
+    msdrswrf = ''
+    mtnswrf  = ''
+    k_t      = ''
 
-#
-v10 = xr.open_dataset(os.path.join(D_reG,'g0p25_v10.nc'))
-v2  = (v10.VAR_10V * 4.87) / np.log((67.8 * 10) - 5.42)
-v2.to_netcdf(os.path.join(D_reG,'g0p25_v2.nc'))
+# U10 to U2
+if compute_u2v2:
+    u10 = xr.open_dataset(os.path.join(D_reG,'g0p25_u10.nc'))
+    u2  = (u10.VAR_10U * 4.87) / np.log((67.8 * 10) - 5.42)
+    u2.to_netcdf(os.path.join(D_reG,'g0p25_u2.nc'))
+    u10 = ''
+    u2  = ''
+    v10 = xr.open_dataset(os.path.join(D_reG,'g0p25_v10.nc'))
+    v2  = (v10.VAR_10V * 4.87) / np.log((67.8 * 10) - 5.42)
+    v2.to_netcdf(os.path.join(D_reG,'g0p25_v2.nc'))
+    v10 = ''
+    v2  = ''
 
-#
-#density of air at 2-metres
-t2m = xr.open_dataset(os.path.join(D_reG,'g0p25_t2m.nc'))
-d2m = xr.open_dataset(os.path.join(D_reG,'g0p25_d2m.nc'))
-sp  = xr.open_dataset(os.path.join(D_reG,'g0p25_sp.nc'))
-RH  = mpc.relative_humidity_from_dewpoint(t2m.t2m,d2m.d2m)
-r   = mpc.mixing_ratio_from_relative_humidity(sp.sp, t2m.t2m, RH)
-rho = mpc.density(sp.sp, t2m.t2m, r)
-rho.to_netcdf(os.path.join(D_reG,'g0p25_rho.nc'))
+# density of air at 2-metres
+if compute_rho:
+    t2m = xr.open_dataset(os.path.join(D_reG,'g0p25_t2m.nc'))
+    d2m = xr.open_dataset(os.path.join(D_reG,'g0p25_d2m.nc'))
+    sp  = xr.open_dataset(os.path.join(D_reG,'g0p25_sp.nc'))
+    RH  = mpc.relative_humidity_from_dewpoint(t2m.t2m,d2m.d2m)
+    r   = mpc.mixing_ratio_from_relative_humidity(sp.sp, t2m.t2m, RH)
+    rho = mpc.density(sp.sp, t2m.t2m, r)
+    rho.to_netcdf(os.path.join(D_reG,'g0p25_rho.nc'))
+    rho = ''
+    RH  = ''
+    r   = ''
+    d2m = ''
+    t2m = ''
+    sp  = ''
 
 # specific humidity at 2-metres
-Rdry = 287.0597
-Rvap = 461.5250
-a1   = 611.21
-a3   = 17.502
-a4   = 32.19
-T0   = 273.16
-E    = a1 * np.exp(a3 * (d2m.d2m-T0) / (d2m.d2m-a4) )
-qsat = (Rdry/Rvap) * E / (sp.sp - ( (1-Rdry/Rvap) * E) )
-qsat.to_netcdf(os.path.join(D_reG,'g0p25_qsat.nc'))
+if compute_qsat:
+    d2m = xr.open_dataset(os.path.join(D_reG,'g0p25_d2m.nc'))
+    sp  = xr.open_dataset(os.path.join(D_reG,'g0p25_sp.nc'))
+    Rdry = 287.0597
+    Rvap = 461.5250
+    a1   = 611.21
+    a3   = 17.502
+    a4   = 32.19
+    T0   = 273.16
+    E    = a1 * np.exp(a3 * (d2m.d2m-T0) / (d2m.d2m-a4) )
+    qsat = (Rdry/Rvap) * E / (sp.sp - ( (1-Rdry/Rvap) * E) )
+    qsat.to_netcdf(os.path.join(D_reG,'g0p25_qsat.nc'))
+    qsat = ''
+    E    = ''
+    t2m  = ''
+    d2m  = ''
+    sp   = ''
 
-#
+#################################################################
+# 
 glbrad = xr.open_dataset(os.path.join(D_reG,'g0p25_msdrswrf.nc')).msdrswrf.values
 dlwsfc = xr.open_dataset(os.path.join(D_reG,'g0p25_msdwlwrf.nc')).msdwlwrf.values
 wndewd = xr.open_dataset(os.path.join(D_reG,'g0p25_u2.nc')).VAR_10U.values
 wndnwd = xr.open_dataset(os.path.join(D_reG,'g0p25_v2.nc')).VAR_10V.values
 airtmp = xr.open_dataset(os.path.join(D_reG,'g0p25_t2m.nc')).t2m.values
-spchmd = xr.open_dataset(os.path.join(D_reG,'g0p25_qsat.nc')).values
+spchmd = xr.open_dataset(os.path.join(D_reG,'g0p25_qsat.nc')).__xarray_dataarray_variable__.values
 ttlpcp = xr.open_dataset(os.path.join(D_reG,'g0p25_mtpr.nc')).mtpr.values
+airrho = xr.open_dataset(os.path.join(D_reG,'g0p25_rho.nc')).__xarray_dataarray_variable__.values
 
 # 
 ERA5 = ''
@@ -175,10 +148,11 @@ ERA5 = xr.Dataset({'glbrad' : (['time','nj','ni'],glbrad),
                    'wndnwd' : (['time','nj','ni'],wndnwd),
                    'airtmp' : (['time','nj','ni'],airtmp),
                    'spchmd' : (['time','nj','ni'],spchmd),
-                   'ttlpcp' : (['time','nj','ni'],ttlpcp),},
-                   coords = {'ulon' : (['nj'],G025u.lon.data[0,:]),
-                             'ulat' : (['ni'],G025u.lat.data[:,0]),
-                             'tlon' : (['nj'],G025t.lon.data[0,:]),
-                             'tlat' : (['ni'],G025t.lat.data[:,0]),
+                   'ttlpcp' : (['time','nj','ni'],ttlpcp),
+                   'airrho' : (['time','nj','ni'],airrho)},
+                   coords = {'ulon' : (['ni'],Gu.lon.data[0,:]),
+                             'ulat' : (['nj'],Gu.lat.data[:,0]),
+                             'tlon' : (['ni'],Gt.lon.data[0,:]),
+                             'tlat' : (['nj'],Gt.lat.data[:,0]),
                              'time' : pd.date_range('2010-01-01', freq='H', periods=31*24)})
 ERA5.to_netcdf(os.path.join(D_frce,'ERA5_g0p25_2010.nc'))
