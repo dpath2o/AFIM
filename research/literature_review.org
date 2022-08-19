@@ -363,7 +363,7 @@ and shelves as the warmer water that has arrived from the sub-tropical
 basins via a set of dynamic processes and provides the annual heat required
 to thin these massive quantities of ice [Pritchard 2012]. The present rate at
 which thinning/melting is occurring is three times what it was three
-decades ago [Rintoooul2016].
+decades ago [Rintoul2016].
 
 The depth of the continental shelf around most of Antarctica is 500m
 with many important high gradient canyons crucial in hydrographic
@@ -371,6 +371,26 @@ feature definition of the cryosphere.
 
 * Coupled Sea Ice -- Ocean Modelling
 ** MOM6
+The Modular Ocean Model (MOM) is currently being developed for it's sixth versional release (MOM6).
+It originated in the early 1990's in the United States at the National Oceanic and Atmospheric
+Administration's (NOAA) Geophysical Fluid Dynamic Laboratory (GFDL). MOM was an evolution in another
+earlier GFDL ocean model colloquial referred to as the Bryan-Cox Model, which had its origin at GFDL sometime in
+the 1960's. MOM1 was written in Fortran77 which allowed for modularity of the code, i.e. one set of
+instructions did not have to all exist within a single file, and modules could be loaded as needed.
+Along with good documentation and test cases with which a researcher could ensure consistency
+against proven results on another computing platform, essentially the modern-era of community-based
+climate model code development was opened.
+
+Each release of MOM, from MOM1 (1991) to MOM5 (2012), have had significant enhancements and
+developments to the parameterisations, numerical methods, language upgrades, documentation and test
+cases. This development has paralleled advances in observations and theoretical knowledge on
+temporarl and spatial scales that enable
+
++ hgiher resolution
++ ice shelf cavities
++ tides
++ improved vertical coordinate
+
 ** CICE6
 ** WW3
 * References

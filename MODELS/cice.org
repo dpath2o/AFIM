@@ -19,7 +19,6 @@
 
 [[https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index]]
 
-
 ** Forcing and Initial Conditions Data
 
 The /default/ forcing data can be obtained here:
@@ -58,7 +57,6 @@ A thorough description of all the fields in ERA5 is given [[https://cds.climate.
 ***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
 
 **** JRA55do
-
 **** [[https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/][MERRAv2]]
 Local copy detailed [[http://climate-cms.wikis.unsw.edu.au/MERRA2][here]]
 ***** Surface Flux Diagnostics ('flx')
@@ -69,7 +67,6 @@ a better term) this portion of MERRAv2 in GADI project 'ua8'
 ***** Radiation Diagnostics ('rad')
 ***** Single-level Diagnostics ('slv')
 **** [[http://www.ecco.ucsd.edu][SOSE]]
-
 **** [[https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718][BRAN]]
 Download [[https://dapds00.nci.org.au/thredds/catalog/gb6/BRAN/BRAN2020/catalog.html][BRAN data]] from NCI webserver
 
@@ -86,6 +83,11 @@ vertical and lateral growth, new freezing, breaking waves and welding
 of floes. This work is based on \citep:horvatPrognosticModelSeaice2015
 
 *** Pre-processing
+
+To ensure documentation and transparency I have a jupyter notebook
+([[../src/python/cice_input_preparation.ipynb][cice_input_preparation]]) that shows the computations for organising, re-gridding
+and interpolating the various datasets for both the forcing and initial
+conditions that I am writing for this work
 
 **** Computing Short-wave downward visibile diffuse
 #+NAME: eqn:swvdf
@@ -112,38 +114,79 @@ ss_tlty = eta/dy
 \end{equation}
 where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitudinal, respectively
 
+*** Table of Standalone CICE6 Initial Conditions
+| CICE6 short    | CICE6 description                                  | Units | short name | Dataset |
+|----------------+----------------------------------------------------+-------+------------+---------|
+| uvel           | sea ice velocity, eastward                         | m/s   | uheff      | SOSE    |
+| vvel           | sea ice velocity, northward                        | m/s   | vheff      | SOSE    |
+| scale_factor   | timestep offsets in shortwave radiation components | -     |            | MERRAv2 |
+| swvdr          | incoming shortwave radiation, visible direct       | W/m^2 | SWGNT      | MERRAv2 |
+| swvdf          | incoming shortwave radiation, visible diffuse      | W/m^2 | SWdiffuse  | MERRAv2 |
+| swidr          | incoming shortwave radiation, infrared direct      | W/m^2 | LWGNT      | MERRAv2 |
+| swidf          | incoming shortwave radiation, infrared diffuse     | W/m^2 | LWdiffuse  | MERRAv2 |
+| strocnxT       | ice-ocean stress                                   | N/m   | taux       | SOSE    |
+| strocnyT       | ice-ocean stress                                   | N/m   | tauy       | SOSE    |
+| stressp_[1-4]  | internal strain tensor                             | N/m   | -          | -       |
+| stressm_[1-4]  | internal strain tensor                             | N/m   | -          | -       |
+| stress12_[1-4] | internal strain tensor                             | N/m   | -          | -       |
+| iceumask       | the mask where there is ice in a gridcell          | -     | -          | derived |
+| sst            | sea surface temperature                            | C     | T          | SOSE    |
+| frzmlt         | ice ocean heat exhange                             | W/m^2 | oceFreez   | SOSE    |
+| frz_onset      | Julian day in which the onset of freezing occurs   | -     | -          | -       |
+| ulat           | 2D u-grid latitudes                                | -     | ulat       | COSIMA  |
+| ulon           | 2D u-grid longitudes                               | -     | ulon       | COSIMA  |
+| tlat           | 2D t-grid latitudes                                | -     | tlat       | COSIMA  |
+| tlon           | 2D t-grid latitudes                                | -     | tlon       | COSIMA  |
+| aicen          | ice fraction per category                          | -     | aicen      | SOSE    |
+| vicen          | ice volume per unit area per category              | -     | heff       | SOSE    |
+| vsnon          | snow volume per unit area per category             | -     | hsnow      | SOSE    |
+| Tsfcn          | surface snow/ice temperature per category          | C     | SItices    | SOSE    |
+| iage           | ice age                                            | -     | -          | -       |
+| FY             | first year ice area                                | -     | -          | -       |
+| alvl           | fraction of level ice area                         | -     | -          | -       |
+| vlvl           | volume of the level ice area                       | -     | -          | -       |
+| apnd           | fraction of ponds per cell                         | -     | -          | -       |
+| hpnd           | depth of ponds per cell                            | -     | -          | -       |
+| ipnd           | other pond characteristics                         | -     | -          | -       |
+| dhs            | -                                                  | -     | -          | -       |
+| ffrac          | -                                                  | -     | -          | -       |
+| fbrs           | -                                                  | -     | -          | -       |
+| sice           | -                                                  | -     | -          | -       |
+| qice           | -                                                  | -     | -          | -       |
+| qsno           | -                                                  | -     | -          | -       |
+
 *** Table of Stand-alone CICE6 Forcing Fields
 
-| CICE6 short | CICE6 description                              | Units      | Dataset | Short Name | Long Name                                     | Derivation | Notes                                 |
-|-------------+------------------------------------------------+------------+---------+------------+-----------------------------------------------+------------+---------------------------------------|
-| zlvl        | atmosphere level height                        | m          | ERA5    | -          | -                                             | yes        | set to 2m                             |
-| uatm        | model grid i-direction wind velocity component | m/s        | ERA5    | 10u        | 10 metre U wind component                     | no         |                                       |
-| vatm        | model grid j-direction wind velocity component | m/s        | ERA5    | 10v        | 10 metre V wind component                     | no         |                                       |
-| strax       | model grid i-direction wind stress             | N/m^2      | ERA5    | metss      | Mean eastward turbulent surface stress        | no         |                                       |
-| stray       | model grid j-direction wind stress             | N/m^2      | ERA5    | mntss      | Mean northward turbulent surface stress       | no         |                                       |
-| potT        | air potential temperature                      | K          | ERA5    | -          | -                                             | yes        | [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.potential_temperature.html][derivation]]                            |
-| Tair        | air termperature                               | K          | ERA5    | 2t         | 2 metre temperature                           | no         |                                       |
-| Qa          | specific humidity                              | kg/kg      | ERA5    | -          | -                                             | yes        | [[https://confluence.ecmwf.int/pages/viewpage.action?pageId=171411214][derivation]]                            |
-| rhoa        | air density                                    | kg/m^3     | ERA5    | -          | -                                             | yes        | compute [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.relative_humidity_from_specific_humidity.html][RH]] then [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.mixing_ratio_from_relative_humidity.html?highlight=mixing%20ratio#metpy.calc.mixing_ratio_from_relative_humidity][mixing ratio]] then [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.density.html?highlight=density][rho]] |
-| flw         | incoming longwave radiation                    | W/m^2      | ERA5    | msnlwrf    | Mean surface net long-wave radiation flux     | no         |                                       |
-| fsw         | incoming shortwave radiation                   | W/m^2      | ERA5    | msnswrf    | Mean surface net short-wave radiation flux    | no         |                                       |
-| swvdr       | sw down, visible, direct                       | W/m^2      | ERA5    | msdrswrfcs | Mean surface direct short-wave radiation flux | no         |                                       |
-| swvdf       | sw down, visible, diffuse                      | W/m^2      | -       | -          | -                                             | yes        | see [[eqn:swvdf]]                         |
-| swidr       | sw down, near IR, direct                       | W/m^2      | -       | -          | -                                             | yes        | ?                                     |
-| swidf       | sw down, near IR, diffuse                      | W/m^2      | -       | -          | -                                             | yes        | ?                                     |
-| frain       | rainfall rate                                  | kg/(m^2 s) | ERA5    | mtpr       | Mean total precipitation rate                 | no         |                                       |
-| fsnow       | snowfall rate                                  | kg/(m^2 s) | ERA5    | msr        | Mean snowfall rate                            | no         |                                       |
-| uocn        | ocean current, x-direction                     | m/s        | BRAN    | u          | eastward velocity                             | no         |                                       |
-| vocn        | ocean current, y-direction                     | m/s        | BRAN    | v          | northward velocity                            | no         |                                       |
-| ss_tltx     | sea surface slope, x-direction                 | m          | BRAN    | -          | -                                             | yes        | see [[eqn:seaslope]] ; use ~eta~          |
-| ss_tlty     | sea surface slope, y-direction                 | m          | BRAN    | -          | -                                             | yes        | see [[eqn:seaslope]] ; use ~eta~          |
-| sss         | sea surface salinity                           | ppt        | BRAN    | salt       | salinity                                      | no         |                                       |
-| sst         | sea surface temperature                        | C          | BRAN    | temp       | temperature                                   | no         |                                       |
-| frzmlt      | freezing/melting potential                     | W/m^2      | -       | -          | -                                             |            | ?                                     |
-| frzmlt_init | frzmlt used in current time step               | W/m^2      | -       | -          | -                                             |            | ?                                     |
-| Tf          | freezing temperature                           | C          | -       | -          | -                                             |            | ?                                     |
-| qdp         | deep ocean heat flux                           | W/m^2      | -       | -          | -                                             |            | ?                                     |
-| hmix        | mixed layer depth                              | m          | BRAN    | mld        | mixed layer depth                             | no         |                                       |
+| CICE6 short | CICE6 description                              | Units      | Dataset | Short Name | Long Name                                       | Derivation | Notes                                 |
+|-------------+------------------------------------------------+------------+---------+------------+-------------------------------------------------+------------+---------------------------------------|
+| zlvl        | atmosphere level height                        | m          | -       | -          | -                                               | -          |                                       |
+| uatm        | model grid i-direction wind velocity component | m/s        | ERA5    | 10u        | 10 metre U wind component                       | no         |                                       |
+| vatm        | model grid j-direction wind velocity component | m/s        | ERA5    | 10v        | 10 metre V wind component                       | no         |                                       |
+| strax       | model grid i-direction wind stress             | N/m^2      | -       | -          | Mean eastward turbulent surface stress          | no         |                                       |
+| stray       | model grid j-direction wind stress             | N/m^2      | -       | -          | Mean northward turbulent surface stress         | no         |                                       |
+| potT        | air potential temperature                      | K          | -       | -          | -                                               | yes        | [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.potential_temperature.html][derivation]]                            |
+| Tair        | air termperature                               | K          | ERA5    | 2t         | 2 metre temperature                             | no         |                                       |
+| Qa          | specific humidity                              | kg/kg      | ERA5    | -          | -                                               | yes        | [[https://confluence.ecmwf.int/pages/viewpage.action?pageId=171411214][derivation]]                            |
+| rhoa        | air density                                    | kg/m^3     | ERA5    | -          | -                                               | yes        | compute [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.relative_humidity_from_specific_humidity.html][RH]] then [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.mixing_ratio_from_relative_humidity.html?highlight=mixing%20ratio#metpy.calc.mixing_ratio_from_relative_humidity][mixing ratio]] then [[https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.density.html?highlight=density][rho]] |
+| flw         | incoming longwave radiation                    | W/m^2      | ERA5    | msdwlwrf   | Mean surface downward long-wave radiation flux  | no         |                                       |
+| fsw         | incoming shortwave radiation                   | W/m^2      | ERA5    | msdwswrf   | Mean surface downward short-wave radiation flux | no         |                                       |
+| swvdr       | sw down, visible, direct                       | W/m^2      | -       | -          | -                                               | no         |                                       |
+| swvdf       | sw down, visible, diffuse                      | W/m^2      | -       | -          | -                                               | yes        |                                       |
+| swidr       | sw down, near IR, direct                       | W/m^2      | -       | -          | -                                               | yes        |                                       |
+| swidf       | sw down, near IR, diffuse                      | W/m^2      | -       | -          | -                                               | yes        |                                       |
+| frain       | rainfall rate                                  | kg/(m^2 s) | ERA5    | mtpr       | Mean total precipitation rate                   | no         |                                       |
+| fsnow       | snowfall rate                                  | kg/(m^2 s) | -       | -          | -                                               | no         |                                       |
+| uocn        | ocean current, x-direction                     | m/s        | BRAN    | u          | eastward velocity                               | no         |                                       |
+| vocn        | ocean current, y-direction                     | m/s        | BRAN    | v          | northward velocity                              | no         |                                       |
+| ss_tltx     | sea surface slope, x-direction                 | m          | BRAN    | -          | -                                               | yes        | see [[eqn:seaslope]] ; use ~eta~          |
+| ss_tlty     | sea surface slope, y-direction                 | m          | BRAN    | -          | -                                               | yes        | see [[eqn:seaslope]] ; use ~eta~          |
+| sss         | sea surface salinity                           | ppt        | BRAN    | salt       | salinity                                        | no         |                                       |
+| sst         | sea surface temperature                        | C          | BRAN    | temp       | temperature                                     | no         |                                       |
+| frzmlt      | freezing/melting potential                     | W/m^2      | -       | -          | -                                               |            |                                       |
+| frzmlt_init | frzmlt used in current time step               | W/m^2      | -       | -          | -                                               |            |                                       |
+| Tf          | freezing temperature                           | C          | -       | -          | -                                               |            |                                       |
+| qdp         | deep ocean heat flux                           | W/m^2      | -       | -          | -                                               |            |                                       |
+| hmix        | mixed layer depth                              | m          | BRAN    | mld        | mixed layer depth                               | no         |                                       |
 
 *** Tracking Data Downloads
 | Downloaded | Mandatory | Might  | Reanalysis |            |      |                                               | Download |                                                                  |            |
@@ -554,6 +597,28 @@ results (see [[fig:tx1_access-om2]], below)
 #+NAME:   fig:tx1_access-om2
 [[./CICE_runs/sandbox_tx1_nc/cice6-tx1_sice_NCgrid.png]]
 
+*** TXp25 (NetCDF Grid) from ACCESS-OM2
+Here is the grid file
+#+BEGIN_SRC sh
+  ./cice.setup -m conda -e macos -c sandbox_tx1_nc -g tx1
+  cd sandbox_tx1_nc
+#+end_src
+After initial setup I edited [[./CICE_runs/sandbox_tx1_nc/ice_in]] file
+changing the following lines
+#+BEGIN_SRC text
+    grid_format  = 'nc'
+    grid_type    = 'tripole'
+    grid_file    = '/Users/dpath2o/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.nc'
+    kmt_file     = 'unknown_kmt_file'
+#+END_SRC
+This runs through to completion with the following commands but the
+results (see [[fig:tx1_access-om2]], below)
+#+BEGIN_SRC sh
+  ./cice.build
+  ./cice.run
+#+END_SRC
+#+CAPTION: This is the 'sice' field for ACCESS-OM2 grid
+#+NAME:   fig:tx1_access-om2
 *** Using MOM6 grid
 
 **** First considered effort

@@ -6,7 +6,44 @@
 #+email: daniel.atwater@utas.edu.au
 #+STARTUP: indent , overview
 
-* Meetings and Correspondence                                           :mtg:email: 
+* July 2022 Meeting with Alex                                           :mtg:
+
+** Discussion Topics
+
+*** Guilian Van Achter's paper 2022 (second paper)
+Results are intriguing but are they significant?
+
+*** Fast ice an grounded iceberg interaction
+Does fast ice adhere to icebergs?
+
+*** CICE6 forcing and atmospheric forcing derivations
+Email to Sonya and Marc regarding the radiation forcings
+
+*** Bounce CICE6 vanilla runs
+
+* FilaChange 2022                                                      :conf:
+  SCHEDULED: <2022-08-29 Mon>-<2022-09-02 Fri>
+[[https://finescales2022.sciencesconf.org]]
+* COSIMA Weekly                                                    :mtg:wkly:
+SCHEDULED: <2022-04-07 Thu 11:30 +1w>
+** [[https://uni-sydney.zoom.us/j/85790057720?pwd=M2RxSlVXdjYyQnpzNk5aa2JSaUl1UT09#success][COSIMA Zoom Link]]                                                   :zoom:bookmark: 
+** [[https://docs.google.com/spreadsheets/d/1xf1JIJk89Q1rWxhlRfr5pD3Okr3PO_CS9rNBcTd59X4/edit#gid=774069671][COSMIA Schedule (google spreadsheet)]]                :doc:google:bookmark:
+*** TODO My first COSIMA presentation / discussion
+DEADLINE: <2022-06-09 Thu 11:30>
+** [2022-04-07 Thu]
+*** Taimor Sohail presentation
++ teasing out the anthropogenic sources from the natural background via a watermass-based framework
+  -- i.e instead of looking at water in terms of coordinates (i.e. lat/lon), which is the Lagrangian
+  method, then this work si taking the Eulerian view point of following a parcel of water based on
+  its temperature and salinity
+*** ERA5 forcing OM2
++ work continues
++ JRA55-do
+*** What to do with COSIMA mtg
++ COSIMA2
++ Science Talks
++ Themed discussions
+
 * Introduction to Andrew Kiss                                         :email:
 Simple introductory email so that he's aware that I exist. Andrew
 provided me with [[./reference/modelling/COSIMA_Hogg_ARC_submitted_220420_project_description.pdf][PDF ARC Proposal of COSIMA]] and this [[https://protect-au.mimecast.com/redirect/eNqtlm1vE0cQx7-Kda9je58frKrCcUBFhUCh9EXr6jT7ZB_47izfHhRQvnvnzgnYIbxLJCvend3Zmd_8d8dfi4Pf52JRBGiquJtB_gQ5Hp70GbpZDP0M-uKi2LW-WJCL4hB9rPY5V3UsFlQJoy23ghIy2NALuyggZ_DbqkktOv26vh3Xscndulj8gzOp2sVrqCMO18WL14wQdCCIKn9rN5ty-WZVdr2rq5xjKBkjgpFyf2jfR5_LEDt_wACqtpntQ1oXF-ui2wIdXfmgGLOMG-MIs1bp5JRXHDQPKTiXKNdAOVF3u5hU4z5KwbAEQInQngbijKKSgLUBiMPsRJSWOxqNVZ5rRbQQFh0mAyoEwePorw5ydOYsc4YJ5hMjNphoCQjGlOKeKc-IGxcf2ja_fewAsCZ_ft4fqcJ-v6s8DJzW82-gqi-D1QpNiLm5uF8J14bPs_xfPofKMaqkidYhgjLSC05d9AnDtITaQJQEQsHR-1AVNdHgKgUJrPCCyZAM8Y5hsb0mMXGu0YFjwbKoklU2QjISuLJeCkhnUC2mqglQaxIEKTTgWuZZSNFFQ8KDUB8ngFOoOSKc-X4HVXPKk0vGfkJzm-tzmkYq50NwVicRHRiJ5bNMaEaFBeGUodFLY-N9msCtSgSDI5RRH5lJSVusipPayog50gROckdC8EoKqwVoaZ1QLDnjuT2jCQIReglJRulBSktjEDYopy1eFMIfovk4AfxIEwntTmFKZeWPMPMBmq6uum649_FuxzeJ-oQoo9GesaA0F5RpD0CsC1EbrC8wYwyD-1CdNSwKn7glJpHACBeMS52Ijd4nS3jyzKL6Pep9mNXBR-mSi3ifgTt1BlUbQFlJis8NajQKjMTRoFlChSkZ4kNQHyeAU6h17DrYxPX8kLxhbNrl3rkYTglTYqW--fcGX_VQ4Xs-vP3PGxztqzBY9UXhumKhOc4AvvrFavnOLo3AFTAuXm2j__DuzYvjBFYE55be47CrodviSCUlPXHUexcBBGqMO5Q93jyvMTUbtEGZkTBsacIBdwD-i59mH7DET6Dpvzce7ATv0f4mLiavt1eTt7kP2EkmVfMxdrna4AvXbCbPoMuT5z5O6jbE3Q6ncGeu88u2b8LgvceOVtNiyMyfpzQ0v--9CnFU--qkVTV3Crwau-NkeeyOI89YQ7UbjT9vnePC0Nbjk4Erz0zHIsRu4K4kExz_KD8y-R7TtxCWI6PJ78jo3vkP07t_9j1LtR9nBZlhzfFj8CNHy7bt8lFNeMC0jhz6jtC2Ybhg1vbZDVhn2JJzHOs_zO3a9sPMt_jc3RzZX2MpMAHsNDiu9vj1_CScrbvNkHrxi7lcrdilXE4v5dPLqTBcTC17djVlTxVZsqW4skt9ktivw96j0DMqtWBk-JVAKNUU7wz-lkB7f9ihZZvzvlus5-v5psrb3o0Rzlev3j5_uVzPwXv0Mm1rtp4juj526zl27qEmg843pZ_GEnpCS11-DHpKWXkrnPLuyJKUt-KaYqZTLSzX2rIxvU0_Zvdq9Vcp4cunV82KXYv-79cmbF_8gXbfd7mt48EfSZ1oMm6Ot-oW8RT62XDLPcp8yKC4-R8alOfF][GitHub gem]] of a

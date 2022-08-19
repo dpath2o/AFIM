@@ -95,7 +95,6 @@
    + image 2
      #+ATTR_LATEX: :width 15cm
 
-
 * Methods of Downloading Level 1 Sentinel SAR Data
   As I ran into delays with python method I chose to download the data
   from RDI/CDASO. The delay with the python method was that the online

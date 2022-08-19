@@ -1,9 +1,14 @@
-#+title: Australian Fast Ice Model
+#+title: Australian Fast Ice Model (AFIM)
 #+date: <2022-04-02 Sat>
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
 #+STARTUP: overview
 
+* Australian Fast Ice Model (AFIM)
+  #+NAME: AFIM
+  Admittedly not the most creative name but at least it's an honest acronym.
+
+* A quick heads-up
 _Technical Note 1_: This file is written in [[https://orgmode.org][Emacs-Org]] (which, as an
 aside, I have been enamoured with for more years than I care to
 admit). As such it is exported to the [[https://www.markdownguide.org][markdown]] language that is
@@ -23,7 +28,7 @@ _Technical Note 3_: In separating the files into various sub-org files
 I noticed that the export from org to markdown does not translate for
 internal links. Hence beyond the background information *please use README.org file above to navigate*.
 
-* Background                                                       :personal:
+* AFIM Background                                                  :personal:
 
 At the start of 2020 I decided to pursue a PhD in oceanography that
 comprised [[http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf][ocean modelling]], the [[https://tos.org/oceanography/issue/volume-25-issue-03][Southern Ocean]] and [[https://www.scar.org][Antarctica]]. This was
@@ -67,9 +72,16 @@ fast ice modelling with an eye towards incorporating it into [[http://cosima.org
 
 * Administration
 [[./admin/admin.org]]
+
 * Research                                                              :res:
-** UTas Library Services                                         :bookmarks:
-[[https://www.utas.edu.au/library/research][UTas Research]]
+  
+** Plan 2.0                                                            :plan:
+Being a dynamic document this simply a new version of the previous
+plan. As it should it will be kept separate from this document and can
+be found [[./research/researchplan.org][here]] (as an Emacs-Org)
+
+** Grounded Icebergs                                       :methods:bookmark:
+   [[./research/grounded_icebergs.org]]
 
 ** Modelling                                                 :modelling:
 *** CICE                                              :coupled:seaice:modelling:
@@ -90,14 +102,8 @@ fast ice modelling with an eye towards incorporating it into [[http://cosima.org
 ** Data                                                      :data:
 [[./data.org]]
 
-** Research Plan 2.0                                                  :plan:
-Being a dynamic document this simply a new version of the previous
-plan. As it should it will be kept separate from this document and can
-be found [[./researchplan/researchplan.org][here]] (as an Emacs-Org)
-
 ** Candidature                                             :report:
 *** Meetings
-
 You are encouraged to meet with your supervisory team on a regular basis (e.g. fortnightly) to discuss project progress, troubleshoot issues and develop action plans for future research. These regular meetings support fruitful communication between you and your team, and assists all parties to manage their expectations.
 Meeting Agendas: You are responsible for preparing the agenda for your meetings and documenting the discussion and outcomes. This record provides clarity for all parties. The agenda can include:
 Meeting date/attendees
@@ -232,8 +238,12 @@ For PhD or Professional Doctorate candidates only: A 40-word summary of your the
 Once you have fulfilled the above requirements, the Graduate Research Office will request Academic Senate approval to award your degree. We will advise you when this approval has been received.
 *** Step 5: Graduation
 
+** UTas Library Services                                         :bookmarks:
+[[https://www.utas.edu.au/library/research][UTas Research]]
+
 * Meetings and Correspondence                                     :mtg:email:
 [[./admin/meetings.org]]
+
 
 * Computing                                                            :comp:
 [[./admin/computing.org]]
