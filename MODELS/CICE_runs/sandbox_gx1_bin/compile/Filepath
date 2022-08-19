@@ -1,9 +1,0 @@
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/drivers/standalone/cice
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/dynamics
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/general
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/analysis
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/infrastructure
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/infrastructure/io/io_netcdf
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/cicedynB/infrastructure/comm/mpi
-/Users/dpath2o/PHD/MODELS/src/CICE/cicecore/shared
-/Users/dpath2o/PHD/MODELS/src/CICE/icepack/columnphysics
