@@ -1,25 +1,21 @@
-#+title: Australian Fast Ice Model
+#+title: Antarctic Fast Ice Model
 #+subtitle: Modelling
 #+subtitle: CICE
-#+date: <2022-06-07 Tue>
+#+date: <2022-08-28 Sun>
 #+author: DP@H$_2$O
 #+email: daniel.atwater@utas.edu.au
-#+STARTUP: indent, overview, align
+#+STARTUP:
 
-* Python Notebook
+* CICE Consortium
 
-[[../src/py/cice_analysis.ipynb][AFIM CICE Analysis]]
-
-
-* Source Code Repository
-
+** CICE Github Repository
 [[https://github.com/CICE-Consortium]]
 
-** Resource Index
-
+*** Resources Index
 [[https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index]]
 
-** Forcing and Initial Conditions Data
+*** CICE Consortium Test Data
+#+LABEL: CICE6_Default_Forcing_and_IC
 
 The /default/ forcing data can be obtained here:
 [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data]]
@@ -34,47 +30,1530 @@ step loop. That subroutine computes the forcing year (~fyear~), calls
 the appropriate forcing data method, and then calls ~prepare_forcing~
 which converts the input data fields to model forcing fields.
 
-*** Datasets
-**** COREv2
-[[https://data1.gfdl.noaa.gov/nomads/forms/core/COREv2/CIAF_v2.html][Description and GFDL website]]
+Data was downloaded and unpacked into the following local directory,
+[[/Volumes/ioa03/cice-dirs/input/CICE_data]].
 
-**** ERA5
+** GX3 Description
+Global Three-Degree Cartesian
+*** GX3 Grid
+Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/grid_gx3.nc][GX3 grid file]]:
+#+BEGIN_QUOTE
+netcdf grid_gx3 {
+dimensions:
+	y = 116 ;
+	x = 100 ;
+variables:
+	double ulat(y, x) ;
+		ulat:units = "rad" ;
+	double ulon(y, x) ;
+		ulon:units = "rad" ;
+	double htn(y, x) ;
+		htn:units = "cm" ;
+	double hte(y, x) ;
+		hte:units = "cm" ;
+	double hus(y, x) ;
+		hus:units = "cm" ;
+	double huw(y, x) ;
+		huw:units = "cm" ;
+	double angle(y, x) ;
+		angle:units = "rad" ;
+
+// global attributes:
+		:history = "Tue Apr 17 16:11:59 2007: ncatted -astandard_name,,d,, global_gx3.grid.nc\n",
+			"Tue Apr 17 16:11:38 2007: ncatted -aunits,huw,c,c,cm global_gx3.grid.nc\n",
+			"Tue Apr 17 16:11:34 2007: ncatted -aunits,hus,c,c,cm global_gx3.grid.nc\n",
+			"Tue Apr 17 16:11:30 2007: ncatted -aunits,hte,c,c,cm global_gx3.grid.nc\n",
+			"Tue Apr 17 16:11:27 2007: ncatted -aunits,htn,c,c,cm global_gx3.grid.nc\n",
+			"Tue Apr 17 16:09:35 2007: ncatted -aunits,ulat,o,c,rad global_gx3.grid.nc\n",
+			"Tue Apr 17 16:09:32 2007: ncatted -aunits,ulon,o,c,rad global_gx3.grid.nc\n",
+			"Tue Apr 17 16:09:19 2007: ncatted -aunits,angle,c,c,rad global_gx3.grid.nc\n",
+			"Tue Apr 17 16:09:04 2007: ncatted -aunits,ulon,c,c,rad global_gx3.grid.nc\n",
+			"Tue Apr 17 16:08:59 2007: ncatted -aunits,ulat,c,c,rad global_gx3.grid.nc\n",
+			"Tue Apr 17 16:06:06 2007: ncatted -aunits,ulon,c,c,degree_east global_gx3.grid.nc\n",
+			"Tue Apr 17 16:05:53 2007: ncatted -aunits,ulat,c,c,degree_north global_gx3.grid.nc\n",
+			"Tue Apr 17 16:05:15 2007: ncrename -aunits,standard_name global_gx3.grid.nc\n",
+			"Tue Apr 17 16:04:40 2007: ncatted -aunits,ulon,c,c,longitude global_gx3.grid.nc\n",
+			"Tue Apr 17 16:04:31 2007: ncatted -aunits,ulat,c,c,latitude global_gx3.grid.nc\n",
+			"Tue Apr 17 16:02:44 2007: ncatted -aConventions,global,c,c,CF-1.0 global_gx3.grid.nc\n",
+			"Tue Apr 17 15:55:18 2007: ncap -O -sulat=ulat*0.0174533;ulon=ulon*0.0174533;htn=htn*100.0;hte=hte*100.0;hus=hus*100.0;huw=huw*100.0;angle=angle*0.0174533 global_gx3.grid.nc temp.nc\n",
+			"Tue Apr 17 15:34:39 2007: ncrename -vunspecified,ulat -vunspecified_2,ulon -vunspecified_3,htn -vunspecified_4,hte -vunspecified_5,hus -vunspecified_6,huw -vunspecified_7,angle temp.nc\n",
+			"Tue Apr 17 15:33:13 2007: ncks -x -a -vlongitude,latitude,unspecified_1,t global_gx3.grid.nc temp.nc\n",
+			"Tue Apr 17 15:32:26 2007: ncrename -dlongitude,x -dlatitude,y global_gx3.grid.nc\n",
+			"Tue Apr 17 15:31:50 2007: ncwa -O -aunspecified_1 global_gx3.grid.nc global_gx3.grid.nc\n",
+			"Tue Apr 17 15:31:34 2007: ncwa -at global_gx3.grid.nc global_gx3.grid.nc\n",
+			"Tue Apr 17 15:31:16 2007: ncatted -a,,d,, global_gx3.grid.nc\n",
+			"Tue Apr 17 15:30:50 BST 2007 - XCONV V1.91 Development" ;
+		:Conventions = "CF-1.0" ;
+}
+#+END_QUOTE
+*** GX3 Bathymetry
+Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/global_gx3.bathy.nc][GX3 bathymetry file]]:
+#+BEGIN_QUOTE
+netcdf global_gx3.bathy {
+dimensions:
+	nj = 116 ;
+	ni = 100 ;
+variables:
+	float Bathymetry(nj, ni) ;
+		Bathymetry:long_name = "ocean bathymetry for grounding scheme" ;
+		Bathymetry:units = "m" ;
+		Bathymetry:coordinates = "TLON TLAT" ;
+		Bathymetry:missing_value = 1.e+30f ;
+		Bathymetry:_FillValue = 1.e+30f ;
+	float TLAT(nj, ni) ;
+		TLAT:long_name = "T grid center latitude" ;
+		TLAT:units = "degrees_north" ;
+		TLAT:missing_value = 1.e+30f ;
+		TLAT:_FillValue = 1.e+30f ;
+	float TLON(nj, ni) ;
+		TLON:long_name = "T grid center longitude" ;
+		TLON:units = "degrees_east" ;
+		TLON:missing_value = 1.e+30f ;
+		TLON:_FillValue = 1.e+30f ;
+
+// global attributes:
+		:title = "ocean bathymetry for grounding scheme" ;
+		:source = "created from bathy_ORCA025_LIM.std" ;
+		:history = "Mon Oct 29 15:57:35 2018: ncatted -a conventions,global,d,, gx3_bathy.nc gx3_bathyTP12.nc\n",
+			"Mon Oct 29 15:56:16 2018: ncatted -a source,global,o,c,created from bathy_ORCA025_LIM.std gx3_bathyTP10.nc gx3_bathyTP11.nc\n",
+			"Mon Oct 29 15:54:19 2018: ncatted -a contents,global,d,, gx3_bathyTP9.nc gx3_bathyTP10.nc\n",
+			"Mon Oct 29 15:53:44 2018: ncatted -a comment,global,d,, gx3_bathyTP8.nc gx3_bathyTP9.nc\n",
+			"Mon Oct 29 15:53:36 2018: ncatted -a comment2,global,d,, gx3_bathyTP7.nc gx3_bathyTP8.nc\n",
+			"Mon Oct 29 15:53:10 2018: ncatted -a comment3,global,d,, gx3_bathyTP6.nc gx3_bathyTP7.nc\n",
+			"Mon Oct 29 15:27:25 2018: ncatted -a title,global,o,c,ocean bathymetry for grounding scheme gx3_bathyTP5.nc gx3_bathyTP6.nc\n",
+			"Mon Oct 29 15:11:32 2018: ncks -x -v time,time_bounds gx3_bathyTP4.nc gx3_bathyTP5.nc\n",
+			"Mon Oct 29 15:10:09 2018: ncatted -a units,Bathymetry,o,c,m gx3_bathyTP3.nc gx3_bathyTP4.nc\n",
+			"Mon Oct 29 15:06:47 2018: ncatted -a long_name,Bathymetry,o,c,ocean bathymetry for grounding scheme gx3_bathyTP2.nc gx3_bathyTP3.nc\n",
+			"Mon Oct 29 14:57:31 2018: ncks -x -v time_bounds gx3_bathyTP.nc gx3_bathyTP2.nc\n",
+			"Mon Oct 29 14:57:06 2018: ncks -x -v time gx3_bathyTP.nc gx3_bathyTP2.nc\n",
+			"Mon Oct 29 14:55:17 2018: ncks -x -v ULAT,ULON gx3_bathyTP.nc gx3_bathyTP2.nc\n",
+			"Thu Oct 25 18:26:01 2018: ncrename -v tarea,Bathymetry tempgx3.nc\n",
+			"Thu Oct 25 17:26:26 2018: ncks -x -v hi tempgx3.nc tempgx3out.nc\n",
+			"This dataset was created on 2018-10-25 at 17:24:50.3" ;
+		:io_flavor = "io_netcdf" ;
+		:NCO = "4.4.2" ;
+}
+#+END_QUOTE
+*** GX3 Land Mask
+Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/kmt_gx3.nc][GX3 land mask file]]:
+#+BEGIN_QUOTE
+netcdf kmt_gx3 {
+dimensions:
+	y = 116 ;
+	x = 100 ;
+variables:
+	float kmt(y, x) ;
+		kmt:units = "1" ;
+
+// global attributes:
+		:history = "Tue Apr 17 16:12:58 2007: ncatted -astandard_name,,d,, global_gx3.kmt.nc\n",
+			"Tue Apr 17 16:01:24 2007: ncatted -astandard_name,,c,c,model_level_number global_gx3.kmt.nc\n",
+			"Tue Apr 17 16:00:39 2007: ncatted -aunits,,c,c,1 global_gx3.kmt.nc\n",
+			"Tue Apr 17 15:58:38 2007: ncatted -aConventions,global,c,c,CF-1.0 global_gx3.kmt.nc\n",
+			"Tue Apr 17 15:27:57 2007: ncrename -dlongitude,x -dlatitude,y temp.nc\n",
+			"Tue Apr 17 15:27:39 2007: ncwa -aunspecified_1 temp.nc temp.nc\n",
+			"Tue Apr 17 15:27:32 2007: ncwa -at temp.nc temp.nc\n",
+			"Tue Apr 17 15:26:58 2007: ncrename -vunspecified,kmt temp.nc\n",
+			"Tue Apr 17 15:26:21 2007: ncks -C -vunspecified global_gx3.kmt.nc temp.nc\n",
+			"Tue Apr 17 15:25:37 2007: ncatted -a,,d,, global_gx3.kmt.nc\n",
+			"Tue Apr 17 15:25:13 BST 2007 - XCONV V1.91 Development" ;
+		:Conventions = "CF-1.0" ;
+}
+#+END_QUOTE
+*** GX3 Forcing
+Three datasets are used for forcing: [[GX3 JRA55]], [[GX3 NCAR]], and [[GX3 WW3]]
+**** GX3 JRA55
+Separated into five yearly NetCDF files that have three-hourly data -- i.e.
+[[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/JRA55/8XDAILY][8XDAILY]].
+
+Dictories contents:
+#+BEGIN_QUOTE
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2005.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2006.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2007.nc
+-rw-r-xr--  1 dpath2o  staff   907M 22 Feb  2020 JRA55_gx3_03hr_forcing_2008.nc
+-rw-r-xr--  1 dpath2o  staff   905M 22 Feb  2020 JRA55_gx3_03hr_forcing_2009.nc
+#+END_QUOTE
+
+Here is the header information of the first file
+#+BEGIN_QUOTE
+netcdf JRA55_gx3_03hr_forcing_2005 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	nj = 116 ;
+	ni = 100 ;
+variables:
+	float time(time) ;
+		time:long_name = "model time" ;
+		time:units = "days since 1900-12-31 00:00:00" ;
+		time:calendar = "standard" ;
+	float LON(nj, ni) ;
+		LON:long_name = "Longitude" ;
+		LON:units = "degrees_east" ;
+	float LAT(nj, ni) ;
+		LAT:long_name = "Latitude" ;
+		LAT:units = "degrees_north" ;
+	float glbrad(time, nj, ni) ;
+		glbrad:long_name = "downward surface shortwave" ;
+		glbrad:units = "W/m^2" ;
+		glbrad:coordinates = "LON LAT" ;
+		glbrad:_FillValue = 1.e+30f ;
+	float dlwsfc(time, nj, ni) ;
+		dlwsfc:long_name = "downward surface longwave" ;
+		dlwsfc:units = "W/m^2" ;
+		dlwsfc:coordinates = "LON LAT" ;
+		dlwsfc:_FillValue = 1.e+30f ;
+	float wndewd(time, nj, ni) ;
+		wndewd:long_name = "x-ward winds" ;
+		wndewd:units = "m/s" ;
+		wndewd:coordinates = "LON LAT" ;
+		wndewd:_FillValue = 1.e+30f ;
+	float wndnwd(time, nj, ni) ;
+		wndnwd:long_name = "y-ward winds" ;
+		wndnwd:units = "m/s" ;
+		wndnwd:coordinates = "LON LAT" ;
+		wndnwd:_FillValue = 1.e+30f ;
+	float airtmp(time, nj, ni) ;
+		airtmp:long_name = "Air temperature" ;
+		airtmp:units = "Kelvin" ;
+		airtmp:coordinates = "LON LAT" ;
+		airtmp:_FillValue = 1.e+30f ;
+	float spchmd(time, nj, ni) ;
+		spchmd:long_name = "Specific Humidity" ;
+		spchmd:units = "kg/kg" ;
+		spchmd:coordinates = "LON LAT" ;
+		spchmd:_FillValue = 1.e+30f ;
+	float ttlpcp(time, nj, ni) ;
+		ttlpcp:long_name = "Precipitation" ;
+		ttlpcp:units = "kg m-2 s-1" ;
+		ttlpcp:coordinates = "LON LAT" ;
+		ttlpcp:_FillValue = 1.e+30f ;
+}
+#+END_QUOTE
+**** GX3 NCAR
+Separate into [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/4XDAILY][4XDAILY]] (i.e. six-hourly) and [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/MONTHLY][monthly]] files, which are all binary,
+and hence NIL header information is listed here. The contents of the files can
+be dedecued from the file names:
+| filename | my guess                     |
+|----------+------------------------------|
+| cldf     | cloud                        |
+| prec     | precipitation                |
+| swdn     | net downward shortwave       |
+| dn10     | dew-point temperature @ 10 m |
+| q_10     | specific humidity @ 10 m     |
+| t_10     | air temperature @ 10 m       |
+| u_10     | zonal wind speed @ 10 m      |
+| v_10     | meridional wind speed @ 10 m |
+
+The directory contents are provided as:
+***** GX3 NCAR 4XDAILY
+#+BEGIN_QUOTE:
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 cldf.1997.dat
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 prec.1997.dat
+-rw-r--r--  1 dpath2o  staff   1.1M 12 Dec  2003 swdn.1997.dat
+#+END_QUOTE
+***** GX3 NCAR MONTHLY
+#+BEGIN_QUOTE
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 dn10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 q_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 t_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 u_10.1997.dat
+-rw-r--r--  1 dpath2o  staff   129M 12 Dec  2003 v_10.1997.dat
+#+END_QUOTE
+**** GX3 WW3
+[[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/WW3/ww3.20100101_efreq_remapgx3.nc][One wave spectral file]] is given with a total of four time steps and 25
+frequencies. The header is provided as:
+#+BEGIN_QUOTE
+	time = UNLIMITED ; // (4 currently)
+	ni = 100 ;
+	nj = 116 ;
+	f = 25 ;
+variables:
+	double time(time) ;
+		time:standard_name = "time" ;
+		time:long_name = "julian day (UT)" ;
+		time:units = "days since 1990-01-01 00:00:00" ;
+		time:calendar = "standard" ;
+		time:axis = "T" ;
+	float TLON(nj, ni) ;
+		TLON:standard_name = "longitude" ;
+		TLON:long_name = "longitude" ;
+		TLON:units = "degrees_east" ;
+		TLON:_CoordinateAxisType = "Lon" ;
+	float TLAT(nj, ni) ;
+		TLAT:standard_name = "latitude" ;
+		TLAT:long_name = "latitude" ;
+		TLAT:units = "degrees_north" ;
+		TLAT:_CoordinateAxisType = "Lat" ;
+	float f(f) ;
+		f:long_name = "wave_frequency" ;
+		f:units = "s-1" ;
+		f:axis = "Hz" ;
+		f:standard_name = "wave_frequency" ;
+	float efreq(time, f, nj, ni) ;
+		efreq:standard_name = "power_spectral_density_of_surface_elevation" ;
+		efreq:long_name = "wave_elevation_spectrum" ;
+		efreq:units = "m2 s" ;
+		efreq:coordinates = "TLAT TLON" ;
+		efreq:_FillValue = 9.96921e+36f ;
+		efreq:missing_value = 9.96921e+36f ;
+		efreq:globwave_name = "power_spectral_density_of_surface_elevation" ;
+
+// global attributes:
+		:CDI = "Climate Data Interface version 1.9.7.1 (http://mpimet.mpg.de/cdi)" ;
+		:history = "Wed Sep 04 15:05:27 2019: cdo chname,ef,efreq ww3.20100101_ef_remapgx3.nc ww3.20100101_efreq_remapgx3.nc\nWed Sep 04 13:37:05 2019: cdo remapnn,../gx3_tgrid_.nc ww3.20100101_ef_.nc ww3.20100101_ef_remapgx3.nc\nWed Sep  4 13:36:54 2019: ncks -x -v MAPSTA ww3.20100101_ef.nc ww3.20100101_ef_.nc\nWed Sep  4 13:28:07 2019: ncatted -a coordinates,ef,c,c,longitude latitude ww3.20100101_ef.nc" ;
+		:Conventions = "CF-1.6" ;
+		:WAVEWATCH_III_version_number = "5.16" ;
+		:WAVEWATCH_III_switches = "F90 NOGRB NOPA LRB4 NC4 PR3 UQ FLX0 LN1 ST4 BT1 DB1 MLIM NL1 TR0 BS0 REF0 IS0 IC4 XX0 WNT1 WNX1 CRT1 CRX1 O0 O1 O2 O3 O4 O5 O6 O7 O11 SHRD" ;
+		:product_name = "ww3.20100101_ef.nc" ;
+		:area = "POP 1 degree grid (gx1v6b)" ;
+		:latitude_resolution = "n/a" ;
+		:longitude_resolution = "n/a" ;
+		:southernmost_latitude = "-79.22052" ;
+		:northernmost_latitude = "89.70641" ;
+		:westernmost_longitude = "1.4731102E-02" ;
+		:easternmost_longitude = "359.9960" ;
+		:minimum_altitude = "-12000 m" ;
+		:maximum_altitude = "9000 m" ;
+		:altitude_resolution = "n/a" ;
+		:start_date = "2010-01-01 00:00:00" ;
+		:stop_date = "2010-01-01 18:00:00" ;
+		:NCO = "netCDF Operators version 4.7.9 (Homepage = http://nco.sf.net, Code = http://github.com/nco/nco)" ;
+		:CDO = "Climate Data Operators version 1.9.7.1 (http://mpimet.mpg.de/cdo)" ;
+}
+#+END_QUOTE
+*** GX3 Initial Conditions
+There are a total of 12 initial condition files provided. With each file
+containing NIL time step across the This is interesting to
+me as I thought only one would be required. Nonetheless, the header of
+the first file is given below. 
+#+BEGIN_QUOTE
+netcdf iced_gx3_v6.2005-01-01 {
+dimensions:
+	ni = 100 ;
+	nj = 116 ;
+	ncat = 5 ;
+variables:
+	double uvel(nj, ni) ;
+	double vvel(nj, ni) ;
+	double scale_factor(nj, ni) ;
+	double swvdr(nj, ni) ;
+	double swvdf(nj, ni) ;
+	double swidr(nj, ni) ;
+	double swidf(nj, ni) ;
+	double strocnxT(nj, ni) ;
+	double strocnyT(nj, ni) ;
+	double stressp_1(nj, ni) ;
+	double stressp_2(nj, ni) ;
+	double stressp_3(nj, ni) ;
+	double stressp_4(nj, ni) ;
+	double stressm_1(nj, ni) ;
+	double stressm_2(nj, ni) ;
+	double stressm_3(nj, ni) ;
+	double stressm_4(nj, ni) ;
+	double stress12_1(nj, ni) ;
+	double stress12_2(nj, ni) ;
+	double stress12_3(nj, ni) ;
+	double stress12_4(nj, ni) ;
+	double iceumask(nj, ni) ;
+	double sst(nj, ni) ;
+	double frzmlt(nj, ni) ;
+	double frz_onset(nj, ni) ;
+	double fsnow(nj, ni) ;
+	double aicen(ncat, nj, ni) ;
+	double vicen(ncat, nj, ni) ;
+	double vsnon(ncat, nj, ni) ;
+	double Tsfcn(ncat, nj, ni) ;
+	double iage(ncat, nj, ni) ;
+	double FY(ncat, nj, ni) ;
+	double alvl(ncat, nj, ni) ;
+	double vlvl(ncat, nj, ni) ;
+	double apnd(ncat, nj, ni) ;
+	double hpnd(ncat, nj, ni) ;
+	double ipnd(ncat, nj, ni) ;
+	double dhs(ncat, nj, ni) ;
+	double ffrac(ncat, nj, ni) ;
+	double fbrn(ncat, nj, ni) ;
+	double first_ice(ncat, nj, ni) ;
+	double sice001(ncat, nj, ni) ;
+	double qice001(ncat, nj, ni) ;
+	double sice002(ncat, nj, ni) ;
+	double qice002(ncat, nj, ni) ;
+	double sice003(ncat, nj, ni) ;
+	double qice003(ncat, nj, ni) ;
+	double sice004(ncat, nj, ni) ;
+	double qice004(ncat, nj, ni) ;
+	double sice005(ncat, nj, ni) ;
+	double qice005(ncat, nj, ni) ;
+	double sice006(ncat, nj, ni) ;
+	double qice006(ncat, nj, ni) ;
+	double sice007(ncat, nj, ni) ;
+	double qice007(ncat, nj, ni) ;
+	double qsno001(ncat, nj, ni) ;
+
+// global attributes:
+		:istep1 = 87672 ;
+		:time = 315619200. ;
+		:time_forc = 315619200. ;
+		:nyr = 11 ;
+		:month = 1 ;
+		:mday = 1 ;
+		:sec = 0 ;
+		:created = "2021-03-19" ;
+		:history = "Wed Apr  7 12:29:43 2021: ncatted --attribute created,global,c,c,2021-03-19 iced_gx3_v6.2005-01-01.nc" ;
+		:NCO = "netCDF Operators version 4.9.5 (Homepage = http://nco.sf.net, Code = http://github.com/nco/nco)" ;
+}
+#+END_QUOTE
+
+** GX1 Description
+Global One-Degree Cartesian
+*** GX1 Grid
+For some reason the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/grid_gx1.bin][GX1 grid file]] is in binary format and the header information
+is not easily accessible.
+*** GX1 Bathymetry
+Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/grid_gx1.bin][GX1 bathymetry file]]:
+#+BEGIN_QUOTE
+netcdf global_gx1.bathy {
+dimensions:
+	nj = 384 ;
+	ni = 320 ;
+variables:
+	float Bathymetry(nj, ni) ;
+		Bathymetry:long_name = "ocean bathymetry for grounding scheme" ;
+		Bathymetry:units = "m" ;
+		Bathymetry:coordinates = "TLON TLAT" ;
+		Bathymetry:missing_value = 1.e+30f ;
+		Bathymetry:_FillValue = 1.e+30f ;
+	float TLAT(nj, ni) ;
+		TLAT:long_name = "T grid center latitude" ;
+		TLAT:units = "degrees_north" ;
+		TLAT:missing_value = 1.e+30f ;
+		TLAT:_FillValue = 1.e+30f ;
+	float TLON(nj, ni) ;
+		TLON:long_name = "T grid center longitude" ;
+		TLON:units = "degrees_east" ;
+		TLON:missing_value = 1.e+30f ;
+		TLON:_FillValue = 1.e+30f ;
+
+// global attributes:
+		:title = "ocean bathymetry for grounding scheme" ;
+		:source = "created from bathy_ORCA025_LIM.std" ;
+		:history = "Mon Oct 29 16:01:01 2018: ncatted -a source,global,o,c,created from bathy_ORCA025_LIM.std gx1_bathyTP10.nc gx1_bathyTP11.nc\n",
+			"Mon Oct 29 16:00:02 2018: ncatted -a contents,global,d,, gx1_bathyTP9.nc gx1_bathyTP10.nc\n",
+			"Mon Oct 29 15:59:40 2018: ncatted -a comment,global,d,, gx1_bathyTP8.nc gx1_bathyTP9.nc\n",
+			"Mon Oct 29 15:59:33 2018: ncatted -a comment2,global,d,, gx1_bathyTP7.nc gx1_bathyTP8.nc\n",
+			"Mon Oct 29 15:59:26 2018: ncatted -a comment3,global,d,, gx1_bathyTP6.nc gx1_bathyTP7.nc\n",
+			"Mon Oct 29 15:59:13 2018: ncatted -a conventions,global,d,, gx1_bathyTP5.nc gx1_bathyTP6.nc\n",
+			"Mon Oct 29 15:27:15 2018: ncatted -a title,global,o,c,ocean bathymetry for grounding scheme gx1_bathyTP4.nc gx1_bathyTP5.nc\n",
+			"Mon Oct 29 15:13:20 2018: ncks -x -v time,time_bounds gx1_bathyTP3.nc gx1_bathyTP4.nc\n",
+			"Mon Oct 29 15:13:04 2018: ncatted -a units,Bathymetry,o,c,m gx1_bathyTP2.nc gx1_bathyTP3.nc\n",
+			"Mon Oct 29 15:12:46 2018: ncatted -a long_name,Bathymetry,o,c,ocean bathymetry for grounding scheme gx1_bathy.nc gx1_bathyTP2.nc\n",
+			"Fri Oct 26 13:28:47 2018: ncrename -v tarea,Bathymetry tempgx1.nc\n",
+			"Thu Oct 25 17:17:42 2018: ncks -x -v ANGLE,ANGLET,NCAT,ULAT,ULON,VGRDa,aice,blkmask,hi,taubx,tauby,time_bounds,tmask,uarea,uvel,vvel tempgx1.nc tempgx1out.nc\n",
+			"This dataset was created on 2018-10-22 at 18:12:11.5" ;
+		:io_flavor = "io_netcdf" ;
+		:NCO = "4.4.2" ;
+}
+#+END_QUOTE
+*** GX1 Land Mask
+For some reason the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/kmt_gx1.bin][GX1 land mask file]] is in binary format and the header
+information is not easily accessible.
+*** GX1 Forcing
+Four datasets are used for forcing: [[GX1 CESM]], [[GX1 COREII]], [[GX1 JRA55]], and [[GX1
+WOA]]. I find it interesting to note that WaveWatch III data is not provided. 
+**** GX1 CESM
+One file provides monthly summarised oceanographic data in the following format.
+Note that the time dimension is only 12 increments in length. 
+#+BEGIN_QUOTE
+netcdf ocean_forcing_clim_2D_gx1 {
+dimensions:
+	time = 12 ;
+	nj = 384 ;
+	ni = 320 ;
+variables:
+	double area(nj, ni) ;
+		area:long_name = "area of grid cell in radians squared" ;
+		area:units = "area" ;
+	int mask(nj, ni) ;
+		mask:units = "unitless" ;
+		mask:long_name = "domain maskr" ;
+		mask:_FillValue = -2147483647 ;
+		mask:missing_value = -2147483647 ;
+	double xc(nj, ni) ;
+		xc:missing_value = 9.96920996838687e+36 ;
+		xc:_FillValue = 9.96920996838687e+36 ;
+		xc:units = "degrees east" ;
+		xc:long_name = "longitude of grid cell center" ;
+	double yc(nj, ni) ;
+		yc:missing_value = 9.96920996838687e+36 ;
+		yc:_FillValue = 9.96920996838687e+36 ;
+		yc:units = "degrees north" ;
+		yc:long_name = "latitude of grid cell center" ;
+	float time(time) ;
+		time:calendar = "noleap" ;
+		time:long_name = "observation time" ;
+		time:units = "days since 0001-01-01 00:00:00" ;
+	float S(time, nj, ni) ;
+		S:units = "ppt" ;
+		S:long_name = "salinity" ;
+		S:_FillValue = 9.96921e+36f ;
+	float T(time, nj, ni) ;
+		T:units = "degC" ;
+		T:long_name = "temperature" ;
+		T:_FillValue = 9.96921e+36f ;
+	float U(time, nj, ni) ;
+		U:units = "m/s" ;
+		U:long_name = "u ocean current" ;
+		U:_FillValue = 9.96921e+36f ;
+	float V(time, nj, ni) ;
+		V:units = "m/s" ;
+		V:long_name = "v ocean current" ;
+		V:_FillValue = 9.96921e+36f ;
+	float dhdx(time, nj, ni) ;
+		dhdx:units = "m/m" ;
+		dhdx:long_name = "ocean surface slope: zonal" ;
+		dhdx:_FillValue = 9.96921e+36f ;
+	float dhdy(time, nj, ni) ;
+		dhdy:units = "m/m" ;
+		dhdy:long_name = "ocean surface slope: meridional" ;
+		dhdy:_FillValue = 9.96921e+36f ;
+	float hblt(time, nj, ni) ;
+		hblt:units = "m" ;
+		hblt:long_name = "boundary layer depth" ;
+		hblt:_FillValue = 9.96921e+36f ;
+	float qdp(time, nj, ni) ;
+		qdp:units = "W/m^2" ;
+		qdp:long_name = "ocean heat flux convergence" ;
+		qdp:_FillValue = 9.96921e+36f ;
+
+// global attributes:
+		:creation_date = "Tue Feb 17 09:45:48 MST 2015" ;
+		:comment = "This data is on the displaced pole grid gx1v5" ;
+		:calendar = "standard" ;
+		:author = "D. Bailey" ;
+		:note3 = "qdp is computed from depth summed ocean column" ;
+		:note2 = "all fields interpolated to T-grid" ;
+		:note1 = "fields computed from years 402 to 1510 monthly means from pop" ;
+		:description = "Input data for DOCN7 mixed layer model from b.e11.B1850C5CN.f09_g16.005" ;
+		:source = "pop_frc.ncl" ;
+		:conventions = "CCSM data model domain description" ;
+		:title = "Monthly averaged ocean forcing from POP output" ;
+		:history = "Wed Mar 24 11:42:29 2021: ncatted --glb_att_add description2=From the CESM-LE control run as in Kay et al. 2015 pop_frc.gx1.nc" ;
+		:description2 = "From the CESM-LE control run as in Kay et al. 2015" ;
+		:NCO = "netCDF Operators version 4.9.5 (Homepage = http://nco.sf.net, Code = http://github.com/nco/nco)" ;
+    }
+#+END_QUOTE
+**** GX1 COREII
+These files are given as binary with two sub-directories [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/4XDAILY][4XDAILY]] and [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/MONTHLY][MONTHLY]].
+The file names indicate the representative variable contained within.
+
+Here is the directory listing of the [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/4XDAILY/][4XDAILY]]:
+#+BEGIN_QUOTE
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2005.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2006.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2007.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2008.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 q_10.2009.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2005.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2006.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2007.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2008.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 t_10.2009.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2005.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2006.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2007.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 u_10.2008.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 31 Aug  2017 u_10.2009.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2005.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2006.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2007.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 30 Aug  2017 v_10.2008.dat
+-rwxr-xr-x  1 dpath2o  staff   1.3G 31 Aug  2017 v_10.2009.dat
+#+END_QUOTE
+
+Here is the listing of the [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/MONTHLY][MONTHLY]]:
+#+BEGIN_QUOTE
+-rw-r--r--  1 dpath2o  staff    11M 12 Jul  2012 cldf.omip.dat
+-rw-r--r--  1 dpath2o  staff    11M 12 Jul  2012 prec.nmyr.dat
+#+END_QUOTE
+**** GX1 JRA55
+The forcing files are nearly identical to [[GX3 JRA55]] with the exception of the
+change in grid. This is most notable in comparing the file sizes -- [[GX3 JRA55]]
+files are 0.9GB and these GX1 JRA55 files are 9.5GB. Here is the directory
+listing of the [[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/JRA55/8XDAILY/][8XDAILY]]:
+#+BEGIN_QUOTE
+-rw-r--r--@ 1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2005.nc
+-rw-r--r--  1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2006.nc
+-rw-r--r--  1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2007.nc
+-rw-r--r--  1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2008.nc
+-rw-r--r--  1 dpath2o  staff   9.4G 22 Aug  2019 JRA55_03hr_forcing_2009.nc
+#+END_QUOTE
+
+Here is the header information of the first file:
+#+BEGIN_QUOTE
+netcdf JRA55_03hr_forcing_2005 {
+dimensions:
+	nj = 384 ;
+	ni = 320 ;
+	time = UNLIMITED ; // (2920 currently)
+variables:
+	float LAT(nj, ni) ;
+		LAT:long_name = "Latitude" ;
+		LAT:units = "degrees_north" ;
+	float LON(nj, ni) ;
+		LON:long_name = "Longitude" ;
+		LON:units = "degrees_east" ;
+	float airtmp(time, nj, ni) ;
+		airtmp:long_name = "Air temperature" ;
+		airtmp:units = "Kelvin" ;
+		airtmp:coordinates = "LON LAT" ;
+		airtmp:_FillValue = 1.e+30f ;
+	float dlwsfc(time, nj, ni) ;
+		dlwsfc:long_name = "downward surface longwave" ;
+		dlwsfc:units = "W/m^2" ;
+		dlwsfc:coordinates = "LON LAT" ;
+		dlwsfc:_FillValue = 1.e+30f ;
+	float glbrad(time, nj, ni) ;
+		glbrad:long_name = "downward surface shortwave" ;
+		glbrad:units = "W/m^2" ;
+		glbrad:coordinates = "LON LAT" ;
+		glbrad:_FillValue = 1.e+30f ;
+	float spchmd(time, nj, ni) ;
+		spchmd:long_name = "Specific Humidity" ;
+		spchmd:units = "kg/kg" ;
+		spchmd:coordinates = "LON LAT" ;
+		spchmd:_FillValue = 1.e+30f ;
+	float time(time) ;
+		time:long_name = "model time" ;
+		time:units = "days since 1900-12-31 00:00:00" ;
+		time:calendar = "standard" ;
+	float ttlpcp(time, nj, ni) ;
+		ttlpcp:long_name = "Total precipiation" ;
+		ttlpcp:units = "kg m-2 s-1" ;
+		ttlpcp:coordinates = "LON LAT" ;
+		ttlpcp:_FillValue = 1.e+30f ;
+		ttlpcp:comment = "derived from bucket dumps" ;
+	float wndewd(time, nj, ni) ;
+		wndewd:long_name = "x-ward winds" ;
+		wndewd:units = "m/s" ;
+		wndewd:coordinates = "LON LAT" ;
+		wndewd:_FillValue = 1.e+30f ;
+	float wndnwd(time, nj, ni) ;
+		wndnwd:long_name = "y-ward winds" ;
+		wndnwd:units = "m/s" ;
+		wndnwd:coordinates = "LON LAT" ;
+		wndnwd:_FillValue = 1.e+30f ;
+
+// global attributes:
+		:history = "Mon Aug  5 15:31:32 2019: ncks -v time,LON,LAT,glbrad,dlwsfc,wndewd,wndnwd,airtmp,spchmd,ttlpcp JRA55_03hr_forcing_20050101.00.netrad.nc JRA55_03hr_forcing_20050101.00.nc" ;
+		:NCO = "netCDF Operators version 4.7.5 (Homepage = http://nco.sf.net, Code = http://github.com/nco/nco)" ;
+}
+#+END_QUOTE
+**** GX1 WOA
+Monthly statistics for silicate and nitrate are provided across two files. The
+header information for these two files is provided.
+
+[[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/WOA/MONTHLY/nitrate_climatologyWOA_gx1v6f_20150107.nc][Nitrate]] file:
+#+BEGIN_QUOTE
+netcdf nitrate_climatologyWOA_gx1v6f_20150107 {
+dimensions:
+	time = 12 ;
+	nj = 384 ;
+	ni = 320 ;
+variables:
+	float time(time) ;
+	int nj(nj) ;
+	int ni(ni) ;
+	float TLAT(nj, ni) ;
+		TLAT:_FillValue = 1.e+30f ;
+	float TLON(nj, ni) ;
+		TLON:_FillValue = 1.e+30f ;
+	double nitrate(time, nj, ni) ;
+		nitrate:_FillValue = 1.00000001504747e+30 ;
+}
+#+END_QUOTE
+
+[[/Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/WOA/MONTHLY/silicate_climatologyWOA_gx1v6f_20150107.nc][Silicate]] file:
+#+BEGIN_QUOTE
+netcdf silicate_climatologyWOA_gx1v6f_20150107 {
+dimensions:
+	time = 12 ;
+	nj = 384 ;
+	ni = 320 ;
+variables:
+	float time(time) ;
+		time:_FillValue = 9.96921e+36f ;
+	int nj(nj) ;
+	int ni(ni) ;
+	float TLAT(nj, ni) ;
+		TLAT:_FillValue = 1.e+30f ;
+	float TLON(nj, ni) ;
+		TLON:_FillValue = 1.e+30f ;
+	float silicate(time, nj, ni) ;
+		silicate:_FillValue = 1.e+30f ;
+}
+#+END_QUOTE
+
+*** GX1 Initial Conditions
+These files are nearly identical to the [[GX3 Initial Conditions]] *other than the
+underlying grid*. So there are a total of 12 initial condition files provided.
+With each file containing NIL time step across the This is interesting to me as
+I thought only one would be required. Nonetheless, the header of the first file
+is given below. 
+#+BEGIN_QUOTE
+netcdf iced_gx1_v6.2005-01-01 {
+dimensions:
+	ni = 320 ;
+	nj = 384 ;
+	ncat = 5 ;
+variables:
+	double uvel(nj, ni) ;
+	double vvel(nj, ni) ;
+	double scale_factor(nj, ni) ;
+	double swvdr(nj, ni) ;
+	double swvdf(nj, ni) ;
+	double swidr(nj, ni) ;
+	double swidf(nj, ni) ;
+	double strocnxT(nj, ni) ;
+	double strocnyT(nj, ni) ;
+	double stressp_1(nj, ni) ;
+	double stressp_2(nj, ni) ;
+	double stressp_3(nj, ni) ;
+	double stressp_4(nj, ni) ;
+	double stressm_1(nj, ni) ;
+	double stressm_2(nj, ni) ;
+	double stressm_3(nj, ni) ;
+	double stressm_4(nj, ni) ;
+	double stress12_1(nj, ni) ;
+	double stress12_2(nj, ni) ;
+	double stress12_3(nj, ni) ;
+	double stress12_4(nj, ni) ;
+	double iceumask(nj, ni) ;
+	double sst(nj, ni) ;
+	double frzmlt(nj, ni) ;
+	double frz_onset(nj, ni) ;
+	double fsnow(nj, ni) ;
+	double aicen(ncat, nj, ni) ;
+	double vicen(ncat, nj, ni) ;
+	double vsnon(ncat, nj, ni) ;
+	double Tsfcn(ncat, nj, ni) ;
+	double iage(ncat, nj, ni) ;
+	double FY(ncat, nj, ni) ;
+	double alvl(ncat, nj, ni) ;
+	double vlvl(ncat, nj, ni) ;
+	double apnd(ncat, nj, ni) ;
+	double hpnd(ncat, nj, ni) ;
+	double ipnd(ncat, nj, ni) ;
+	double dhs(ncat, nj, ni) ;
+	double ffrac(ncat, nj, ni) ;
+	double fbrn(ncat, nj, ni) ;
+	double first_ice(ncat, nj, ni) ;
+	double sice001(ncat, nj, ni) ;
+	double qice001(ncat, nj, ni) ;
+	double sice002(ncat, nj, ni) ;
+	double qice002(ncat, nj, ni) ;
+	double sice003(ncat, nj, ni) ;
+	double qice003(ncat, nj, ni) ;
+	double sice004(ncat, nj, ni) ;
+	double qice004(ncat, nj, ni) ;
+	double sice005(ncat, nj, ni) ;
+	double qice005(ncat, nj, ni) ;
+	double sice006(ncat, nj, ni) ;
+	double qice006(ncat, nj, ni) ;
+	double sice007(ncat, nj, ni) ;
+	double qice007(ncat, nj, ni) ;
+	double qsno001(ncat, nj, ni) ;
+
+// global attributes:
+		:istep1 = 87672 ;
+		:time = 315619200. ;
+		:time_forc = 315619200. ;
+		:nyr = 11 ;
+		:month = 1 ;
+		:mday = 1 ;
+		:sec = 0 ;
+		:created = "2021-03-30" ;
+		:history = "Fri Apr  2 08:48:44 2021: ncatted --attribute created,global,c,c,2021-03-30 iced_gx1_v6.2005-01-01.nc" ;
+		:NCO = "netCDF Operators version 4.9.5 (Homepage = http://nco.sf.net, Code = http://github.com/nco/nco)" ;
+}
+#+END_QUOTE
+** TX1 Description
+Global One-Degree Tri-polar
+*** TX1 Grid
+Here this [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.nc][grid file]] is given in both NetCDF and binary format, hence here is the
+header contents of this file. This header contents indicates are fair amount
+more information than the [[GX3 Grid]] file.
+#+BEGIN_QUOTE
+netcdf grid_tx1 {
+dimensions:
+	nx = 360 ;
+	ny = 300 ;
+	nc = 4 ;
+variables:
+	double ulat(ny, nx) ;
+		ulat:units = "radians" ;
+		ulat:title = "Latitude of U points" ;
+	double ulon(ny, nx) ;
+		ulon:units = "radians" ;
+		ulon:title = "Longitude of U points" ;
+	double tlat(ny, nx) ;
+		tlat:units = "radians" ;
+		tlat:title = "Latitude of T points" ;
+	double tlon(ny, nx) ;
+		tlon:units = "radians" ;
+		tlon:title = "Longitude of T points" ;
+	double htn(ny, nx) ;
+		htn:units = "cm" ;
+		htn:title = "Width of T cells on N side" ;
+	double hte(ny, nx) ;
+		hte:units = "cm" ;
+		hte:title = "Width of T cells on E side" ;
+	double hun(ny, nx) ;
+		hun:units = "cm" ;
+		hun:title = "Width of U cells on N side" ;
+	double hue(ny, nx) ;
+		hue:units = "cm" ;
+		hue:title = "Width of U cells on E side" ;
+	double angle(ny, nx) ;
+		angle:units = "radians" ;
+		angle:title = "Rotation Angle of U cells" ;
+	double angleT(ny, nx) ;
+		angleT:units = "radians" ;
+		angleT:title = "Rotation Angle of T cells" ;
+	double tarea(ny, nx) ;
+		tarea:units = "m^2" ;
+		tarea:title = "area in m^2 for T cells" ;
+	double uarea(ny, nx) ;
+		uarea:units = "m^2" ;
+		uarea:title = "area in m^2 for U cells" ;
+	double lont_bonds(nc, ny, nx) ;
+		lont_bonds:units = "radians" ;
+		lont_bonds:title = "long. of T cell vertices" ;
+	double latt_bonds(nc, ny, nx) ;
+		latt_bonds:units = "radians" ;
+		latt_bonds:title = "lat. of T cell vertices" ;
+	double lonu_bonds(nc, ny, nx) ;
+		lonu_bonds:units = "radians" ;
+		lonu_bonds:title = "long. of U cell vertices" ;
+	double latu_bonds(nc, ny, nx) ;
+		latu_bonds:units = "radians" ;
+		latu_bonds:title = "lat. of U cell vertices" ;
+}
+#+END_QUOTE
+*** TX1 Bathymetry
+The [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/tx1_bathy.nc][bathymetry file]] for the tri-polar grid is pretty straight forward:
+#+BEGIN_QUOTE
+netcdf tx1_bathy {
+dimensions:
+	dim_j = 240 ;
+	dim_i = 360 ;
+variables:
+	double Bathymetry(dim_j, dim_i) ;
+		Bathymetry:long_name = "ocean bathymetry for grounding scheme" ;
+		Bathymetry:units = "m" ;
+		Bathymetry:_FillValue = 1.e+30 ;
+	double lat(dim_j, dim_i) ;
+		lat:long_name = "Latitude" ;
+		lat:units = "degrees_north" ;
+		lat:_FillValue = 1.e+30 ;
+	double lon(dim_j, dim_i) ;
+		lon:long_name = "Longitude" ;
+		lon:units = "degrees_east" ;
+		lon:_FillValue = 1.e+30 ;
+
+// global attributes:
+		:history = "Wed Feb 10 21:25:30 2021: ncatted -a units,Bathymetry,o,c,m temptx1.nc tx1_bathy.nc\n",
+			"Wed Feb 10 21:24:26 2021: ncatted -a long_name,Bathymetry,o,c,ocean bathymetry for grounding scheme temptx1.nc temptx1.nc\n",
+			"Wed Feb 10 21:23:52 2021: ncks -x -v dx,dy,mask temptx1.nc temptx1.nc\n",
+			"Wed Feb 10 21:22:19 2021: ncrename -v ang,Bathymetry temptx1.nc" ;
+		:NCO = "4.4.2" ;
+}
+#+END_QUOTE
+*** TX1 Land Mask
+The [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/kmt_tx1.bin][land mask file]] is binary and cannot be easily shown here. 
+*** TX1 Forcing
+The only dataset utilised for the tri-polar forcing is JRA55. It is equivalent
+in it's structure and content to the other two JRA55 ([[GX3 JRA55]] and [[GX1 JRA55]]),
+but just re-gridded onto the [[TX1 Grid]].
+*** TX1 Initial Conditions
+There is no version 6 files provided [[CICE Consortium]]
+** Initial Conditions Discussion
+All three (GX3, GX1 and TX1) cases of [[CICE Consortium Test Data]] have the same
+structure of the initial condition files. Each case provides twelve files named
+for each month. The contents of those files show 56 gridded parameters over two
+and three dimensions (one categorical dimension and two spatial dimensions).
+There is not a time dimension. Hence time-step is implied as monthly with 12
+files named for each month -- it is not known wether this is a snap snot or an
+average over the month. The table below is made in order to consolidate the
+initial condition parameters should at some point it be determined that initial
+conditions should be provided. The short name and description (the first two
+columns) are obtained from correlating the [[CICE_Consortium Test Data]] information
+and the information found in the documentation, online [[https://cice-consortium-cice.readthedocs.io/en/main/cice_index.html][here]]. 
+| CICE6 short    | CICE6 description                                  | Dims         | Units | short name | Dataset |
+|----------------+----------------------------------------------------+--------------+-------+------------+---------|
+| uvel           | sea ice velocity, eastward                         | ni, nj       | m/s   | uheff      | SOSE    |
+| vvel           | sea ice velocity, northward                        | ni, nj       | m/s   | vheff      | SOSE    |
+| scale_factor   | timestep offsets in shortwave radiation components | ni, nj       | -     |            | MERRAv2 |
+| swvdr          | incoming shortwave radiation, visible direct       | ni, nj       | W/m^2 | SWGNT      | MERRAv2 |
+| swvdf          | incoming shortwave radiation, visible diffuse      | ni, nj       | W/m^2 | SWdiffuse  | MERRAv2 |
+| swidr          | incoming shortwave radiation, infrared direct      | ni, nj       | W/m^2 | LWGNT      | MERRAv2 |
+| swidf          | incoming shortwave radiation, infrared diffuse     | ni, nj       | W/m^2 | LWdiffuse  | MERRAv2 |
+| strocnxT       | ice-ocean stress                                   | ni, nj       | N/m   | taux       | SOSE    |
+| strocnyT       | ice-ocean stress                                   | ni, nj       | N/m   | tauy       | SOSE    |
+| stressp_[1-4]  | internal strain tensor                             | ni, nj       | N/m   | -          | -       |
+| stressm_[1-4]  | internal strain tensor                             | ni, nj       | N/m   | -          | -       |
+| stress12_[1-4] | internal strain tensor                             | ni, nj       | N/m   | -          | -       |
+| iceumask       | the mask where there is ice in a gridcell          | ni, nj       | -     | -          | derived |
+| sst            | sea surface temperature                            | ni, nj       | C     | T          | SOSE    |
+| frzmlt         | ice ocean heat exhange                             | ni, nj       | W/m^2 | oceFreez   | SOSE    |
+| frz_onset      | Julian day in which the onset of freezing occurs   | ni, nj       | -     | -          | -       |
+| ulat           | u-grid latitudes                                   | ni, nj       | -     | ulat       | COSIMA  |
+| ulon           | u-grid longitudes                                  | ni, nj       | -     | ulon       | COSIMA  |
+| tlat           | t-grid latitudes                                   | ni, nj       | -     | tlat       | COSIMA  |
+| tlon           | t-grid latitudes                                   | ni, nj       | -     | tlon       | COSIMA  |
+| aicen          | ice fraction per category                          | ncat, ni, nj | -     | aicen      | SOSE    |
+| vicen          | ice volume per unit area per category              | ncat, ni, nj | -     | heff       | SOSE    |
+| vsnon          | snow volume per unit area per category             | ncat, ni, nj | -     | hsnow      | SOSE    |
+| Tsfcn          | surface snow/ice temperature per category          | ncat, ni, nj | C     | SItices    | SOSE    |
+| iage           | ice age                                            | ncat, ni, nj | -     | -          | -       |
+| FY             | first year ice area                                | ncat, ni, nj | -     | -          | -       |
+| alvl           | fraction of level ice area                         | ncat, ni, nj | -     | -          | -       |
+| vlvl           | volume of the level ice area                       | ncat, ni, nj | -     | -          | -       |
+| apnd           | fraction of ponds per cell                         | ncat, ni, nj | -     | -          | -       |
+| hpnd           | depth of ponds per cell                            | ncat, ni, nj | -     | -          | -       |
+| ipnd           | other pond characteristics                         | ncat, ni, nj | -     | -          | -       |
+| dhs            | -                                                  | ncat, ni, nj | -     | -          | -       |
+| ffrac          | -                                                  | ncat, ni, nj | -     | -          | -       |
+| fbrs           | -                                                  | ncat, ni, nj | -     | -          | -       |
+| sice00[1-5]    | -                                                  | ncat, ni, nj | -     | -          | -       |
+| qice00[1-5]    | -                                                  | ncat, ni, nj | -     | -          | -       |
+| qsno00[1-5]    | -                                                  | ncat, ni, nj | -     | -          | -       |
+
+* Climatological Datasets
+The following external datasets are relevant to stand-alone [[CICEConsortium][CICE6]]. Below is
+given information that is helpful to reference for this purpose.
+
+** [[https://data1.gfdl.noaa.gov/nomads/forms/core/COREv2/CIAF_v2.html][COREv2]]
+Global one degree 1948-2009, directory listing of downloaded files:
+#+BEGIN_QUOTE
+-rw-r--r--  1 dpath2o  staff   102M 24 Oct  2012 ncar_precip.1948-2009.23OCT2012.nc
+-rw-r--r--  1 dpath2o  staff   3.0G 24 Oct  2012 ncar_rad.1948-2009.23OCT2012.nc
+-rw-r--r--  1 dpath2o  staff   6.1G 24 Oct  2012 q_10.1948-2009.23OCT2012.nc
+-rw-r--r--  1 dpath2o  staff   509K 18 Jun  2009 runoff.15JUNE2009.nc
+-rw-r--r--  1 dpath2o  staff   386M 26 Jul  2016 runoff.daitren.iaf.20120419.nc
+-rw-r--r--  1 dpath2o  staff   6.1G 24 Oct  2012 slp.1948-2009.23OCT2012.nc
+-rw-r--r--  1 dpath2o  staff   6.1G 24 Oct  2012 u_10.1948-2009.23OCT2012.nc
+-rw-r--r--  1 dpath2o  staff   6.1G 24 Oct  2012 v_10.1948-2009.23OCT2012.nc
+#+END_QUOTE
+
+Header of u10 file:
+#+BEGIN_QUOTE
+netcdf u_10.1948-2009.23OCT2012 {
+dimensions:
+	LAT = 94 ;
+	LON = 192 ;
+	TIME = UNLIMITED ; // (90520 currently)
+	bnds = 2 ;
+variables:
+	double LAT(LAT) ;
+		LAT:units = "degrees_north" ;
+		LAT:point_spacing = "uneven" ;
+		LAT:axis = "Y" ;
+	double LON(LON) ;
+		LON:units = "degrees_east" ;
+		LON:modulo = 360. ;
+		LON:point_spacing = "even" ;
+		LON:axis = "X" ;
+	double TIME(TIME) ;
+		TIME:units = "days since 1948-01-01 00:00:00" ;
+		TIME:axis = "T" ;
+		TIME:bounds = "TIME_bnds" ;
+		TIME:time_origin = "1-JAN-1948" ;
+		TIME:calendar = "NOLEAP" ;
+	double TIME_bnds(TIME, bnds) ;
+	float U_10_MOD(TIME, LAT, LON) ;
+		U_10_MOD:missing_value = -1.e+34f ;
+		U_10_MOD:_FillValue = -1.e+34f ;
+		U_10_MOD:long_name = "10m U Wind" ;
+		U_10_MOD:units = "m/s" ;
+
+// global attributes:
+		:history = "Thu Sep 27 07:10:36 2012: ncatted -O -a bounds,LAT,d,c,LAT_bnds u_10_mod.1948-2009.nomads.nc\n",
+			"Thu Sep 27 07:10:08 2012: ncks -x -v LAT_bnds u_10_mod.1948-2009.new.nc u_10_mod.1948-2009.nomads.nc\n",
+			"FERRET V6.725   18-Sep-12" ;
+		:Conventions = "CF-1.0" ;
+		:NCO = "4.0.3" ;
+}
+#+END_QUOTE
+
+** [[http://c-glors.cmcc.it/index/index.html][C-GLORS]]
+The CMCC Global Ocean Physical Reanalysis System (C-GLORS) is used  to simulate
+the state of the ocean in the last decades. It consists of a variational data
+assimilation system (OceanVar), capable of assimilating all in-situ observations
+along with altimetry data, and a forecast step performed by the ocean model NEMO
+coupled with the LIM2 sea-ice model. 
+
+I have downloaded the MLD files for 2010-2020 and here is the header
+information:
+#+BEGIN_QUOTE
+netcdf CGv7_2010_MLD {
+dimensions:
+	y = 1050 ;
+	x = 1442 ;
+	time_counter = UNLIMITED ; // (365 currently)
+	axis_nbounds = 2 ;
+variables:
+	float nav_lat(y, x) ;
+		nav_lat:standard_name = "latitude" ;
+		nav_lat:long_name = "Latitude" ;
+		nav_lat:units = "degrees_north" ;
+		nav_lat:nav_model = "grid_T" ;
+	float nav_lon(y, x) ;
+		nav_lon:standard_name = "longitude" ;
+		nav_lon:long_name = "Longitude" ;
+		nav_lon:units = "degrees_east" ;
+		nav_lon:nav_model = "grid_T" ;
+	float somxl010(time_counter, y, x) ;
+		somxl010:standard_name = "ocean_mixed_layer_thickness_defined_by_sigma_theta" ;
+		somxl010:long_name = "Mixed Layer Depth (dsigma = 0.01 wrt 10m)" ;
+		somxl010:units = "m" ;
+		somxl010:online_operation = "average" ;
+		somxl010:interval_operation = "1080 s" ;
+		somxl010:interval_write = "1 d" ;
+		somxl010:cell_methods = "time: mean (interval: 1080 s)" ;
+		somxl010:_FillValue = 1.e+20f ;
+		somxl010:missing_value = 1.e+20f ;
+		somxl010:coordinates = "time_centered nav_lon nav_lat" ;
+	double time_centered(time_counter) ;
+		time_centered:standard_name = "time" ;
+		time_centered:long_name = "Time axis" ;
+		time_centered:calendar = "gregorian" ;
+		time_centered:units = "seconds since 1950-01-01 00:00:00" ;
+		time_centered:time_origin = "1950-01-01 00:00:00" ;
+		time_centered:bounds = "time_centered_bounds" ;
+	double time_centered_bounds(time_counter, axis_nbounds) ;
+	double time_counter(time_counter) ;
+		time_counter:axis = "T" ;
+		time_counter:standard_name = "time" ;
+		time_counter:long_name = "Time axis" ;
+		time_counter:calendar = "gregorian" ;
+		time_counter:units = "seconds since 1950-01-01 00:00:00" ;
+		time_counter:time_origin = "1950-01-01 00:00:00" ;
+		time_counter:bounds = "time_counter_bounds" ;
+	double time_counter_bounds(time_counter, axis_nbounds) ;
+
+// global attributes:
+		:name = "NEMO_1d_20091227_20100106" ;
+		:description = "ocean T grid variables" ;
+		:title = "ocean T grid variables" ;
+		:Conventions = "CF-1.5" ;
+		:production = "An IPSL model" ;
+		:timeStamp = "2016-Aug-14 13:15:38 CEST" ;
+}
+#+END_QUOTE
+
+** ERA5
+$1/4$ degree spatial and 1 hour temporal resolutions. 
 
 A thorough description of all the fields in ERA5 is given [[https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview][here]]
 
-[[https://github.com/COSIMA/access-om2/issues/242][COSIMA GitHub Working Group/Issue]]. For a comprehensive list on GADI of mapped ERA5 fields [[https://github.com/COSIMA/access-om2/issues/242#issuecomment-913908910][see Andrew Kiss's]] helpful table -- that thread also contains other helpful for information re. ERA5 setup for CICE6.
+[[https://github.com/COSIMA/access-om2/issues/242][COSIMA GitHub Working Group/Issue]]. For a comprehensive list on GADI of mapped
+ERA5 fields [[https://github.com/COSIMA/access-om2/issues/242#issuecomment-913908910][see Andrew Kiss's]] helpful table -- that thread also contains other
+helpful for information re. ERA5 setup for CICE6. 
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
+*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
+Here is an example of the NetCDF header:
+#+BEGIN_QUOTE
+netcdf \10u_era5_oper_sfc_20100101-20100131 {
+dimensions:
+	longitude = 1440 ;
+	latitude = 721 ;
+	time = 744 ;
+variables:
+	float longitude(longitude) ;
+		longitude:units = "degrees_east" ;
+		longitude:long_name = "longitude" ;
+	float latitude(latitude) ;
+		latitude:units = "degrees_north" ;
+		latitude:long_name = "latitude" ;
+	int time(time) ;
+		time:units = "hours since 1900-01-01 00:00:00.0" ;
+		time:long_name = "time" ;
+		time:calendar = "gregorian" ;
+	short u10(time, latitude, longitude) ;
+		u10:scale_factor = 0.00113594702823864 ;
+		u10:add_offset = 7.62408107433744 ;
+		u10:_FillValue = -32767s ;
+		u10:missing_value = -32767s ;
+		u10:units = "m s**-1" ;
+		u10:long_name = "10 metre U wind component" ;
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
+// global attributes:
+		:Conventions = "CF-1.6" ;
+		:history = "2020-09-28 12:42:00 UTC+1000 by era5_replication_tools-1.2.1: mv /g/data/rt52/admin/incoming/era5/single-levels/reanalysis/10u/2010/.10u_era5_oper_sfc_20100101-20100131.tmp /g/data/rt52/era5/single-levels/reanalysis/10u/2010/10u_era5_oper_sfc_20100101-20100131.nc\n",
+			"2020-09-28 12:40:58 UTC+1000 by era5_replication_tools-1.2.1: nccopy -k4 -d5 -s /g/data/zt77/admin/incoming/era5/single-levels/reanalysis/10u/2010/10u_era5_oper_sfc_20100101-20100131.nc /g/data/rt52/admin/incoming/era5/single-levels/reanalysis/10u/2010/.10u_era5_oper_sfc_20100101-20100131.tmp\n",
+			"2020-09-28 12:36:04 UTC+1000 by era5_replication_tools-1.2.1: curl --connect-timeout 20 --show-error --silent --max-time 36000 -o /g/data/zt77/admin/incoming/era5/single-levels/reanalysis/10u/2010/10u_era5_oper_sfc_20100101-20100131.nc http://136.156.133.25/cache-compute-0008/cache/data0/adaptor.mars.internal-1601260358.5388222-19803-23-f152e830-9d4e-468b-a146-f2132486120c.nc\n",
+			"2020-09-28 02:33:37 GMT by grib_to_netcdf-2.16.0: /opt/ecmwf/eccodes/bin/grib_to_netcdf -S param -o /cache/data0/adaptor.mars.internal-1601260358.5388222-19803-23-f152e830-9d4e-468b-a146-f2132486120c.nc /cache/tmp/f152e830-9d4e-468b-a146-f2132486120c-adaptor.mars.internal-1601260358.5393667-19803-6-tmp.grib" ;
+		:license = "Licence to use Copernicus Products: https://apps.ecmwf.int/datasets/licences/copernicus/" ;
+		:summary = "ERA5 is the fifth generation ECMWF atmospheric reanalysis of the global climate. This file is part of the ERA5 replica hosted at NCI Australia. For more information please see http://dx.doi.org/10.25914/5f48874388857" ;
+		:title = "ERA5 single-levels reanalysis 10m_u_component_of_wind 20100101-20100131" ;
+}
+#+END_QUOTE
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
+** [[https://climate.mri-jma.go.jp/pub/ocean/JRA55-do/][JRA55do]]
+$1/2$ degree spatial and 3 hour temporal resolutions.
 
-***** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
+This is Version 1.5 has been downloaded to my [[/Volumes/ioa01/reanalysis/JRA55do/][local repository]] for the following
+parameters.
+*** [[/Volumes/ioa01/reanalysis/JRA55do/huss][huss]]
+Near surface specific humidity
+#+BEGIN_QUOTE
+netcdf huss_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	double height ;
+		height:units = "m" ;
+		height:axis = "Z" ;
+		height:positive = "up" ;
+		height:long_name = "height" ;
+		height:standard_name = "height" ;
+	float huss(time, lat, lon) ;
+		huss:standard_name = "specific_humidity" ;
+		huss:long_name = "Near-Surface Specific Humidity" ;
+		huss:comment = "Near-surface (usually, 2 meter) specific humidity" ;
+		huss:units = "1" ;
+		huss:original_units = "1.0" ;
+		huss:history = "2020-09-15T15:01:10Z altered by CMOR: Converted units from \'1.0\' to \'1\'. 2020-09-15T15:01:10Z altered by CMOR: Treated scalar dimension: \'height\'." ;
+		huss:cell_methods = "area: mean time: point" ;
+		huss:cell_measures = "area: areacella" ;
+		huss:coordinates = "height" ;
+		huss:missing_value = 1.e+20f ;
+		huss:_FillValue = 1.e+20f ;
 
-**** JRA55do
-**** [[https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/][MERRAv2]]
-Local copy detailed [[http://climate-cms.wikis.unsw.edu.au/MERRA2][here]]
-***** Surface Flux Diagnostics ('flx')
-***** Ocean Surface Diagnostics ('ocn')
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T15:01:18Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T15:01:18Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/369cad98-ed94-4040-a47d-72258fd68584" ;
+		:variable_id = "huss" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
+*** [[/Volumes/ioa01/reanalysis/JRA55do/prra][prra]]
+Rainfall flux
+#+begin_quote
+netcdf prra_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010130-201012312230 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float prra(time, lat, lon) ;
+		prra:standard_name = "rainfall_flux" ;
+		prra:long_name = "Rainfall Flux" ;
+		prra:comment = "In accordance with common usage in geophysical disciplines, \'flux\' implies per unit area, called \'flux density\' in physics" ;
+		prra:units = "kg m-2 s-1" ;
+		prra:cell_methods = "area: time: mean" ;
+		prra:cell_measures = "area: areacella" ;
+		prra:missing_value = 1.e+20f ;
+		prra:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T06:03:44Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hr" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T06:03:44Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hr" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/0ebc0818-9a24-47ad-a6d5-112506908d87" ;
+		:variable_id = "prra" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
+*** [[/Volumes/ioa01/reanalysis/JRA55do/prsn/][prsn]]
+Snowfall flux
+#+begin_quote
+netcdf prsn_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010130-201012312230 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float prsn(time, lat, lon) ;
+		prsn:standard_name = "snowfall_flux" ;
+		prsn:long_name = "Snowfall Flux" ;
+		prsn:comment = "At surface; includes precipitation of all forms of water in the solid phase" ;
+		prsn:units = "kg m-2 s-1" ;
+		prsn:cell_methods = "area: time: mean" ;
+		prsn:cell_measures = "area: areacella" ;
+		prsn:missing_value = 1.e+20f ;
+		prsn:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T07:53:10Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hr" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T07:53:10Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hr" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/11edbd94-09f9-4e92-b307-c69ee1238c4e" ;
+		:variable_id = "prsn" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
+*** [[/Volumes/ioa01/reanalysis/JRA55do/psl][psl]]
+Mean surface pressure
+#+begin_quote
+netcdf psl_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float psl(time, lat, lon) ;
+		psl:standard_name = "air_pressure_at_mean_sea_level" ;
+		psl:long_name = "Sea Level Pressure" ;
+		psl:comment = "Sea Level Pressure" ;
+		psl:units = "Pa" ;
+		psl:cell_methods = "area: mean time: point" ;
+		psl:cell_measures = "area: areacella" ;
+		psl:missing_value = 1.e+20f ;
+		psl:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T17:20:36Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T17:20:36Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/4e5646ac-45d5-40cd-a999-1554bb4cd75a" ;
+		:variable_id = "psl" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
+*** [[/Volumes/ioa01/reanalysis/JRA55do/rlds][rlds]]
+Surface downwelling longwave flux
+#+begin_quote
+netcdf rlds_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010130-201012312230 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float rlds(time, lat, lon) ;
+		rlds:standard_name = "surface_downwelling_longwave_flux_in_air" ;
+		rlds:long_name = "Surface Downwelling Longwave Radiation" ;
+		rlds:comment = "The surface called \'surface\' means the lower boundary of the atmosphere. \'longwave\' means longwave radiation. Downwelling radiation is radiation from above. It does not mean \'net downward\'. When thought of as being incident on a surface, a radiative flux is sometimes called \'irradiance\'. In addition, it is identical with the quantity measured by a cosine-collector light-meter and sometimes called \'vector irradiance\'. In accordance with common usage in geophysical disciplines, \'flux\' implies per unit area, called \'flux density\' in physics." ;
+		rlds:units = "W m-2" ;
+		rlds:cell_methods = "area: time: mean" ;
+		rlds:cell_measures = "area: areacella" ;
+		rlds:missing_value = 1.e+20f ;
+		rlds:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T10:15:08Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hr" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T10:15:08Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hr" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/9a1230a5-bb91-4cb5-9c99-179ba031866e" ;
+		:variable_id = "rlds" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
+*** [[/Volumes/ioa01/reanalysis/JRA55do/rsds][rsds]]
+*** [[/Volumes/ioa01/reanalysis/JRA55do/tas][tas]]
+*** [[/Volumes/ioa01/reanalysis/JRA55do/ts][ts]]
+*** [[/Volumes/ioa01/reanalysis/JRA55do/uas][uas]]
+*** [[/Volumes/ioa01/reanalysis/JRA55do/vas][vas]]
+
+** [[https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/][MERRAv2]]
+[[#gadi]] has a repository described [[http://climate-cms.wikis.unsw.edu.au/MERRA2][here]] and an [[/Users/dpath2o/PHD/references/data/MERRA2_variables.xlsx][excel spreadsheet]] has also been
+provided to further describe this repository.
+*** Surface Flux Diagnostics ('flx')
+*** Ocean Surface Diagnostics ('ocn')
 Not presently on any projects associated with GADI. I have inquired with the one
 of the project leaders at UTas if there is any scope to 'host' (for the lack of
 a better term) this portion of MERRAv2 in GADI project 'ua8'
-***** Radiation Diagnostics ('rad')
-***** Single-level Diagnostics ('slv')
-**** [[http://www.ecco.ucsd.edu][SOSE]]
-**** [[https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718][BRAN]]
-Download [[https://dapds00.nci.org.au/thredds/catalog/gb6/BRAN/BRAN2020/catalog.html][BRAN data]] from NCI webserver
+*** Radiation Diagnostics ('rad')
+*** Single-level Diagnostics ('slv')
 
-**** [[https://protect-au.mimecast.com/s/tZdCCmOxBVhjGZ3PxcGDjNQ?domain=data-cbr.csiro.au][CAWCR]]
+** [[http://www.ecco.ucsd.edu][SOSE]]
+
+** [[https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718][BRAN]]
+[[#gadi]] maintains a repository of [[https://dapds00.nci.org.au/thredds/catalog/gb6/BRAN/BRAN2020/catalog.html][BRAN data]]
+
+** [[https://protect-au.mimecast.com/s/tZdCCmOxBVhjGZ3PxcGDjNQ?domain=data-cbr.csiro.au][CAWCR]]
 The [[https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files][CICE GitHub online setup guide]] explains that this forcing data is
 from just one day with the only variable present from [[https://github.com/NOAA-EMC/WW3][WaveWatch III]]
 being ~efreq~ with units \(m^2/s\), which is necessary for floe size
-distribution (FSD). As the [[https://cice-consortium-cice.readthedocs.io/en/main/#][CICE Documentation]] clearly states the basic
+distribution (FS
+D). As the [[https://cice-consortium-cice.readthedocs.io/en/main/#][CICE Documentation]] clearly states the basic
 problem in sea ice modelling, the one CICE aims to model, is ice
 thickness distribution (ITD). However, CICE can optionally attempt to
 model FSD. It does this via a probability distribution function that
@@ -82,31 +1561,37 @@ charcacterises the variability of the horizontal floe size through
 vertical and lateral growth, new freezing, breaking waves and welding
 of floes. This work is based on \citep:horvatPrognosticModelSeaice2015
 
-*** Pre-processing
+
+* Pre-processing
+
+[[Forcing and Initial Conditions Data][CICE6 default forcing and initial conditions]] are broken down into three example
+or test runs based on the underlying spatial grid: a three-degree global
+cartesian, a one-degree global cartesian, and a one-degree tri-polar. 
 
 To ensure documentation and transparency I have a jupyter notebook
 ([[../src/python/cice_input_preparation.ipynb][cice_input_preparation]]) that shows the computations for organising, re-gridding
 and interpolating the various datasets for both the forcing and initial
 conditions that I am writing for this work
 
-**** Computing Short-wave downward visibile diffuse
+** Computing Short-wave downward visibile diffuse
 #+NAME: eqn:swvdf
 \begin{equation}
 SW_{diff} = 0.952 - 1.041\exp{-\exp{(2.3-4.702k_t)}}
 \end{equation}
 where,
 \begin{equation}
+
 k_t = SW / SW_{TOA}
 \end{equation}
 and $SW_{TOA}$ is the short-wave at the top-of-the-atmosphere
 
-**** Computing two-metre wind speed components
+** Computing two-metre wind speed components
 #+NAME: eqn:u10to2
 \begin{equation}
 u2 = (u10 * 4.87) / ln ((67.8 * 10) − 5.42)
 \end{equation}
 
-**** Computing sea surface slope
+** Computing sea surface slope
 #+NAME: eqn:seaslope
 \begin{equation}
 ss_tltx = eta/dx
@@ -114,7 +1599,7 @@ ss_tlty = eta/dy
 \end{equation}
 where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitudinal, respectively
 
-*** Table of Standalone CICE6 Initial Conditions
+** Table of Standalone CICE6 Initial Conditions
 | CICE6 short    | CICE6 description                                  | Units | short name | Dataset |
 |----------------+----------------------------------------------------+-------+------------+---------|
 | uvel           | sea ice velocity, eastward                         | m/s   | uheff      | SOSE    |
@@ -155,7 +1640,7 @@ where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitu
 | qice           | -                                                  | -     | -          | -       |
 | qsno           | -                                                  | -     | -          | -       |
 
-*** Table of Stand-alone CICE6 Forcing Fields
+** Table of Stand-alone CICE6 Forcing Fields
 
 | CICE6 short | CICE6 description                              | Units      | Dataset | Short Name | Long Name                                       | Derivation | Notes                                 |
 |-------------+------------------------------------------------+------------+---------+------------+-------------------------------------------------+------------+---------------------------------------|
@@ -188,7 +1673,7 @@ where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitu
 | qdp         | deep ocean heat flux                           | W/m^2      | -       | -          | -                                               |            |                                       |
 | hmix        | mixed layer depth                              | m          | BRAN    | mld        | mixed layer depth                               | no         |                                       |
 
-*** Tracking Data Downloads
+** Tracking Data Downloads
 | Downloaded | Mandatory | Might  | Reanalysis |            |      |                                               | Download |                                                                  |            |
 |            | CICE      | Be     | or         | Field      | Time | Time                                          | Location | Field                                                            |            |
 |            | Field     | Useful | Gridded    | Short      | Step | Coveage                                       |          | Long                                                             | Units      |
@@ -239,17 +1724,17 @@ where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitu
 |            |           |        |            |            |      |                                               |          |                                                                  |            |
 |            |           |        |            |            |      |                                               |          |                                                                  |            |
 
-** External Drives
+* External Drives
 
-*** ioa01 (5000GB capacity -- 4940GB used)
+** ioa01 (5000GB capacity -- 4940GB used)
 
-**** Datasets
+*** Datasets
 
-***** BRAN (3000GB)
+**** BRAN (3000GB)
 
-***** JRA55do (140GB)
+**** JRA55do (140GB)
 
-***** MERRAv2 (1800GB -- incomplete)
+**** MERRAv2 (1800GB -- incomplete)
 - currently only contains surface fluxes ('flx') and radiative ('rad') components of the dataset
 - only partial 'rad' upto mid-2015 (add another 400GB)
 - also 'ocn' and 'slv' (see [[MERRAv2]] above) need to be downloaded, with estimated
@@ -257,35 +1742,36 @@ where $dx$ and $dy$ is the grid spacing in meters in the longitudinal and latitu
 - estimated total storage space for one decade is 4300GB, hence will require own
   5TB disk
   
-*** ioa02 (5000GB capacity -- 4170GB used)
+** ioa02 (5000GB capacity -- 4170GB used)
 
-**** Datasets
+*** Datasets
 
-***** ERA5 (2300GB)
-
-***** CAWCR (925GB)
-
-***** SOSE (675GB -- incomplete)
+**** ERA5 (2300GB)
+**** CAWCR (925GB)
+**** SOSE (675GB -- incomplete)
 missing U and V (both roughly 500GB each)
 
-***** C-GLORS (7GB)
+**** C-GLORS (7GB)
+**** COREv2 (30GB)
 
-***** COREv2 (30GB)
+** ioa03 (5000GB capacity -- varying used)
 
-***** Fast Ice (8GB)
+**** Fast Ice (8GB)
 
-***** model input (106GB)
+**** model_input
 
-***** observations (9GB)
+**** model_output 
 
-***** orography (32GB)
+**** observations
 
-***** satellite (78GB)
+**** orography
 
+**** satellite
 
-* MacOS Trials
+* Documenting Runs
+** Initial Trials
 
-** CICE Installation
+*** CICE Installation
 
 [[Source Code Repository]] was cloned onto local machine
 
@@ -513,7 +1999,7 @@ total 243008
 #+END_SRC
 
 
-** Test Run ``Vanilla''
+*** Test Run ``Vanilla''
 
 A successful test run of a ``vanilla'' setup of CICE. Test directory
 setup is preserved in [[/Users/dpath2o/PHD/MODELS/src/CICE/case1][case1]] and output is preserved in [[/Users/dpath2o/cice-dirs/runs/case1][case1]]. What I
@@ -527,9 +2013,7 @@ cd case1
 ./cice.run
 #+END_SRC
 
-
 ** Sandbox
-
 *** GX1 fail [2022-05-23 Mon 06:00]
 
 Edited ~ice_in~ file replacing ~gx3~ enteries with ~gx1~ . While this ran
@@ -627,3 +2111,6 @@ results (see [[fig:tx1_access-om2]], below)
 See post on [[https://bb.cgd.ucar.edu/cesm/threads/cice6-sandboxing.7412/post-45021][CICE Consortium Forum]] for details
 
 **** 
+* Python Notebook and Scripts
+
+** [[../src/python/CICE/cice_analysis.ipynb][AFIM CICE Analysis]]
