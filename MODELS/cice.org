@@ -1061,15 +1061,12 @@ A thorough description of all the fields in ERA5 is given [[https://cds.climate.
 ERA5 fields [[https://github.com/COSIMA/access-om2/issues/242#issuecomment-913908910][see Andrew Kiss's]] helpful table -- that thread also contains other
 helpful for information re. ERA5 setup for CICE6. 
 
-\begin{enumerate}
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
-\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
-\end{enumerate}
-
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
++ [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
 
 Here is an example of the NetCDF header:
 #+BEGIN_QUOTE
