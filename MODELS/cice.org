@@ -1057,16 +1057,18 @@ $1/4$ degree spatial and 1 hour temporal resolutions.
 
 A thorough description of all the fields in ERA5 is given [[https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview][here]]
 
-[[https://github.com/COSIMA/access-om2/issues/242][COSIMA GitHub Working Group/Issue]]. For a comprehensive list on GADI of mapped
+[[https://github.com/COSIMA/access-om2/issues/242][COSIMA GitHub Working Group/Issue]]. For a comprehensive list on [[#gadi]] of mapped
 ERA5 fields [[https://github.com/COSIMA/access-om2/issues/242#issuecomment-913908910][see Andrew Kiss's]] helpful table -- that thread also contains other
 helpful for information re. ERA5 setup for CICE6. 
 
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
-*** [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
+\begin{enumerate}
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_lats_lons.txt][Latitudes and Longitudes (grid) in text (ascii) format]]
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ERA5.025deg_std_pres_levels.txt][Pressure Levels (levels) in text (ascii) format]]
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.sfc.grib1.table.web.txt][ERA5 Atmospheric Surface Analysis]]
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt][ERA5 Atmospheric Pressure Level Analysis]]
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt][ERA5 Accummulated Fields]]
+\item [[https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt][ERA5 Instantaneous Fields]]
+\end{enumerate}
 
 
 Here is an example of the NetCDF header:
@@ -1113,7 +1115,7 @@ $1/2$ degree spatial and 3 hour temporal resolutions.
 This is Version 1.5 has been downloaded to my [[/Volumes/ioa01/reanalysis/JRA55do/][local repository]] for the following
 parameters.
 *** [[/Volumes/ioa01/reanalysis/JRA55do/huss][huss]]
-Near surface specific humidity
+Near-surface specific humidity
 #+BEGIN_QUOTE
 netcdf huss_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
 dimensions:
@@ -1527,10 +1529,434 @@ variables:
 }
 #+end_quote
 *** [[/Volumes/ioa01/reanalysis/JRA55do/rsds][rsds]]
+Surface downwelling shortwave flux
+#+begin_quote
+netcdf rsds_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010130-201012312230 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float rsds(time, lat, lon) ;
+		rsds:standard_name = "surface_downwelling_shortwave_flux_in_air" ;
+		rsds:long_name = "Surface Downwelling Shortwave Radiation" ;
+		rsds:comment = "Surface solar irradiance for UV calculations." ;
+		rsds:units = "W m-2" ;
+		rsds:cell_methods = "area: time: mean" ;
+		rsds:cell_measures = "area: areacella" ;
+		rsds:missing_value = 1.e+20f ;
+		rsds:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T12:28:57Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hr" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T12:28:57Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hr" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/f376d4e4-6396-44b4-ab8b-c7220a1afcb3" ;
+		:variable_id = "rsds" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
 *** [[/Volumes/ioa01/reanalysis/JRA55do/tas][tas]]
+Near-surface air temperature
+#+begin_quote
+netcdf tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	double height ;
+		height:units = "m" ;
+		height:axis = "Z" ;
+		height:positive = "up" ;
+		height:long_name = "height" ;
+		height:standard_name = "height" ;
+	float tas(time, lat, lon) ;
+		tas:standard_name = "air_temperature" ;
+		tas:long_name = "Near-Surface Air Temperature" ;
+		tas:comment = "near-surface (usually, 2 meter) air temperature" ;
+		tas:units = "K" ;
+		tas:cell_methods = "area: mean time: point" ;
+		tas:cell_measures = "area: areacella" ;
+		tas:history = "2020-09-15T19:35:02Z altered by CMOR: Treated scalar dimension: \'height\'." ;
+		tas:coordinates = "height" ;
+		tas:missing_value = 1.e+20f ;
+		tas:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T19:35:07Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T19:35:07Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/a0582304-8b18-4297-b548-f33f0b40eccb" ;
+		:variable_id = "tas" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
 *** [[/Volumes/ioa01/reanalysis/JRA55do/ts][ts]]
+Surface temperature
+#+begin_quote
+netcdf ts_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	float ts(time, lat, lon) ;
+		ts:standard_name = "surface_temperature" ;
+		ts:long_name = "Surface Temperature" ;
+		ts:comment = "Temperature of the lower boundary of the atmosphere" ;
+		ts:units = "K" ;
+		ts:cell_methods = "area: mean time: point" ;
+		ts:cell_measures = "area: areacella" ;
+		ts:missing_value = 1.e+20f ;
+		ts:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-15T21:48:05Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-15T21:48:05Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/d725c7b9-ce5a-4fe7-8f65-3003acf15323" ;
+		:variable_id = "ts" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
 *** [[/Volumes/ioa01/reanalysis/JRA55do/uas][uas]]
+Eastward near-surface wind
+#+begin_quote
+netcdf uas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	double height ;
+		height:units = "m" ;
+		height:axis = "Z" ;
+		height:positive = "up" ;
+		height:long_name = "height" ;
+		height:standard_name = "height" ;
+	float uas(time, lat, lon) ;
+		uas:standard_name = "eastward_wind" ;
+		uas:long_name = "Eastward Near-Surface Wind" ;
+		uas:comment = "Eastward component of the near-surface wind" ;
+		uas:units = "m s-1" ;
+		uas:cell_methods = "area: mean time: point" ;
+		uas:cell_measures = "area: areacella" ;
+		uas:history = "2020-09-16T01:30:40Z altered by CMOR: Treated scalar dimension: \'height\'." ;
+		uas:coordinates = "height" ;
+		uas:missing_value = 1.e+20f ;
+		uas:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-16T01:30:45Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-16T01:30:45Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/9e2256e3-29b7-4e8a-906a-47a98a256308" ;
+		:variable_id = "uas" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
 *** [[/Volumes/ioa01/reanalysis/JRA55do/vas][vas]]
+Northward near-surface wind
+#+begin_quote
+netcdf vas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_201001010000-201012312100 {
+dimensions:
+	time = UNLIMITED ; // (2920 currently)
+	lat = 320 ;
+	lon = 640 ;
+	bnds = 2 ;
+variables:
+	double time(time) ;
+		time:bounds = "time_bnds" ;
+		time:units = "days since 1900-01-01 00:00:00" ;
+		time:calendar = "gregorian" ;
+		time:axis = "T" ;
+		time:long_name = "time" ;
+		time:standard_name = "time" ;
+	double time_bnds(time, bnds) ;
+	double lat(lat) ;
+		lat:bounds = "lat_bnds" ;
+		lat:units = "degrees_north" ;
+		lat:axis = "Y" ;
+		lat:long_name = "Latitude" ;
+		lat:standard_name = "latitude" ;
+	double lat_bnds(lat, bnds) ;
+	double lon(lon) ;
+		lon:bounds = "lon_bnds" ;
+		lon:units = "degrees_east" ;
+		lon:axis = "X" ;
+		lon:long_name = "Longitude" ;
+		lon:standard_name = "longitude" ;
+	double lon_bnds(lon, bnds) ;
+	double height ;
+		height:units = "m" ;
+		height:axis = "Z" ;
+		height:positive = "up" ;
+		height:long_name = "height" ;
+		height:standard_name = "height" ;
+	float vas(time, lat, lon) ;
+		vas:standard_name = "northward_wind" ;
+		vas:long_name = "Northward Near-Surface Wind" ;
+		vas:comment = "Northward component of the near surface wind" ;
+		vas:units = "m s-1" ;
+		vas:cell_methods = "area: mean time: point" ;
+		vas:cell_measures = "area: areacella" ;
+		vas:history = "2020-09-16T04:10:06Z altered by CMOR: Treated scalar dimension: \'height\'." ;
+		vas:coordinates = "height" ;
+		vas:missing_value = 1.e+20f ;
+		vas:_FillValue = 1.e+20f ;
+
+// global attributes:
+		:Conventions = "CF-1.7 CMIP-6.2" ;
+		:activity_id = "input4MIPs" ;
+		:cell_measures = "area: areacella" ;
+		:comment = "Based on JRA-55 reanalysis (1958-01 to 2020-07)" ;
+		:contact = "Hiroyuki Tsujino (htsujino@mri-jma.go.jp)" ;
+		:creation_date = "2020-09-16T04:10:11Z" ;
+		:data_specs_version = "01.00.32" ;
+		:dataset_category = "atmosphericState" ;
+		:external_variables = "areacella" ;
+		:frequency = "3hrPt" ;
+		:further_info_url = "http://climate.mri-jma.go.jp/~htsujino/jra55do.html" ;
+		:grid = "data regridded to the normal atmosphere TL319 gaussian grid (320x640 latxlon) from a reduced TL319 gaussian grid" ;
+		:grid_label = "gr" ;
+		:history = "2020-09-16T04:10:11Z; CMOR rewrote data to be consistent with input4MIPs, CMIP6, and CF-1.7 CMIP-6.2 standards" ;
+		:institution = "Meteorological Research Institute, Tsukuba, Ibaraki 305-0052, Japan" ;
+		:institution_id = "MRI" ;
+		:mip_era = "CMIP6" ;
+		:nominal_resolution = "50 km" ;
+		:product = "reanalysis" ;
+		:realm = "atmos" ;
+		:references = "Tsujino et al., 2018: JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), Ocean Modelling, 130(1), pp 79-139. https://doi.org/10.1016/j.ocemod.2018.07.002" ;
+		:region = "global_ocean" ;
+		:release_year = "2020" ;
+		:source = "MRI JRA55-do 1.5.0: Atmospheric state generated for OMIP based on the JRA-55 reanalysis" ;
+		:source_description = "Atmospheric state and terrestrial runoff datasets produced by MRI for the OMIP experiment of CMIP6" ;
+		:source_id = "MRI-JRA55-do-1-5-0" ;
+		:source_type = "satellite_blended" ;
+		:source_version = "1.5.0" ;
+		:table_id = "input4MIPs_A3hrPt" ;
+		:table_info = "Creation Date:(14 September 2020) MD5:d10deb7a45fa93934ec0a16c9d534e45" ;
+		:target_mip = "OMIP" ;
+		:title = "MRI JRA55-do 1.5.0 dataset prepared for input4MIPs" ;
+		:tracking_id = "hdl:21.14100/b80b6346-812b-4171-9be7-75718695dd0e" ;
+		:variable_id = "vas" ;
+		:license = "OMIP boundary condition data produced by MRI is licensed under a Creative Commons Attribution-[NonCommercial-]ShareAlike 4.0 International License (https://creativecommons.org/licenses). Consult https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing input4MIPs output, including citation requirements and proper acknowledgment. Further information about this data, including some limitations, can be found via the further_info_url (recorded as a global attribute in this file). The data producers and data providers make no warranty, either express or implied, including, but not limited to, warranties of merchantability and fitness for a particular purpose. All liabilities arising from the supply of the information (including any liability arising in negligence) are excluded to the fullest extent permitted by law." ;
+		:cmor_version = "3.6.0" ;
+}
+#+end_quote
 
 ** [[https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/][MERRAv2]]
 [[#gadi]] has a repository described [[http://climate-cms.wikis.unsw.edu.au/MERRA2][here]] and an [[/Users/dpath2o/PHD/references/data/MERRA2_variables.xlsx][excel spreadsheet]] has also been
