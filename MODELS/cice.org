@@ -37,7 +37,7 @@ Data was downloaded and unpacked into the following local directory,
 Global Three-Degree Cartesian
 *** GX3 Grid
 Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/grid_gx3.nc][GX3 grid file]]:
-#+BEGIN_QUOTE
+#+BEGIN_VERBATIM
 netcdf grid_gx3 {
 dimensions:
 	y = 116 ;
@@ -85,7 +85,7 @@ variables:
 			"Tue Apr 17 15:30:50 BST 2007 - XCONV V1.91 Development" ;
 		:Conventions = "CF-1.0" ;
 }
-#+END_QUOTE
+#+END_VERBATIM
 *** GX3 Bathymetry
 Header from the [[/Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/global_gx3.bathy.nc][GX3 bathymetry file]]:
 #+BEGIN_QUOTE
