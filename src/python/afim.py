@@ -6,6 +6,7 @@ author: dpath2o, daniel.atwater@utas.edu.au, May 2022
 '''
 
 import os
+import pdb
 import subprocess
 import json
 import pygmt
@@ -16,7 +17,11 @@ import metpy.calc  as mpc
 
 ############################################################################
 # globals
-cdo = os.path.join('/','Users','dpath2o','opt','anaconda3','envs','afim','bin','cdo')
+cdo      = os.path.join('/','Users','dpath2o','opt','anaconda3','envs','afim','bin','cdo')
+ncks     = os.path.join('/','opt','homebrew','bin','ncks')
+ncwa     = os.path.join('/','opt','homebrew','bin','ncwa')
+ncrename = os.path.join('/','opt','homebrew','bin','ncrename')
+ncdump   = os.path.join('/','opt','homebrew','bin','ncdump')
 
 ############################################################################
 # DIRECTORIES
@@ -100,15 +105,16 @@ class cice_prep:
         self.D_CAWCR = PARAMS['D_CAWCR']
         self.D_ERA5  = PARAMS['D_ERA5']
         self.D_SOSE  = PARAMS['D_SOSE']
-        self.D_IC    = PARAMS['D_IC']
-        self.D_frcg  = os.path.join(PARAMS['D_frcg'],self.G_res)
-        self.D_grid  = PARAMS['D_grid']
+        self.D_CICE  = PARAMS['D_CICE']
         self.D_graph = PARAMS['D_graph']
         self.D_modin = PARAMS['D_modin']
+        self.D_IC    = os.path.join(PARAMS['D_CICE'],'input','CICE_data','ic',self.G_res)
+        self.D_frcg  = os.path.join(PARAMS['D_CICE'],'input','CICE_data','forcing',self.G_res)
+        self.D_grid  = os.path.join(PARAMS['D_CICE'],'input','CICE_data','grid',self.G_res)
         self.D_reG   = os.path.join(self.D_modin,'regridded',self.G_res)
         # files
-        self.F_gx1ic    = PARAMS['F_gx1ic']
-        self.F_gx1bath  = PARAMS['F_gx1bath']
+        self.F_gx1ic    = os.path.join(self.D_grid,'gx1','iced_gx1_v6.2005-01-01.nc')
+        self.F_gx1bath  = os.path.join(self.D_grid,'gx1','global_gx1.bathy.nc')
         self.F_aom2bath = PARAMS['F_aom2bath']
         self.F_Gt       = os.path.join(self.D_modin,'grids',self.G_res,'g{:s}_cice_tgrid.nc'.format(self.G_res))
         self.F_Gu       = os.path.join(self.D_modin,'grids',self.G_res,'g{:s}_cice_ugrid.nc'.format(self.G_res))
@@ -123,8 +129,8 @@ class cice_prep:
         self.BRAN_frcg_tvars     = PARAMS['BRAN_frcg_tvars']
         self.BRAN_frcg_uvars     = PARAMS['BRAN_frcg_uvars']
         self.BRAN_3D_var_names   = PARAMS['BRAN_3D_var_names']
-        self.ERA5_alt_var_names  = PARAMS['ERA5_alt_var_names']
-        self.BRAN_alt_var_names  = PARAMS['BRAN_alt_var_names']
+        self.ERA5_rename_vars  = PARAMS['ERA5_rename_vars']
+        self.BRAN_rename_vars  = PARAMS['BRAN_rename_vars']
         self.ERA5toCICE_varnames = PARAMS['ERA5toCICE_varnames']
         self.BRANtoCICE_varnames = PARAMS['BRANtoCICE_varnames']
         self.ERA5_filename_form  = PARAMS['ERA5_filename_form']
@@ -133,6 +139,7 @@ class cice_prep:
         self.BRAN_F_force_form   = PARAMS['BRAN_F_force_form']
         self.Ftmp_yrmo_form      = PARAMS['Ftmp_yrmo_form']
         self.ERA5_yr_Ftmp_form   = PARAMS['ERA5_yr_Ftmp_form']
+        self.BRAN_yr_Ftmp_form   = PARAMS['BRAN_yr_Ftmp_form']
         self.CICE6_atm_var_names = PARAMS['CICE6_atm_var_names']
         self.ERA5_derv_rho_name  = PARAMS['ERA5_derv_rho_name']
         self.ERA5_derv_qsat_name = PARAMS['ERA5_derv_qsat_name']        
@@ -163,6 +170,7 @@ class cice_prep:
         F_Gt  = self.F_Gt
         F_Gu  = self.F_Gu
         G_res = self.G_res
+        G     = xr.open_dataset(self.F_Gt).hte
         # time arrays
         stdts = pd.date_range(self.start_date, freq='MS', periods=self.n_months*self.n_years)
         spdts = pd.date_range(self.start_date, freq='M', periods=self.n_months*self.n_years)
@@ -176,91 +184,145 @@ class cice_prep:
             # create loop switches/counters so that when a value of 1 is reached with any of
             # the following variable in a conditional statement then processing of a particular
             # derivation can proceeed
-            proc     = 0
-            N_sp     = 0
-            N_2d     = 0
-            N_2t     = 0
-            N_eta    = 0
-            N_temp   = 0
-            N_salt   = 0
+            N_sp   = 0
+            N_2d   = 0
+            N_2t   = 0
+            N_eta  = 0
+            N_temp = 0
+            N_salt = 0
+            N_mld  = 0
             # create the name of the full-year-all-variables file first because if it exists I'm
             # making the assumption that I don't want it to be re-made
             Pn_mrg_var = os.path.join(D_reG,yr_str,'*.nc')
-            Fo_mrg_var = self.ERA5_F_force_form.format(G_res=G_res,yr=yr_str)
+            if ds_name=='ERA5':
+                Fo_mrg_var = self.ERA5_F_force_form.format(G_res=G_res,yr=yr_str)
+            elif ds_name=='BRAN':
+                Fo_mrg_var = self.BRAN_F_force_form.format(G_res=G_res,yr=yr_str)
             Po_mrg_var = os.path.join(D_reG,Fo_mrg_var)
             # skip this year if the output file aready exists
             if os.path.exists(Po_mrg_var):
                 print('Merged full-year-all-variables already exists -- skip *ALL* regridding and merging.\n{:s}'.format(Po_mrg_var))
                 continue
             for var_name in list_of_var_names:
+                print("\n\nWorking on {vin:s} for the year-month {date:s}".format(vin=var_name,date=yrmo_str))
                 # as variables are regridded turn-on their switches for processing derived variables
-                if var_name=='sp': N_sp += 1
-                if var_name=='2d': N_2d += 1
-                if var_name=='2t': N_2t += 1
-                if var_name=='eta_t': N_eta += 1
-                if var_name=='temp': N_temp += 1
-                if var_name=='salt': N_salt += 1
-                # create the new path name depending on the dataset
-                if ds_name=='ERA5':
-                    Fn_reG = self.ERA5_filename_form.format(field=var_name,stt=stt_str,stp=stp_str)
-                    Pn_reG = os.path.join(D_ERA5,var_name,yr_str,Fn_reG)
-                elif ds_name=='BRAN':
-                    Fn_reG = self.BRAN_filename_form.format(field=var_name,yr=yr_str,mo=mo_str)
-                    Pn_reG = os.path.join(D_BRAN,var_name,Fn_reG)
-                # create the temporary path name for regrdding the file before it has it's variable name change
+                if var_name=='sp'    : N_sp   += 1
+                if var_name=='2d'    : N_2d   += 1
+                if var_name=='2t'    : N_2t   += 1
+                if var_name=='eta_t' : N_eta  += 1
+                if var_name=='temp'  : N_temp += 1
+                if var_name=='salt'  : N_salt += 1
+                if var_name=='mld'   : N_mld  += 1
+                 # create the temporary path name for regrdding the file before it has it's variable name change
                 Do_reG = os.path.join(D_reG,yr_str,var_name)
                 if not(os.path.exists(Do_reG)): os.makedirs(Do_reG)
                 Fo_reG = self.Ftmp_yrmo_form.format(G_res=G_res,field=var_name,yrmo=yrmo_str)
                 Po_reG = os.path.join(Do_reG,Fo_reG)
-                if var_name in self.BRAN_3D_var_names:
-                    Fo_slce = self.Ftmp_yrmo_form.format(G_res=G_res,field=self.BRAN_3D_var_names[var_name],yrmo=yrmo_str)
-                    Po_slce = os.path.join(Do_reG,Fo_slce)
-                # perform regridding
-                if self.switches['regridding']:
-                    Prename = ''
-                    if (var_name in self.ERA5toCICE_varnames) or (var_name in self.BRANtoCICE_varnames):
-                        if ds_name=='ERA5':
-                            Frename = self.Ftmp_yrmo_form.format(G_res=G_res,field=self.ERA5toCICE_varnames[var_name],yrmo=yrmo_str)
-                        elif ds_name=='BRAN':
-                            Frename = self.Ftmp_yrmo_form.format(G_res=G_res,field=self.BRANtoCICE_varnames[var_name],yrmo=yrmo_str)
-                        Prename = os.path.join(Do_reG,Frename)
-                    if not(os.path.exists(Prename)):
-                        if not(os.path.exists(Po_reG)):
-                            print("\nAttempting to regrid\nFROM: {:s}\nTO: {:s}".format(Pn_reG,Po_reG))
-                            if var_name in self.ERA5_frcg_tvars:
-                                regrid_nc(Pn_reG, Po_reG, F_Gt, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
-                            elif var_name in self.ERA5_frcg_uvars:
-                                regrid_nc(Pn_reG, Po_reG, F_Gu, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
-                            elif var_name in self.BRAN_frcg_tvars:
-                                if var_name in self.BRAN_3D_var_names:
-                                    print("\nSlicing 3D variable to surface\nFROM: {:s}\nTO: {:s}".format(Pn_reG,Po_slce))
-                                    slice_nc(Pn_reG, Po_slce, level_index=self.BRAN_sfc_lev_idx)
-                                    regrid_nc(Po_slce, Po_reG, F_Gt, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type, del_in=True)
-                                else:
-                                    regrid_nc(Pn_reG, Po_reG, F_Gt, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
-                            elif var_name in self.BRAN_frcg_uvars:
-                                if var_name in self.BRAN_3D_var_names:
-                                    print("\nSlicing 3D variable to surface\nFROM: {:s}\nTO: {:s}".format(Pn_reG,Po_slce))
-                                    slice_nc(Pn_reG, Po_slce, level_index=self.BRAN_sfc_lev_idx)
-                                    regrid_nc(Po_slce, Po_reG, F_Gu, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type, del_in=True)
-                                else:
-                                    regrid_nc(Pn_reG, Po_reG, F_Gu, cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
-                    if (var_name in self.ERA5toCICE_varnames) and not(os.path.exists(Prename)):
-                        print("Renaming internal variable \nFROM: {:s}\nTO: {:s}".format(var_name,self.ERA5toCICE_varnames[var_name]))
-                        rename_nc_var(Po_reG,Prename,self.ERA5_alt_var_names[var_name],self.ERA5toCICE_varnames[var_name])
-                    elif (var_name in self.BRANtoCICE_varnames) and not(os.path.exists(Prename)):
-                        print("Renaming internal variable \nFROM: {:s}\nTO: {:s}".format(var_name,self.BRANtoCICE_varnames[var_name]))
-                        rename_nc_var(Po_reG,Prename,self.BRAN_alt_var_names[var_name],self.BRANtoCICE_varnames[var_name])
-                if N_sp==1 and N_2d==1 and proc==0:
-                    print('\nAttempting to compute SPECIFIC HUMIDITY (or "qsat")')
-                    self.compute_derivations(ds_name=ds_name,compute='qsat',yr_str=yr_str,yrmo_str=yrmo_str)
-                    proc=1
-                if N_eta==1 and proc==0:
-                    print('\nAttempting to compute OCEAN SURFACE SLOPE in the X-DIRECTION (or "dhdx")')
-                    self.compute_derivations(ds_name=ds_name,compute='dhdx',yr_str=yr_str,yrmo_str=yrmo_str)
-                    print('\nAttempting to compute OCEAN SURFACE SLOPE in the X-DIRECTION (or "dhdy")')
-                    self.compute_derivations(ds_name=ds_name,compute='dhdy',yr_str=yr_str,yrmo_str=yrmo_str)
-                    proc=1
+                # create the input path name depending on the dataset
+                # this is data that is from the reanalysis source
+                if ds_name=='ERA5':
+                    Fn_reG  = self.ERA5_filename_form.format(field=var_name,stt=stt_str,stp=stp_str)
+                    Pn_reG  = os.path.join(D_ERA5,var_name,yr_str,Fn_reG)
+                    if not(os.path.exists(Po_reG)):
+                        if var_name in self.ERA5_frcg_tvars:
+                            regrid_ERA5(Pn_reG, Po_reG, F_Gt, Vname=var_name, var_renames=self.ERA5_rename_vars,
+                                        cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
+                        else:
+                            regrid_ERA5(Pn_reG, Po_reG, F_Gu, Vname=var_name, var_renames=self.ERA5_rename_vars,
+                                        cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type)
+                    if N_sp==1 and N_2d==1:
+                        Do = os.path.join(D_reG,yr_str,'qsat')
+                        if not(os.path.exists(Do)): os.makedirs(Do)
+                        Fo = self.Ftmp_yrmo_form.format(G_res=G_res,field='qsat',yrmo=yrmo_str)
+                        Po = os.path.join(Do,Fo)
+                        if not(os.path.exists(Po)):
+                            print('\nAttempting to compute SPECIFIC HUMIDITY (or "qsat")')
+                            D1 = os.path.join(D_reG,yr_str,'2d')
+                            F1 = self.Ftmp_yrmo_form.format(G_res=G_res,field='2d',yrmo=yrmo_str)
+                            print("LOADING: {:s}".format(os.path.join(D1,F1)))
+                            d2m = xr.open_dataset(os.path.join(D1,F1))
+                            D2 = os.path.join(D_reG,yr_str,'sp')
+                            F2 = self.Ftmp_yrmo_form.format(G_res=G_res,field='sp',yrmo=yrmo_str)
+                            print("LOADING: {:s}".format(os.path.join(D2,F2)))
+                            sp = xr.open_dataset(os.path.join(D2,F2))
+                            qsat = compute_sfc_qsat(d2m.d2m,sp.sp)
+                            print("SAVING to NetCDF: {:s}".format(Po))
+                            qsat.to_netcdf(Po)
+                            SYS_CALL = '{ncrename:s} -O -v __xarray_dataarray_variable__,spchmd {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Po)
+                            call_subprocess(SYS_CALL)
+                elif ds_name=='BRAN':
+                    Fn_reG = self.BRAN_filename_form.format(field=var_name,yr=yr_str,mo=mo_str)
+                    Pn_reG = os.path.join(D_BRAN,var_name,Fn_reG)
+                    if not(os.path.exists(Po_reG)):
+                        if var_name in self.BRAN_frcg_tvars:
+                            regrid_BRAN(Pn_reG, Po_reG, F_Gt, var_type=var_name, var_3D_names=self.BRAN_3D_var_names.keys(),
+                                        cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type, var_renames=self.BRAN_rename_vars)
+                        else:
+                            regrid_BRAN(Pn_reG, Po_reG, F_Gu, var_type=var_name, var_3D_names=self.BRAN_3D_var_names.keys(),
+                                        cdo_options=self.cdo_reG_opts, cdo_regrid_type=self.cdo_reG_type, var_renames=self.BRAN_rename_vars)
+                    if N_eta==1:
+                        Do = os.path.join(D_reG,yr_str,'dhdx')
+                        if not(os.path.exists(Do)): os.makedirs(Do)
+                        Fo = self.Ftmp_yrmo_form.format(G_res=G_res,field='dhdx',yrmo=yrmo_str)
+                        Po = os.path.join(Do,Fo)
+                        if not(os.path.exists(Po)):
+                            print('\nAttempting to compute OCEAN SURFACE SLOPE in the X-DIRECTION (or "dhdx")')
+                            D1 = os.path.join(D_reG,yr_str,'eta_t')
+                            F1 = self.Ftmp_yrmo_form.format(G_res=G_res,field='eta_t',yrmo=yrmo_str)
+                            print("LOADING: {:s}".format(os.path.join(D1,F1)))
+                            eta = xr.open_dataset(os.path.join(D1,F1))
+                            dhdx = compute_ocn_sfc_slope(eta.eta_t,G,direction='x',grid_scale_factor=self.G_scale_fact)
+                            print("SAVING to NetCDF: {:s}".format(Po))
+                            dhdx.to_netcdf(Po)
+                            SYS_CALL = '{ncrename:s} -O -v __xarray_dataarray_variable__,dhdx -v lat,LAT -v lon,LON {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Po)
+                            call_subprocess(SYS_CALL)
+                        Do = os.path.join(D_reG,yr_str,'dhdy')
+                        if not(os.path.exists(Do)): os.makedirs(Do)
+                        Fo = self.Ftmp_yrmo_form.format(G_res=G_res,field='dhdy',yrmo=yrmo_str)
+                        Po = os.path.join(Do,Fo)
+                        if not(os.path.exists(Po)):
+                            print('\nAttempting to compute OCEAN SURFACE SLOPE in the X-DIRECTION (or "dhdy")')
+                            dhdy = compute_ocn_sfc_slope(eta.eta_t,G,direction='y',grid_scale_factor=self.G_scale_fact)
+                            print("SAVING to NetCDF: {:s}".format(Po))
+                            dhdy.to_netcdf(Po)
+                            SYS_CALL = '{ncrename:s} -O -v __xarray_dataarray_variable__,dhdy -v lat,LAT -v lon,LON {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Po)
+                            call_subprocess(SYS_CALL)
+                    if N_temp==1 and N_salt==1 and N_mld==1:
+                        Do = os.path.join(D_reG,yr_str,'qdp')
+                        if not(os.path.exists(Do)): os.makedirs(Do)
+                        Fo = self.Ftmp_yrmo_form.format(G_res=G_res,field='qdp',yrmo=yrmo_str)
+                        Po = os.path.join(Do,Fo)
+                        if not(os.path.exists(Po)):
+                            print('\nAttempting to compute OCEAN HEAT FLUX (or "qdp")')
+                            Fn = self.BRAN_filename_form.format(field='temp',yr=yr_str,mo=mo_str)
+                            Pn = os.path.join(D_BRAN,'temp',Fn)
+                            print("LOADING: {:s}".format(Pn))
+                            T = xr.open_dataset(Pn)
+                            Fn = self.BRAN_filename_form.format(field='salt',yr=yr_str,mo=mo_str)
+                            Pn = os.path.join(D_BRAN,'salt',Fn)
+                            print("LOADING: {:s}".format(Pn))
+                            S = xr.open_dataset(Pn)
+                            Fn = self.BRAN_filename_form.format(field='mld',yr=yr_str,mo=mo_str)
+                            Pn = os.path.join(D_BRAN,'mld',Fn)
+                            print("LOADING: {:s}".format(Pn))
+                            MLD = xr.open_dataset(Pn)
+                            print("COMPUTING OCEAN HEAT_FLUX")
+                            QDP = compute_ocn_heat_flux(T,S,MLD)
+                            print("SAVING to NetCDF: {:s}".format(Po))
+                            QDP.to_netcdf(Po)
+                            SYS_CALL = '{ncks:s} -C -O -x -v st_ocean {Fout:s} {Fout:s}'.format(ncks=ncks,Fout=Po)
+                            call_subprocess(SYS_CALL)
+                            SYS_CALL = '{ncrename:s} -O -v __xarray_dataarray_variable__,qdp -v lat,LAT -v lon,LON {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Po)
+                            call_subprocess(SYS_CALL)
+                            Pt = os.path.join(Do,'tmp.nc')
+                            SYS_CALL = '{cdo:s} {opts:s} {type:s},{Fgrd:s} {Fin:s} {Fout:s}'.format(cdo=cdo,
+                                                                                                    type=self.cdo_reG_type,
+                                                                                                    opts=self.cdo_reG_opts,
+                                                                                                    Fgrd=F_Gt,
+                                                                                                    Fin=Po,
+                                                                                                    Fout=Pt)
+                            call_subprocess(SYS_CALL)
+                            os.rename(Pt,Po)
             # at the end of each year go back into each variable and merge that variable across the months
             # then once merged across the months, merge all the variables into one large yearly file as is
             # required by CICE6 
@@ -268,13 +330,13 @@ class cice_prep:
                 if ds_name=='ERA5':
                     tmp_list = self.ERA5toCICE_varnames
                 elif ds_name=='BRAN':
-                    tmp_list = self.BRANtoCICE_varnames.keys()
+                    tmp_list = self.BRANtoCICE_varnames
                 for var_name in tmp_list:
                     Pn_mrg_mo = os.path.join(D_reG,yr_str,var_name,'*.nc')
                     if ds_name=='ERA5':
                         Fo_mrg_mo = self.ERA5_yr_Ftmp_form.format(G_res=G_res,field=self.ERA5toCICE_varnames[var_name],yr=yr_str)
                     elif ds_name=='BRAN':
-                        Fo_mrg_mo = self.ERA5_yr_Ftmp_form.format(G_res=G_res,field=self.BRANtoCICE_varnames[var_name],yr=yr_str)
+                        Fo_mrg_mo = self.BRAN_yr_Ftmp_form.format(G_res=G_res,field=self.BRANtoCICE_varnames[var_name],yr=yr_str)
                     Po_mrg_mo = os.path.join(D_reG,yr_str,Fo_mrg_mo)
                     if not(os.path.exists(Po_mrg_mo)):
                         print('CREATING full-year single variable -- APPROXIMATE TIME 45MINS.\n{:s}'.format(Po_mrg_mo))
@@ -284,93 +346,6 @@ class cice_prep:
                 print('CREATING full-year-all-variables -- APPROXIMATE TIME 4.5HRS.\n{:s}'.format(Po_mrg_var))
                 merge_nc(Pn_mrg_var,Po_mrg_var,self.switches['delete_merge_input'])
 
-    #########################################################################################
-    def compute_derivations(self,ds_name='ERA5',compute='qsat',var_names=['2d','sp'],yr_str='',yrmo_str=''):
-        '''
-        This module works but is a work in progress as it was written with some hard-wired information that
-        really needs to be changed before it is really useful.
-
-        That being said, if one is working with ERA5 or BRAN this derivation wrapper will attempt to load
-        required variables for a given derivation and pass that to the respective derivation function.
-
-        Types of derivations:
-        "airrho" -> density of air at the surface based on dew-point temperature, surface pressure and air
-                    temperature. See help(afim.compute_sfc_airrho())
-        "qsat"   -> specific humidity at the surface based on dew-point temperature and surface pressure. It
-                    is also the default calculation/derivation. See help(afim.compute_sfc_qsat())
-        "dhdx"   -> ocean surface slope in the x-direction based on sea surface height. See
-                    help(afim.compute_ocn_sfc_slope())
-        "dhdy"   -> ocean surface slope in the y-direction based on sea surface height. See
-                    help(afim.compute_ocn_sfc_slope())
-        "qdp"    -> ocean heat_flux at the mixed laer depth and uses temperature, salinity and mixed layer
-                    depth. See help(afim.compute_ocn_heat_flux())
-        '''
-        D_reG = os.path.join(self.D_reG,ds_name)
-        G_res = self.G_res
-        if compute=='airrho':
-            var_names = ['2d','sp','2t']
-            vout      = 'rho'
-            vnew      = self.ERA5_derv_rho_name
-        elif compute=='qsat':
-            vout      = 'qsat'
-            vnew      = self.ERA5toCICE_varnames[vout]
-        elif compute=='dhdx':
-            var_names = ['eta_t']
-            vout      = 'seaslpx'
-            vnew      = self.BRANtoCICE_varnames[vout]
-        elif compute=='dhdy':
-            var_names = ['eta_t']
-            vout      = 'seaslpy'
-            vnew      = self.BRANtoCICE_varnames[vout]
-        elif compute=='qdp':
-            var_names = ['temp','salt','mld']
-            vout      = 'qdp'
-            vnew      = self.BRANtoCICE_varnames[vout]
-        Dnew = os.path.join(D_reG,yr_str,vout)
-        Fnew = self.Ftmp_yrmo_form.format(G_res=G_res,field=vnew,yrmo=yrmo_str)
-        Pnew = os.path.join(Dnew,Fnew)
-        if os.path.exists(Pnew):
-            print('Derived file already exists -- skipping derivation: {:s}'.format(Pnew))
-            return
-        D1 = os.path.join(D_reG,yr_str,var_names[0])
-        F1 = self.Ftmp_yrmo_form.format(G_res=G_res,field=var_names[0],yrmo=yrmo_str)
-        print("LOADING: {:s}".format(os.path.join(D1,F1)))
-        ds1 = xr.open_dataset(os.path.join(D1,F1))
-        if compute=='airrho' or compute=='qsat' or compute=='qdp':
-            D2 = os.path.join(D_reG,yr_str,var_names[1])
-            F2 = self.Ftmp_yrmo_form.format(G_res=G_res,field=var_names[1],yrmo=yrmo_str)
-            print("LOADING: {:s}".format(os.path.join(D2,F2)))
-            ds2 = xr.open_dataset(os.path.join(D2,F2))
-        if compute=='airrho' or compute=='qdp':
-            D3 = os.path.join(D_reG,yr_str,var_names[2])
-            F3 = self.Ftmp_yrmo_form.format(G_res=G_res,field=var_names[2],yrmo=yrmo_str)
-            print("LOADING: {:s}".format(os.path.join(D3,F3)))
-            ds3 = xr.open_dataset(os.path.join(D3,F3))
-        if compute=='airrho':
-            print("COMPUTING AIR DENSITY at the surface")
-            ds = compute_sfc_airrho(ds1.d2m, ds2.sp, ds3.t2m)
-        elif compute=='qsat':
-            print("COMPUTING SPECIFIC HUMIDITY at the surface")
-            ds = compute_sfc_qsat(ds1.d2m, ds2.sp)
-        elif compute=='dhdx':
-            print("COMPUTING OCEAN SURFACE SLOPE X-DIRECTION at the surface")
-            G  = xr.open_dataset(self.F_Gt).hte
-            ds = compute_ocn_sfc_slope(ds1.eta_t,G,direction='x',grid_scale_factor=self.G_scale_fact)
-        elif compute=='dhdy':
-            print("COMPUTING OCEAN SURFACE SLOPE Y-DIRECTION at the surface")
-            G  = xr.open_dataset(self.F_Gt).hte
-            ds = compute_ocn_sfc_slope(ds1.eta_t,G,direction='y',grid_scale_factor=self.G_scale_fact)
-        elif compute=='qdp':
-            print("COMPUTING OCEAN HEAT_FLUX")
-            ds = compute_ocn_heat_flux(ds1.temp,ds2.salt,ds3.mld)
-        Dout = os.path.join(D_reG,yr_str,vout)
-        if not(os.path.exists(Dout)): os.makedirs(Dout)
-        Fout = self.Ftmp_yrmo_form.format(G_res=G_res,field=vout,yrmo=yrmo_str)
-        Pout = os.path.join(Dout,Fout)
-        print("SAVING to NetCDF: {:s}".format(Pout))
-        ds.to_netcdf(Pout)
-        print("RENAMING variable {:s} to {:s} and saving to NetCDF: {:s}".format('__xarray_dataarray_variable__',vnew,Pnew))
-        rename_nc_var(Pout,Pnew,'__xarray_dataarray_variable__',vnew)
 
 ############################################################################
 # a simple function to call subprocess commands
@@ -385,8 +360,19 @@ def call_subprocess(sys_str_in):
     print('System call return: ',sys_str_out)
 
 ############################################################################
+#
+def info_nc(Fin,all_info=False):
+    '''
+    '''
+    if all_info:
+        SYS_CALL = '{cdo:s} infon {Fin:s}'.format(cdo=cdo,Fin=Fin)
+    else:
+        SYS_CALL = '{cdo:s} sinfon {Fin:s}'.format(cdo=cdo,Fin=Fin)
+    call_subprocess(SYS_CALL)
+
+############################################################################
 # a simple function to regrid a NetCDF file using CDO
-def regrid_nc(Fin, Fout, Fgrd, Vname='', tslice='',
+def regrid_ERA5(Fin, Fout, Fgrd, Vname='', tslice='', var_renames={},
               cdo_regrid_type='remapbic', cdo_options='', del_in=False):
     '''
     This function takes a gridded NetCDF and attempts to regrid it using 2D
@@ -409,32 +395,10 @@ def regrid_nc(Fin, Fout, Fgrd, Vname='', tslice='',
     'cdo_options'     :: specific options passed to CDO. See CDO manual for
                          more detailed help.
     '''
-
-    Ftmp = os.path.join('/', 'Users', 'dpath2o', 'tmp', 'tmp_pre-regrid.nc')
-
-    # OPEN NETCDF: parse variable name and time
-    ds = xr.open_dataset(Fin, engine='netcdf4')
-    if tslice:
-        if Vname:
-            ds = ds[Vname].sel(time=tslice, method='nearest')
-        else:
-            ds = ds.sel(time=tslice, method='nearest')
-    else:
-        if Vname:
-            ds = ds[Vname]
-
-    # show what the dataset looks like before re-gridding
-    print('DATASET BEFORE REGRIDDING: ', ds.sizes)
-
-    # TEMPORARY NETCDF FILE: create a temporary NetCDF for CDO to read from
-    if os.path.exists(Ftmp):
-        os.remove(Ftmp)
-    ds.to_netcdf(Ftmp)
-
-    # IF OUTPUT FILE ALREADY EXISTS CLOBBER IT
-    if os.path.exists(Fout):
-        os.remove(Fout)
-
+    Do   = os.path.split(Fout)[0]
+    Fo   = os.path.split(Fout)[1]
+    Po   = os.path.join(Do,Fout)
+    Ftmp = os.path.join(Do,"tmp.nc")
     # REGRID
     if cdo_options:
         SYS_CALL = '{cdo:s} {opts:s} {type:s},{Fgrd:s} {Fin:s} {Fout:s}'.format(cdo=cdo,
@@ -442,30 +406,106 @@ def regrid_nc(Fin, Fout, Fgrd, Vname='', tslice='',
                                                                                 opts=cdo_options,
                                                                                 Fgrd=Fgrd,
                                                                                 Fin=Fin,
-                                                                                Fout=Fout)
+                                                                                Fout=Ftmp)
     else:
         SYS_CALL = '{cdo:s} {type:s},{Fgrd:s} {Fin:s} {Fout:s}'.format(cdo=cdo,
                                                                        type=cdo_regrid_type,
                                                                        Fgrd=Fgrd,
                                                                        Fin=Fin,
-                                                                       Fout=Fout)
+                                                                       Fout=Ftmp)
     call_subprocess(SYS_CALL)
- # show what the file looks like after re-gridding
-    ds = xr.open_dataset(Fout, engine='netcdf4')
-    print('DATASET AFTER REGRIDDING: ', ds.sizes)
-    if del_in:
-        SYS_CALL = 'rm -f {Fin:s}'.format(Fin=Fin)
+    os.rename(Ftmp,Fout)
+    SYS_CALL = '{ncks:s} -C -O -x -v Time_bnds {Fout:s} {Fout:s}'.format(ncks=ncks,Fin=Fout,Fout=Fout)
+    #call_subprocess(SYS_CALL)
+    SYS_CALL = '{ncrename:s} -O -v lon,LON -v lat,LAT {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Fout)
+    #call_subprocess(SYS_CALL)
+    if Vname in var_renames.keys():
+        SYS_CALL = '{ncrename:s} -O -v {vin:s},{vout:s} {Fout:s} {Fout:s}'.format(ncrename=ncrename,
+                                                                                  vin=Vname,
+                                                                                  vout=var_renames[Vname],
+                                                                                  Fout=Fout)
+        call_subprocess(SYS_CALL)
+
+############################################################################
+# a simple function to regrid a NetCDF file using CDO
+def regrid_BRAN(Fin, Fout, Fgrd, var_type='', var_3D_names='', var_renames={},
+                Vname='', tslice='', cdo_regrid_type='remapbic', cdo_options='',
+                del_in=False):
+    '''
+    This function takes a gridded NetCDF and attempts to regrid it using 2D
+    NetCDF grid file. The function does not return any values. The function
+    requires the following inputs:
+
+    'Fin'  :: the full path name of the NetCDF file to be regridded
+    'Fout' :: the full path name of the *new* (re-gridded) NetCDF file
+    'Fgrd' :: the full path name of the 2D NetCDF grid file that will be used
+              to preform the re-gridding
+
+    Additional/Optional inputs:
+    'Vname'  :: the short name of the particular variable in 'Fin' which will be
+                re-gridded. All other variables in the file will be ignored.
+    'tslice' :: if the user is only concerned with a particular timeframe of
+                the variable then this is place to put this in string format
+                YYYY-MM-DD[:YYYY-MM-DD]
+    'cdo_regrid_type' :: type of regridding interpolation to perform. See CDO
+                         manual for more detailed help.
+    'cdo_options'     :: specific options passed to CDO. See CDO manual for
+                         more detailed help.
+    '''
+    if var_type in var_3D_names:
+        SYS_CALL = '{cdo:s} sellevidx,1 {Fin:s} {Fout:s}'.format(cdo=cdo,Fin=Fin,Fout=Fout)
+        call_subprocess(SYS_CALL)
+        SYS_CALL = '{ncwa:s} -O -a st_ocean {Fout:s} {Fout:s}'.format(ncwa=ncwa,Fout=Fout)
+        call_subprocess(SYS_CALL)
+        SYS_CALL = '{ncks:s} -C -O -x -v st_ocean {Fout:s} {Fout:s}'.format(ncks=ncks,Fout=Fout)
+        call_subprocess(SYS_CALL)
+        Fin = Fout
+    Do   = os.path.split(Fout)[0]
+    Fo   = os.path.split(Fout)[1]
+    Po   = os.path.join(Do,Fout)
+    Ftmp = os.path.join(Do,"tmp.nc")
+    # REGRID
+    if cdo_options:
+        SYS_CALL = '{cdo:s} {opts:s} {type:s},{Fgrd:s} {Fin:s} {Fout:s}'.format(cdo=cdo,
+                                                                                type=cdo_regrid_type,
+                                                                                opts=cdo_options,
+                                                                                Fgrd=Fgrd,
+                                                                                Fin=Fin,
+                                                                                Fout=Ftmp)
+    else:
+        SYS_CALL = '{cdo:s} {type:s},{Fgrd:s} {Fin:s} {Fout:s}'.format(cdo=cdo,
+                                                                       type=cdo_regrid_type,
+                                                                       Fgrd=Fgrd,
+                                                                       Fin=Fin,
+                                                                       Fout=Ftmp)
+    call_subprocess(SYS_CALL)
+    # rename filename
+    os.rename(Ftmp,Fout)
+    SYS_CALL = '{ncks:s} -C -O -x -v Time_bnds {Fout:s} {Fout:s}'.format(ncks=ncks,Fin=Fout,Fout=Fout)
+    call_subprocess(SYS_CALL)
+    SYS_CALL = '{ncrename:s} -O -v lon,LON -v lat,LAT {Fout:s} {Fout:s}'.format(ncrename=ncrename,Fout=Fout)
+    call_subprocess(SYS_CALL)
+    if var_type in var_renames.keys():
+        SYS_CALL = '{ncrename:s} -O -v {vin:s},{vout:s} {Fout:s} {Fout:s}'.format(ncrename=ncrename,
+                                                                                  vin=var_type,
+                                                                                  vout=var_renames[var_type],
+                                                                                  Fout=Fout)
         call_subprocess(SYS_CALL)
 
 ############################################################################
 # a simple function slice NetCDF along a *level* index
-def slice_nc(Fin,Fout,level_index=0):
+def slice_nc(Fin,Fout,level_index=0,ds_name=''):
     '''
     Given a NetCDF with three spatial dimensions, slice along the level at
     a given index.
     '''
     SYS_CALL = '{cdo:s} sellevidx,{idx:d} {Fin:s} {Fout:s}'.format(cdo=cdo,Fin=Fin,Fout=Fout,idx=level_index)
     call_subprocess(SYS_CALL)
+    if ds_name=='BRAN':
+        SYS_CALL = '{ncwa:s} -O -a st_ocean {Fout:s} {Fout:s}'.format(ncwa=ncwa,Fout=Fout)
+        call_subprocess(SYS_CALL)
+        SYS_CALL = '{ncks:s} -C -O -x -v st_ocean {Fout:s} {Fout:s}'.format(ncks=ncks,Fout=Fout)
+        call_subprocess(SYS_CALL)
 
 ############################################################################
 # a simple function to merge NetCDF along the time axis using CDO
@@ -500,34 +540,8 @@ def rename_nc_var(Fin,Fout,var_in,var_out):
     call_subprocess(SYS_CALL)
 
 ############################################################################
-# a simple function to report on NetCDF variables
-def report_nc_var_names(Fin, mmm=False):
-    '''
-    Given a full path name to a NetCDF file then report on the variables' names
-    and attributes. Optional switch for the function is to enable reporting on
-    mean, minimum and maximum of each variable. Note, that if the NetCDF
-    variable is large in time and space then this mean, min, max switch can
-    take a long time to complete. The function does not return any values.
-    '''
-
-    # OPEN NETCDF: parse variable name and time
-    ds = xr.open_dataset(Fin, engine='netcdf4')
-
-    # show what the dataset looks like before re-gridding
-    print('DATASET via xarray print: ', ds)
-
-    for i in ds.keys():
-        print('')
-        print('variable name       : ', i)
-        print('variable attributes : ', ds[i].attrs)
-        if mmm:
-            print('variable min        : ', ds[i].min())
-            print('variable max        : ', ds[i].max())
-            print('variable mean       : ', ds[i].mean())
-
-############################################################################
 #
-def compute_ocn_heat_flux(T,S,mld,lat_name='yt_ocean'):
+def compute_ocn_heat_flux(T,S,mld,lat_name='xt_ocean'):
     '''
     Given ocean temperature and salinity, compute the deep ocean heat flux. The
     approach is first to accurately compute heat capacity and then use the relationship
@@ -537,15 +551,15 @@ def compute_ocn_heat_flux(T,S,mld,lat_name='yt_ocean'):
     Unesco 1983. Algorithms for computation of fundamental properties of seawater,
     1983. Unesco Tech. Pap. in Mar. Sci., No. 44, 53 pp.
     '''
-    sst    = T.sel(st_ocean=0  ,method='nearest')
-    T_mld  = T.sel(st_ocean=mld,method='nearest')
-    S_mld  = S.sel(st_ocean=mld,method='nearest')
+    sst    = T.sel(st_ocean=0      ,method='nearest').temp
+    T_mld  = T.sel(st_ocean=mld.mld,method='nearest').temp
+    S_mld  = S.sel(st_ocean=mld.mld,method='nearest').salt
     # depth to pressure, convert lats to radians
     latrad = np.sin(np.abs(T[lat_name])*(np.pi/180)) 
     C1     = 5.92e-3 + latrad**(2*5.25e-3)
-    P_mld  = ( (1-C1) - np.sqrt( ( (1-C1)**2 ) - (8.84e-6*mld) ) ) / 4.42e-6
+    P_mld  = ( (1-C1) - np.sqrt( ( (1-C1)**2 ) - (8.84e-6*mld.mld) ) ) / 4.42e-6
     # to convert db to Bar as used in Unesco routines
-    P_mld  = P_mld/10; 
+    P_mld  = P_mld/10
     # HEAT CAPACITY
     c0     =  4.2174e3
     c1     = -3.720283
