@@ -1,7 +1,1 @@
-#+title: Australian Fast Ice Model
-#+subtitle: References
-#+date: <2022-04-05 Tue>
-#+author: DP@H$_2$O
-#+email: daniel.atwater@utas.edu.au
-
-
+/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_refs.org

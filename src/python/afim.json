@@ -31,7 +31,7 @@
   "D_graph"            : "/Users/dpath2o/PHD/GRAPHICAL",
   "F_aom2bath"         : "/Volumes/ioa03/model_input/ACCESS-OM2/input_20200530/mom_025deg/topog.nc",
   "CICE6_atm_var_names": ["glbrad","dlwsfc","wndewd","wndnwd","airtmp","spchmd","airrho","ttlpcp"],
-  "CICE5_ocn_var_names": ["T","S","qdp","dhdx","dhdy","u","v","hblt"],
+  "CICE6_ocn_var_names": ["T","S","qdp","dhdx","dhdy","u","v","hblt"],
   "BRAN_dir_var_list"  : ["eta","ice_force","mld","salt","static","temp","u","v"],
   "JRA55_dir_var_list" : ["huss","prra","prsn","psl","rlds","rsds","tas","ts","uas","vas"],
   "MERRA_dir_var_list" : ["flx","rad","slv"],

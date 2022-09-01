@@ -695,4 +695,4 @@ def map_global_gridded_field(dat,region='g',projection='W180/15c',tit_str='',D_p
     fig.grdimage(grid=dat, region="g", frame="a",transparency=25)
     fig.coast(region="g", land="black",frame=["af", f'WSne+t"{tit_str}"'])
     fig.colorbar(frame='af')
-    fig.savefig(os.path.join(D_plt,'{:s}.png'.format(i)))
+    fig.savefig(os.path.join(D_plt,'map_global_gridded_field_{:s}.png'.format(tit_str)))
