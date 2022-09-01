@@ -1,1 +1,107 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_roms_grid_generation.org
+#+TITLE: AFIM -- ROMS Grid Generation
+#+AUTHOR: 
+
+* test correct anaconda environment
+#+BEGIN_SRC python
+import sys
+return sys.exec_prefix
+#+END_SRC
+
+#+RESULTS:
+: /media/SEACHUM/.grid
+
+* import required libraries
+#+BEGIN_SRC python
+import warnings
+warnings.simplefilter('ignore')
+import numpy as np
+import matplotlib.pyplot as plt
+from shapely.geometry import Polygon, Point
+from pyproj import Proj, transform
+import pandas as pd
+import geopandas as gpd
+import xarray as xr
+import pygridgen as pgg
+import pygridtools as pgt
+import pdb
+#+END_SRC
+
+#+RESULTS:
+: None
+
+* projections
+This projection could possibly be used as well /epsg:3857/
+#+BEGIN_SRC python
+in_projection_string = 'epsg:4326'
+out_projection_string = 'epsg:3577'
+outProj = Proj(init=out_projection_string)
+inProj = Proj(init=in_projection_string)
+#+END_SRC
+
+#+RESULTS:
+
+* boundary points
+#+BEGIN_SRC python
+blocs  = np.array([(150.8 , -34.7),
+                   (150.4 , -35.4),
+                   (151.5 , -36),
+                   (152.5 , -34.5),
+                   (150.8 , -34.7)] )
+bbetas = np.array([1,
+                   1,
+                   1,
+                   1,
+                   0])
+bndry = pd.DataFrame({'beta':bbetas,
+                      'longitudes':blocs[:,0],
+                      'latitudes':blocs[:,1]})
+bndry_pts = gpd.GeoDataFrame(bndry,
+                             geometry=gpd.points_from_xy(bndry.longitudes,bndry.latitudes),
+                             crs=in_projection_string)
+bndry_ply = gpd.GeoDataFrame(geometry=gpd.GeoSeries([Polygon(blocs)]),
+                             crs=in_projection_string)
+AusAlbers_bndry_pts = bndry_pts.to_crs(out_projection_string)
+AusAlbers_bndry_ply = bndry_ply.to_crs(out_projection_string)
+#+END_SRC
+
+* grid resolutions
+#+BEGIN_SRC python
+nx = 100
+ny = nx
+#+END_SRC
+
+* plot the domain
+#+BEGIN_SRC python
+fig,ax = plt.subplots(figsize=(5, 5), subplot_kw={'aspect':'equal'})
+fig    = pgt.viz.plot_domain(AusAlbers_bndry_pts, betacol='beta', ax=ax)
+plt.savefig('boundary.png')
+#+END_SRC
+
+* generate the grid with gridgen
+#+BEGIN_SRC python
+grid   = pgg.Gridgen(AusAlbers_bndry_pts.geometry.x,
+                     AusAlbers_bndry_pts.geometry.y,
+                     AusAlbers_bndry_pts.beta,
+                     shape=(nx,ny),
+                     ul_idx=2)
+fig,ax = plt.subplots(figsize=(7, 7), subplot_kw={'aspect':'equal'})
+fig    = pgt.viz.plot_cells(grid.x, grid.y, ax=ax)
+plt.savefig('grid_and_boundary.png')
+#+END_SRC
+
+* coast mask
+#+BEGIN_SRC python
+cst     = gpd.read_file('./AusCst/DEACoastlines_annualcoastlines_v1.0.0.shp')
+jb_cst  = cst.clip(AusAlbers_bndry_ply)
+fig, ax = plt.subplots(figsize=(12, 8))
+jb_cst.plot(ax=ax, color="purple")
+AusAlbers_bndry_ply.boundary.plot(ax=ax, color="red")
+ax.set_axis_off()
+plt.savefig('./coast.png')
+#+END_SRC
+
+* import bathymetry
+#+BEGIN_SRC python
+bath = xr.open_dataset('./GEBCO_2021_AustraliaStation.nc')
+#+END_SRC
+

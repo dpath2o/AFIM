@@ -1,1 +1,221 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_computing.org
+#+title: AFIM -- Computing
+#+subtitle: Administration
+#+subtitle: Computing
+#+date: <2022-08-28 Sun>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+
+* External Systems
+** RDSI/CDASO                                                      :noexport:
+   #+NAME: RDI_CDASO
+   + user     :: dpath2o
+   + passcode :: _1ce5lip
+   + ip       :: 131.217.169.118
+*** DONE setup auto-ssh via keygen
+    :COMPLETED: [2022-04-13 Wed]
+** GitHub
+:LOGBOOK:
+CLOCK: [2021-07-10 Sat 13:37]--[2021-07-10 Sat 16:39] =>  3:02
+CLOCK: [2021-07-05 Mon 12:06]--[2021-07-05 Mon 16:27] =>  4:21
+CLOCK: [2021-07-05 Mon 09:59]--[2021-07-05 Mon 11:04] =>  1:05
+:END:
+*** Repository Initialisation [2021-07-05 Mon]
+*** New Repository [2022-04-05 Tue]
+[[https://github.com/dpath2o/AFIM][GitHub AFIM]]
+**** DONE [#A] Invited Alex, Will, Paul
+** CloudStor
+** Remote Desktop                        :vnc:remote_desktop:computer_admin:
+*** X2Go
+[[https://wiki.x2go.org/doku.php/doc:newtox2go][X2Go]]
+** Microsoft                                               :bookmark:office:
+- [[https://www.office.com/?auth=2&home=1][Office 365]]
+- [[https://myanalytics.microsoft.com][Analytics]]
+** Tasmanian Partnership for Advancing Computing (TPAC)           :bookmark:
+*** Contact
+[[mailto:xiao.fu@utas.edu.au][Ming]]
+*** Nectar Cloud Starter Training
+[[https://www.tpac.org.au/training/][online information]]
+*** DONE Work through this TPAC material
+CLOSED: [2021-08-18 Wed 10:28] DEADLINE: <2021-07-12 Mon>
+[[https://protect-au.mimecast.com/s/jYHACr8DKNfB6xBxh7U3m5?domain=tutorials.rc.nectar.org.au]]
+*** DONE Register for one-day course
+CLOSED: [2021-05-10 Mon 17:07]
+:PROPERTIES:
+:DEADLINE: <2021-05-15 Sat>
+:PRIORITY: A
+:END:
+- CLOSING NOTE [2021-05-10 Mon 17:07] \\
+  interest has been registered; see email thread. No current course listings
+  available. They will contact me once a date has been promulgated.
+- CASE ID: INC0868693
+** National eResearch Colloboration Tools And Resources (NECTAR)  :bookmark:
+[[https://nectar.org.au][Homepage]]
+*** Compile METROMs in Sandbox
+:LOGBOOK:
+CLOCK: [2021-06-03 Thu 08:57]--[2021-06-03 Thu 11:44] =>  2:47
+:END:
+*** Attempting to login and play around
+:LOGBOOK:
+CLOCK: [2021-05-28 Fri 21:59]--[2021-05-28 Fri 22:28] =>  0:29
+:END:
+- Stuck on remote login using SSH
+- success after ensuring that my Key Pair is associated with Instance at the
+configuration of that Instance
+- logging in
+#+begin_src
+ssh -i ~/.ssh/ubuntu.pem ubuntu@115.146.85.105
+#+end_src
+*** Training
+:LOGBOOK:
+CLOCK: [2021-05-23 Sun 21:15]--[2021-05-23 Sun 21:47] =>  0:32
+:END:
+[[https://tutorials.rc.nectar.org.au][Self-paced online tutorials]]
+**** TODO X11 Forwarding
+**** DONE [#B] Cloud Starter Series
+CLOSED: [2021-05-23 Sun 21:11]
+- CLOSING NOTE [2021-05-23 Sun 21:11]
+#+NAME: Cloud Starter Series
+DEADLINE: <2021-06-11 Fri>
+[[https://tutorials.rc.nectar.org.au/cloud-starter/02-tutorials][website]]
+***** Security Groups, the absolute basics
+:LOGBOOK:
+CLOCK: [2021-05-23 Sun 20:03]--[2021-05-23 Sun 21:10] =>  1:07
+:END:
+As of [2021-05-23 Sun] Cannot SSH into instance
+*** SEACLUB
+:LOGBOOK:
+CLOCK: [2021-09-09 Thu 10:23]--[2021-09-09 Thu 15:47] =>  5:24
+:End:
+Created new instance called /seaclub/ for a lack of a better name and began
+installing software
+*** SEACLUB IP                                         :seaclub:ip:address:
+131.217.175.244
+*** Linked *CLOUDSTOR* to /seaclub/
+**** Steps
+1. login into *CLOUDSTOR* and go user settings
+2. generate an /app/ password
+3. copy password to notepad
+4. open /ssh/ to /seaclub/ or whatever the name of the NECTAR machine is and run
+   the command =cloudstor-setup= and following the bouncing ball
+*** Installed Software
+**** NetCDF
+=sudo apt-get install libnetcdf-dev libnetcdff-dev=
+**** ROMS
+:PROPERTIES:
+:ID:       43E7649C-F3BE-4BE0-877F-BFE34DA00639
+:END:
+1. Logged into [[https://www.myroms.org][ROMS]] and followed [[https://www.myroms.org/wiki/Git][ROMS GIT Wiki]]
+2. Created and stored login credentials securely via: =gpg --gen-key= and used
+   =daniel.atwater@utas.edu.au= as my /host/
+3. Then =curl -o ~/bin/git-credential-netrc https://raw.githubusercontent.com/git/git/master/contrib/credential/netrc/git-credential-netrc=
+4. Created file =nano ~/.netrc= with this format:
+   #+BEGIN_SRC text
+   machine www.myroms.org
+   login dpath2o
+   password [PASSCODE]
+   protocol https
+   #+END_SRC
+5. Then ran the command =gpg -e -r daniel.atwater@utas.edu.au .netrc= and
+   deleted =rm ~/.netrc=
+6. Enabled =git= awareness of this new file via =git config --global credential.helper "netrc -f ~/.netrc.gpg -v"=
+7. Cloned ROMS via =git clone https://dpath2o@www.myroms.org/git/src bin/ROMS=
+8. In order to synchronize the Git and Subversion repository revision
+   information, we have created a Git filter that will insert the git hash of
+   the last time a file was modified, similar to the Subversion $Id$ keyword. In
+   order for the filter to work, it has to be explicitly enabled by the user.
+   After the git clone command from above completes change into MyDir and
+   execute the following:
+   #+BEGIN_SRC shell
+     cd ~/bin/ROMS
+     git config filter.id.smudge ".git_filters/id.smudge %f"
+     git config filter.id.clean ".git_filters/id.clean %f"
+     rm .git/index
+     git checkout HEAD -- "$(git rev-parse --show-toplevel)"
+     git config --global user.name "dpath2o"
+     git config --global uers.email "dpath2o@mac.com"
+   #+END_SRC
+**** Anaconda
+***** Created new environment /EAFIM/
+**** Texlive
+**** Python
+***** Additional Libraries
+****** PyGMT
+****** GDAL
+****** Cartopy
+****** MetPy
+** Kunanyi
+** gadi                                                           :user:acct:
+:PROPERTIES:
+ :CUSTOM_ID: gadi
+ :END:
+[[https://opus.nci.org.au/login.action?os_destination=%2Fdisplay%2FHelp%2F0.%2BWelcome%2Bto%2BGadi][Account created]] on [2022-06-07 Tue] and [[https://opus.nci.org.au/display/Help/0.+Welcome+to+Gadi#id-0.WelcometoGadi-FileTransferto/fromGadi][helpful information on GADI usage]]. 
+*** username
+~da1339~
+*** Project and Group Memberships
+**** gb6 (Bluelink)
+[[https://dx.doi.org/10.25914/6009627c7af03]]
+**** hh5 (Climate-LIEF)
+Data storage funded by ARC LIEF scheme to support workflow for climate science. 
+This project host the conda environment managed by CLEX, as such we accept all
+membership requests without questions.
+[[https://orcid.org/0000-0002-0164-5105]]
+**** ik11 (COSIMA)
+This project is for the Consortium for Ocean and Sea-Ice Modelling in Australia
+(COSIMA). This project stores the shared datasets and other data necessary to
+run the models supported by COSIMA. This space will also be used for storage of
+pre-publication datasets created by COSIMA and software needed for the
+preparation of the COSIMA simulations for publication.
+[[https://orcid.org/0000-0001-5898-7635]]
+**** jk72 (Antarctic systems and future change)
+Australia’s weather, climate and fisheries – and hence economy and way of life –
+are heavily affected by changes in the Southern Ocean and Antarctica. Further,
+melting of Antarctica’s ice sheets will threaten $230 billion of Australia’s
+coastal infrastructure, heritage and homes. This project will provide the first
+year of a multiyear computational national-scale research capacity required to
+advance knowledge and hone predictions of Antarctica’s complex
+ice-earth-ocean-atmosphere-ecosystem interactions that govern these future
+impacts. The project will form the computational nexus of the Australian
+Antarctic Program Partnership (AAPP) that includes the complementary ice sheet
+systems modelling component of the the Australian Centre for Excellence in
+Antarctic Science (ACEAS), in order to deliver ground-breaking advances in
+Australia’s Antarctic Science Priorities. A suite of models will be run to test
+and evaluate the interconnected systems across the Antarctic ice sheet,
+atmosphere, sea ice, oceans, solid Earth, and ecosystems. The simulations are
+tightly integrated with the collection and use of observations, collected by the
+overarching Programs, to determine the key processes that govern the
+interactions of the system. This understanding will be used to provide the best
+available projections of the nature and rate of future change, enabling
+Australia to better safeguard against its worst impacts.
+https://orcid.org/0000-0003-1404-4103
+**** qv56 (Reference datasets for climate model analysis/forcing)
+https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f4756_8918_5098_5424
+**** rr7 (Reanalysis reference data)
+Note: currently only MERRA2 6-hourly data are updated and maintained, all the
+other datasets are available elsewhere and the rr7 versions are obsolete.
+**** rt52 (ERA5 Replicated Data: Single and pressure-levels data)
+[[https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f2836_1346_3774_9763]]
+**** ua8 (ARC Centre of Excellence for Climate System Science data)
+[[https://orcid.org/0000-0002-0164-5105]]
+* Hardware
+** Primary Laptop
+#+name: MBPro
++ Macbook Pro (14-inch,2021)
++ Serial Number :: Q5TL7F7WDL
++ Memory :: 32GB
++ Storage :: 1TB
+*** Rebuilt OS on [2022-03-28 Mon]
+** Primary Notepad
++ iPad Pro 11-inch
++ Version :: iPadOS 15.1
++ Serial Number :: FQQF9J5C6G
++ IMEI :: 356635353177101
+* Software Applications
+** Zotero                                                         :software:
+Installed on [[MBPro]] on [2022-04-05 Tue]
+** Anaconda                                                          :conda:
+Installed on [[MBPro]] on [2022-03-28 Mon]
+*** Environments
+**** icepack                                                         :env:
+Installed following guidance from [[./references/modelling/cice-consortium-icepack-readthedocs-io-en-master.pdf][icepack documentation]]
+** SNAP (SentiNel Applications Platform)
+Installed on [[MBPro]] on [2022-04-07 Thu]

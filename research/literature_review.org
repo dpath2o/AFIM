@@ -1,1 +1,397 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_literature_review.org
+#+title: AFIM -- Literature Review
+#+subtitle: Literature Review
+#+date: <2022-06-01 Wed>
+#+author: DP@H_{2}O
+#+email: daniel.atwater@utas.edu.au
+#+LaTeX_class: article
+#+LaTeX_CLASS_OPTIONS: [11pt,a4paper]
+#+LaTeX_HEADER: \usepackage{setspace} \doublespacing
+#+LaTeX_HEADER: \usepackage[type={CC},modifier={by-nc-sa},version={3.0}]{doclicense}
+#+LaTeX_HEADER: \usepackage[top=1cm,bottom=1cm,left=1cm,right=1cm]{geometry}
+#+LaTeX_HEADER: \usepackage{pdflscape}
+#+LaTeX_HEADER: \usepackage[final]{pdfpages}
+#+LaTeX_HEADER: \usepackage[myheadings]{fullpage}
+#+LaTeX_HEADER: \usepackage{enumerate}
+#+LaTeX_HEADER: \usepackage{parskip}
+#+LaTeX_HEADER: \usepackage{dashrule}
+#+LaTeX_HEADER: \usepackage{enumitem}
+#+LaTeX_HEADER: \usepackage{sectsty}
+#+LaTeX_HEADER: \usepackage{latexsym}
+#+LaTeX_HEADER: \usepackage{framed}
+#+LaTeX_HEADER: \usepackage{pbox}
+#+LaTeX_HEADER: \usepackage{ifdraft}
+#+LaTeX_HEADER: \usepackage[english]{babel}
+#+LaTeX_HEADER: \usepackage{fourier}
+#+LaTeX_HEADER: \usepackage{shadowtext}
+#+LaTeX_HEADER: \usepackage[utf8]{inputenc}
+#+LaTeX_HEADER: \usepackage[T1]{fontenc}
+#+LaTeX_HEADER: \usepackage[protrusion=true, expansion=true]{microtype}
+#+LaTeX_HEADER: \usepackage{textcomp}
+#+LaTeX_HEADER: \usepackage{soul}
+#+LaTeX_HEADER: \usepackage{lipsum}
+#+LaTeX_HEADER: \usepackage{blindtext}
+#+LaTeX_HEADER: \usepackage{graphicx}
+#+LaTeX_HEADER: \usepackage{float}
+#+LaTeX_HEADER: \usepackage{wrapfig}
+#+LaTeX_HEADER: \usepackage{rotating}
+#+LaTeX_HEADER: \usepackage{tikz}
+#+LaTeX_HEADER: \usepackage{tikzpagenodes}
+#+LaTeX_HEADER: \usepackage[font=small, labelfont=bf]{caption}
+#+LaTeX_HEADER: \usepackage{pgfgantt}
+#+LaTeX_HEADER: \usepackage{amsmath}
+#+LaTeX_HEADER: \usepackage{bm}
+#+LaTeX_HEADER: \usepackage{amssymb}
+#+LaTeX_HEADER: \usepackage{marvosym}
+#+LaTeX_HEADER: \usepackage{mathpazo}
+#+LaTeX_HEADER: \usepackage{mathtools}
+#+LaTeX_HEADER: \usepackage{siunitx}
+#+LaTeX_HEADER: \usepackage{tabularx}
+#+LaTeX_HEADER: \usepackage{longtable}
+#+LaTeX_HEADER: \usepackage{array}
+#+LaTeX_HEADER: \usepackage{makecell}
+#+LaTeX_HEADER: \usepackage{totpages,fancyhdr}
+#+LaTeX_HEADER: \def\ORGTITLE  {Literature Review}
+#+LaTeX_HEADER: \def\ORGAUTHOR {DP@H_2O}
+#+LaTeX_HEADER: \pagestyle{fancy}
+#+LaTeX_HEADER: \fancyhf{}
+#+LaTeX_HEADER: \setlength\headheight{1cm}
+#+LaTeX_HEADER: \fancyhead[L]{\LARGE \ORGTITLE  }
+#+LaTeX_HEADER: \fancyhead[R]{\large \ORGAUTHOR }
+#+LaTeX_HEADER: \fancyfoot[C]{\small Page \thepage}
+#+LaTeX_HEADER: \usepackage[natbib,style=authoryear-comp]{biblatex}
+#+LaTeX_HEADER: \bibliography{../references/refs_bbt.bib}
+#+LaTeX_HEADER: \usepackage{url}
+#+LaTeX_HEADER: \usepackage{booktabs}
+#+LaTeX_HEADER: \usepackage{hyperref}
+#+LaTeX_HEADER: \hypersetup{colorlinks=true,linktoc=all,linkcolor=blue,filecolor=magenta,urlcolor=cyan,citecolor=magenta}
+#+LaTeX_HEADER: \usepackage{titling}
+#+LaTeX_HEADER: \title{\textsc{Research Plan}}
+#+LaTeX_HEADER: \author{\href{mailto:daniel.atwater@utas.edu.au}{Daniel Patrick Atwater}}
+#+LaTeX_HEADER: \setcounter{secnumdepth}{1}
+#+LaTeX_HEADER: \setcounter{tocdepth}{1}
+#+LaTeX_HEADER: \usepackage{xcolor}
+#+LaTeX_HEADER: \newcommand{\crule}[3][black]{\textcolor{#1}{\rule{#2}{#3}}}
+#+LaTeX_HEADER: \newcommand{\source}[1]{\caption*{\hfill Source: {#1}} }
+#+LaTeX_HEADER: \newcommand{\HRule}[1]{\rule{\linewidth}{#1}}
+#+LaTeX_HEADER: \newcommand{\latlonDec}[2]{$\ang{#1}$ \textbf{#2}}
+#+LaTeX_HEADER: \newcommand{\citationNeeded}{\textbf{}}
+#+LaTeX_HEADER: \newcommand{\htwoo}{H$_2$O }
+#+LaTeX_HEADER: \newcommand{\otwo}{O$_2$ }
+#+LaTeX_HEADER: \newcommand{\cotwo}{CO$_2$ }
+#+LaTeX_HEADER: \newcommand{\chfour}{CH$_4$ }
+#+LaTeX_HEADER: \newcommand{\ntwo}{N$_2$ }
+#+LaTeX_HEADER: \newcommand{\moc}{\textit{\textsc{moc }}} %Meridional Overturning Circulation
+#+LaTeX_HEADER: \newcommand{\nadw}{\textit{\textsc{nadw }}} %Meridional Overturning Circulation
+#+LaTeX_HEADER: \newcommand{\sip}{\textit{\textsc{sip }}} %Sea ice production
+#+LaTeX_HEADER: \newcommand{\dsw}{\textit{\textsc{{dsw }}}} %Dense Shelf Water
+#+LaTeX_HEADER: \newcommand{\aabw}{\textit{\textsc{{aabw }}}} %Antarctic Bottom Water
+#+LaTeX_HEADER: \newcommand{\asf}{\textit{\textsc{{asf }}}} %Antarctic Slope Front
+#+LaTeX_HEADER: \newcommand{\asc}{\textit{\textsc{{asc }}}} %Antarctic Slope Current
+#+LaTeX_HEADER: \newcommand{\acc}{\textit{\textsc{{acc }}}} %Antarctic Slope Current
+#+LaTeX_HEADER: \newcommand{\cdp}{\textit{\textsc{{cdp }}}} %Cape Darnley Polynya
+#+LaTeX_HEADER: \newcommand{\cdfi}{\textit{\textsc{{cdfi }}}}
+#+Latex_HEADER: \newcommand{\mc}{\textit{\textsc{{mc }}}} %Mawson Coast
+#+LaTeX_HEADER: \newcommand{\ais}{\textit{\textsc{{ais} }}} %Amery Ice Shelf
+#+LaTeX_HEADER: \newcommand{\fastice}{fast ice }
+#+LaTeX_HEADER: \newcommand{\Fastice}{Fast ice }
+#+LaTeX_HEADER: \newcommand{\Lpolynya}{$\mathcal{L}$-polynya }
+#+LaTeX_HEADER: \newcommand{\Tpolynya}{$\mathcal{T}$-polynya }
+#+LaTeX_HEADER: \newcommand{\wmo}{\href{https://public.wmo.int/en}{\uppercase{wmo}}}
+#+LaTeX_HEADER: \newcommand{\utas}{\href{https://utas.edu.au}{\textsc{UTas}}}
+#+LaTeX_HEADER: \newcommand{\aapp}{\href{https://aappartnership.org.au}{\uppercase{aapp}}}
+#+LaTeX_HEADER: \newcommand{\imas}{\href{https://www.imas.utas.edu.au}{\uppercase{imas}}}
+#+LaTeX_HEADER: \newcommand{\csiro}{\href{https://www.csiro.au/en/about/people/business-units/oceans-and-atmosphere}{\uppercase{csiro}}}
+#+LaTeX_HEADER: \newcommand{\bom}{\href{http://www.bom.gov.au}{\uppercase{bom}}}
+#+LaTeX_HEADER: \newcommand{\anu}{\href{http://www.anu.edu.au}{\uppercase{anu}}}
+#+LaTeX_HEADER: \newcommand{\primarysupervisor}{\href{mailto:alexander.fraser@utas.edu.au}{\textsc{Alex Fraser}}}
+#+LaTeX_HEADER: \newcommand{\secondarysupervisor}{\href{mailto:will.hobbs@utas.edu.au}{\textsc{Will Hobbs}}}
+#+LaTeX_HEADER: \newcommand{\tertiarysupervisor}{\href{mailto:paul.spence@utas.edu.au}{\textsc{Pual Spence}}}
+#+LaTeX_HEADER: \newcommand{\grc}{\href{mailto:maxim.nikurashin@utas.edu.au}{\textsc{Max Nikurashin}}}
+
+* Introduction
+
+The meridional overturning circulation (\moc) within the Earth's ocean
+basins is understood to play a significant contribution in regulating
+heat content of the climate, ventilating the deep ocean and \cotwo uptake
+\citep{orsiCirculationMixingProduction1999,levitusWarmingWorldOcean2005,bindoffObservationsOceanicClimate2007,purkeyWarmingGlobalAbyssal2010,talleyClosureGlobalOverturning2013}. With
+overturning time scales on the order of a millennia \citep{johnsonQuantifyingAntarcticBottom2008}
+understanding the driving mechanisms of the \moc has implications for
+the rates of change of key parameters in Earth's climate: e.g. \cotwo uptake rate, latent heat draw down, and ventilation of the deep ocean
+\citep{bindoffObservationsOceanicClimate2007,purkeyWarmingGlobalAbyssal2010}. 
+
+The conceptual model of the \moc includes the tropical waters of the
+Atlantic flowing north via the Gulf Stream and overturning at various
+locations in the north Atlantic due to baroclinic instabilities, thus
+becoming North Atlantic Deep Water. At the other end of planet, along
+the coast of Antarctica, a complex set of seasonal events give rise to
+coastal processes that cause cold dense water to form at the surface
+at key locations \citep{orsiCirculationMixingProduction1999}. As the water forms it is
+highly unstable and begins to sink flowing down the slopes of the
+continental shelf, mixing with ambient waters in its descent, and in
+the process becoming dense shelf water (\dsw) \citep{orsiCirculationMixingProduction1999}. Both
+Ekman forced and baroclinic instabilities transport
+\citep{orsiCirculationMixingProduction1999} this \dsw flows across the Antarctic slope front,
+with some indication of mixing
+\citep{mizutaSeasonalEvolutionCape2021,vanachterModellingLandfastSea2022,rintoulOceanHeatDrives2016}, and into the various
+abyssal plains (e.g. becoming Antarctic Bottom Water \textemdash
+\aabw) \citep{stewartAccelerationOverturningAntarctic2019}. Abyssal
+waters with a southern origin that are colder than the North Atlantic
+Deep Water, with temperatures below \si{2}{\degress\Celisus} have been referred to
+generically as Antarctic Bottom Water (\aabw) for quite a long time [Deacon,
+1933; Speer & Zenk, 1993]. This water mass fills the ocean basins of
+the Southern Hemisphere \citep{johnsonQuantifyingAntarcticBottom2008}, and is identified as cold
+dense abyssal water originating from overturning coastal waters around
+Antarctica \citep{orsiCirculationMixingProduction1999}. 
+
+In this manner, \aabw mass accounts for 30\textendash 40% of global ocean
+mass \citep{johnsonQuantifyingAntarcticBottom2008}. Its formation and controlling mechanisms are
+areas of contemporary research. In the effort to prognosticate furture
+climate, the current capability to constrain the climate's heat
+budget, via global climate models, is dependent upon knowledge of
+these controlling mechanisms of the deep ocean
+\citep{dominguesImprovedEstimatesUpperocean2008,murphyObservationallyBasedEnergy2009,purkeyGlobalContractionAntarctic2012,durackOceanWarmingSurface2018}. At
+present, the uncertainty in deep-ocean heat uptake has been shown to be a
+significant cause of variation among climate models
+\citep{boeDeepOceanHeat2009,durackOceanWarmingSurface2018}. While on the other hand, empirically, it
+also has been shown that Earth's systems linked to the long-term
+water-phase-mass distribution and surface temperature variations are
+accelerating \citep{murphyObservationallyBasedEnergy2009,portnerIPCCSpecialReport2019}.
+
+One specific uncertainty of the \moc under investigation in this work,
+is the rate at which \aabw is formed via \dsw formation. To
+investigate this uncertainty I will be undertaking a series of
+simulations, and likely enhancements/tuning of those simulations, of a
+coupled physical system (sea ice-ocean and possibly an atmosphere
+coupled model) across the circumpolar Antarctic domain.
+
+** Project Overview
+
+First, before analysing and revising the physically simulated
+environment across the whole of the Antarctic coastline for fast ice
+distribution accuracy, I will be focusing on specific region of East
+Antarctica. The Mawson Coast and Prydz Bay region of East Antarctica under investigation here, is chosen due to its:
+\begin{enumerate}
+\item significance in \aabw formation
+  \citep{williamsSurfaceOceanographyBROKEWest2010,ohshimaGlobalViewSeaice2016,tamuraSeaIceProduction2016,williamsg.d.SuppressionAntarcticBottom,fraserLandfastIceControls2019,aokiFresheningAntarcticBottom2020},
+\item previous remote sensing, oceanographic a geographic studies (i.e. data availability)
+  \citep{meijersCirculationWaterMasses2010,williamsSurfaceOceanographyBROKEWest2010,ohshimaAntarcticBottomWater2013,tamuraSeaIceProduction2016,fraserLandfastIceControls2019,aokiFresheningAntarcticBottom2020,smithCapeDarnleyBathymetry2020},
+  and
+\item previous geophysical fluid modelling covering or adjacent to this region
+  \citep{galton-fenziModelingBasalMelting2012,nakayamaNumericalInvestigationFormation2014,liuModelingModifiedCircumpolar2017,kusaharaModelingOceanCryosphere2017,kusaharaDenseShelfWater2017,naughtenIntercomparisonAntarcticIceshelf2018,vanachterModellingLandfastSea2022}.
+\end{enumerate}
+
+The distinction of the Mawson Coast, in this context, is its inclusion of the Cape Darnley Polynya
+(\cdp) \citep{meijersCirculationWaterMasses2010}. The \cdp is a coastal ocean polynya
+(i.e. latent\textendash heat polynya) \citep{massomDistributionFormativeProcesses1998,tamuraMappingSeaIce2008}. Some coastal ocean
+polynyas are sources of \aabw \citep{massomDistributionFormativeProcesses1998,maquedam.PolynyaDynamicsReview}. For
+reasons of clarification, I will use the \cite{barberChapterRoleSea2007} definition of
+polynyas:
+\begin{quote}
+  Polynyas are persistent reoccurring regions of open water and/or thin ice,
+  tens to tens of thousands of square kilometres in extent, that occur at
+  locations where more consolidated and thicker ice cover would be
+  climatologically expected.
+\end{quote}
+
+This defintion is derived, in part, from \cite{smithPolynyasLeadsOverview1990} and requires a
+further, modern qualification, and that is that polynyas are \textit{non-linear}
+regions \citep{massomDistributionFormativeProcesses1998} of open water and/or thin ice. The inverse of this
+given by \cite{smithPolynyasLeadsOverview1990} in their definition of oceanographic \textit{leads} as
+\textit{linear} openings in sea ice differentiated by their absence of
+re-occurrence at a particular geographic location. For completeness, it should
+be added, that coastal ocean polynyas are distinctly different from open ocean
+polynyas in that the former are associated with sea ice production (\sip),
+salt-rejection and hence \dsw formation
+\citep{massomDistributionFormativeProcesses1998,maquedam.PolynyaDynamicsReview,tamuraMappingSeaIce2008}. This is in contrast to open ocean
+polynyas (i.e. sensible heat polynyas) that are not typically associated with
+\sip, especially in the Southern Ocean. Categorically, it is the water mass
+modification occurring in coastal polynyas of Antarctica which are a
+key driver of the \moc \citep{gawarkiewiczNumericalStudyDense1995,orsiCirculationMixingProduction1999,galton-fenziModelingBasalMelting2012,sansivieroModellingSeaIce2017},
+and particularly, of concern in this work, is that the \cdp has been
+shown to contribute 13\textendash 30% of the total \aabw mass \citep{ohshimaAntarcticBottomWater2013}.
+
+Given the identification of the \cdp as a significant contributor to \aabw, the
+effort to determine its controlling factors has been pursued \citep{nakayamaNumericalInvestigationFormation2014,liuModelingModifiedCircumpolar2017}. \cite{fraserLandfastIceControls2019}
+have shown that the contribution, specifically the length of landfast
+ice (\fastice), termed Cape Darnley \fastice (\cdfi) is the most corollary physical feature (measured by satellite) in relation to the size of \cdp. (Note, I
+include here the `dagger' portion, defined by \cite{fraserLandfastIceControls2019}, when
+considering \cdfi). Beyond the physical importance of \fastice with polynya
+dynamics it should be further ascribed that their role within the environment as unique habitats
+is critical and our knowledge is formative \citep{trathanFirstRecordedLoss2011,ainleyApparentPopulationDecrease2015a}. It may also be worth mentioning here, that conceptually
+differentiating \fastice from other types of sea ice (e.g. pack
+ice, floes, etc.), I do so inline with common practice via the World
+Meteorological Definition (\wmo) definition \cite{wmoWMOSeaiceNomenclature1970}:
+\begin{quote}
+  Sea ice which forms and remains fast along the coast, where it is attached to
+  the shore, to an ice wall, to an ice front, between shoals or grounded
+  icebergs. Vertical fluctuations may be observed during changes of sea-level.
+  Fast ice may be formed in situ from sea water or by freezing of floating ice
+  of any age to the shore, and it may extend a few metres or several hundred
+  kilometres from the coast. Fast ice may be more than one year old and may then
+  be prefixed with the appropriate age category (old, second-year, or multi-
+  year).
+\end{quote}
+
+In many parts of the Antarctic continental shelf bathymetry favours the grounding of
+icebergs \citep{wescheIcebergSignaturesDetection2012}. The grounding of icebergs provides a linking/trapping/blocking
+mechanism for sea ice to become fastened to the iceberg \citep{massomEffectsRegionalFastice2001,fraserLandfastIceControls2019,liSpatiotemporalPatternsLandfast2020}. In some cases this
+fastening links back to the shoreline, shelf edge, grounding keels, glacial
+tongues, or ice walls \citep{massomDistributionFormativeProcesses1998,fraserEastAntarcticLandfast2012}.
+\cdfi (and hence \cdp) appear connected in this manner to the seafloor topography
+adjacent to Cape Darnley (i.e. Fram Bank) \citep{nakayamaNumericalInvestigationFormation2014,liuModelingModifiedCircumpolar2017}. It has
+been shown that the spatial and temporal distribution of \fastice acts as
+barrier and either inhibits or an enhances the size a coastal ocean
+polynya
+\citep{massomEffectsRegionalFastice2001,ohshimaAntarcticBottomWater2013,nakayamaNumericalInvestigationFormation2014,nihashiCircumpolarMappingAntarctic2015,kusaharaDenseShelfWater2017,fraserLandfastIceControls2019}.
+The work done recently by \cite{fraserLandfastIceControls2019} provides a new metric for
+\fastice categorisation and has shown that quantifying and predicting
+\sip cannot rely solely on representation of the near surface wind, but also
+must include the spatial and temporal distribution of the \fastice. Hence, a
+growing \fastice database of Antarctic is underway \citep{fraserHighresolutionMappingCircumAntarctic2020} and will
+be utilised in this work.
+
+Prior to the above work, a lack of appropriate repressentation of
+\fastice as well as the critical iceberg distribution, at a given time, in a coupled
+ice-ocean numerical model, under represents \sip, and hence \dsw formation,
+incorrectly, or not at all \citep{nakayamaNumericalInvestigationFormation2014,liuModelingModifiedCircumpolar2017}. Fast\textendash  
+ice estimates derived from satellite indicate the \cdp to be a region
+of high \sip and \dsw formation (13\textendash 30% of total \aabw mass) through annual
+production of sea ice between 195 $\pm$ 71 \si{\kilo\meter\cubed}
+\citep{ohshimaAntarcticBottomWater2013,tamuraSeaIceProduction2016}. The
+controlling mechanisms for the \cdp are yet to be well documented but
+are likely both atmospheric and oceanographic via: katabatic surface
+winds, westward circumpolar flow, and favourable bathymetric topology
+of the subsurface northward extension of the \cdp. 
+
+The impetus of this thesis is focused on correctly representing
+\fastice via a coupled sea ice\textendash ocean model \textemdash the
+Modular Ocean Model (MOM6), Los Alamos Community Sea Ice model (CICE)
+\citep{hunkeSeaiceModelsClimate2010,hunkeCICEAlamosSea2010} and
+Wavewatch III (WW3). Rationale of choosing these models as well as an
+overview of oceanographic, atmospheric and cryospheric
+features and concepts will now be provided.
+
+* Oceanography of the Southern Ocean
+
+The Southern Ocean is broadly defined as the body of planetary water
+that separates Antarctica from the continental landmasses of South
+America, Africa and Australia. The Antarctic Circumpolar Current
+(\acc) is the major oceanographic feature that encompases the Southern
+Ocean. An unimpeded flow of a series of ocean surface jets that
+extend hundreds of metres into the water column, encircling the
+planet and allowing for information in the form of heat, chemicals and
+nutrients to be exchanged between the ocean basins on timescales of
+months to years. It is the largest current of
+water on earth, driven by westerly winds between 45-55 deg.S. and
+buoyancy forcing that tilt surfaces of density (isopycnal surfaces) in
+the ocean basins (Atlantic, Indian and Pacific) towards the south and create the eastward geostrophic
+flow of the \acc. Waters of the ocean basins are thus connected via
+the \acc\citep{orsiMeridionalExtentFronts1995}. This relationship gives rise to highly distinguishable meridional
+gradient that separates the Southern Ocean waters from those of the
+low-latitude ocean basin waters. The area where these waters converge
+on the surface is the \acc or also referred to as the sub-tropical
+front \citep{orsiCoolingVentilatingAbyssal2001}. In this manner it can be
+thought of as a series of ocean jets that, due to the absence of any
+pressure gradient force that a blocking land mass would impose, in
+which no net geostrophic flow across the \acc can occur.
+
+The \acc differs fundamentally from other major current
+systems (western boundary currents) in that its zonal ocean transport
+is known to be proportional \textit{directly} to the wind stress
+\citep{munkNoteDynamicsAntarctic1951}. Whereas, western boundary
+currents (Gulf Stream, Kuroshio, EAC, etc.), the wind stress is
+balanced with lateral friction, and hence the transport is proportional to the
+\textit{curl} of the wind stress
+\citep{munkNoteDynamicsAntarctic1951}. \cite{hughesWhyWesternBoundary2001}
+further showed that the interaction of the \acc flow with topographic features is also
+fundamentally a balance in the absolute vorticity at depth and
+advection of planetary vorticity, whereas the flat-bottom Sverdrup
+balance between the curl of the wind stress and advection of planetary
+vorticity, in the other ocean basins, is \textit{not} linked to bottom
+topography. This fundamental distinction is
+significant in that the transfer of energy from the atmosphere to
+ocean, in the Southern Ocean, is not only like no where else on the
+planet, but also intimately tied to the synoptic atmosphere of the
+Southern Hemisphere and the bathymetry of the Southern Ocean.
+
+Consider again the isopycnal surfaces of the ocean basins. In areas
+where they rapidly rise in the southward direction, and are in balance
+with geostrophic flow, they induce eastward flow intensification in
+\acc. In areas where thesse sloping surfaces become baroclinically unstable meso-scale eddies are generated and facilitate
+the transfer and the mixing of sub-polar and sub-tropical ocean basin waters. These
+anti-cyclonic (warm core eddies) transport warm salty sub-tropical
+nutrient poor waters towards the Antarctic shelf
+\citep{rintoulGlobalInfluenceLocalized2018}. These warm core eddies,
+with their divergent surface flow, facilitate the vertical momemtum
+transport necessary to balance the heat loss of the sub-polar ocean
+with that gained from the sub-tropical waters -- i.e. venting of the
+deep ocean is ocean is achieved. Critical to this process is that the
+vertical momemtum transport induces a deep water geostropic flow, in
+turn balanced by the pressure gradient force over bathymetry, which
+results in bottom force stress that opposes the surface wind. This
+critically allows for transport where otherwise no time-averaged
+geogstrophic flow can occur. Hence the \moc and the \acc are
+initimately linked.
+
+Along the coastline of Antarctica fierce katabatic oceanward winds
+pour off the massive ice shelves and glaciers and have a slightly more
+eastward tendency and hence drive Ekman transport of relatively cold
+freshwater westward and away from the coast. This is observed as two
+current systems called the Antarctic Slope Front and Antarctic Coastal
+Current \citep{heywoodFateAntarcticSlope2004}. Distinguishing between
+these two current systems is not necessarily beneficial and hence are
+commonly referred to as the Antarctic Slope Current (\asc). Just as the \acc is a
+series of eastward boundary jets in the deep water of the Southern Ocean, the
+\asc is a series of westward jets that roughly follow the
+continental shelf and control the rate at which waters flow onto and
+away from the shelf waters \citep{thompsonAntarcticSlopeCurrent2018}. It is also important to
+note that the \asc is not purely driven by local effects but also
+linked to climatic systems El Nino Southern Oscillation (ENSO) and the
+Southern Annular Mode (SAM) \citep{spenceRapidSubsurfaceWarming2014,nakayamaOriginCircumpolarDeep2018}. The \asc is
+near surface current that flows at rates of 10-30 cm/s. The importance
+of this 
+
+* Cryosphere of Antarctic Coastal Margin
+
+The continental shelf waters of Antarctica are the connector to the
+Antarctic cryosphere. In West Antarctica this has been most pointedly
+observed as the increase to the heat
+content of the shelf waters has directly contributed to dramatic
+thinning of those ice shelves [Heywood2014,Paolo2015]. The thinning
+has been directly attributed to melting from beneath the ice tongues
+and shelves as the warmer water that has arrived from the sub-tropical
+basins via a set of dynamic processes and provides the annual heat required
+to thin these massive quantities of ice [Pritchard 2012]. The present rate at
+which thinning/melting is occurring is three times what it was three
+decades ago [Rintoul2016].
+
+The depth of the continental shelf around most of Antarctica is 500m
+with many important high gradient canyons crucial in hydrographic
+feature definition of the cryosphere. 
+
+* Coupled Sea Ice -- Ocean Modelling
+** MOM6
+The Modular Ocean Model (MOM) is currently being developed for it's sixth versional release (MOM6).
+It originated in the early 1990's in the United States at the National Oceanic and Atmospheric
+Administration's (NOAA) Geophysical Fluid Dynamic Laboratory (GFDL). MOM was an evolution in another
+earlier GFDL ocean model colloquial referred to as the Bryan-Cox Model, which had its origin at GFDL sometime in
+the 1960's. MOM1 was written in Fortran77 which allowed for modularity of the code, i.e. one set of
+instructions did not have to all exist within a single file, and modules could be loaded as needed.
+Along with good documentation and test cases with which a researcher could ensure consistency
+against proven results on another computing platform, essentially the modern-era of community-based
+climate model code development was opened.
+
+Each release of MOM, from MOM1 (1991) to MOM5 (2012), have had significant enhancements and
+developments to the parameterisations, numerical methods, language upgrades, documentation and test
+cases. This development has paralleled advances in observations and theoretical knowledge on
+temporarl and spatial scales that enable
+
++ hgiher resolution
++ ice shelf cavities
++ tides
++ improved vertical coordinate
+
+** CICE6
+** WW3
+* References
+#+LaTeX: \printbibliography[heading=none]

@@ -1,1 +1,78 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_research_plan.org
+#+title: AFIM -- Research Plan
+#+subtitle: Research Plan 2.0
+#+date: <2022-04-04 Mon>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+BIBILOGRAPHY: ./references/refs_bbt.bib 
+#+LaTeX_class: article
+#+LaTeX_CLASS_OPTIONS: [a4paper]
+#+LaTeX_HEADER: \affiliation{<Your school, think tank, etc>}
+#+LaTeX_HEADER: \shorttitle{<A short version of the long title for page headers>}
+#+LaTeX_HEADER: \usepackage{breakcites}
+#+LaTeX_HEADER: \usepackage{apacite}
+#+LaTeX_HEADER: \usepackage{paralist}
+#+LaTeX_HEADER: \let\itemize\compactitem
+#+LaTeX_HEADER: \let\description\compactdesc
+#+LaTeX_HEADER: \let\enumerate\compactenum
+
+
+* Table of Contents
+The meridional overturning circulation (\moc) within the Earth's ocean basins is understood to play a significant contribution in regulating heat content of the climate, ventilating the deep ocean and \cotwo~uptake \citep{Orsi1999,Levitus2005,Bindoff2007,Purkey2010,Talley2013}. With overturning
+time scales on the order of a millennia \citep{Johnson2008} understanding the
+driving mechanisms of the \moc~has implications for the rates of change of key
+parameters in Earth's climate: e.g. \cotwo~uptake rate, latent heat draw down,
+and ventilation of the deep ocean \citep{Bindoff2007,Purkey2010}.
+
+The conceptual model of the \moc~includes the tropical waters of the Atlantic flowing north via the Gulf Stream
+and overturning at various locations in the north Atlantic due to baroclinic
+instabilities, thus becoming North Atlantic Deep Water. At the other
+end of planet, along the coast of Antarctica, a complex set
+of seasonal events give rise to coastal processes that cause cold dense water
+to form at the surface at key locations \citep{Orsi1999,Talley2013}. As the water
+forms it is highly unstable and begins to sink flowing down the slopes of the
+continental shelf, mixing with ambient waters in its descent, and in the process
+becoming dense shelf water (\dsw) \citep{Orsi2001}.
+%Both Ekman forced and baroclinic instabilities transport \citep{Rintoul2018}
+This \dsw~flows across the Antarctic slope front, with some indication of mixing \citep{Mizuta2021,VanAchter2021,Rintoul2018}, and into the various abyssal plains (e.g. becoming Antarctic Bottom Water \textemdash \aabw)
+\citep{Stewart2019}. This water mass fills the ocean basins of the Southern Hemisphere \citep{Johnson2008}, and is
+identified as cold dense abyssal water originating from overturning coastal
+waters around Antarctica \citep{Orsi1999}.
+
+In this manner, \aabw~mass accounts for 30\textendash 40\% of global ocean
+mass \citep{Johnson2008}. Its formation and controlling mechanisms are areas of contemporary research. In the effort to prognosticate furture climate, the current capability to constrain the climate's heat budget,
+via global climate models, is dependent upon knowledge of these
+controlling mechanisms of the deep ocean
+\citep{Domingues2008,Murphy2009,Purkey2012,Durack2018}. At present, the
+uncertainty in deep-ocean heat uptake has been shown to be a significant cause
+of variation among climate models \citep{Boe2009,Durack2018}. While on the other hand, empirically, it also has been
+shown that Earth's systems linked to the long-term water-phase-mass distribution
+and surface temperature variations are accelerating
+\citep{Murphy2009,IPCC2019SpecialReport}.
+
+One specific uncertainty of the \moc~under investigation in this
+work, is the rate at which \aabw~is formed via \dsw~formation. To investigate
+this uncertainty I will be undertaking a series of simulations of a coupled
+physical system (sea ice-ocean) over a region of East Antarctica in the vicinity
+of the Mawson Coast, see \ref{fig:GEBCO_bathy}.
+
+* Document Background
+
+* Scientific Background
+
+* Rationale
+
+* Methodology
+
+* Outputs
+
+* Ethical Approval
+
+* Work, Health and Safety
+
+* Intellectual Property
+
+* Project Infrastructure
+
+* Skills
+
+* References

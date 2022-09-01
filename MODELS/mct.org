@@ -1,1 +1,10 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_mct.org
+#+title: AFIM -- MCT
+#+subtitle: Modelling
+#+subtitle: Model Coupling Toolkit
+#+date: <2022-04-05 Tue>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+
+[[https://www.mcs.anl.gov/research/projects/mct/][US DOE Hosted wesbite]]

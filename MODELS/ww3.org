@@ -1,1 +1,9 @@
-/Users/dpath2o/Library/Mobile Documents/iCloud~com~appsonthemove~beorg/Documents/org/AFIM_ww3.org
+#+title: AFIM -- WW3
+#+subtitle: Modelling
+#+subtitle: WAVEWATCH III
+#+date: <2022-04-05 Tue>
+#+author: DP@H$_2$O
+#+email: daniel.atwater@utas.edu.au
+#+STARTUP: indent , overview
+
+[[https://polar.ncep.noaa.gov/waves/wavewatch/license.shtml][NOAA NCEP Homepage]]
