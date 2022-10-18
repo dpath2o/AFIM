@@ -1,0 +1,13 @@
+{
+  "type": "Feature",
+  "geometry": {
+     "type": "Polygon",
+     "coordinates": [
+          [ [150,-34], [155,-34], [155,-39],
+               [150,-39], [150,-34] ]
+     ]
+   },
+   "properties": {
+        "name": "NSW_southcoast"
+   }
+}
