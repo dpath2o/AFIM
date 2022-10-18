@@ -224,12 +224,50 @@ class cice_prep:
                             :: defualt is 12
         Number of Years     :: much like the number of months, but this defines the duration
                             :: default is 2
-        CDO Re-grid Options :: these are the optional parameters that are passed to CDO during regridding.
-                            :: Consult CDO documentation for more informaiton.
-                            :: default is "-f nc -b F64"
-        CDO Re-grid Type    :: this the type of regridding to perform
-                            :: Consult CDO documentation for more informaiton.
-                            :: default is "remapbic"
+        CICE grid resolution:: this is string that defines the grid resolution of CICE and is strictly 
+                            :: used in naming of files and directories
+                            :: default is "0p1"
+        Interpolation method:: "regrid_interp_type"
+        for re-gridding     :: this is a string that is passed to ESMF_RegridWeightGen for defining the
+                            :: type of re-gridding method used for interpolation. See 
+                            :: ESMF_RegridWeightGen for more details on methods of interpolation. This 
+                            :: is used in the method cice_prep.esmf_generate_weights(), however, that
+                            :: method does have an over-ride option 'interp_type' that when provided
+                            :: will over-ride the setting in this JSON file.
+                            :: default is "bilinear"
+        Directories:
+           The following inputs are useful directories
+           base data        :: "D_data"
+                            :: defines the base directory where data will be output
+           BRAN data        :: "D_BRAN", location of native BRAN climatology data
+           ERA5 data        :: "D_ERA5", location of native ERA5 climatology data
+           Model Input      :: "D_modin", probably no longer necessary as it was used in previous 
+                            :: version of this module
+           Graphical        :: "D_graph", this is figures/plots/animations are stored
+           ACCESS-OM2 output:: "D_access-om2_out", this defines which ACCESS-OM2 cycle data will be 
+                            :: in the concatenation routines and then subsequently forcing the CICE
+                            :: stand-alone model
+        Files:
+           The followin are specific files that are used by the module
+           Bathymetry       :: "F_amo2bath", this file is no presently used in any of the methods,
+                            :: but is highly relevant and might want to be used for plotting
+           CICE grid        :: "F_G_CICE", this contains the spherical grid (lat/lon in decimal degrees) 
+                            :: and is an AFIM-compatible-version of the grid that stand-alone CICE uses
+                            :: when running. It is used here in the  generation of re-gridding weights and 
+                            :: re-gridding of climatology datasets
+           BRAN grid        :: "F_G_BRAN", this contains the spherical grid (lat/lon in decimal degrees) 
+                            :: of the BRAN climatology and is used in the generation of re-gridding weights
+                            :: and re-gridding of climatology datasets
+           ERA5 grid        :: "F_G_ERA5", this contains the spherical grid (lat/lon in decimal degrees) 
+                            :: of the ERA5 climatology and is used in the generation of re-gridding weights
+                            :: and re-gridding of climatology datasets
+           BRAN weights     :: "F_BRAN_weights", once created via the AFIM python module
+                            :: cice_prep.esmf_generate_weights this is the name of the file used in the 
+                            :: method cice_prep.regrid_climatology() for BRAN climatology
+           ERA5 weights     :: "F_ERA5_weights", once created via the AFIM python module
+                            :: cice_prep.esmf_generate_weights this is the name of the file used in the 
+                            :: method cice_prep.regrid_climatology() for ERA5 climatology
+           
         '''
         # read in the JSON file
         self.FJSON = FJSON
@@ -240,14 +278,9 @@ class cice_prep:
         self.start_date         = PARAMS['start_date']
         self.n_months           = PARAMS['n_months']
         self.n_years            = PARAMS['n_years']
-        self.qdp_depth          = PARAMS['qdp_depth']
-        self.BRAN_sfc_lev_idx   = PARAMS['BRAN_sfc_lev_idx']
         self.regrid_interp_type = PARAMS['regrid_interp_type']
-        # these are switches for conditional computations
-        self.switches = PARAMS['switches']
         # grid
         self.G_res        = PARAMS['G_res']
-        self.G_scale_fact = PARAMS['G_scale_fact']
         # directories
         self.D_01         = PARAMS['D01']
         self.D_data       = os.path.join(PARAMS['D01'],'data')
@@ -282,19 +315,21 @@ class cice_prep:
         if not interp_type:
             interp_type = self.regrid_interp_type
         if ds_name=='ERA5':
-            P_wgt = os.path.join( self.weights , 'map_{from_name:s}_{to_name:s}_{grid_res:s}.nc'.format(from_name=ds_name,
-                                                                                                        to_name=weight_file_prefix,
-                                                                                                        grid_res=self.G_res))
-            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} {src:s} {dst:s} {wgt:s}'.format(type=interp_type,
+            P_wgt = os.path.join( self.D_weights, 'map_{from_name:s}_{to_name:s}_{grid_res:s}_{type:s}.nc'.format(from_name=ds_name,
+                                                                                                                  to_name=weight_file_prefix,
+                                                                                                                  grid_res=self.G_res,
+                                                                                                                  type=interp_type))
+            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} -s {src:s} -d {dst:s} -w {wgt:s}'.format(type=interp_type,
                                                                                                               opts=regrid_options,
                                                                                                               src=self.F_G_ERA5,
                                                                                                               dst=self.F_G_CICE,
                                                                                                               wgt=P_wgt)
         elif ds_name=='BRAN':
-            P_wgt = os.path.join( self.weights , 'map_{from_name:s}_{to_name:s}_{grid_res:s}.nc'.format(from_name=ds_name,
-                                                                                                        to_name=weight_file_prefix,
-                                                                                                        grid_res=self.G_res))
-            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} {src:s} {dst:s} {wgt:s}'.format(type=interp_type,
+            P_wgt = os.path.join( self.D_weights, 'map_{from_name:s}_{to_name:s}_{grid_res:s}_{type:s}.nc'.format(from_name=ds_name,
+                                                                                                                  to_name=weight_file_prefix,
+                                                                                                                  grid_res=self.G_res,
+                                                                                                                  type=interp_type))
+            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} -s {src:s} -d {dst:s} -w {wgt:s}'.format(type=interp_type,
                                                                                                               opts=regrid_options,
                                                                                                               src=self.F_G_BRAN,
                                                                                                               dst=self.F_G_CICE,
@@ -326,8 +361,8 @@ class cice_prep:
         G_CICE['lon'].attrs['units'] = 'degrees_east'
         G_CICE['lat'].attrs['units'] = 'degrees_north'
         # time arrays
-        stdts    = pd.date_range(self.start_date, freq='MS', periods=self.n_months*self.n_years)
-        spdts    = pd.date_range(self.start_date, freq='M', periods=self.n_months*self.n_years)
+        stdts = pd.date_range(self.start_date, freq='MS', periods=self.n_months*self.n_years)
+        spdts = pd.date_range(self.start_date, freq='M', periods=self.n_months*self.n_years)
         # Directories and files
         if ds_name=='ERA5':
             for i in range(self.n_years):
@@ -358,24 +393,24 @@ class cice_prep:
                 d2m         = rg(d2m_na)
                 sp_na       = xr.open_mfdataset(os.path.join(self.D_ERA5,'sp',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
                 sp          = rg(d2m_na)
-                qsat  = compute_sfc_qsat(d2m.d2m, sp.sp)
-                ATM   = xr.Dataset({ "airtmp" : t2m.t2m,
-                                     "dlwsfc" : msdwlwrf.msdwlwrf,
-                                     "glbrad" : msdwswrf.msdwswrf,
-                                     "spchmd" : qsat,
-                                     "ttlpcp" : mtpr.mtpr,
-                                     "wndewd" : u10.u10,
-                                     "wndnwd" : v10.v10 },
-                                   coords = { "LON"  : (["ny","nx"],LON_rg),
-                                              "LAT"  : (["ny","nx"],LAT_rg),
-                                              "time" : time.values })
-                ATM   = ATM.rename_dims({"ny":"nj","nx":"ni"})
-                P_ATM = os.path.join(self.D_frcg,self.F_ERA5_reG_form.format(yr=yr_str))
+                qsat        = compute_sfc_qsat(d2m.d2m, sp.sp)
+                ATM         = xr.Dataset({ "airtmp" : t2m.t2m,
+                                           "dlwsfc" : msdwlwrf.msdwlwrf,
+                                           "glbrad" : msdwswrf.msdwswrf,
+                                           "spchmd" : qsat,
+                                           "ttlpcp" : mtpr.mtpr,
+                                           "wndewd" : u10.u10,
+                                           "wndnwd" : v10.v10 },
+                                         coords = { "LON"  : (["ny","nx"],LON_rg),
+                                                    "LAT"  : (["ny","nx"],LAT_rg),
+                                                    "time" : time.values })
+                ATM         = ATM.rename_dims({"ny":"nj","nx":"ni"})
+                P_ATM       = os.path.join(self.D_frcg,self.F_ERA5_reG_form.format(yr=yr_str))
                 ATM.to_netcdf(P_ATM)
         elif ds_name=='BRAN':
             for i in range(self.n_years):
-                G_BRAN = xr.open_dataset(F_G_BRAN).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'}).chunk({'lon':100,'lat':100})
-                G_BRAN = G_BRAN.drop(('st_edges_ocean','tmask','umask','kmu','kmt','hu','ht','xu_ocean','yu_ocean'))
+                G_BRAN  = xr.open_dataset(F_G_BRAN).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'}).chunk({'lon':100,'lat':100})
+                G_BRAN  = G_BRAN.drop(('st_edges_ocean','tmask','umask','kmu','kmt','hu','ht','xu_ocean','yu_ocean'))
                 rg      = xe.Regridder(G_BRAN,G_CICE,method="bilinear",periodic=True,filename=F_bran_t_wgt,reuse_weights=True)
                 temp_na = xr.open_mfdataset(os.path.join(D_bran,'ocean_temp_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1,'st_ocean':1}).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'})
                 temp_na = temp_na.drop(('st_edges_ocean','nv','Time_bounds','average_DT','average_T2','average_T1'))
@@ -455,17 +490,23 @@ class cice_prep:
                            os.path.join(D_cats[1],'{:s}*.nc'.format(j)),
                            os.path.join(D_cats[2],'{:s}*.nc'.format(j)),
                            os.path.join(D_cats[3],'{:s}*.nc'.format(j))]
-                P_out = os.path.join(self.D_data,'ac-om2-{var:s}_{yr:s}.nc'.format(var=j,yr=str(yr_out)))
+                P_out = os.path.join(self.D_data,'ac-om2-{var:s}{yr:s}.nc'.format(var=j,yr=str(yr_out)))
                 str_concat = 'ncrcat {:s} {:s} {:s} {:s} {:s}'.format(P_wilds[0],P_wilds[1],P_wilds[2],P_wilds[3],P_out)
-                print("concatenating: ",str_concat)
-                os.system(str_concat)
+                if os.exists(P_out):
+                    print('File exists: {:s}\n SKIPPING concatentation')
+                else:
+                    print("concatenating: ",str_concat)
+                    os.system(str_concat)
             for j in F_3d_prefixes_to_concat:
                 P_wilds = [os.path.join(D_cats[0],'{:s}*.nc'.format(j)),
                            os.path.join(D_cats[1],'{:s}*.nc'.format(j)),
                            os.path.join(D_cats[2],'{:s}*.nc'.format(j)),
                            os.path.join(D_cats[3],'{:s}*.nc'.format(j))]
-                P_out = os.path.join(self.D_data,'ac-om2-{var:s}_{yr:s}.nc'.format(var=j,yr=str(yr_out)))
+                P_out = os.path.join(self.D_data,'ac-om2-{var:s}{yr:s}.nc'.format(var=j,yr=str(yr_out)))
                 str_concat = 'ncrcat -d st_ocean,0,1 {:s} {:s} {:s} {:s} {:s}'.format(P_wilds[0],P_wilds[1],P_wilds[2],P_wilds[3],P_out)
-                print("concatenating: ",str_concat)
-                os.system(str_concat)
+                if os.exists(P_out):
+                    print('File exists: {:s}\n SKIPPING concatentation')
+                else:
+                    print("concatenating: ",str_concat)
+                    os.system(str_concat)
             yr_out+=1

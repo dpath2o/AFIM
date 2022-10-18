@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -P jk72
-#PBS -l walltime=8:00:00
+#PBS -l walltime=12:00:00
 #PBS -l ncpus=384
 #PBS -l mem=1TB
 #PBS -l storage=gdata/cj50+gdata/jk72+gdata/ik11+gdata/hh5+gdata/rt52+gdata/gb6
