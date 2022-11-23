@@ -6,27 +6,26 @@ author: dpath2o, daniel.atwater@utas.edu.au, May 2022
 '''
 
 import os
-import glob
-import pdb
-import subprocess
+import re
 import json
-import pygmt
+import pdb
+import logging
+import time
 import numpy             as np
 import xarray            as xr
 import xesmf             as xe
 import pandas            as pd
 import metpy.calc        as mpc
-import matplotlib.pyplot as plt
-import cartopy.crs       as ccrs
-from dask.distributed    import Client
+from datetime            import datetime, timedelta
+from dask.diagnostics    import ProgressBar
 
 ############################################################################
 # globals
 ncrcat = os.path.join('/','apps','nco','5.0.5','bin','ncrcat')
 
-########################################################################################################################################################
-############################################################# NON-CLASS FUNCTIONS ######################################################################
-########################################################################################################################################################
+################################################################################################################################################
+######################################################## NON-CLASS FUNCTIONS #################################################################
+################################################################################################################################################
 def compute_sfc_qsat(d2m, sp):
     '''
     compute specific humidity at 2-metres based on dewpoint and surface pressure
@@ -41,90 +40,381 @@ def compute_sfc_qsat(d2m, sp):
     return (Rdry/Rvap) * E / (sp - ( (1-Rdry/Rvap) * E) )
 
 ############################################################################
-def compute_ocn_sfc_slope(eta,grid,direction='x',grid_scale_factor=100):
+def compute_ocn_sfc_slope(eta, dxdy_array, direction='x', grid_scale_factor=100):
     '''
+    grid_scale_factor assumes dxdy_array is in cm and eta is m
     '''
     if direction=='x':
-        dhdx                    = eta / (grid/grid_scale_factor)
+        dhdx                    = eta / (dxdy_array/grid_scale_factor)
         dhdx.attrs['units']     = 'meters'
         dhdx.attrs['long_name'] = 'sea surface slope in x-direction'
         return dhdx
     if direction=='y':
-        dhdy                    = eta / (grid/grid_scale_factor)
+        dhdy                    = eta / (dxdy_array/grid_scale_factor)
         dhdy.attrs['units']     = 'meters'
         dhdy.attrs['long_name'] = 'sea surface slope in y-direction'
         return dhdy
     
 ############################################################################
-def compute_ocn_heat_flux(T,S,mld,lat_name='xt_ocean'):
+def compute_ocn_heat_flux_at_depth(rho_D,cp_D,D,F_net,dTdt_D,
+                                   time_unit_to_seconds=3600):
     '''
-    Given ocean temperature and salinity, compute the deep ocean heat flux. The
-    approach is first to accurately compute heat capacity and then use the relationship
-    Q = cp + dT ; where T is the temperature across the layer and cp is the
-    heat capacity calculated at a depth. The heat capacity comes from the reference:
-    Fofonff, P. and Millard, R.C. Jr
-    Unesco 1983. Algorithms for computation of fundamental properties of seawater,
-    1983. Unesco Tech. Pap. in Mar. Sci., No. 44, 53 pp.
+    Returns the ocean heat flux at depth in W/m^2
+    
+    Requires:
+        rho, rho_D, density at depth, in kg/m^2
+        cp, cp_D, heat capacity at depth, in J/(kg*C)
+        depth, D, in metres
+        dTdt_D, time derivative of temperature at depth,
+                assumes in C/hr, but if time derivative is different
+                then the option to provide the correct unit of time in
+                seconds is provided, (i.e. default is 3600 seconds)
+        F_net, atmospheric heat flux at surface, W/m^2
+        
+    Unit analysis on assumption of time derivative:
+        
+        W/m^2 - (kg/m^3) * (J/(kg*C)) * m * (C/hr)
+        
+        reduces to:
+        
+        W/m^2 - J/(m^2 * hr)
+        
+        or
+        
+        (J * m^-2 * s^-1) - (J * m^-2 * 3600*s^-1)
+    
     '''
-    sst    = T.sel(st_ocean=0      ,method='nearest').temp
-    T_mld  = T.sel(st_ocean=mld.mld,method='nearest').temp
-    S_mld  = S.sel(st_ocean=mld.mld,method='nearest').salt
-    # depth to pressure, convert lats to radians
-    latrad = np.sin(np.abs(T[lat_name])*(np.pi/180)) 
-    C1     = 5.92e-3 + latrad**(2*5.25e-3)
-    P_mld  = ( (1-C1) - np.sqrt( ( (1-C1)**2 ) - (8.84e-6*mld.mld) ) ) / 4.42e-6
-    # to convert db to Bar as used in Unesco routines
-    P_mld  = P_mld/10
-    # HEAT CAPACITY
-    c0     =  4.2174e3
-    c1     = -3.720283
-    c2     =   .1412855
-    c3     = -2.654387e-3
-    c4     = 2.093236e-5
-    a0     = -7.64357
-    a1     =   .1072763
-    a2     = -1.38385e-3
-    b0     =   .1770383
-    b1     = -4.07718e-3
-    b2     =  5.148e-5
-    Cpst0  = c0 + c1*T_mld + c2*T_mld**2 + c3*T_mld**3 + c4*T_mld**4 + (a0 + a1*T_mld + a2*T_mld**2)*S_mld + (b0 + b1*T_mld + b2*T_mld**2)*S_mld*np.sqrt(S_mld)
-    a0     = -4.9592e-1
-    a1     =  1.45747e-2
-    a2     = -3.13885e-4
-    a3     =  2.0357e-6
-    a4     =  1.7168e-8
-    b0     =  2.4931e-4
-    b1     = -1.08645e-5
-    b2     =  2.87533e-7
-    b3     = -4.0027e-9
-    b4     =  2.2956e-11
-    c0     = -5.422e-8
-    c1     =  2.6380e-9
-    c2     = -6.5637e-11
-    c3     =  6.136e-13
-    dCp0t0 = (a0 + a1*T_mld + a2*T_mld**2 + a3*T_mld**3 + a4*T_mld**4)*P_mld + (b0 + b1*T_mld + b2*T_mld**2 + b3*T_mld**3 + b4*T_mld**4)*P_mld**2 + (c0 + c1*T_mld + c2*T_mld**2 + c3*T_mld**3)*P_mld**3
-    d0     =  4.9247e-3
-    d1     = -1.28315e-4
-    d2     =  9.802e-7
-    d3     =  2.5941e-8
-    d4     = -2.9179e-10
-    e0     = -1.2331e-4
-    e1     = -1.517e-6
-    e2     =  3.122e-8
-    f0     = -2.9558e-6
-    f1     =  1.17054e-7
-    f2     = -2.3905e-9
-    f3     =  1.8448e-11
-    g0     =  9.971e-8
-    h0     =  5.540e-10
-    h1     = -1.7682e-11
-    h2     =  3.513e-13
-    j1     = -1.4300e-12
-    S3_2   = S_mld*np.sqrt(S_mld)
-    dCpstp = ((d0 + d1*T_mld + d2*T_mld**2 + d3*T_mld**3 + d4*T_mld**4)*S_mld + (e0 + e1*T_mld + e2*T_mld**2)*S3_2)*P_mld + ((f0 + f1*T_mld + f2*T_mld**2 + f3*T_mld**3)*S_mld + g0*S3_2)*P_mld**2 + ((h0 + h1*T_mld + h2*T_mld**2)*S_mld + j1*T_mld*S3_2)*P_mld**3
-    cp     = Cpst0 + dCp0t0 + dCpstp
-    # HEAT FLUX
-    return cp + (sst-T_mld)
+    # cp_D is in J/(kg*C) and W is equal to J 
+    return F_net - (rho_D*cp_D*D*dTdt_D)/time_unit_to_seconds
+
+############################################################################
+def compute_ocn_pressure_at_depth(D,latitude):
+    '''
+    Calculates pressure in dbars from depth in meters.
+    
+    REFERENCE:
+    Saunders, P.M. 1981
+    "Practical conversion of Pressure to Depth"
+    Journal of Physical Oceanography, 11, 573-574
+    
+    '''
+    x  = np.sin(abs(latitude)*np.pi/180)
+    c1 = 5.92E-3+(x**2)*5.25E-3;
+    return ((1-c1)-np.sqrt(((1-c1)**2)-(8.84E-6*D)))/4.42E-6;
+
+############################################################################
+def compute_ocn_secant_bulk_modulus(S,T,P):
+    '''
+     Secant Bulk Modulus (K) of Sea Water using Equation of state 1980. 
+     UNESCO polynomial implementation.
+     
+     P in dbar
+     T in Celsius
+     S in PSU
+     
+     REFERENCES:
+      Fofonoff, P. and Millard, R.C. Jr
+      Unesco 1983. Algorithms for computation of fundamental properties of 
+      seawater, 1983. _Unesco Tech. Pap. in Mar. Sci._, No. 44, 53 pp.
+      Eqn.(15) p.18
+      
+      Millero, F.J. and  Poisson, A.
+      International one-atmosphere equation of state of seawater.
+      Deep-Sea Res. 1981. Vol28A(6) pp625-629.
+    '''
+    # pressure dbar to atmospheric
+    P = P/10
+    
+    #--------------------------------------------------------------------
+    # Pure water terms of the secant bulk modulus at atmos pressure.
+    # UNESCO eqn 19 p 18
+    h3 = -5.77905e-7
+    h2 =  1.16092e-4
+    h1 =  1.43713e-3
+    h0 =  3.239908
+    AW = h0 + (h1 + (h2 + h3*T)*T)*T
+
+    k2 =  5.2787e-8
+    k1 = -6.12293e-6
+    k0 =  8.50935e-5
+    BW = k0 + (k1 + k2*T)*T;
+
+    e4 = -5.155288e-5
+    e3 =  1.360477e-2
+    e2 = -2.327105
+    e1 =  1.484206e2
+    e0 =  1.96522e4
+    KW = e0 + (e1 + (e2 + (e3 + e4*T)*T)*T)*T
+    
+    #--------------------------------------------------------------------
+    # SEA WATER TERMS OF SECANT BULK MODULUS AT ATMOS PRESSURE.
+    j0 =  1.91075e-4
+    i2 = -1.6078e-6
+    i1 = -1.0981e-5
+    i0 =  2.2838e-3
+
+    SR = np.sqrt(S);
+    A  = AW + (i0 + (i1 + i2*T)*T + j0*SR)*S
+    
+    m2 =  9.1697e-10
+    m1 =  2.0816e-8
+    m0 = -9.9348e-7
+    
+    #eqn.18
+    B  = BW + (m0 + (m1 + m2*T)*T)*S
+    
+    f3 = -6.1670e-5
+    f2 =  1.09987e-2
+    f1 = -0.603459
+    f0 = 54.6746
+    g2 = -5.3009e-4
+    g1 =  1.6483e-2
+    g0 =  7.944e-2
+    
+    #eqn.16
+    K0 = KW + (f0 + (f1 + (f2 + f3*T)*T)*T + (g0 + (g1 + g2*T)*T)*SR)*S
+
+    #eqn.15
+    return K0 + (A + B*P)*P
+
+############################################################################
+def compute_ocn_density_standard_mean_ocean_water(T):
+    '''
+    Denisty of Standard Mean Ocean Water (Pure Water) using EOS 1980. 
+    Returns kg/m^3
+    
+    Requires input, T, temperature, in Celsius
+    
+    REFERENCES:
+        Fofonoff, P. and Millard, R.C. Jr
+        Unesco 1983. Algorithms for computation of fundamental properties of 
+        seawater, 1983. _Unesco Tech. Pap. in Mar. Sci._, No. 44, 53 pp.
+        UNESCO 1983 p17  Eqn(14)
+         
+        Millero, F.J & Poisson, A.
+        International one-atmosphere equation of state for seawater.
+        Deep-Sea Research Vol28A No.6. 1981 625-629.    Eqn (6)
+    '''
+    a0 =  9.99842594e2
+    a1 =  6.793952e-2
+    a2 = -9.095290e-3
+    a3 =  1.001685e-4
+    a4 = -1.120083e-6
+    a5 =  6.536332e-9
+    
+    return a0 + (a1 + (a2 + (a3 + (a4 + a5*T)*T)*T)*T)*T
+
+############################################################################
+def compute_ocn_density_at_surface(S,T):
+    '''
+    Density of Sea Water at atmospheric pressure using UNESCO 1983 (EOS 1980) polynomial.
+    Returns kg/m^3
+    
+    Requires, S (salinity) to be in practical salinity units (psu), and, T (temperature)
+    to be in Celsius
+    
+    REFERENCES:
+         Unesco 1983. Algorithms for computation of fundamental properties of 
+         seawater, 1983. _Unesco Tech. Pap. in Mar. Sci._, No. 44, 53 pp.
+         UNESCO 1983 p17
+         
+         Millero, F.J & Poisson, A.
+         International one-atmosphere equation of state for seawater.
+         Deep-Sea Research Vol28A No.6. 1981 625-629.
+    '''
+    # UNESCO 1983 eqn(13) p17.
+    b0 =  8.24493e-1
+    b1 = -4.0899e-3
+    b2 =  7.6438e-5
+    b3 = -8.2467e-7
+    b4 =  5.3875e-9
+    c0 = -5.72466e-3
+    c1 =  1.0227e-4
+    c2 = -1.6546e-6
+    d0 =  4.8314e-4
+    d_smow = compute_ocn_density_standard_mean_ocean_water(T)
+    
+    return d_smow + (b0 + (b1 + (b2 + (b3 + b4*T)*T)*T)*T)*S + (c0 + (c1 + c2*T)*T)*S*np.sqrt(S) + d0*(S**2)
+
+############################################################################
+def compute_ocn_density_at_depth(S,T,D,latitude):
+    '''
+    Density of Sea Water using UNESCO 1983 (EOS 80) polynomial.
+    Returns kg/m^3
+    
+    Requires:
+        S (salinity) to be in practical salinity units (psu)
+        T (temperature) to be in Celsius
+        D (depth) to be in metres
+        latitude to be in degrees
+    
+    REFERENCES:
+        Fofonoff, P. and Millard, R.C. Jr
+        Unesco 1983. Algorithms for computation of fundamental properties of 
+        seawater, 1983. _Unesco Tech. Pap. in Mar. Sci._, No. 44, 53 pp.
+        UNESCO 1983 p17  Eqn(14)
+         
+        Millero, F.J & Poisson, A.
+        International one-atmosphere equation of state for seawater.
+        Deep-Sea Research Vol28A No.6. 1981 625-629.    Eqn (6)
+    '''
+    # compute pressure at depth and convert to bars
+    P    = compute_ocn_pressure_at_depth(D,latitude)/10 
+    rho0 = compute_ocn_density_at_surface(S,T)
+    K    = compute_ocn_secant_bulk_modulus(S,T,P)
+    
+    return rho0/(1-P/K)
+
+############################################################################
+def compute_ocn_heat_capacity_at_depth(S,T,D,latitude):
+    '''
+    Heat Capacity of Sea Water using UNESCO 1983 polynomial.
+    Returns [J kg^-1 C^-1]
+    
+    Requires:
+        S (salinity) to be in practical salinity units (psu)
+        T (temperature) to be in Celsius
+        D (depth) to be in metres
+        latitude to be in degrees
+    
+    REFERENCES:
+        Fofonoff, P. and Millard, R.C. Jr
+        Unesco 1983. Algorithms for computation of fundamental properties of 
+        seawater, 1983. _Unesco Tech. Pap. in Mar. Sci._, No. 44, 53 pp.
+        UNESCO 1983 p17  Eqn(14)
+         
+        Millero, F.J & Poisson, A.
+        International one-atmosphere equation of state for seawater.
+        Deep-Sea Research Vol28A No.6. 1981 625-629.    Eqn (6)
+    '''
+    # compute pressure at depth and convert to bars
+    P    = compute_ocn_pressure_at_depth(D,latitude)/10
+    #-----------------
+    # eqn.26, p.32
+    a0   = -7.64357
+    a1   =   .1072763
+    a2   = -1.38385e-3
+    b0   =   .1770383
+    b1   = -4.07718e-3
+    b2   =  5.148e-5
+    c0   =  4.2174e3
+    c1   = -3.720283
+    c2   =   .1412855
+    c3   = -2.654387e-3
+    c4   = 2.093236e-5
+    A1   = c0 + c1*T + c2*T**2 + c3*T**3 + c4*T**4
+    A2   = (a0 + a1*T + a2*T**2)*S
+    A3   = (b0 + b1*T + b2*T**2)*S*np.sqrt(S)
+    Cp0  = A1 + A2 + A3
+    #-----------------
+    # eqn.28, p.33
+    d0   = -4.9592e-1
+    d1   =  1.45747e-2
+    d2   = -3.13885e-4
+    d3   =  2.0357e-6
+    d4   =  1.7168e-8
+    e0   =  2.4931e-4
+    e1   = -1.08645e-5
+    e2   =  2.87533e-7
+    e3   = -4.0027e-9
+    e4   =  2.2956e-11
+    f0   = -5.422e-8
+    f1   =  2.6380e-9
+    f2   = -6.5637e-11
+    f3   =  6.136e-13
+    B1   = (d0 + d1*T + d2*T**2 + d3*T**3 + d4*T**4)*P
+    B2   = (e0 + e1*T + e2*T**2 + e3*T**3 + e4*T**4)*P**2
+    B3   = (f0 + f1*T + f2*T**2 + f3*T**3)*P**3
+    dCp0 =  B1 + B2 + B3
+    #-----------------
+    # eqn.29, p.34
+    d0   =  4.9247e-3
+    d1   = -1.28315e-4
+    d2   =  9.802e-7
+    d3   =  2.5941e-8
+    d4   = -2.9179e-10
+    e0   = -1.2331e-4
+    e1   = -1.517e-6
+    e2   =  3.122e-8
+    f0   = -2.9558e-6
+    f1   =  1.17054e-7
+    f2   = -2.3905e-9
+    f3   =  1.8448e-11
+    g0   =  9.971e-8
+    h0   =  5.540e-10
+    h1   = -1.7682e-11
+    h2   =  3.513e-13
+    j1   = -1.4300e-12
+    S_3  = S*np.sqrt(S)
+    C1   = ((d0 + d1*T + d2*T**2 + d3*T**3 + d4*T**4)*S + (e0 + e1*T + e2*T**2)*S_3)*P
+    C2   = ((f0 + f1*T + f2*T**2 + f3*T**3)*S + g0*S_3)*P**2
+    C3   = ((h0 + h1*T + h2*T**2)*S + j1*T*S_3)*P**3
+    dCp  = C1 + C2 + C3
+    
+    return (Cp0 + dCp0 + dCp)
+
+############################################################################
+def compute_ocn_density_at_depth_alternative_method(S,T,D,latitude):
+    '''
+    '''
+    # depth to pressure
+    P = compute_ocn_pressure_at_depth(D,latitude)
+    # standar ocean water
+    a0       =   999.842594
+    a1       =     6.793953e-2
+    a2       =    -9.095290e-3
+    a3       =     1.001685e-4
+    a4       =    -1.120083e-6
+    a5       =     6.536332e-9
+    rho_SMOW = a0 + a1*T + a2*T**2 + a3*T**3 + a4*T**4 +a5*T**5
+    b0       =     8.2449e-1
+    b1       =    -4.0899e-3
+    b2       =     7.6438e-5
+    b3       =    -8.2467e-7
+    b4       =     5.3875e-9
+    c0       =    -5.7246e-3
+    c1       =     1.0227e-4
+    c2       =    -1.6546e-6
+    d0       =     4.8314e-4
+    B1       = b0 + b1*T + b2*T**2 + b3*T**3 + b4*T**4
+    C1       = c0 + c1*T + c2*T**2
+    rho_p0   = rho_SMOW + B1*S + C1*S**1.5 + d0*S**2
+    e0       = 19652.21
+    e1       =   148.4206
+    e2       =    -2.327105
+    e3       =     1.360477e-2
+    e4       =    -5.155288e-5
+    f0       =    54.674600
+    f1       =    -0.603459
+    f2       =     1.099870e-2
+    f3       =    -6.167e-5
+    g0       =     7.9440e-2
+    g1       =     1.6483e-2
+    g2       =    -5.3009e-4
+    G1       = g0 + g1*T + g2*T**2
+    F1       = f0 + f1*T + f2*T**2 + f3*T**3
+    Kw       = e0 + e1*T + e2*T**2 + e3*T**3 + e4*T**4
+    K0       = Kw + F1*S + G1*S**1.5
+    h0       =     3.23990
+    h1       =     1.43713e-3
+    h2       =     1.16092e-4
+    h3       =    -5.77905e-7
+    i0       =     2.28380e-3
+    i1       =    -1.09810e-5
+    i2       =    -1.60780e-6
+    j0       =     1.91075e-4
+    k0       =     8.50935e-5
+    k1       =    -6.12293e-6
+    k2       =     5.27870e-8
+    m0       =    -9.9348e-7
+    m1       =     2.0816e-8
+    m2       =     9.1697e-10
+    Bw       = k0 + k1*T + k2*T**2
+    B2       = Bw + (m0 + m1*T + m2*T**2)*S
+    Aw       = h0 + h1*T + h2*T**2 + h3*T**3
+    A1       = Aw + (i0 + i1*T + i2*T**2)*S + j0*S**1.5
+    K        = K0 + A1*P + B2*P**2
+    return ( rho_p0 / (1 - ( P / K )) )
 
 ############################################################################
 def compute_diffuse_sfc_em(em_sfc, em_toa):
@@ -174,9 +464,37 @@ def ocean_temp_from_theta(p0, p):
     '''
     dp = p0 - p
 
-########################################################################################################################################################
-######################################################################### CLASSES ######################################################################
-########################################################################################################################################################
+############################################################################
+def update_frame(frame):
+    '''
+    '''
+    cax.set_array( ds.isel(time=frame).values.flatten() )
+
+############################################################################
+def xesmf_regrid_dataset(DS_src, DS_dst, F_DS_na,
+                         method='bilinear',
+                         periodic=True,
+                         reuse_weights=True,
+                         F_weights='',
+                         multi_file=False):
+    '''
+    '''
+    print("regridding file: ",F_DS_na)
+    rg = xe.Regridder(DS_src, DS_dst, 
+                      method=method, 
+                      periodic=periodic, 
+                      filename=F_weights, 
+                      reuse_weights=reuse_weights)
+    if multi_file:
+        DS_na = xr.open_mfdataset(F_DS_na, parallel=True, chunks={'time':1})
+    else:
+        DS_na = xr.open_dataset(F_DS_na)
+    DS_rg = rg(DS_na)
+    return DS_rg
+
+##############################################################################################################################################
+############################################################### CLASSES ######################################################################
+##############################################################################################################################################
 
 # DIRECTORIES
 class cice_prep:
@@ -273,240 +591,835 @@ class cice_prep:
         self.FJSON = FJSON
         with open(FJSON) as f:
             PARAMS = json.load(f)
+        # logging
+        self.F_log              = PARAMS['F_log']
+        logging.basicConfig(filename=self.F_log, encoding='utf-8', level=logging.DEBUG)
         # miscellaneous
         self.CICE_ver           = PARAMS['CICE_ver']
         self.start_date         = PARAMS['start_date']
         self.n_months           = PARAMS['n_months']
         self.n_years            = PARAMS['n_years']
-        self.regrid_interp_type = PARAMS['regrid_interp_type']
+        self.ncrcat_opts        = PARAMS["ncrcat_opts"]
+        # dataset specific
+        self.acom2_model_run    = PARAMS["acom2_model_run"]
+        self.acom2_start_date   = PARAMS['acom2_start_date']
+        self.acom2_var_freq     = PARAMS['acom2_var_freq']
+        self.acom2_chunking     = PARAMS['acom2_chunking']
+        self.ERA5_chunking      = PARAMS['ERA5_chunking']
+        self.ERA5_start_date    = PARAMS['ERA5_start_date']
+        self.ERA5_regen_weights = PARAMS['ERA5_regen_weights']
+        self.ERA5_regrid_method = PARAMS['ERA5_regrid_method']
+        self.ERA5_periodicity   = PARAMS['ERA5_periodicity']
+        self.BRAN_t_chunking    = PARAMS['BRAN_t_chunking']
+        self.BRAN_u_chunking    = PARAMS['BRAN_u_chunking']
+        self.BRAN_start_date    = PARAMS['BRAN_start_date']
+        self.BRAN_regen_weights = PARAMS['BRAN_regen_weights']
+        self.BRAN_regrid_method = PARAMS['BRAN_regrid_method']
+        self.BRAN_periodicity   = PARAMS['BRAN_periodicity']
+        self.BRAN_var_freq      = PARAMS['BRAN_var_freq']
         # grid
         self.G_res        = PARAMS['G_res']
         # directories
-        self.D_01         = PARAMS['D01']
+        self.D01          = PARAMS['D01']
         self.D_data       = os.path.join(PARAMS['D01'],'data')
-        self.D_grids      = os.path.join(PARAMS['D01'],'grids')
+        self.D_grids      = os.path.join('/','g','data','jk72','da1339','grids')
         self.D_weights    = os.path.join(self.D_grids,'weights')
         self.D_BRAN       = PARAMS['D_BRAN']
         self.D_ERA5       = PARAMS['D_ERA5']
         self.D_CICE       = PARAMS['D_CICE']
         self.D_graph      = PARAMS['D_graph']
         self.D_modin      = PARAMS['D_modin']
-        self.D_ac_om2_out = PARAMS['D_access-om2_out']
+        self.D_frcg       = PARAMS['D_frcg']
+        self.D_acom2_out = PARAMS['D_access-om2_out']
         self.D_CICE_IC    = os.path.join(PARAMS['D_CICE'],'input','AFIM','ic',self.G_res)
         self.D_CICE_force = os.path.join(PARAMS['D_CICE'],'input','AFIM','forcing',self.G_res)
         self.D_CICE_grid  = os.path.join(PARAMS['D_CICE'],'input','AFIM','grid',self.G_res)
         # files
-        self.F_gx1ic    = os.path.join(self.D_CICE_grid,'gx1','iced_gx1_v6.2005-01-01.nc')
-        self.F_gx1bath  = os.path.join(self.D_CICE_grid,'gx1','global_gx1.bathy.nc')
-        self.F_aom2bath = PARAMS['F_aom2bath']
-        self.F_G_CICE   = PARAMS['F_G_CICE']
-        self.F_G_BRAN   = PARAMS['F_G_BRAN']
-        self.F_G_ERA5   = PARAMS['F_G_ERA5']
-        self.F_ERA5_weights = PARAMS['F_ERA5_weights']
-        self.F_BRAN_weights = PARAMS['F_BRAN_weights']
+        self.F_gx1ic         = os.path.join(self.D_CICE_grid,'gx1','iced_gx1_v6.2005-01-01.nc')
+        self.F_gx1bath       = os.path.join(self.D_CICE_grid,'gx1','global_gx1.bathy.nc')
+        self.F_aom2bath      = PARAMS['F_aom2bath']
+        self.F_G_CICE        = PARAMS['F_G_CICE']
+        self.F_G_CICE_vars   = PARAMS['F_G_CICE_vars']
+        self.F_G_CICE_original = PARAMS['F_G_CICE_original']
+        self.F_G_BRAN        = PARAMS['F_G_BRAN']
+        self.F_G_ERA5        = PARAMS['F_G_ERA5']
+        self.F_ERA5_weights  = PARAMS['F_ERA5_weights']
+        self.F_BRAN_t_weights= PARAMS['F_BRAN_t_weights']
+        self.F_BRAN_u_weights= PARAMS['F_BRAN_u_weights']
         self.F_ERA5_reG_form = PARAMS['F_ERA5_reG_form']
+        self.F_ERA5_reG_form_tmp = PARAMS["F_ERA5_reG_form_tmp"]
         self.F_BRAN_reG_form = PARAMS['F_BRAN_reG_form']
+        
+    ############################################################################################
+    def time_series_day_month_start_or_end(self,start_date='',n_months='',n_years='',month_start=True):
+        '''
+        '''
+        if not n_months:
+            n_mos = self.n_months
+        else:
+            n_mos = n_months
+        if not n_years:
+            n_yrs = self.n_years
+        else:
+            n_yrs = n_years
+        if not start_date:
+            stt_dt = self.start_date
+        else:
+            stt_dt = start_date
+        if month_start:
+            freq = 'MS'
+        else:
+            freq = 'M'
+        return pd.date_range(stt_dt, freq=freq, periods=n_mos*n_yrs)
 
     ############################################################################################
-    def esmf_generate_weights(self, ds_name='ERA5', weight_file_prefix='access-om2_cice',
-                              interp_type='', regrid_options='-p none'):
+    def define_datetime_object(self,start_date='',year_offset=0):
         '''
         '''
-        if not interp_type:
-            interp_type = self.regrid_interp_type
-        if ds_name=='ERA5':
-            P_wgt = os.path.join( self.D_weights, 'map_{from_name:s}_{to_name:s}_{grid_res:s}_{type:s}.nc'.format(from_name=ds_name,
-                                                                                                                  to_name=weight_file_prefix,
-                                                                                                                  grid_res=self.G_res,
-                                                                                                                  type=interp_type))
-            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} -s {src:s} -d {dst:s} -w {wgt:s}'.format(type=interp_type,
-                                                                                                              opts=regrid_options,
-                                                                                                              src=self.F_G_ERA5,
-                                                                                                              dst=self.F_G_CICE,
-                                                                                                              wgt=P_wgt)
-        elif ds_name=='BRAN':
-            P_wgt = os.path.join( self.D_weights, 'map_{from_name:s}_{to_name:s}_{grid_res:s}_{type:s}.nc'.format(from_name=ds_name,
-                                                                                                                  to_name=weight_file_prefix,
-                                                                                                                  grid_res=self.G_res,
-                                                                                                                  type=interp_type))
-            str_esmf_gen_weights = 'ESMF_RegridWeightGen -m {type:s} {opts:s} -s {src:s} -d {dst:s} -w {wgt:s}'.format(type=interp_type,
-                                                                                                              opts=regrid_options,
-                                                                                                              src=self.F_G_BRAN,
-                                                                                                              dst=self.F_G_CICE,
-                                                                                                              wgt=P_wgt)
-        print("generating weights with the command:\n",str_esmf_gen_weights)
-        os.system(str_esmf_gen_weights)
+        if not start_date: start_date = self.start_date
+        return datetime.strptime(start_date,'%Y-%m-%d').date() + pd.DateOffset(years=year_offset)
+    
+    ############################################################################################
+    def year_string_from_datetime_object(self,dt_obj):
+        '''
+        '''
+        return dt_obj.strftime('%Y')
+    
+    ############################################################################################
+    def define_era5_variable_path(self,var_name='',stt='',stp=''):
+        '''
+        '''
+        if not stt:
+            stt = self.time_series_day_month_start_or_end()
+        if not stp:
+            ptp = self.time_series_day_month_end()
+        F = '{var:s}_era5_oper_sfc_{stt:s}-{stp:s}.nc'.format(var=var_name,stt=stt,stp=stp)
+        return os.path.join(self.D_ERA5,var_name,self.yr_str,F)
+    
+    ############################################################################################
+    def era5_load_and_regrid(self,era5_var='2t',yr_str='', mo_str='', D_base='', G_dst='',
+                             regrid_method='', regrid_periodicity='',cnk_dict='',
+                             generate_weights=False, weights_file_name=''):
+        '''
+        '''
+        # optional inputs
+        if not G_dst:              G_dst              = self.cice_grid_prep()
+        if not D_base:             D_ERA5             = self.D_ERA5
+        if not regrid_method:      regrid_method      = self.ERA5_regrid_method
+        if not regrid_periodicity: regrid_periodicity = self.ERA5_periodicity
+        if not cnk_dict:           cnk_dict           = self.ERA5_chunking
+        if not weights_file_name: 
+            F_weights = self.F_ERA5_weights
+        else:
+            F_weights = weights_file_name
+        if not yr_str:
+            dt_obj = define_datetime_object(start_date=self.ERA5_start_date, year_offset=0)
+            yr_str = year_string_from_datetime_object(dt_obj)
+        # pull-in the grids
+        G_ERA5 = self.era5_grid_prep()
+        logging.info("Source file looks like this: %s",G_ERA5)
+        logging.info("Destination file looks like this: %s",G_dst)
+        if generate_weights or not os.path.exists(F_weights):
+            logging.info("User has requested to generate weights file *or* %s does not exist",F_weights)
+            logging.info("Creating weights can take some time ... sometimes it can take a long time!!")
+            logging.info("Intialising xesmf regridder")
+            logging.info("Using xesmf method %s",regrid_method)
+            logging.info("Full path to weight file is: %s",F_weights)
+            rg = xe.Regridder(G_ERA5, G_dst, method=regrid_method,  periodic=regrid_periodicity, filename=F_weights, reuse_weights=False)
+        else:
+            logging.info("REUSING EXISTING WEIGHT FILE: %s",F_weights)
+            logging.info("Using xesmf method %s",regrid_method)
+            rg = xe.Regridder(G_ERA5, G_dst, method=regrid_method,  periodic=regrid_periodicity, filename=F_weights, reuse_weights=True)
+        dat_n = self.era5_load(era5_var=era5_var, D_base=D_ERA5, yr_str=yr_str, mo_str='', cnk_dict=cnk_dict )
+        print("regridding ERA5")
+        return rg(dat_n)
+    
+    ############################################################################################
+    def era5_load(self,era5_var='2t',D_base='',yr_str='',mo_str='',cnk_dict=''):
+        '''
+        '''
+        #optional inputs
+        if not D_base:
+            D_ERA5 = self.D_ERA5
+        else:
+            D_ERA5 = D_base
+        if not cnk_dict: cnk_dict = self.ERA5_chunking
+        if not yr_str:
+            dt_obj = define_datetime_object(start_date=self.ERA5_start_date, year_offset=0)
+            yr_str = year_string_from_datetime_object(dt_obj)
+        if mo_str:
+            P_dat = os.path.join(D_ERA5,era5_var,yr_str,'{:s}_era5_oper_sfc_{:s}{:s}*.nc'.format(era5_var,yr_str,mo_str))
+        else:
+            P_dat = os.path.join(D_ERA5,era5_var,yr_str,'*.nc')
+        print("loading ERA5: {:s}".format(P_dat))
+        prt_str = "".join(str(key) + str(value) for key, value in cnk_dict.items())
+        logging.info("chunking dictionary: %s",prt_str)
+        return xr.open_mfdataset( P_dat , chunks=cnk_dict )
+     
+    ############################################################################################
+    def bran_load_and_regrid(self, bran_var='temp', yr_str='', mo_str='', D_base='', G_dst='', var_freq='', grid_type='',
+                             regrid_method='', regrid_periodicity='', cnk_dict='',
+                             generate_weights=False, weights_file_name=''):
+        '''
+        '''
+        # optional inputs
+        if not grid_type:          grid_type          = 't'
+        if not G_dst:              G_dst              = self.cice_grid_prep()
+        if not D_base:             D_BRAN             = self.D_BRAN
+        if not regrid_method:      regrid_method      = self.BRAN_regrid_method
+        if not regrid_periodicity: regrid_periodicity = self.BRAN_periodicity
+        if not var_freq:           var_freq           = self.BRAN_var_freq
+        if not weights_file_name:
+            if grid_type=='t':
+                F_weights = self.F_BRAN_t_weights
+            elif grid_type=='u':
+                F_weights = self.F_BRAN_u_weights
+        else:
+            F_weights = weights_file_name
+        if not yr_str:
+            dt_obj = define_datetime_object(start_date=self.BRAN_start_date, year_offset=0)
+            yr_str = year_string_from_datetime_object(dt_obj)
+        if grid_type=='t' and not cnk_dict:
+            cnk_dict = self.BRAN_t_chunking
+        elif grid_type=='u' and not cnk_dict:
+            cnk_dict = self.BRAN_u_chunking
+        # pull-in the grids
+        G_BRAN = self.bran_grid_prep()
+        logging.info("Source file looks like this: %s",G_BRAN)
+        logging.info("Destination file looks like this: %s",G_dst)
+        if generate_weights or not os.path.exists(F_weights):
+            logging.info("User has requested to generate weights file *or* %s does not exist",F_weights)
+            logging.info("Creating weights can take some time ... sometimes it can take a long time!!")
+            logging.info("Intialising xesmf regridder")
+            logging.info("Using xesmf method %s",regrid_method)
+            logging.info("Full path to weight file is: %s",F_weights)
+            rg = xe.Regridder(G_BRAN, G_dst, method=regrid_method,  periodic=regrid_periodicity, filename=F_weights, reuse_weights=False)
+        else:
+            logging.info("REUSING EXISTING WEIGHT FILE: %s",F_weights)
+            logging.info("Using xesmf method %s",regrid_method)
+            rg = xe.Regridder(G_BRAN, G_dst, method=regrid_method,  periodic=regrid_periodicity, filename=F_weights, reuse_weights=True)
+        dat_n = self.bran_load(bran_var=bran_var, D_base=D_BRAN, yr_str=yr_str, mo_str=mo_str, var_freq=var_freq, cnk_dict=cnk_dict , grid_type=grid_type)
+        print("regridding BRAN")
+        return rg(dat_n[bran_var])
 
     ############################################################################################
-    def regrid_climatology(self,ds_name='ERA5'):
+    def bran_load(self,bran_var='temp',D_base='',yr_str='',mo_str='',var_freq='',cnk_dict='',grid_type=''):
         '''
-        After defining the JSON fields attempt to regrid a dataset using CDO and format that regridding
-        so that it is directly usable by CICE6. An example for regridding ERA5 and BRAN data for a test
-        of fast ice on the Mawson Coast is simple as:
-        import afim
-        cice_prep = afim.cice_prep("./fastice_mawson_coast.json")
-        cice_prep.regrid_climatology(ds_name="ERA5")
-        cice_prep.regrid_climatology(ds_name="BRAN")
         '''
-        # load in the grid file to grid to
-        G_CICE                       = xr.open_dataset(self.F_G_CICE,chunks={'ny':100,'nx':100})
-        G_CICE                       = G_CICE.drop(('clon_t','clat_t','clon_u','clat_u','ulat','ulon','htn','hte','angle','angleT','tarea','uarea'))
-        ln_tmp                       = G_CICE.tlon.values[0,:]
-        lt_tmp                       = G_CICE.tlat.values[:,0]
-        G_CICE                       = G_CICE.drop(('tlon','tlat'))
-        G_CICE['lon']                = ln_tmp
-        G_CICE['lat']                = lt_tmp
-        G_CICE['lon']                = G_CICE.lon * 180/np.pi
-        G_CICE['lat']                = G_CICE.lat * 180/np.pi
-        G_CICE['lon'].attrs['units'] = 'degrees_east'
-        G_CICE['lat'].attrs['units'] = 'degrees_north'
-        # time arrays
-        stdts = pd.date_range(self.start_date, freq='MS', periods=self.n_months*self.n_years)
-        spdts = pd.date_range(self.start_date, freq='M', periods=self.n_months*self.n_years)
-        # Directories and files
-        if ds_name=='ERA5':
-            for i in range(self.n_years):
-                yr_str   = stdts[i].strftime('%Y')
-                stt_str  = stdts[i].strftime('%Y%m%d')
-                stp_str  = spdts[i].strftime('%Y%m%d')
-                F_ERA5 = '{var:s}_era5_oper_sfc_{stt:s}-{stp:s}.nc'.format(var='2t',stt=stt_str,stp=stp_str)
-                P_ERA5 = os.path.join(self.D_ERA5,
-                                      self.ERA5_dir_var_list[0],
-                                      yr_str,
-                                      F_ERA5)
-                #G_ERA5      = xr.open_dataset(P_ERA5).rename({'longitude': 'lon', 'latitude': 'lat'})
-                G_ERA5      = xr.open_dataset(F_G_ERA5).rename({'longitude': 'lon', 'latitude': 'lat'})
-                rg          = xe.Regridder(G_ERA5,G_CICE,method="bilinear",periodic=True,filename=F_ERA5_weights,reuse_weights=True)
-                t2m_na      = xr.open_mfdataset(os.path.join(self.D_ERA5,'2t',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                t2m         = rg(t2m_na)
-                msdwlwrf_na = xr.open_mfdataset(os.path.join(self.D_ERA5,'msdwlwrf',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                msdwlwrf    = rg(msdwlwrf_na)
-                msdwswrf_na = xr.open_mfdataset(os.path.join(self.D_ERA5,'msdwswrf',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                msdwswrf    = rg(msdwswrf_na)
-                mtpr_na     = xr.open_mfdataset(os.path.join(self.D_ERA5,'mtpr',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                mtpr        = rg(mtpr_na)
-                u10_na      = xr.open_mfdataset(os.path.join(self.D_ERA5,'u10',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                u10         = rg(u10_na)
-                v10_na      = xr.open_mfdataset(os.path.join(self.D_ERA5,'v10',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                v10         = rg(v10_na)
-                d2m_na      = xr.open_mfdataset(os.path.join(self.D_ERA5,'2d',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                d2m         = rg(d2m_na)
-                sp_na       = xr.open_mfdataset(os.path.join(self.D_ERA5,'sp',yr_str,'*.nc'), parallel=True, chunks={"time": 1})
-                sp          = rg(d2m_na)
-                qsat        = compute_sfc_qsat(d2m.d2m, sp.sp)
-                ATM         = xr.Dataset({ "airtmp" : t2m.t2m,
-                                           "dlwsfc" : msdwlwrf.msdwlwrf,
-                                           "glbrad" : msdwswrf.msdwswrf,
-                                           "spchmd" : qsat,
-                                           "ttlpcp" : mtpr.mtpr,
-                                           "wndewd" : u10.u10,
-                                           "wndnwd" : v10.v10 },
-                                         coords = { "LON"  : (["ny","nx"],LON_rg),
-                                                    "LAT"  : (["ny","nx"],LAT_rg),
-                                                    "time" : time.values })
-                ATM         = ATM.rename_dims({"ny":"nj","nx":"ni"})
-                P_ATM       = os.path.join(self.D_frcg,self.F_ERA5_reG_form.format(yr=yr_str))
-                ATM.to_netcdf(P_ATM)
-        elif ds_name=='BRAN':
-            for i in range(self.n_years):
-                G_BRAN  = xr.open_dataset(F_G_BRAN).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'}).chunk({'lon':100,'lat':100})
-                G_BRAN  = G_BRAN.drop(('st_edges_ocean','tmask','umask','kmu','kmt','hu','ht','xu_ocean','yu_ocean'))
-                rg      = xe.Regridder(G_BRAN,G_CICE,method="bilinear",periodic=True,filename=F_bran_t_wgt,reuse_weights=True)
-                temp_na = xr.open_mfdataset(os.path.join(D_bran,'ocean_temp_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1,'st_ocean':1}).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'})
-                temp_na = temp_na.drop(('st_edges_ocean','nv','Time_bounds','average_DT','average_T2','average_T1'))
-                temp    = rg(temp_na)
-                salt_na = xr.open_mfdataset(os.path.join(D_bran,'ocean_salt_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1,'st_ocean':1}).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'})
-                salt_na = salt_na.drop(('Time_bounds','average_DT','average_T2','average_T1','nv'))
-                salt    = rg(salt_na)
-                mld_na  = xr.open_mfdataset(os.path.join(D_bran,'ocean_mld_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={'Time':1}).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'})
-                mld_na  = mld_na.drop(('Time_bounds','average_T1','average_T2','average_DT','nv'))
-                mld     = rg(mld_na)
-                uocn_na = xr.open_mfdataset(os.path.join(D_bran,'ocean_u_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1,'st_ocean':1}).rename({'xu_ocean': 'lon', 'yu_ocean': 'lat'})
-                uocn_na = uocn_na.drop(('st_edges_ocean','Time_bounds','average_T1','average_T2','average_DT','nv'))
-                uocn    = rg(uocn_na)
-                vocn_na = xr.open_mfdataset(os.path.join(D_bran,'ocean_v_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1,'st_ocean':1}).rename({'xu_ocean': 'lon', 'yu_ocean': 'lat'})
-                vocn_na = vocn_na.drop(('st_edges_ocean','Time_bounds','average_T1','average_T2','average_DT','nv'))
-                vocn    = rg(vocn_na)
-                eta_na  = xr.open_mfdataset(os.path.join(D_bran,'ocean_eta_t_{yr:s}*.nc'.format(yr=yr_str)), parallel=True, chunks={"Time":1}).rename({'xt_ocean': 'lon', 'yt_ocean': 'lat'})
-                eta_na  = eta_na.drop(('Time_bounds','average_T1','average_T2','average_DT','nv'))
-                eta     = rg(eta_na)
-                sst     = temp.sel(st_ocean=0,method='nearest').values
-                sss     = salt.sel(st_ocean=0,method='nearest').values
-                u       = uocn.sel(st_ocean=0,method="nearest").values
-                v       = vocn.sel(st_ocean=0,method="nearest").values
-                dhdx    = compfute_ocn_sfc_slope(eta, G_CICE, direction='x', grid_scale_factor=100)
-                dhdy    = compfute_ocn_sfc_slope(eta, G_CICE, direction='y', grid_scale_factor=100)
-                qdp     = np.zeros( ( len(temp.Time), len(temp.lat), len(temp.lon) ) )
-                for j in range(len(temp.Time)):
-                    qdp[j,:,:] = compute_ocn_heat_flux( temp.isel(Time=j), salt.isel(Time=j), mld.isel(Time=j), lat_name='lat')
-                ln    = sst.lon
-                lt    = sst.lat
-                LN,LT = np.meshgrid(ln,lt)
-                time  = sst.Time
-                OCN   = xr.Dataset({ "T"    : sst,
-                                     "S"    : sss,
-                                     "hblt" : mld.mld.values,
-                                     "u"    : u,
-                                     "v"    : v,
-                                     "dhdx" : dhdx,
-                                     "dhdy" : dhdy,
-                                     "qdp"  : qdp},
-                                   coords = { "LON"  : (["ny","nx"],LN),
-                                              "LAT"  : (["ny","nx"],LT),
-                                              "time" : time.values })
-                OCN   = OCN.rename_dims({"ny":"nj","nx":"ni"})
-                P_ATM = os.path.join(self.D_frcg,self.F_BRAN_reG_form.format(yr=yr_str))
-                OCN.to_netcdf(P_ocn)
+        #optional inputs
+        if not D_base:
+            D_BRAN = self.D_BRAN
+        else:
+            D_BRAN = D_base
+        if not var_freq: var_freq = self.BRAN_var_freq
+        if not yr_str:
+            dt_obj = define_datetime_object(start_date=self.BRAN_start_date, year_offset=0)
+            yr_str = year_string_from_datetime_object(dt_obj)
+        if not grid_type: grid_type = 't'
+        if grid_type=='t' and not cnk_dict:
+            cnk_dict = self.BRAN_t_chunking
+        elif grid_type=='u' and not cnk_dict:
+            cnk_dict = self.BRAN_u_chunking
+        if mo_str:
+            P_dat = os.path.join(D_BRAN,var_freq,'ocean_{var:s}_{yr:s}_{mo:s}.nc'.format(var=bran_var,yr=yr_str,mo=mo_str))
+            print("loading BRAN: {:s}".format(P_dat))
+            return xr.open_dataset( P_dat )
+        else:
+            P_dat = os.path.join(D_BRAN,var_freq,'ocean_{var:s}_{yr:s}*.nc'.format(var=bran_var,yr=yr_str))
+            print("loading BRAN: {:s}".format(P_dat))
+            #prt_str = "".join(str(key) + str(value) for key, value in cnk_dict.items())
+            #logging.info("chunking dictionary: %s",prt_str)
+            # BRAN chunking works but sticking it into the re-gridder fails!!
+            return xr.open_mfdataset( P_dat )#, chunks=cnk_dict )
+        
+    ############################################################################################
+    def era5_grid_prep(self):
+        '''
+        '''
+        return xr.open_dataset(self.F_G_ERA5)
+    
+    ############################################################################################
+    def bran_grid_prep(self,grid_type=''):
+        '''
+        '''
+        if not grid_type: grid_type = 't'
+        if grid_type=='t':
+            lat_name = 'yt_ocean'
+            lon_name = 'xt_ocean'
+        elif grid_type=='u':
+            lat_name = 'yu_ocean'
+            lon_name = 'xu_ocean'
+        G_BRAN        = xr.open_dataset(self.F_G_BRAN)
+        LN,LT         = np.meshgrid(G_BRAN[lon_name].values,G_BRAN[lat_name].values)
+        G_BRAN['lon'] = (['ny','nx'],LN,{'units':'degrees_east','_FillValue':-2e8})
+        G_BRAN['lat'] = (['ny','nx'],LT,{'units':'degrees_north','_FillValue':-2e8})
+        G_BRAN        = G_BRAN.drop(('xt_ocean','yt_ocean','xu_ocean','yu_ocean','hu','ht','kmt',
+                                     'kmu','umask','tmask','st_edges_ocean','Time','st_ocean'))
+        return G_BRAN
 
     ############################################################################################
-    def concat_access_om2(self,start_year='2005',stop_year='2018'):
+    def cice_grid_prep(self,grid_type=''):
         '''
         '''
-        import re
-        import fnmatch
-        F_2d_prefixes_to_concat = ['ocean-2d-surface_temp-1-daily-mean-ym_',
-                                   'ocean-2d-surface_salt-1-daily-mean-ym_',
-                                   'ocean-2d-mld-1-daily-mean-ym_']
-        F_3d_prefixes_to_concat = ['ocean-3d-u-1-daily-mean-ym_',
-                                   'ocean-3d-v-1-daily-mean-ym_']
-        search_pattern = '*{yr:s}_01.nc'.format(yr=start_year)
-        matches        = []
-        for root, dirnames, filenames in os.walk(self.D_ac_om2_out):
-            for basename in filenames:
-                if fnmatch.fnmatch(basename,search_pattern):
-                    matches.append(os.path.join(root, basename))
-        D_out0_parsed = matches[0].split(os.sep)
-        D_out0        = D_out0_parsed[8]
-        D_out0_n      = int(re.split('(\d+)',D_out0)[1])
-        D_outN_n      = ( (int(stop_year) - int(start_year))*4 ) + D_out0_n
-        yr_out        = int(start_year)
-        for i in np.arange(D_out0_n,D_outN_n,4):
-            D_cats = [os.path.join(self.D_ac_om2_out,'output{:d}'.format(i),'ocean'),
-                      os.path.join(self.D_ac_om2_out,'output{:d}'.format(i+1),'ocean'),
-                      os.path.join(self.D_ac_om2_out,'output{:d}'.format(i+2),'ocean'),
-                      os.path.join(self.D_ac_om2_out,'output{:d}'.format(i+3),'ocean')]
-            for j in F_2d_prefixes_to_concat:
-                P_wilds = [os.path.join(D_cats[0],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[1],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[2],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[3],'{:s}*.nc'.format(j))]
-                P_out = os.path.join(self.D_data,'ac-om2-{var:s}{yr:s}.nc'.format(var=j,yr=str(yr_out)))
-                str_concat = 'ncrcat {:s} {:s} {:s} {:s} {:s}'.format(P_wilds[0],P_wilds[1],P_wilds[2],P_wilds[3],P_out)
-                if os.exists(P_out):
-                    print('File exists: {:s}\n SKIPPING concatentation')
+        if not grid_type: grid_type = 't'
+        if grid_type=='t':
+            lat = 'tlat'
+            lon = 'tlon'
+        elif grid_type=='u':
+            lat = 'ulat'
+            lon = 'ulon'
+        G_CICE        = xr.open_dataset(self.F_G_CICE_original)
+        G_CICE['lat'] = (['ny','nx'],G_CICE[lat].values*(180/np.pi),{'units':'degrees_north','_FillValue':-2e8})
+        G_CICE['lon'] = (['ny','nx'],G_CICE[lon].values*(180/np.pi),{'units':'degrees_east','_FillValue':-2e8})
+        G_CICE        = G_CICE.drop(('ulat','ulon','tlat','tlon','clon_t','clat_t','clat_u','clon_u','angle','uarea'))
+        G_CICE        = G_CICE.assign_coords(xt_ocean=G_CICE['lon'][0,:],yt_ocean=G_CICE['lat'][:,0])
+        G_CICE        = G_CICE.set_index(nx='xt_ocean',ny='yt_ocean')
+        return G_CICE
+
+    ############################################################################################
+    def regrid_era5_for_cice6(self,start_date=''):
+        '''
+        '''
+        if not start_date: start_date = self.ERA5_start_date
+        for i in range(self.n_years):
+            dt_obj = self.define_datetime_object(start_date=start_date, year_offset=i)
+            yr_str = self.year_string_from_datetime_object(dt_obj)
+            t2m   = self.era5_load_and_regrid(era5_var = '2t'      , yr_str = yr_str,)
+            lw    = self.era5_load_and_regrid(era5_var = 'msdwlwrf', yr_str = yr_str,)
+            sw    = self.era5_load_and_regrid(era5_var = 'msdwswrf', yr_str = yr_str,)
+            mtpr  = self.era5_load_and_regrid(era5_var = 'mtpr'    , yr_str = yr_str,)
+            u10   = self.era5_load_and_regrid(era5_var = 'u10'     , yr_str = yr_str,)
+            v10   = self.era5_load_and_regrid(era5_var = 'v10'     , yr_str = yr_str,)
+            d2m   = self.era5_load_and_regrid(era5_var = '2d'      , yr_str = yr_str,)
+            sp    = self.era5_load_and_regrid(era5_var = 'sp'      , yr_str = yr_str,)
+            qsat = compute_sfc_qsat(d2m.d2m, sp.sp)
+            print("Data array sizes (GB):")
+            print("\t airtmp: ", t2m.t2m.astype(np.single).nbytes / (1024**3))
+            print("\t dlwsfc: ", lw.msdwlwrf.astype(np.single).nbytes / (1024**3))
+            print("\t glbrad: ", sw.msdwswrf.astype(np.single).nbytes / (1024**3))
+            print("\t spchmd: ", qsat.astype(np.single).nbytes / (1024**3))
+            print("\t ttlpcp: ", mtpr.mtpr.astype(np.single).nbytes / (1024**3))
+            print("\t wndewd: ", u10.u10.astype(np.single).nbytes / (1024**3))
+            print("\t wndnwd: ", v10.v10.astype(np.single).nbytes / (1024**3))
+            d_vars = {"airtmp" : (['time','nj','ni'],t2m.t2m.astype(np.single).data,
+                                  {'long_name' :"2 metre temperature",
+                                   'units'     :"Kelvin",
+                                   '_FillValue':-2e8}),
+                      "dlwsfc" : (['time','nj','ni'],lw.msdwlwrf.astype(np.single).data,
+                                  {'long_name':"Mean surface downward long-wave radiation flux",
+                                   'units'    :"W m**-2",
+                                   '_FillValue':-2e8}),
+                      "glbrad" : (['time','nj','ni'],sw.msdwswrf.astype(np.single).data,
+                                  {'long_name':"Mean surface downward short-wave radiation flux",
+                                   'units'    :"W m**-2",
+                                   '_FillValue':-2e8}),
+                      "spchmd" : (['time','nj','ni'],qsat.astype(np.single).data,
+                                  {'long_name':"specific humidity",
+                                   'units'    :"kg/kg",
+                                   '_FillValue':-2e8}),
+                      "ttlpcp" : (['time','nj','ni'],mtpr.mtpr.astype(np.single).data,
+                                  {'long_name':"Mean total precipitation rate",
+                                   'units'    :"kg m**-2 s**-1",
+                                   '_FillValue':-2e8}),
+                      "wndewd" : (['time','nj','ni'],u10.u10.astype(np.single).data,
+                                  {'long_name':"10 metre meridional wind component",
+                                   'units'    :"m s**-1",
+                                   '_FillValue':-2e8}),
+                      "wndnwd" : (['time','nj','ni'],v10.v10.astype(np.single).data,
+                                  {'long_name':"10 metre zonal wind component",
+                                   'units'    :"m s**-1",
+                                   '_FillValue':-2e8}) }
+            coords = {"LON"  : (["nj","ni"],G_CICE.lon.data,{'units':'degrees_east'}),
+                      "LAT"  : (["nj","ni"],G_CICE.lat.data,{'units':'degrees_north'}),
+                      "time" : (["time"],t2m.time.data)}
+            attrs = {'creation_date': datetime.now().strftime('%Y-%m-%d %H'),
+                     'conventions'  : "CCSM data model domain description -- for CICE6 standalone 'JRA55' atmosphere option",
+                     'title'        : "re-gridded ERA5 for CICE6 standalone ocean forcing",
+                     'source'       : "ERA5, https://doi.org/10.1002/qj.3803, ",
+                     'comment'      : "source files found on gadi, /g/data/rt52/era5/single-levels/reanalysis",
+                     'note1'        : "ERA5 documentation, https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation",
+                     'note2'        : "regridding weight file, /g/data/jk72/da1339/grids/weights/map_ERA5_access-om2_cice_0p1_bilinear.nc",
+                     'note3'        : "re-gridded using ESMF_RegridGenWeights",
+                     'author'       : 'Daniel P Atwater',
+                     'email'        : 'daniel.atwater@utas.edu.au'}
+            ATM = xr.Dataset(data_vars=d_vars,coords=coords,attrs=attrs)
+            #write to monthly files
+            cnt = 0
+            #for i in wks_arr:
+            mo0_dates = pd.date_range(start=dt_obj,freq='MS',periods=self.n_months)
+            moN_dates = pd.date_range(start=dt_obj,freq='M',periods=self.n_months)
+            enc_dict  = {'shuffle':True,'zlib':True,'complevel':5}
+            for i in mo0_dates:
+                dt0_str   = i.strftime('%Y-%m-%d %H:%M')
+                dtN_str   = moN_dates[cnt].strftime('%Y-%m-%d %H:%M')
+                yrmo0_str = i.strftime('%Y_%m')
+                P_ATM_tmp = os.path.join(self.D_data,'ERA5','monthly',self.F_ERA5_reG_form_tmp.format(dt_str=yrmo0_str))
+                if not os.path.exists(P_ATM_tmp):
+                    ATM_tmp   = ATM.sel(time=slice(dt0_str,dtN_str))
+                    write_job = ATM_tmp.to_netcdf(P_ATM_tmp,unlimited_dims=['time'],compute=False,encoding={'airtmp':enc_dict,
+                                                                                                            'dlwsfc':enc_dict,
+                                                                                                            'glbrad':enc_dict,
+                                                                                                            'spchmd':enc_dict,
+                                                                                                            'ttlpcp':enc_dict,
+                                                                                                            'wndewd':enc_dict,
+                                                                                                            'wndnwd':enc_dict})
+                    with ProgressBar():
+                        print(f"Writing to {P_ATM_tmp}")
+                        write_job.compute()
+                cnt+=1
+                
+    ############################################################################################
+    def regrid_bran_for_cice6(self,start_date='',ncrcat_opts=''):
+        '''
+        '''
+        P_G_ocn = '/g/data/ik11/grids/ocean_grid_01.nc'
+        if not start_date:  start_date  = self.BRAN_start_date
+        if not ncrcat_opts: ncrcat_opts = self.ncrcat_opts
+        G_CICE = self.cice_grid_prep()
+        for i in range(self.n_years):
+            dt_obj = self.define_datetime_object(start_date=start_date, year_offset=i)
+            yr_str = self.year_string_from_datetime_object(dt_obj)
+            D_ocn  = os.path.join(self.D_modin,'BRAN')
+            P_ocn  = os.path.join(self.D_modin,'bran_ocn_frcg_cice6_{yr:s}.nc'.format(yr=yr_str))
+            print("\nCreating file: {:s}".format(P_ocn))
+            print("\tcurrent time: ",datetime.now().time())
+            if os.path.exists(P_ocn):
+                print('\tFile exists: {:s}\n\t ... advancing to next iteration'.format(P_ocn))
+                continue
+            for j in range(12):
+                mo_str = '{:02d}'.format(j+1)
+                D_ocn_j= os.path.join(D_ocn,'yr_mo')
+                P_ocn_j= os.path.join(D_ocn_j,'bran_ocn_frcg_cice6_{yr:s}_{mo:s}.nc'.format(yr=yr_str,mo=mo_str))
+                print("\tCreating file: {:s}".format(P_ocn_j))
+                if os.path.exists(P_ocn_j):
+                    print('\tFile exists: {:s}\n\t ... advancing to next iteration'.format(P_ocn_j))
                 else:
-                    print("concatenating: ",str_concat)
-                    os.system(str_concat)
-            for j in F_3d_prefixes_to_concat:
-                P_wilds = [os.path.join(D_cats[0],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[1],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[2],'{:s}*.nc'.format(j)),
-                           os.path.join(D_cats[3],'{:s}*.nc'.format(j))]
-                P_out = os.path.join(self.D_data,'ac-om2-{var:s}{yr:s}.nc'.format(var=j,yr=str(yr_out)))
-                str_concat = 'ncrcat -d st_ocean,0,1 {:s} {:s} {:s} {:s} {:s}'.format(P_wilds[0],P_wilds[1],P_wilds[2],P_wilds[3],P_out)
-                if os.exists(P_out):
-                    print('File exists: {:s}\n SKIPPING concatentation')
-                else:
-                    print("concatenating: ",str_concat)
-                    os.system(str_concat)
-            yr_out+=1
+                    temp   = self.bran_load_and_regrid( bran_var = 'temp' , yr_str = yr_str, mo_str = mo_str, grid_type = 't')
+                    salt   = self.bran_load_and_regrid( bran_var = 'salt' , yr_str = yr_str, mo_str = mo_str, grid_type = 't')
+                    mld    = self.bran_load_and_regrid( bran_var = 'mld'  , yr_str = yr_str, mo_str = mo_str, grid_type = 't')
+                    print("\tcomputing temperature derivative over time")
+                    dTdt   = temp.differentiate('Time')
+                    print("\tcomputing atmospheric surface heat flux")
+                    F_net  = self.compute_era5_net_atmospheric_surface_heat_flux(yr_str = yr_str, mo_str=mo_str)
+                    D_qdp  = os.path.join(D_ocn,'qdp')
+                    D_qdp_k = os.path.join(D_qdp,'md')
+                    P_qdp  = os.path.join(D_qdp,'bran_qdp_{:s}_{:s}.nc'.format(yr_str,mo_str))
+                    print("\tCreating file: {:s}".format(P_qdp))
+                    if os.path.exists(P_qdp):
+                        print("\tFile exists: {:s}\n ... advancing to next iteration".format(P_qdp))
+                    else:
+                        for k in range(len(temp.Time)):
+                            P_qdp_k = os.path.join(D_qdp_k,'qdp_md{:02d}.nc'.format(k))
+                            if os.path.exists(P_qdp_k):
+                                print("\t\tFile exists: {:s}\n  ... advancing to next iteration".format(P_qdp_k))
+                            else:
+                                print("\t\tcurrent time: ",datetime.now().time())
+                                mld_k  = mld.isel(Time=k).astype(np.single).load().persist()
+                                Fnet_k = F_net.isel(time=k).astype(np.single).load().persist()
+                                print("\t\tslicing temporal temperature derivative at the mixed layer depth")
+                                dTdt_k = dTdt.isel(Time=j).sel(st_ocean=mld_k,method='nearest').drop('st_ocean').astype(np.single).load().persist()
+                                print("\t\tslicing temporal temperature at the mixed layer depth")
+                                temp_k = temp.isel(Time=j).sel(st_ocean=mld_k,method='nearest').drop('st_ocean').astype(np.single).load().persist()
+                                print("\t\tslicing salinity temperature at the mixed layer depth")
+                                salt_k = salt.isel(Time=j).sel(st_ocean=mld_k,method='nearest').drop('st_ocean').astype(np.single).load().persist()
+                                print("\t\tcomputing ocean heat capacity at the mixed layer depth")
+                                cp_k = compute_ocn_heat_capacity_at_depth(salt_k, temp_k, mld_k, mld.ny).astype(np.single)
+                                cp_k = cp_k.load().persist()
+                                print("\t\tcomputing ocean density at the mixed layer depth")
+                                rho_k = compute_ocn_density_at_depth(salt_k, temp_k, mld_k, mld.ny).astype(np.single)
+                                rho_k = rho_k.load().persist()
+                                print("\t\tcomputing ocean heat flux at the mixed layer depth")
+                                qdp_k = compute_ocn_heat_flux_at_depth(rho_k, cp_k, mld_k, Fnet_k, dTdt_k)
+                                qdp_k = qdp_k.load().persist()
+                                qdp_k = qdp_k.assign_coords(time=temp.Time.isel(Time=k).values).expand_dims('time').astype(np.single).to_dataset(name='qdp')
+                                print("\t\twriting out ocean heat flux netcdf to: ",P_qdp_k)
+                                logging.info("his what qdp_k looks like before writing: %s",qdp_k)
+                                enc_dict  = {'shuffle':True,'zlib':True,'complevel':5}
+                                write_qdp_k = qdp_k.to_netcdf(P_qdp_k, unlimited_dims=['time'], compute=False, encoding={'qdp':enc_dict})
+                                with ProgressBar():
+                                    print(f"\t\tWriting to {P_qdp_k}")
+                                    write_qdp_k.compute()
+                                print("\t\tcompleted writing qdp, current time: ",datetime.now().time())
+                        time.sleep(60)
+                        print("\tconcatenating qdp for one month, files in {:s}".format(D_qdp_k))
+                        print("\tcurrent time: ",datetime.now().time())
+                        sys_call = 'ncrcat {:s} {:s}/qdp_md* {:s}'.format(ncrcat_opts,D_qdp_k,P_qdp)
+                        os.system(sys_call)
+                        time.sleep(60)
+                        os.system(sys_call)
+                        print("\tcompleted concatenating qdp for one month, current time: ",datetime.now().time())
+                        if os.path.exists(P_qdp):
+                            print("\tsuccessfully created {:s}\n\tdeleting temporary files in {:s}".format(P_qdp,D_qdp_k))
+                            os.system("rm {:s}/*.nc".format(D_qdp_k))
+                    print("\tloading in qdp one-month file {:s} ... and persisting in memory".format(P_qdp))
+                    qdp  = xr.open_dataset(P_qdp).load().persist()
+                    print("\tslicing SST out of full ocean temperatures and keeping data in memory")
+                    sst  = temp.sel(st_ocean=0,method='nearest').load().persist()
+                    print("\tslicing SSS out of full ocean salinity and keeping data in memory")
+                    sss  = salt.sel(st_ocean=0,method='nearest').load().persist()
+                    uocn = self.bran_load_and_regrid( bran_var = 'u', yr_str = yr_str, mo_str = mo_str, grid_type = 'u')
+                    vocn = self.bran_load_and_regrid( bran_var = 'v', yr_str = yr_str, mo_str = mo_str, grid_type = 'u')
+                    print("\tslicing surface zonal velocities out of full ocean zonal velocities and keeping data in memory")
+                    uocn = uocn.sel(st_ocean=0,method="nearest").load().persist()
+                    print("\tslicing surface meridional velocities out of full ocean meridional velocities and keeping data in memory")
+                    vocn = vocn.sel(st_ocean=0,method="nearest").load().persist()
+                    eta  = self.bran_load_and_regrid( bran_var = 'eta_t', yr_str = yr_str, mo_str = mo_str, grid_type = 'u')
+                    eta  = eta.load().persist()
+                    print("\tcomputing ocean surface slopes in the zonal direction and keeping data in memory")
+                    dhdx = compute_ocn_sfc_slope(eta, G_CICE.hte.data, direction='x')
+                    dhdx = dhdx.load().persist()
+                    print("\tcomputing ocean surface slopes in the meridional direction and keeping data in memory")
+                    dhdy = compute_ocn_sfc_slope(eta, G_CICE.htn.data, direction='y')
+                    dhdy = dhdy.load().persist()
+                    print("\tloading and keeping in memory, geographic ocean grid for writing into ocean forcing file {:s}".format(P_G_ocn))
+                    LN   = xr.open_dataset(P_G_ocn).geolon_t.load().persist()
+                    LT   = xr.open_dataset(P_G_ocn).geolat_t.load().persist()
+                    print("\tcreating ocean forcing file data structure")
+                    data_vars = {'qdp' : (['time','nj','ni'],qdp.qdp.data,{'units':'W/m^2','long_name':'deep ocean heat flux','_FillValue':-2e8}),
+                                 'T'   : (['time','nj','ni'],sst.data,{'units':'C','long_name':'sea surface temperature','_FillValue':-2e8}),
+                                 'S'   : (['time','nj','ni'],sss.data,{'units':'psu','long_name':'sea surface salinity','_FillValue':-2e8}),
+                                 'hblt': (['time','nj','ni'],mld.data,{'units':'m','long_name':'mixed layer depth','_FillValue':-2e8}),
+                                 'U'   : (['time','nj','ni'],uocn.data,{'units':'m/s','long_name':'meridional surface current','_FillValue':-2e8}),
+                                 'V'   : (['time','nj','ni'],vocn.data,{'units':'m/s','long_name':'zonal surface current','_FillValue':-2e8}),
+                                 'dhdx': (['time','nj','ni'],dhdx.data,{'units':'m','long_name':'zonal sea surface slope','_FillValue':-2e8}),
+                                 'dhdy': (['time','nj','ni'],dhdy.data,{'units':'m','long_name':'meridional sea surface slope','_FillValue':-2e8})}
+                    coords = {'xc'   : (['nj','ni'],LN.data,{'units':'degrees_east'}),
+                              'yc'   : (['nj','ni'],LT.data,{'units':'degrees_north'}),
+                              'time' : (['time'],sst.Time.data,{'long_name':'time','cartesian_axis':'T','calendar_type':'GREGORIAN'})}
+                    attrs = {'creation_date': datetime.now().strftime('%Y-%m-%d %H'),
+                             'conventions'  : 'CCSM data model domain description -- for CICE6 standalone "NCAR" ocean option',
+                             'title'        : 'daily averaged ocean forcing from BRAN2020 output for CICE6 standalone ocean forcing',
+                             'source'       : 'BRAN2020',
+                             'comment'      : 'source files found on gadi, /g/data/gb6/BRAN/BRAN2020',
+                             'calendar'     : 'standard',
+                             'note1'        : 'grid is ACCESS-OM2 t-grid',
+                             'note2'        : 'u,v, and eta (i.e. dhdx and dhdy) are interpolated to t-grid',
+                             'author'       : 'Daniel P Atwater',
+                             'email'        : 'daniel.atwater@utas.edu.au'}
+                    print("\twriting one month ocean forcing file {:s}".format(P_ocn_j))
+                    print("\tcurrent time: ",datetime.now().time())
+                    OCN       = xr.Dataset(data_vars=data_vars,coords=coords,attrs=attrs)
+                    enc_dict  = {'shuffle':True,'zlib':True,'complevel':5}
+                    write_job = OCN.to_netcdf(P_ocn_j, unlimited_dims=['time'], compute=False,
+                                            encoding={'qdp':enc_dict, 'T':enc_dict, 'S':enc_dict, 'hblt':enc_dict,
+                                            'U':enc_dict, 'V':enc_dict, 'dhdx':enc_dict, 'dhdy':enc_dict})
+                    with ProgressBar():
+                        print(f'Writing to {P_ocn_j}')
+                        write_job.compute()
+                    print("\tcompleted writing one month ocean forcing file, current time: ",datetime.now().time())
+            time.sleep(60)
+            print("concatenating monthly ocean forcing files in {:s}".format(D_ocn_j))
+            print("into a year-long file {:s}".format(P_ocn))
+            print("\tcurrent time: ",datetime.now().time())
+            sys_call = 'ncrcat {:s} {:s}/bran_ocn_frcg_cice6* {:s}'.format(ncrcat_opts,D_ocn_j,P_ocn)
+            os.system(sys_call)
+            time.sleep(60)
+            os.system(sys_call)
+            #print("\tcompleted writing year-long ocean forcing file, current time: ",datetime.now().time())
+            #if os.path.exists(P_ocn):
+            #    print("\tsuccessfully created {:s}\n deleting temporary monthly files in {:s}".format(P_ocn,D_ocn_j))
+            #    os.system("rm {:s}/*.nc".format(D_ocn_j))
+
+    ###########################################################################################
+    def acom2_coallate_for_cice_forcing(self, start_date='', acom2_model_run='', cnk_dict='', var_freq='' ):
+        '''
+        '''
+        self.acom2_coallate_for_cice_forcing_has_been_called = True
+        import cosima_cookbook as cc
+        if not var_freq:        var_freq        = self.acom2_var_freq 
+        if not acom2_model_run: acom2_model_run = self.acom2_model_run
+        if not start_date:      start_date      = self.acom2_start_date
+        if not cnk_dict:        cnk_dict        = self.acom2_chunking
+        G_CICE = self.cice_grid_prep()
+        for i in range(self.n_years):
+            if i>0:
+                dt0 = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(i*365))
+                dtN = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(i*364*2))
+            else:
+                dt0 = datetime.strptime(start_date,'%Y-%m-%d %H:%M')
+                dtN = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(364))
+            dt0_str = dt0.strftime('%Y-%m-%d %H:%M')
+            dtN_str = dtN.strftime('%Y-%m-%d %H:%M')
+            P_out  = os.path.join(self.D_modin,'acom2_ocn_frcg_cice6_{yr:s}.nc'.format(yr=str(dt0.year)))
+            if os.path.exists(P_out):
+                print('File exists: {:s}\n SKIPPING concatentation')
+            else:
+                print("extracting ac-om2 data from model run: ",acom2_model_run," from start dt: ",dt0_str," to stop dt: ",dtN_str)
+                cc_sess = cc.database.create_session()
+                sst     = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'temp',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk(cnk_dict).isel(st_ocean=0).drop('st_ocean')
+                sss     = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'salt',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk(cnk_dict).isel(st_ocean=0).drop('st_ocean')
+                uocn    = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'u',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk({'time':3,'xu_ocean':100,'yu_ocean':100}).isel(st_ocean=0).drop('st_ocean')
+                vocn    = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'v',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk({'time':3,'xu_ocean':100,'yu_ocean':100}).isel(st_ocean=0).drop('st_ocean')
+                mld     = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'mld',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk(cnk_dict)
+                eta     = cc.querying.getvar(expt       = acom2_model_run,
+                                             variable   = 'sea_level',
+                                             session    = cc_sess,
+                                             frequency  = var_freq,
+                                             start_time = dt0_str,
+                                             end_time   = dtN_str).chunk(cnk_dict)
+                qdp  = self.acom2_compute_qdp()
+                dhdx = compute_ocn_sfc_slope(eta, G_CICE.hte.data, direction='x')
+                dhdy = compute_ocn_sfc_slope(eta, G_CICE.htn.data, direction='y')
+                LN   = xr.open_dataset('/g/data/ik11/grids/ocean_grid_01.nc').geolon_t.data
+                LT   = xr.open_dataset('/g/data/ik11/grids/ocean_grid_01.nc').geolat_t.data
+                data_vars = {'qdp' : (['time','nj','ni'],qdp.qdp.data,{'units':'W/m^2','long_name':'deep ocean heat flux','_FillValue':-2e8}),
+                             'T'   : (['time','nj','ni'],sst.data-273.15,{'units':'C','long_name':'sea surface temperature','_FillValue':-2e8}),
+                             'S'   : (['time','nj','ni'],sss.data,{'units':'psu','long_name':'sea surface salinity','_FillValue':-2e8}),
+                             'hblt': (['time','nj','ni'],mld.data,{'units':'m','long_name':'mixed layer depth','_FillValue':-2e8}),
+                             'U'   : (['time','nj','ni'],uocn.data,{'units':'m/s','long_name':'meridional surface current','_FillValue':-2e8}),
+                             'V'   : (['time','nj','ni'],vocn.data,{'units':'m/s','long_name':'zonal surface current','_FillValue':-2e8}),
+                             'dhdx': (['time','nj','ni'],dhdx.data,{'units':'m','long_name':'zonal sea surface slope','_FillValue':-2e8}),
+                             'dhdy': (['time','nj','ni'],dhdy.data,{'units':'m','long_name':'meridional sea surface slope','_FillValue':-2e8})}
+                coords = {'xc'   : (['nj','ni'],LN,{'units':'degrees_east'}),
+                          'yc'   : (['nj','ni'],LT,{'units':'degrees_north'}),
+                          'time' : (['time'],sst.time.data,{'long_name':'time','cartesian_axis':'T','calendar_type':'GREGORIAN'})}
+                attrs = {'creation_date': datetime.now().strftime('%Y-%m-%d %H'),
+                         'conventions'  : 'CCSM data model domain description -- for CICE6 standalone "NCAR" ocean option',
+                         'title'        : 'daily averaged ocean forcing from ACCESS-OM2-01 outputn for CICE6 standalone ocean forcing',
+                         'source'       : 'ACCESS-OM2-01',
+                         'comment'      : 'source files found using COSIMA Cookbook',
+                         'calendar'     : 'standard',
+                         'note1'        : 'grid is ACCESS-OM2 t-grid',
+                         'note2'        : 'u,v, and eta (i.e. dhdx and dhdy) are interpolated to t-grid',
+                         'note3'        : 'dhdx,dhdy are described in ACCESS-OM2 output as effective sea level (eta_t + patm/(rho0*g)) on T cells',
+                         'author'       : 'Daniel P Atwater',
+                         'email'        : 'daniel.atwater@utas.edu.au'}
+                OCN       = xr.Dataset(data_vars=data_vars,coords=coords,attrs=attrs)
+                enc_dict  = {'shuffle':True,'zlib':True,'complevel':5}
+                write_job = OCN.to_netcdf(P_out, unlimited_dims=['time'], compute=False,
+                                          encoding={'qdp':enc_dict, 'T':enc_dict, 'S':enc_dict, 'hblt':enc_dict,
+                                                    'U':enc_dict, 'V':enc_dict, 'dhdx':enc_dict, 'dhdy':enc_dict})
+                with ProgressBar():
+                    print(f'Writing to {P_out}')
+                    write_job.compute()
+
+    ############################################################################################
+    def acom2_compute_qdp(self,start_date='',acom2_model_run='', ncrcat_opts='', var_freq='',
+                          regrid_method='', regrid_periodicity='', cnk_dict='',
+                          generate_weights='', weights_file_name=''):
+        '''
+        '''
+        import cosima_cookbook as cc
+        if not var_freq:           var_freq           = self.acom2_var_freq 
+        if not ncrcat_opts:        ncrcat_opts        = self.ncrcat_opts
+        if not acom2_model_run:    acom2_model_run    = self.acom2_model_run
+        if not start_date:         start_date         = self.acom2_start_date
+        if not regrid_method:      regrid_method      = self.ERA5_regrid_method
+        if not regrid_periodicity: regrid_periodicity = self.ERA5_periodicity
+        if not cnk_dict:           cnk_dict           = self.acom2_chunking
+        if not generate_weights:   generate_weights   = self.ERA5_regen_weights
+        if not weights_file_name: 
+            F_weights = self.F_ERA5_weights
+        else:
+            F_weights = weight_file_name
+        G_ERA5 = self.era5_grid_prep()
+        P_qdp  = os.path.join(self.D01,'qdp','tmp')
+        for i in range(self.n_years):
+            if i>0:
+                dt0 = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(i*365))
+                dtN = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(i*364*2))
+            else:
+                dt0 = datetime.strptime(start_date,'%Y-%m-%d %H:%M')
+                dtN = datetime.strptime(start_date,'%Y-%m-%d %H:%M') + timedelta(days=(364))
+            dt0_str = dt0.strftime('%Y-%m-%d %H:%M')
+            dtN_str = dtN.strftime('%Y-%m-%d %H:%M')
+            P_out  = os.path.join(self.D01,'qdp','acom2_qdp_{yr:s}.nc'.format(yr=str(dt0.year)))
+            if os.path.exists(P_out):
+                print('File exists: {:s}\n SKIPPING concatentation')
+                if self.acom2_coallate_for_cice_forcing_has_been_called:
+                    return xr.open_dataset(P_out)
+            else:
+                print("extracting ac-om2 data from model run: ",acom2_model_run," from start dt: ",dt0_str," to stop dt: ",dtN_str)
+                cc_sess = cc.database.create_session()
+                temp    = cc.querying.getvar(expt=acom2_model_run,
+                                             variable='temp',
+                                             session=cc_sess,
+                                             frequency= var_freq,
+                                             start_time=dt0_str,
+                                             end_time=dtN_str).chunk(cnk_dict)
+                salt    = cc.querying.getvar(expt=acom2_model_run,
+                                             variable='salt',
+                                             session=cc_sess,
+                                             frequency= var_freq,
+                                             start_time=dt0_str,
+                                             end_time=dtN_str).chunk(cnk_dict)
+                mld     = cc.querying.getvar(expt=acom2_model_run,
+                                             variable='mld',
+                                             session=cc_sess,
+                                             frequency= var_freq,
+                                             start_time=dt0_str,
+                                             end_time=dtN_str).chunk(cnk_dict)
+                print("computing temperature derivative over time")
+                dTdt    = temp.differentiate("time")
+                print("generating regridding weights on the fly using xesmf via method: ", regrid_method)
+                print("\nsource grid, looks like this: ",G_ERA5)
+                lat_mom = temp.yt_ocean
+                lon_mom = temp.xt_ocean
+                G_tmp = xr.Dataset({'lon':lon_mom,'lat':lat_mom})
+                F_net = self.compute_era5_net_atmospheric_surface_heat_flux(G_dst              = G_tmp,
+                                                                            yr_str             = str(dt0.year),
+                                                                            return_daily_mean  = True,
+                                                                            regrid_method      = regrid_method,
+                                                                            regrid_periodicity = regrid_periodicity,
+                                                                            cnk_dict           = self.ERA5_chunking,
+                                                                            generate_weights   = generate_weights,
+                                                                            weights_file_name  = F_weights)
+                for j in range(len(F_net.time)):
+                    F_qdp  = os.path.join(P_qdp,'qdp_yd{:03d}.nc'.format(j))
+                    if os.path.exists(F_qdp):
+                        print("File exists: {:s}\n skip writing out".format(F_qdp))
+                        continue
+                    print("\n\ncurrent time: ",datetime.now().time())
+                    mld_j  = mld.isel(time=j).astype(np.single)
+                    Fnet_j = F_net.isel(time=j).astype(np.single)
+                    print("slicing temporal temperature derivative at the mixed layer depth")
+                    dTdt_j = dTdt.isel(time=j).sel(st_ocean=mld_j,method='nearest').drop('st_ocean').astype(np.single)
+                    print("slicing temporal temperature at the mixed layer depth")
+                    temp_j = temp.isel(time=j).sel(st_ocean=mld_j,method='nearest').drop('st_ocean').astype(np.single)
+                    print("slicing salinity temperature at the mixed layer depth")
+                    salt_j = salt.isel(time=j).sel(st_ocean=mld_j,method='nearest').drop('st_ocean').astype(np.single)
+                    print("computing ocean heat capacity at the mixed layer depth")
+                    cp_j = compute_ocn_heat_capacity_at_depth(salt_j, temp_j, mld_j, mld.yt_ocean).astype(np.single)
+                    print("computing ocean density at the mixed layer depth")
+                    rho_j = compute_ocn_density_at_depth(salt_j, temp_j, mld_j, mld.yt_ocean).astype(np.single)
+                    print("computing ocean heat flux at the mixed layer depth")
+                    qdp_j = compute_ocn_heat_flux_at_depth(rho_j, cp_j, mld_j, Fnet_j, dTdt_j)
+                    qdp_j = qdp_j.assign_coords(time=temp.time.isel(time=j).values).expand_dims('time').astype(np.single).to_dataset(name='qdp')
+                    print("writing out ocean heat flux netcdf to: ",F_qdp)
+                    print("\n this what qdp_j looks like before writing:\n",qdp_j)
+                    enc_dict  = {'shuffle':True,'zlib':True,'complevel':5}
+                    write_job = qdp_j.to_netcdf(F_qdp, unlimited_dims=['time'], compute=False, encoding={'qdp':enc_dict})
+                    with ProgressBar():
+                        print(f"Writing to {F_qdp}")
+                        write_job.compute()
+                sys_call = 'ncrcat {:s} {:s}/qdp_yd* {:s}'.format(ncrcat_opts,P_qdp,P_out)
+                os.system(sys_call)
+                if os.path.exists(P_out):
+                    print("successfully created {:s}\n deleting temporary files in {:s}".format(P_out,P_qdp))
+                    os.system("rm {:s}/*.nc".format(P_qdp))
+                    if self.acom2_coallate_for_cice_forcing_has_been_called:
+                        return xr.open_dataset(P_out)
+                    
+
+    ############################################################################################
+    def compute_era5_net_atmospheric_surface_heat_flux(self, G_dst='', yr_str='', mo_str='', return_daily_mean=True,
+                                                       regrid_method='', regrid_periodicity='',
+                                                       cnk_dict='', generate_weights='', weights_file_name=''):
+        '''
+        '''
+        if not G_dst:              G_dst              = self.cice_grid_prep()
+        if not regrid_method:      regrid_method      = self.ERA5_regrid_method
+        if not regrid_periodicity: regrid_periodicity = self.ERA5_periodicity
+        if not cnk_dict:           cnk_dict           = self.ERA5_chunking
+        if not generate_weights:   generate_weights   = self.ERA5_regen_weights
+        if not weights_file_name: 
+            F_weights = self.F_ERA5_weights
+        else:
+            F_weights = weights_file_name
+        if not yr_str:
+            dt_obj = define_datetime_object(start_date=self.ERA5_start_date, year_offset=0)
+            yr_str = year_string_from_datetime_object(dt_obj)
+        G_ERA5 = self.era5_grid_prep()
+        logging.info("generating regridding weights on the fly using xesmf via method: %s",regrid_method)
+        lw    = self.era5_load_and_regrid(era5_var           = 'msdwlwrf',
+                                          G_dst              = G_dst,
+                                          yr_str             = yr_str,
+                                          mo_str             = mo_str,
+                                          regrid_method      = regrid_method,
+                                          regrid_periodicity = regrid_periodicity,
+                                          cnk_dict           = cnk_dict,
+                                          generate_weights   = generate_weights,
+                                          weights_file_name  = F_weights)
+        sw    = self.era5_load_and_regrid(era5_var           = 'msdwswrf',
+                                          G_dst              = G_dst,
+                                          yr_str             = yr_str,
+                                          mo_str             = mo_str,
+                                          regrid_method      = regrid_method,
+                                          regrid_periodicity = regrid_periodicity,
+                                          cnk_dict           = cnk_dict,
+                                          generate_weights   = generate_weights,
+                                          weights_file_name  = F_weights)
+        sh    = self.era5_load_and_regrid(era5_var           = 'msshf',
+                                          G_dst              = G_dst,
+                                          yr_str             = yr_str,
+                                          mo_str             = mo_str,
+                                          regrid_method      = regrid_method,
+                                          regrid_periodicity = regrid_periodicity,
+                                          cnk_dict           = cnk_dict,
+                                          generate_weights   = generate_weights,
+                                          weights_file_name  = F_weights)
+        lh    = self.era5_load_and_regrid(era5_var           = 'mslhf',
+                                          G_dst              = G_dst,
+                                          yr_str             = yr_str,
+                                          mo_str             = mo_str,
+                                          regrid_method      = regrid_method,
+                                          regrid_periodicity = regrid_periodicity,
+                                          cnk_dict           = cnk_dict,
+                                          generate_weights   = generate_weights,
+                                          weights_file_name  = F_weights)
+        F_net = sw.msdwswrf - lw.msdwlwrf - lh.mslhf - sh.msshf
+        if return_daily_mean:
+            print("computing daily mean of atmospheric heat flux")
+            F_net = F_net.resample(time='1D').mean()
+        return F_net
+
+    #############################################################################################################
+    def southern_hemisphere_dataset_animation(self,ds,var_name=''):
+        '''
+        '''
+        from matplotlib.animation import FuncAnimation
+        import cmocean as cm
+        import cartopy.crs as ccrs
+        import cartopy.feature as cft
+        import matplotlib.path as mpath
+        land_50m = cft.NaturalEarthFeature('physical', 'land', '50m', edgecolor='black', facecolor='papayawhip', linewidth=0.5)
+        geolon_t = xr.open_dataset('/g/data/ik11/grids/ocean_grid_01.nc').geolon_t
+        geolat_t = xr.open_dataset('/g/data/ik11/grids/ocean_grid_01.nc').geolat_t
+        ds       = ds.assign_coords({'geolat_t': geolat_t, 'geolon_t': geolon_t})
+        ds['geolat_t'] = ds.geolat_t.swap_dims({'grid_y_T':'yt_ocean','grid_x_T':'xt_ocean'})
+        ds['geolon_t'] = ds.geolon_t.swap_dims({'grid_y_T':'yt_ocean','grid_x_T':'xt_ocean'})
+        plt.figure(figsize=(10, 9))
+        fig = plt.gcf()
+        ax = plt.axes(projection=projection)
+        ax.set_extent([-280, 80, -80, -35], crs=ccrs.PlateCarree())
+        ax.add_feature(land_50m, color=[0.8, 0.8, 0.8])
+        ax.coastlines(resolution='50m')
+        theta = np.linspace(0, 2*np.pi, 100)
+        center, radius = [0.5, 0.5], 0.5
+        verts = np.vstack([np.sin(theta), np.cos(theta)]).T
+        circle = mpath.Path(verts * radius + center)
+        ax.set_boundary(circle, transform=ax.transAxes)
+        cax = ds.isel(time=0)[var_name].plot(x='geolon_t', y='geolat_t',
+                                        transform=ccrs.PlateCarree(),
+                                        vmin=-500, vmax=500,
+                                        cmap=cm.cm.thermal,
+                                        cbar_kwargs = {'label': 'QDP (W/m^2)',
+                                                       'fraction': 0.03,
+                                                       'aspect': 15,
+                                                       'shrink': 0.7})
+        
