@@ -19,10 +19,6 @@ import metpy.calc        as mpc
 from datetime            import datetime, timedelta
 from dask.diagnostics    import ProgressBar
 
-############################################################################
-# globals
-ncrcat = os.path.join('/','apps','nco','5.0.5','bin','ncrcat')
-
 ################################################################################################################################################
 ######################################################## NON-CLASS FUNCTIONS #################################################################
 ################################################################################################################################################
@@ -555,7 +551,7 @@ class cice_prep:
                             :: default is "bilinear"
         Directories:
            The following inputs are useful directories
-           base data        :: "D_data"
+           base data        :: "D_tmp"
                             :: defines the base directory where data will be output
            BRAN data        :: "D_BRAN", location of native BRAN climatology data
            ERA5 data        :: "D_ERA5", location of native ERA5 climatology data
@@ -594,6 +590,8 @@ class cice_prep:
         # logging
         self.F_log              = PARAMS['F_log']
         logging.basicConfig(filename=self.F_log, encoding='utf-8', level=logging.DEBUG)
+        # ncrcat location
+        self.P_ncrcat           = PARAMS['P_ncrcat']
         # miscellaneous
         self.CICE_ver           = PARAMS['CICE_ver']
         self.start_date         = PARAMS['start_date']
@@ -621,34 +619,26 @@ class cice_prep:
         self.G_res        = PARAMS['G_res']
         # directories
         self.D01          = PARAMS['D01']
-        self.D_data       = os.path.join(PARAMS['D01'],'data')
-        self.D_grids      = os.path.join('/','g','data','jk72','da1339','grids')
-        self.D_weights    = os.path.join(self.D_grids,'weights')
+        self.D_tmp        = PARAMS['D_tmp']
+        self.D_grids      = PARAMS['D_grids']
+        self.D_weights    = PARAMS['D_weights']
         self.D_BRAN       = PARAMS['D_BRAN']
         self.D_ERA5       = PARAMS['D_ERA5']
         self.D_CICE       = PARAMS['D_CICE']
         self.D_graph      = PARAMS['D_graph']
         self.D_modin      = PARAMS['D_modin']
         self.D_frcg       = PARAMS['D_frcg']
-        self.D_acom2_out = PARAMS['D_access-om2_out']
-        self.D_CICE_IC    = os.path.join(PARAMS['D_CICE'],'input','AFIM','ic',self.G_res)
-        self.D_CICE_force = os.path.join(PARAMS['D_CICE'],'input','AFIM','forcing',self.G_res)
-        self.D_CICE_grid  = os.path.join(PARAMS['D_CICE'],'input','AFIM','grid',self.G_res)
+        self.D_acom2_out  = PARAMS['D_access-om2_out']
         # files
-        self.F_gx1ic         = os.path.join(self.D_CICE_grid,'gx1','iced_gx1_v6.2005-01-01.nc')
-        self.F_gx1bath       = os.path.join(self.D_CICE_grid,'gx1','global_gx1.bathy.nc')
-        self.F_aom2bath      = PARAMS['F_aom2bath']
-        self.F_G_CICE        = PARAMS['F_G_CICE']
-        self.F_G_CICE_vars   = PARAMS['F_G_CICE_vars']
-        self.F_G_CICE_original = PARAMS['F_G_CICE_original']
-        self.F_G_BRAN        = PARAMS['F_G_BRAN']
-        self.F_G_ERA5        = PARAMS['F_G_ERA5']
-        self.F_ERA5_weights  = PARAMS['F_ERA5_weights']
-        self.F_BRAN_t_weights= PARAMS['F_BRAN_t_weights']
-        self.F_BRAN_u_weights= PARAMS['F_BRAN_u_weights']
-        self.F_ERA5_reG_form = PARAMS['F_ERA5_reG_form']
+        self.F_G_CICE            = PARAMS['F_G_CICE']
+        self.F_G_BRAN            = PARAMS['F_G_BRAN']
+        self.F_G_ERA5            = PARAMS['F_G_ERA5']
+        self.F_ERA5_weights      = PARAMS['F_ERA5_weights']
+        self.F_BRAN_t_weights    = PARAMS['F_BRAN_t_weights']
+        self.F_BRAN_u_weights    = PARAMS['F_BRAN_u_weights']
+        self.F_ERA5_reG_form     = PARAMS['F_ERA5_reG_form']
         self.F_ERA5_reG_form_tmp = PARAMS["F_ERA5_reG_form_tmp"]
-        self.F_BRAN_reG_form = PARAMS['F_BRAN_reG_form']
+        self.F_BRAN_reG_form     = PARAMS['F_BRAN_reG_form']
         
     ############################################################################################
     def time_series_day_month_start_or_end(self,start_date='',n_months='',n_years='',month_start=True):
@@ -803,7 +793,7 @@ class cice_prep:
         return rg(dat_n[bran_var])
 
     ############################################################################################
-    def bran_load(self,bran_var='temp',D_base='',yr_str='',mo_str='',var_freq='',cnk_dict='',grid_type=''):
+    def bran_load(self,bran_var='temp',D_base='',yr_str='',mo_str='',var_freq='',cnk_dict='',grid_type='',mbp=False):
         '''
         '''
         #optional inputs
@@ -821,7 +811,10 @@ class cice_prep:
         elif grid_type=='u' and not cnk_dict:
             cnk_dict = self.BRAN_u_chunking
         if mo_str:
-            P_dat = os.path.join(D_BRAN,var_freq,'ocean_{var:s}_{yr:s}_{mo:s}.nc'.format(var=bran_var,yr=yr_str,mo=mo_str))
+            if mpb:
+                P_dat = os.path.join(D_BRAN,bran_var,'ocean_{var:s}_{yr:s}_{mo:s}.nc'.format(var=bran_var,yr=yr_str,mo=mo_str))
+            else:
+                P_dat = os.path.join(D_BRAN,var_freq,'ocean_{var:s}_{yr:s}_{mo:s}.nc'.format(var=bran_var,yr=yr_str,mo=mo_str))
             print("loading BRAN: {:s}".format(P_dat))
             return xr.open_dataset( P_dat )
         else:
@@ -868,7 +861,7 @@ class cice_prep:
         elif grid_type=='u':
             lat = 'ulat'
             lon = 'ulon'
-        G_CICE        = xr.open_dataset(self.F_G_CICE_original)
+        G_CICE        = xr.open_dataset(self.F_G_CICE)
         G_CICE['lat'] = (['ny','nx'],G_CICE[lat].values*(180/np.pi),{'units':'degrees_north','_FillValue':-2e8})
         G_CICE['lon'] = (['ny','nx'],G_CICE[lon].values*(180/np.pi),{'units':'degrees_east','_FillValue':-2e8})
         G_CICE        = G_CICE.drop(('ulat','ulon','tlat','tlon','clon_t','clat_t','clat_u','clon_u','angle','uarea'))
@@ -881,18 +874,19 @@ class cice_prep:
         '''
         '''
         if not start_date: start_date = self.ERA5_start_date
+        G_CICE = self.cice_grid_prep()
         for i in range(self.n_years):
             dt_obj = self.define_datetime_object(start_date=start_date, year_offset=i)
             yr_str = self.year_string_from_datetime_object(dt_obj)
-            t2m   = self.era5_load_and_regrid(era5_var = '2t'      , yr_str = yr_str,)
-            lw    = self.era5_load_and_regrid(era5_var = 'msdwlwrf', yr_str = yr_str,)
-            sw    = self.era5_load_and_regrid(era5_var = 'msdwswrf', yr_str = yr_str,)
-            mtpr  = self.era5_load_and_regrid(era5_var = 'mtpr'    , yr_str = yr_str,)
-            u10   = self.era5_load_and_regrid(era5_var = 'u10'     , yr_str = yr_str,)
-            v10   = self.era5_load_and_regrid(era5_var = 'v10'     , yr_str = yr_str,)
-            d2m   = self.era5_load_and_regrid(era5_var = '2d'      , yr_str = yr_str,)
-            sp    = self.era5_load_and_regrid(era5_var = 'sp'      , yr_str = yr_str,)
-            qsat = compute_sfc_qsat(d2m.d2m, sp.sp)
+            t2m    = self.era5_load_and_regrid(era5_var = '2t'      , yr_str = yr_str,)
+            lw     = self.era5_load_and_regrid(era5_var = 'msdwlwrf', yr_str = yr_str,)
+            sw     = self.era5_load_and_regrid(era5_var = 'msdwswrf', yr_str = yr_str,)
+            mtpr   = self.era5_load_and_regrid(era5_var = 'mtpr'    , yr_str = yr_str,)
+            u10    = self.era5_load_and_regrid(era5_var = 'u10'     , yr_str = yr_str,)
+            v10    = self.era5_load_and_regrid(era5_var = 'v10'     , yr_str = yr_str,)
+            d2m    = self.era5_load_and_regrid(era5_var = '2d'      , yr_str = yr_str,)
+            sp     = self.era5_load_and_regrid(era5_var = 'sp'      , yr_str = yr_str,)
+            qsat   = compute_sfc_qsat(d2m.d2m, sp.sp)
             print("Data array sizes (GB):")
             print("\t airtmp: ", t2m.t2m.astype(np.single).nbytes / (1024**3))
             print("\t dlwsfc: ", lw.msdwlwrf.astype(np.single).nbytes / (1024**3))
@@ -953,7 +947,7 @@ class cice_prep:
                 dt0_str   = i.strftime('%Y-%m-%d %H:%M')
                 dtN_str   = moN_dates[cnt].strftime('%Y-%m-%d %H:%M')
                 yrmo0_str = i.strftime('%Y_%m')
-                P_ATM_tmp = os.path.join(self.D_data,'ERA5','monthly',self.F_ERA5_reG_form_tmp.format(dt_str=yrmo0_str))
+                P_ATM_tmp = os.path.join(self.D_tmp,self.F_ERA5_reG_form_tmp.format(dt_str=yrmo0_str))
                 if not os.path.exists(P_ATM_tmp):
                     ATM_tmp   = ATM.sel(time=slice(dt0_str,dtN_str))
                     write_job = ATM_tmp.to_netcdf(P_ATM_tmp,unlimited_dims=['time'],compute=False,encoding={'airtmp':enc_dict,
