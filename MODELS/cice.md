@@ -75,9 +75,9 @@ There is no version 6 files provided *CICE Consortium*
 
 All three (GX3, GX1 and TX1) cases of *CICE Consortium Test Data* have the same structure of the initial condition files. Each case provides twelve files named for each month. The contents of those files show 56 gridded parameters over two and three dimensions (one categorical dimension and two spatial dimensions). There is not a time dimension. Hence time-step is implied as monthly with 12 files named for each month -- it is not known wether this is a snap snot or an average over the month. The table below is made in order to consolidate the initial condition parameters should at some point it be determined that initial conditions should be provided. The short name and description (the first two columns) are obtained from correlating the *CICE Consortium Test Data* information and the information found in the documentation, online [here](https://cice-consortium-cice.readthedocs.io/en/main/cice_index.html).
 
-  CICE6 short         CICE6 description                                    Dims           Units
-  ------------------- ---------------------------------------------------- -------------- --------
-  uvel                sea ice velocity, eastward                           ni, nj         m/s
+  | CICE6 short       |  CICE6 description                                 |    Dims      |   Units|
+  |-------------------|----------------------------------------------------|--------------|--------|
+  |uvel               | sea ice velocity, eastward                         | ni, nj       | m/s    |
   vvel                sea ice velocity, northward                          ni, nj         m/s
   scale~factor~       timestep offsets in shortwave radiation components   ni, nj         \-
   swvdr               incoming shortwave radiation, visible direct         ni, nj         W/m^2^
