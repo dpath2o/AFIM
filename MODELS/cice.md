@@ -117,12 +117,20 @@ All three (GX3, GX1 and TX1) cases of *CICE Consortium Test Data* have the same 
 
 # Climatological Datasets
 The following external datasets are relevant to stand-alone *CICE6*. Below is given information that is helpful to reference for this purpose.
-
-## COREv2
-[COREv2](https://data1.gfdl.noaa.gov/nomads/forms/core/COREv2/CIAF_v2.html) is a high quality, but now aging, global one degree and one-hour atmospheric climate dataset with from years 1948-2009.
-## C-GLORS
-The CMCC Global Ocean Physical Reanalysis System ([C-GLORS](http://c-glors.cmcc.it/index/index.html)) is used to simulate the state of the ocean in the last decades. It consists of a variational data assimilation system (OceanVar), capable of assimilating all in-situ observations along with altimetry data, and a forecast step performed by the ocean model NEMO coupled with the LIM2 sea-ice model. 
-## ERA5
+## Primary Datasets
+### JRA55do
+[JRA55do](https://climate.mri-jma.go.jp/pub/ocean/JRA55-do/) is a $1/2^{\circ}$ spatial and 3-hour temporal resolution atmospheric climate dataset. Version 1.5 has been regridded on the following variables:
+*  huss: Near-surface specific humidity
+*  prra: Rainfall flux
+*  prsn: Snowfall flux
+*  psl: Mean surface pressure
+*  rlds: Surface downwelling longwave flux
+*  rsds: Surface downwelling shortwave flux
+*  tas: Near-surface air temperature
+*  ts: Surface temperature
+*  uas: Eastward near-surface wind
+*  vas: Northward near-surface wind
+### ERA5
 $1/4^{\circ}$ spatial and 1-hour temporal resolutions. A thorough description of all the fields in ERA5 is given [here](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview).
 [This is also](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Table3), another good location to resource for information on the ERA5 fields.
 
@@ -134,89 +142,81 @@ $1/4^{\circ}$ spatial and 1-hour temporal resolutions. A thorough description of
 -   [ERA5 Atmospheric Pressure Level Analysis](https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.an.pl.grib1.table.web.txt)
 -   [ERA5 Accummulated Fields](https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.accumu.grib1.table.web.txt)
 -   [ERA5 Instantaneous Fields](https://rda.ucar.edu/datasets/ds633.0/docs/ds633.0.e5.oper.fc.sfc.instan.grib1.table.web.txt)
+#### The following ERA5 fields have been regridded:
+*  10u: Ten-metre zonal surface winds
+*  10v: Ten-metre meridional surface winds
+*  2d: Two-metre dew-point temperature
+*  2t: Two-metre air temperature
+*  metss: Mean eastward turbulent surface stress
+*  mntss: Mean northward turbulent surface stress
+*  mror: Mean runoff rate
+*  msdrswrf: Mean surface direct short-wave radiation flux
+*  msdrswrfcs: Mean surface direct short-wave radiation flux, clear sky
+*  msdwlwrf: Mean surface downward long-wave radiation flux
+*  msdwlwrfcs: Mean surface downward long-wave radiation flux, clear sky
+*  msdwswrf: Mean surface downward short-wave radiation flux
+*  msdwswrfcs: Mean surface downward short-wave radiation flux, clear sky
+*  msl: Mean sea level pressure
+*  msnlwrf: Mean surface net long-wave radiation flux
+*  msnlwrfcs: Mean surface net long-wave radiation flux, clear sky
+*  msnswrf: Mean surface net short-wave radiation flux
+*  msnswrfcs: Mean surface net short-wave radiation flux, clear sky
+*  msr: Mean snowfall rate
+*  msror: Mean surface runoff rate
+*  mtdwswrf: Mean top downward short-wave radiation flux
+*  mtnlwrf: Mean top net long-wave radiation flux
+*  mtnlwrfcs: Mean top net long-wave radiation flux, clear sky
+*  mtnswrf: Mean top net short-wave radiation flux
+*  mtnswrfcs: Mean top net short-wave radiation flux, clear sky
+*  mtpr: Mean total precipitation rate
+*  sp: Surface pressure
+*  z: Geopotential
+### BRAN2020
+[CSIRO maintained dataset](https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718), but available on gadi via the [BRAN data](https://dapds00.nci.org.au/thredds/catalog/gb6/BRAN/BRAN2020/catalog.html) repository.
 
-### The following ERA5 fields have been regridded:
-
-#### 10u: Ten-metre zonal surface winds
-#### 10v: Ten-metre meridional surface winds
-#### 2d: Two-metre dew-point temperature
-#### 2t: Two-metre air temperature
-#### metss: Mean eastward turbulent surface stress
-#### mntss: Mean northward turbulent surface stress
-#### mror: Mean runoff rate
-#### msdrswrf: Mean surface direct short-wave radiation flux
-#### msdrswrfcs: Mean surface direct short-wave radiation flux, clear sky
-#### msdwlwrf: Mean surface downward long-wave radiation flux
-#### msdwlwrfcs: Mean surface downward long-wave radiation flux, clear sky
-#### msdwswrf: Mean surface downward short-wave radiation flux
-#### msdwswrfcs: Mean surface downward short-wave radiation flux, clear sky
-#### msl: Mean sea level pressure
-#### msnlwrf: Mean surface net long-wave radiation flux
-#### msnlwrfcs: Mean surface net long-wave radiation flux, clear sky
-#### msnswrf: Mean surface net short-wave radiation flux
-#### msnswrfcs: Mean surface net short-wave radiation flux, clear sky
-#### msr: Mean snowfall rate
-#### msror: Mean surface runoff rate
-#### mtdwswrf: Mean top downward short-wave radiation flux
-#### mtnlwrf: Mean top net long-wave radiation flux
-#### mtnlwrfcs: Mean top net long-wave radiation flux, clear sky
-#### mtnswrf: Mean top net short-wave radiation flux
-#### mtnswrfcs: Mean top net short-wave radiation flux, clear sky
-#### mtpr: Mean total precipitation rate
-#### sp: Surface pressure
-#### z: Geopotential
-## JRA55do
-[JRA55do](https://climate.mri-jma.go.jp/pub/ocean/JRA55-do/) is a $1/2^{\circ}$ spatial and 3-hour temporal resolution atmospheric climate dataset. Version 1.5 has been regridded on the following variables:
-### huss: Near-surface specific humidity
-### prra: Rainfall flux
-### prsn: Snowfall flux
-### psl: Mean surface pressure
-### rlds: Surface downwelling longwave flux
-### rsds: Surface downwelling shortwave flux
-### tas: Near-surface air temperature
-### ts: Surface temperature
-### uas: Eastward near-surface wind
-### vas: Northward near-surface wind
-## MERRAv2
+## Secondary Datasets
+### COREv2
+[COREv2](https://data1.gfdl.noaa.gov/nomads/forms/core/COREv2/CIAF_v2.html) is a high quality, but now aging, global one degree and one-hour atmospheric climate dataset with from years 1948-2009.
+### C-GLORS
+The CMCC Global Ocean Physical Reanalysis System ([C-GLORS](http://c-glors.cmcc.it/index/index.html)) is used to simulate the state of the ocean in the last decades. It consists of a variational data assimilation system (OceanVar), capable of assimilating all in-situ observations along with altimetry data, and a forecast step performed by the ocean model NEMO coupled with the LIM2 sea-ice model. 
+### MERRAv2
 [MERRAv2](https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/) is a $1/2^{\circ}$ spatial and 1-hour temporal resolution atmospheric climate dataset maintained by NASA. gadi has a repository described
 [here](http://climate-cms.wikis.unsw.edu.au/MERRA2) and an [excel spreadsheet](file:///Users/dpath2o/PHD/references/data/MERRA2_variables.xlsx) has also been provided to further describe this repository. 2010-2019 are retained locally.
 
-### Surface Flux Diagnostics (\'flx\')
-### Radiation Diagnostics (\'rad\')
-### Single-level Diagnostics (\'slv\')
-### Ocean Surface Diagnostics (\'ocn\')
+*  Surface Flux Diagnostics (\'flx\')
+*  Radiation Diagnostics (\'rad\')
+*  Single-level Diagnostics (\'slv\')
+*  Ocean Surface Diagnostics (\'ocn\')
 Not presently on any projects associated with gadi. I have inquired with the one of the project leaders at UTas if there is any scope to \'host\' (for the lack of a better term) this portion of MERRAv2 in gadi project \'ua8\'
 
-## SOSE
+### SOSE
 The following files were downloaded from SOSE [Iteration 122](http://sose.ucsd.edu/BSOSE6_iter122_solution.html) (2013-2017).
+* Bottom pressure
+* Fresh water from atmosphere and land
+* Mixed layer depth
+* Sea surface height anomaly
+* Sea ice area
+* Sea ice covered part of SIqnet
+* Ocean surface freshwater flux
+* Sea ice effective ice thickness
+* Sea ice surface temperature over sea ice
+* Sea ice zonal transport effective thickness
+* Sea ice zonal velocity
+* Sea ice meridional transport effective thickness
+* Sea ice meridional velocity
+* Sea ice effective snow thickness
+* Sea ice snow precipitation over sea ice
+* Zonal wind stress at surface
+* Meridional wind stress at surface
+* Total salt flux
+* Total heat flux
+* Atmospheric surface pressure
 
-### Bottom pressure
-### Fresh water from atmosphere and land
-### Mixed layer depth
-### Sea surface height anomaly
-### Sea ice area
-### Sea ice covered part of SIqnet
-### Ocean surface freshwater flux
-### Sea ice effective ice thickness
-### Sea ice surface temperature over sea ice
-### Sea ice zonal transport effective thickness
-### Sea ice zonal velocity
-### Sea ice meridional transport effective thickness
-### Sea ice meridional velocity
-### Sea ice effective snow thickness
-### Sea ice snow precipitation over sea ice
-### Zonal wind stress at surface
-### Meridional wind stress at surface
-### Total salt flux
-### Total heat flux
-### Atmospheric surface pressure
-## BRAN2020
-[CSIRO maintained dataset](https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f9372_7752_2015_3718), but available on gadi via the [BRAN data](https://dapds00.nci.org.au/thredds/catalog/gb6/BRAN/BRAN2020/catalog.html) repository.
-
-## CAWCR
+### CAWCR
 The [CICE GitHub online setup guide](https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data#descriptions-of-tar-files) explains that ocean surface gravity wave information is necessary for
 floe size distribution (FSD). Explanation is given that illustrates from just one day with the only variable present from [WaveWatch III,](https://github.com/NOAA-EMC/WW3) `efreq` ($m^2/s$) the importance of including wave information in sea ice modelling. The [CICE Documentation](https://cice-consortium-cice.readthedocs.io/en/main/#) states the basic problem in sea ice modelling, the one CICE aims to model, is ice thickness distribution (ITD). However, CICE can optionally attempt to model FSD. It does this via a probability distribution function that charcacterises the variability of the horizontal floe size through vertical and lateral growth, new freezing, breaking waves and welding of floes. This work is based on \\[@horvatPrognosticModelSeaice2015]
 -   Available to download from [THREDDS](https://data-cbr.csiro.au/thredds/catalog/catch_all/CMAR_CAWCR-Wave_archive/CAWCR_Wave_Hindcast_aggregate/gridded/catalog.html)
+
 # Pre-processing Forcing and Initial Conditions
 ## Grids
 There are two approaches to providing a stand-alone grid to CICE6: using someone elses or creating one from scratch. Methods accounting both for my research with CICE6 stand-alone are given below.
