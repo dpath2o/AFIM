@@ -1,8 +1,10 @@
 
 # Antarctic Fast Ice Modelling (AFIM)
 Admittedly not the most creative name.
+# Table of contents
+1. [Background](#background)
 
-# Background 
+# Background <a name="background"></a>
 In early 2020 I choose to embark on a PhD in oceanography. This decision was heavily influenced by my background and my interest in [ocean modelling](http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf), the [Southern Ocean](https://tos.org/oceanography/issue/volume-25-issue-03) and [Antarctica](https://www.scar.org). This was spurned largely from my
 [previous](https://www.cencoos.org) [professional life](http://imos.org.au) as a [coastal oceanographer](https://scripps.ucsd.edu/research/topics/coastal-oceanography). That previous pursuit centred mainly around a remote sensing technology called [high frequency radar](https://tos.org/oceanography/assets/docs/10-2_paduan1.pdf) which is, and continues to be, used in a broad number of ways to understand the dynamics (the motion of the of the upper ocean) through the digital application of signal processing of the physical representaiton of a Doppler shifted Bragg frequency. 
 
