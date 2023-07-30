@@ -15,7 +15,20 @@ In mid-2021 I was accepted and enrolled as a part-time PhD student at the [Unive
 
 After a brief interlude in the first quarter of 2022 I\'m now pursuing fast ice modelling with an eye towards incorporating it into [COSIMA](http://cosima.org.au).
 # Administration
-[./admin/admin.md](./admin/admin.md)
+## Supervisors/Advisors/GRC 
+### Primary
+* [Alex Fraser](mailto:alexandar.fraser@utas.edu.au)
+### Secondary
+* [Will Hobbs](mailto:will.hobbs@utas.edu.au)
+* [Paul Spence](mailto:paul.spence@utas.edu.au)
+* [Siobhan O'Farrell](mailto:siobhan.o'farrell@csiro.au)
+### Graduate Research Coordinator
+* [Max Nikurashin](mailto:maximum.nikurashin@utas.edu.au)
+## [Student Systems and Support Servies](https://www.utas.edu.au/research-admin/graduate-research/current-candidates/support-services)
+### [iGrad](https://researchstudent.utas.edu.au/login.aspx?ReturnUrl=%2f)
+iGRad is the electronic Candidature Management system. This system gives you, your supervisors and Graduate Research Coordinator (GRC) an overview of your candidature, monitors your progress and is where you will submit your Research Plans, Annual Review Progress Reports and Thesis for Examination.
+### [eStudent Login](https://estudent.utas.edu.au/T1SMProduction/WebApps/eStudent/login.aspx?ReturnUrl=%2fT1SMProduction%2fWebApps%2feStudent%2fdefault.aspx) 
+Access the eStudent self-service portal to manage your personal details, enrol in your coursework units and monitor your current enrolment and academic progress. Fees information is also accessed via eStudent. For Domestic candidates, the eStudent portal is where you will complete your electronic Commonwealth Assistance Form (eCAF) and pay your Student Services and Amenities Fees (SSAF).
 # Research 
 ## Grounded Icebergs
 [./research/grounded_icebergs.org](./research/grounded_icebergs.org)
