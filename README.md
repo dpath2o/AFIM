@@ -1,8 +1,11 @@
 
 # Antarctic Fast Ice Modelling (AFIM)
-Admittedly not the most creative name.
 # Table of contents
 1. [Background](#background)
+2. [Administration](#administration)
+3. [Research](#research)
+4. [Computing](#computing)
+5. [Meetings](#meetings)
 
 # Background <a name="background"></a>
 In early 2020 I choose to embark on a PhD in oceanography. This decision was heavily influenced by my background and my interest in [ocean modelling](http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf), the [Southern Ocean](https://tos.org/oceanography/issue/volume-25-issue-03) and [Antarctica](https://www.scar.org). This was spurned largely from my
@@ -16,8 +19,8 @@ In mid-2021 I was accepted and enrolled as a part-time PhD student at the [Unive
 [Australian Antarctic Partnership Program](https://aappartnership.org.au). I spent the second-half of that year [reading](./references) and constructing an initial [Reasearch Plan](./ResearchPlan/doc/researchplan.pdf). However, as all good projects evolve, it became apparent that I should be aligning my project with a well-supported Australian sea ice modelling effort, not only for my own support, but also to aim for a more impactful goal of incorporating fast ice into a nationally recognised/supported model.
 
 After a brief interlude in the first quarter of 2022 I\'m now pursuing fast ice modelling with an eye towards incorporating it into [COSIMA](http://cosima.org.au).
-# Administration
-## Supervisors/Advisors/GRC 
+# Administration <a name="administration"></a>
+## Supervisors & Advisors
 ### Primary
 * [Alex Fraser](mailto:alexandar.fraser@utas.edu.au)
 ### Secondary
@@ -31,7 +34,7 @@ After a brief interlude in the first quarter of 2022 I\'m now pursuing fast ice 
 iGRad is the electronic Candidature Management system. This system gives you, your supervisors and Graduate Research Coordinator (GRC) an overview of your candidature, monitors your progress and is where you will submit your Research Plans, Annual Review Progress Reports and Thesis for Examination.
 ### [eStudent Login](https://estudent.utas.edu.au/T1SMProduction/WebApps/eStudent/login.aspx?ReturnUrl=%2fT1SMProduction%2fWebApps%2feStudent%2fdefault.aspx) 
 Access the eStudent self-service portal to manage your personal details, enrol in your coursework units and monitor your current enrolment and academic progress. Fees information is also accessed via eStudent. For Domestic candidates, the eStudent portal is where you will complete your electronic Commonwealth Assistance Form (eCAF) and pay your Student Services and Amenities Fees (SSAF).
-# Research 
+# Research <a name="research"></a>
 ## Grounded Icebergs
 [./research/grounded_icebergs.org](./research/grounded_icebergs.org)
 ## Modelling 
@@ -41,9 +44,9 @@ Access the eStudent self-service portal to manage your personal details, enrol i
 [./MODELS/metroms.md](./MODELS/mom.md)
 ## Data
 [./data.md](./data.md)
-# UTas Library Services
+## UTas Library Services
 [UTas Research](https://www.utas.edu.au/library/research)
-# Meetings and Correspondence
-[./admin/meetings.md](./admin/meetings.md)
-# Computing
+# Computing <a name="computing"></a>
 [./admin/computing.md](./admin/computing.md)
+# Meetings <a name="meetings"></a>
+[./admin/meetings.md](./admin/meetings.md)
