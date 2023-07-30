@@ -34,6 +34,37 @@ After a brief interlude in the first quarter of 2022 I\'m now pursuing fast ice 
 iGRad is the electronic Candidature Management system. This system gives you, your supervisors and Graduate Research Coordinator (GRC) an overview of your candidature, monitors your progress and is where you will submit your Research Plans, Annual Review Progress Reports and Thesis for Examination.
 ### [eStudent Login](https://estudent.utas.edu.au/T1SMProduction/WebApps/eStudent/login.aspx?ReturnUrl=%2fT1SMProduction%2fWebApps%2feStudent%2fdefault.aspx) 
 Access the eStudent self-service portal to manage your personal details, enrol in your coursework units and monitor your current enrolment and academic progress. Fees information is also accessed via eStudent. For Domestic candidates, the eStudent portal is where you will complete your electronic Commonwealth Assistance Form (eCAF) and pay your Student Services and Amenities Fees (SSAF).
+### [My Learning Online (MyLO)](https://www.utas.edu.au/mylo) 
+MyLO is the online learning environment at UTAS. MyLO stands for My Learning Online. Units that you can access via MyLO include any Induction modules you are required to complete and the compulsory units of the Graduate Certificate in Research (X5A):
+-   [XGR501](https://www.utas.edu.au/courses/dvc-research/units/xgr501-introduction-to-higher-degree-by-research): Introduction to Higher Degree by Research
+-   [XGR502](https://www.utas.edu.au/courses/dvc-research/units/xgr502-communicating-research): Communicating Research
+## Graduate Research Office 
+[Graduate Research Office for College of Science and Engineering](mailto:GraduateResearch.CoSE@utas.edu.au) telephone :: +61(0)3 6226 8559 Sandy Bay Campus Centenary Building Level 3, Room 303 SANDY BAY TAS 7005 [Sandy Bay Campus Map](file:///Users/dpath2o/Documents/orgs/figs/Sandy-Bay-Campus-Guide.pdf)
+## Institute of Marine and Antarctic Studies (IMAS)
+### Key Personnel
+1.  Director of IMAS
+    -   Terry Bailey
+2.  Head of Oceans and Cryosphere
+    -   Neil Holbrook
+## [Australian Antarctic Program Project (AAPP)](http://aappartnership.org.au)
+1.  [Theme 3: Future of Antarctic Sea Ice, Krill and Ecosystems](https://aappartnership.org.au/theme-3/)
+    1.  Project 6: Sea Ice
+        1.  Leaders
+            -   [Alex Fraser](https://aappartnership.org.au/our-researchers/#fraser)
+            -   [Petra Heil](hhttps://aappartnership.org.au/our-contributed-staff/#heil)
+2.  Personnel
+    1.  AAPP Director: [Nathan Bindoff](mailto:n.bindoff@utas.edu.au)
+    2.  Specific Administration Manager: [Wenneke Ten Hout](mailto:wenneke.tenhout@utas.edu.au)
+## Funding 
+### ADF 
+1.  CDF Fellowship
+    <https://defence.gov.au/adc/CDR/fellowships.asp>
+    1.  [CDF Application Guidelines]()
+    2.  [Justification](https://navalinstitute.com.au/understanding-australias-polar-attraction/)
+### Academic
+1.  [RTP](https://drive.google.com/file/d/1hFuX_UWDZJjOI3CbTUE5Vub5vQnrqbr7/view?usp=sharing)
+2.  [AAPP Scholarship Top-up](https://universitytasmania.sharepoint.com/:w:/r/sites/AustralianAntarcticProgramPartnership/_layouts/15/Doc.aspx?sourcedoc=%7BD4678FC5-A847-4219-AC35-A9D8E68D830A%7D&file=AAPP%20top-up%20scholarship_FINAL_20200501.docx&action=default&mobileredirect=true)
+3.  [SCAR](https://www.scar.org/awards/fellowships/overview/)
 # Research <a name="research"></a>
 ## Grounded Icebergs
 [./research/grounded_icebergs.org](./research/grounded_icebergs.org)
@@ -44,6 +75,27 @@ Access the eStudent self-service portal to manage your personal details, enrol i
 [./MODELS/metroms.md](./MODELS/mom.md)
 ## Data
 [./data.md](./data.md)
+## Affiliations and Linkages
+### Consortium on Ocean-Sea Ice Modelling in Australia ([COSIMA](http://cosima.org.au))
+### [ACCESS-NRI](https://www.access-nri.org.au)
+### [Institute of Low Temperature Science Hokkaido University](http://www.lowtem.hokudai.ac.jp/en/index.html)
+1. Kazuya Kusahara; oceanographer and GFD modeller with extensive modelling knowledge of Southern Ocean
+2. Keiichiro (Kay) Ohshima; oceanographer with extensive knowledge of Southern Ocean and observations and experiments. Mooring data has been provided to me for use in the Cape Darnley region. 
+### [Naval Research Laboratory](https://www.nrl.navy.mil)
+1. Rick Allard; oceanographer and GFD modeller using CICE6 and investigating various aspects of sea ice-ocean interactions at both poles
+### Fellow PhD Students
+1.  Noah Sheppard Day; investigating wave interaction of CICE6 in relation to the Antarctic marginal ice zone 
+### Relevant sea ice, oceanographic and GFD modelling experts 
+1. Elizabeth Hunke -- Primary CICE author, Los Alamos National Lab 
+2. Jean-Francois Lemieux -- Environment Canada
+3. Till Soya Rasmussen -- Danish Meteorological Institute
+4. Stewart Allen -- BoM
+5. Gary Brassington -- BoM
+6. Paul Sandery -- CSIRO
+7. Jan Lieser -- BoM
+8. Andrew Kiss -- ANU
+9. Robert Massom -- AAPP
+10. Phil Reid -- BoM
 ## UTas Library Services
 [UTas Research](https://www.utas.edu.au/library/research)
 # Computing <a name="computing"></a>
