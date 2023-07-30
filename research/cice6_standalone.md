@@ -11,5 +11,10 @@
 | 06 Jul 23 | 1yr MLD off | $MLD = nil$     |                |
 |           |             | $NDTE = 240$    |                |
 |           |             | $trestore = 90$ |                |
-|           |             |                 |                |
+| 08 Jul 23 | 1yr BRAN    | $MLD = 50m$     |                |
+|           |             | $NDTE = 3710$   |                |
+|           |             | $trestore = 90$ |                |
+| 08 Jul 23 | 1yr NDTE    | $MLD = 50m$     |                |
+|           |             | $NDTE = 3710$   |                |
+|           |             | $trestore = 90$ |                |
 # Results <a name="results"></a>
