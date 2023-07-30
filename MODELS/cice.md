@@ -13,702 +13,67 @@ Describes details and helpful when pulling in more forcing data than the *defaul
 variables have reasonable static defaults that will be used in *default* mode. To advance the forcing, the subroutines `get_forcing_atmo` and `get_forcing_ocn` are called each timestep from the step loop. That subroutine computes the forcing year (`fyear`), calls the appropriate forcing data method, and then calls `prepare_forcing` which converts the input data fields to model forcing fields.
 ## GX3 Description
 Global Three-Degree Cartesian
-### GX3 Grid
-
-Header from the [GX3 grid file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/grid_gx3.nc):
-
-> netcdf grid~gx3~ { dimensions: y = 116 ; x = 100 ; variables: double
-> ulat(y, x) ; ulat:units = \"rad\" ; double ulon(y, x) ; ulon:units =
-> \"rad\" ; double htn(y, x) ; htn:units = \"cm\" ; double hte(y, x) ;
-> hte:units = \"cm\" ; double hus(y, x) ; hus:units = \"cm\" ; double
-> huw(y, x) ; huw:units = \"cm\" ; double angle(y, x) ; angle:units =
-> \"rad\" ;
->
-> // global attributes: :history = \"Tue Apr 17 16:11:59 2007: ncatted
-> -astandard~name~,,d,, global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:11:38 2007: ncatted -aunits,huw,c,c,cm
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:11:34 2007: ncatted
-> -aunits,hus,c,c,cm global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:11:30 2007: ncatted -aunits,hte,c,c,cm
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:11:27 2007: ncatted
-> -aunits,htn,c,c,cm global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:09:35 2007: ncatted -aunits,ulat,o,c,rad
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:09:32 2007: ncatted
-> -aunits,ulon,o,c,rad global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:09:19 2007: ncatted -aunits,angle,c,c,rad
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:09:04 2007: ncatted
-> -aunits,ulon,c,c,rad global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:08:59 2007: ncatted -aunits,ulat,c,c,rad
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:06:06 2007: ncatted
-> -aunits,ulon,c,c,degree~east~ global~gx3~.grid.nc`\n`{=latex}\", \"Tue
-> Apr 17 16:05:53 2007: ncatted -aunits,ulat,c,c,degree~north~
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:05:15 2007:
-> ncrename -aunits,standard~name~ global~gx3~.grid.nc`\n`{=latex}\",
-> \"Tue Apr 17 16:04:40 2007: ncatted -aunits,ulon,c,c,longitude
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 16:04:31 2007: ncatted
-> -aunits,ulat,c,c,latitude global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr
-> 17 16:02:44 2007: ncatted -aConventions,global,c,c,CF-1.0
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 15:55:18 2007: ncap -O
-> -sulat=ulat\*0.0174533;ulon=ulon\*0.0174533;htn=htn\*100.0;hte=hte\*100.0;hus=hus\*100.0;huw=huw\*100.0;angle=angle\*0.0174533
-> global~gx3~.grid.nc temp.nc`\n`{=latex}\", \"Tue Apr 17 15:34:39 2007:
-> ncrename -vunspecified,ulat -vunspecified~2~,ulon -vunspecified~3~,htn
-> -vunspecified~4~,hte -vunspecified~5~,hus -vunspecified~6~,huw
-> -vunspecified~7~,angle temp.nc`\n`{=latex}\", \"Tue Apr 17 15:33:13
-> 2007: ncks -x -a -vlongitude,latitude,unspecified~1~,t
-> global~gx3~.grid.nc temp.nc`\n`{=latex}\", \"Tue Apr 17 15:32:26 2007:
-> ncrename -dlongitude,x -dlatitude,y global~gx3~.grid.nc`\n`{=latex}\",
-> \"Tue Apr 17 15:31:50 2007: ncwa -O -aunspecified~1~
-> global~gx3~.grid.nc global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17
-> 15:31:34 2007: ncwa -at global~gx3~.grid.nc
-> global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 15:31:16 2007: ncatted
-> -a,,d,, global~gx3~.grid.nc`\n`{=latex}\", \"Tue Apr 17 15:30:50 BST
-> 2007 - XCONV V1.91 Development\" ; :Conventions = \"CF-1.0\" ; }
-
-### GX3 Bathymetry
-
-Header from the [GX3 bathymetry
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/global_gx3.bathy.nc):
-
-> netcdf global~gx3~.bathy { dimensions: nj = 116 ; ni = 100 ;
-> variables: float Bathymetry(nj, ni) ; Bathymetry:long~name~ = \"ocean
-> bathymetry for grounding scheme\" ; Bathymetry:units = \"m\" ;
-> Bathymetry:coordinates = \"TLON TLAT\" ; Bathymetry:missing~value~ =
-> 1.e+30f ; Bathymetry:~FillValue~ = 1.e+30f ; float TLAT(nj, ni) ;
-> TLAT:long~name~ = \"T grid center latitude\" ; TLAT:units =
-> \"degrees~north~\" ; TLAT:missing~value~ = 1.e+30f ; TLAT:~FillValue~
-> = 1.e+30f ; float TLON(nj, ni) ; TLON:long~name~ = \"T grid center
-> longitude\" ; TLON:units = \"degrees~east~\" ; TLON:missing~value~ =
-> 1.e+30f ; TLON:~FillValue~ = 1.e+30f ;
->
-> // global attributes: :title = \"ocean bathymetry for grounding
-> scheme\" ; :source = \"created from bathy~ORCA025LIM~.std\" ; :history
-> = \"Mon Oct 29 15:57:35 2018: ncatted -a conventions,global,d,,
-> gx3~bathy~.nc gx3~bathyTP12~.nc`\n`{=latex}\", \"Mon Oct 29 15:56:16
-> 2018: ncatted -a source,global,o,c,created from bathy~ORCA025LIM~.std
-> gx3~bathyTP10~.nc gx3~bathyTP11~.nc`\n`{=latex}\", \"Mon Oct 29
-> 15:54:19 2018: ncatted -a contents,global,d,, gx3~bathyTP9~.nc
-> gx3~bathyTP10~.nc`\n`{=latex}\", \"Mon Oct 29 15:53:44 2018: ncatted
-> -a comment,global,d,, gx3~bathyTP8~.nc gx3~bathyTP9~.nc`\n`{=latex}\",
-> \"Mon Oct 29 15:53:36 2018: ncatted -a comment2,global,d,,
-> gx3~bathyTP7~.nc gx3~bathyTP8~.nc`\n`{=latex}\", \"Mon Oct 29 15:53:10
-> 2018: ncatted -a comment3,global,d,, gx3~bathyTP6~.nc
-> gx3~bathyTP7~.nc`\n`{=latex}\", \"Mon Oct 29 15:27:25 2018: ncatted -a
-> title,global,o,c,ocean bathymetry for grounding scheme
-> gx3~bathyTP5~.nc gx3~bathyTP6~.nc`\n`{=latex}\", \"Mon Oct 29 15:11:32
-> 2018: ncks -x -v time,time~bounds~ gx3~bathyTP4~.nc
-> gx3~bathyTP5~.nc`\n`{=latex}\", \"Mon Oct 29 15:10:09 2018: ncatted -a
-> units,Bathymetry,o,c,m gx3~bathyTP3~.nc
-> gx3~bathyTP4~.nc`\n`{=latex}\", \"Mon Oct 29 15:06:47 2018: ncatted -a
-> long~name~,Bathymetry,o,c,ocean bathymetry for grounding scheme
-> gx3~bathyTP2~.nc gx3~bathyTP3~.nc`\n`{=latex}\", \"Mon Oct 29 14:57:31
-> 2018: ncks -x -v time~bounds~ gx3~bathyTP~.nc
-> gx3~bathyTP2~.nc`\n`{=latex}\", \"Mon Oct 29 14:57:06 2018: ncks -x -v
-> time gx3~bathyTP~.nc gx3~bathyTP2~.nc`\n`{=latex}\", \"Mon Oct 29
-> 14:55:17 2018: ncks -x -v ULAT,ULON gx3~bathyTP~.nc
-> gx3~bathyTP2~.nc`\n`{=latex}\", \"Thu Oct 25 18:26:01 2018: ncrename
-> -v tarea,Bathymetry tempgx3.nc`\n`{=latex}\", \"Thu Oct 25 17:26:26
-> 2018: ncks -x -v hi tempgx3.nc tempgx3out.nc`\n`{=latex}\", \"This
-> dataset was created on 2018-10-25 at 17:24:50.3\" ; :io~flavor~ =
-> \"io~netcdf~\" ; :NCO = \"4.4.2\" ; }
-
-### GX3 Land Mask
-
-Header from the [GX3 land mask
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/kmt_gx3.nc):
-
-> netcdf kmt~gx3~ { dimensions: y = 116 ; x = 100 ; variables: float
-> kmt(y, x) ; kmt:units = \"1\" ;
->
-> // global attributes: :history = \"Tue Apr 17 16:12:58 2007: ncatted
-> -astandard~name~,,d,, global~gx3~.kmt.nc`\n`{=latex}\", \"Tue Apr 17
-> 16:01:24 2007: ncatted -astandard~name~,,c,c,model~levelnumber~
-> global~gx3~.kmt.nc`\n`{=latex}\", \"Tue Apr 17 16:00:39 2007: ncatted
-> -aunits,,c,c,1 global~gx3~.kmt.nc`\n`{=latex}\", \"Tue Apr 17 15:58:38
-> 2007: ncatted -aConventions,global,c,c,CF-1.0
-> global~gx3~.kmt.nc`\n`{=latex}\", \"Tue Apr 17 15:27:57 2007: ncrename
-> -dlongitude,x -dlatitude,y temp.nc`\n`{=latex}\", \"Tue Apr 17
-> 15:27:39 2007: ncwa -aunspecified~1~ temp.nc temp.nc`\n`{=latex}\",
-> \"Tue Apr 17 15:27:32 2007: ncwa -at temp.nc temp.nc`\n`{=latex}\",
-> \"Tue Apr 17 15:26:58 2007: ncrename -vunspecified,kmt
-> temp.nc`\n`{=latex}\", \"Tue Apr 17 15:26:21 2007: ncks -C
-> -vunspecified global~gx3~.kmt.nc temp.nc`\n`{=latex}\", \"Tue Apr 17
-> 15:25:37 2007: ncatted -a,,d,, global~gx3~.kmt.nc`\n`{=latex}\", \"Tue
-> Apr 17 15:25:13 BST 2007 - XCONV V1.91 Development\" ; :Conventions =
-> \"CF-1.0\" ; }
 
 ### GX3 Forcing
-
-Three datasets are used for forcing: [*GX3 JRA55*]{.spurious-link
-target="GX3 JRA55"}, [*GX3 NCAR*]{.spurious-link target="GX3 NCAR"}, and
-[*GX3 WW3*]{.spurious-link target="GX3 WW3"}
-
+Three datasets are used for forcing [*GX3 JRA55*]
 1.  GX3 JRA55
-
-    Separated into five yearly NetCDF files that have three-hourly data
-    -- i.e.
-    [8XDAILY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/JRA55/8XDAILY).
-
-    Dictories contents:
-
-    > -rw-r-xr-- 1 dpath2o staff 905M 22 Feb 2020
-    > JRA55~gx303hrforcing2005~.nc -rw-r-xr-- 1 dpath2o staff 905M 22
-    > Feb 2020 JRA55~gx303hrforcing2006~.nc -rw-r-xr-- 1 dpath2o staff
-    > 905M 22 Feb 2020 JRA55~gx303hrforcing2007~.nc -rw-r-xr-- 1 dpath2o
-    > staff 907M 22 Feb 2020 JRA55~gx303hrforcing2008~.nc -rw-r-xr-- 1
-    > dpath2o staff 905M 22 Feb 2020 JRA55~gx303hrforcing2009~.nc
-
-    Here is the header information of the first file
-
-    > netcdf JRA55~gx303hrforcing2005~ { dimensions: time = UNLIMITED ;
-    > // (2920 currently) nj = 116 ; ni = 100 ; variables: float
-    > time(time) ; time:long~name~ = \"model time\" ; time:units =
-    > \"days since 1900-12-31 00:00:00\" ; time:calendar = \"standard\"
-    > ; float LON(nj, ni) ; LON:long~name~ = \"Longitude\" ; LON:units =
-    > \"degrees~east~\" ; float LAT(nj, ni) ; LAT:long~name~ =
-    > \"Latitude\" ; LAT:units = \"degrees~north~\" ; float glbrad(time,
-    > nj, ni) ; glbrad:long~name~ = \"downward surface shortwave\" ;
-    > glbrad:units = \"W/m^2^\" ; glbrad:coordinates = \"LON LAT\" ;
-    > glbrad:~FillValue~ = 1.e+30f ; float dlwsfc(time, nj, ni) ;
-    > dlwsfc:long~name~ = \"downward surface longwave\" ; dlwsfc:units =
-    > \"W/m^2^\" ; dlwsfc:coordinates = \"LON LAT\" ; dlwsfc:~FillValue~
-    > = 1.e+30f ; float wndewd(time, nj, ni) ; wndewd:long~name~ =
-    > \"x-ward winds\" ; wndewd:units = \"m/s\" ; wndewd:coordinates =
-    > \"LON LAT\" ; wndewd:~FillValue~ = 1.e+30f ; float wndnwd(time,
-    > nj, ni) ; wndnwd:long~name~ = \"y-ward winds\" ; wndnwd:units =
-    > \"m/s\" ; wndnwd:coordinates = \"LON LAT\" ; wndnwd:~FillValue~ =
-    > 1.e+30f ; float airtmp(time, nj, ni) ; airtmp:long~name~ = \"Air
-    > temperature\" ; airtmp:units = \"Kelvin\" ; airtmp:coordinates =
-    > \"LON LAT\" ; airtmp:~FillValue~ = 1.e+30f ; float spchmd(time,
-    > nj, ni) ; spchmd:long~name~ = \"Specific Humidity\" ; spchmd:units
-    > = \"kg/kg\" ; spchmd:coordinates = \"LON LAT\" ;
-    > spchmd:~FillValue~ = 1.e+30f ; float ttlpcp(time, nj, ni) ;
-    > ttlpcp:long~name~ = \"Precipitation\" ; ttlpcp:units = \"kg m-2
-    > s-1\" ; ttlpcp:coordinates = \"LON LAT\" ; ttlpcp:~FillValue~ =
-    > 1.e+30f ; }
-
 2.  GX3 NCAR
-
-    Separate into
-    [4XDAILY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/4XDAILY)
-    (i.e. six-hourly) and
-    [monthly](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/NCAR_bulk/MONTHLY)
-    files, which are all binary, and hence NIL header information is
-    listed here. The contents of the files can be dedecued from the file
-    names:
-
+   The contents of the files can be dedecued from the file names:
       filename   my guess
       ---------- ------------------------------
       cldf       cloud
       prec       precipitation
       swdn       net downward shortwave
       dn10       dew-point temperature @ 10 m
-      q~10~      specific humidity @ 10 m
-      t~10~      air temperature @ 10 m
-      u~10~      zonal wind speed @ 10 m
-      v~10~      meridional wind speed @ 10 m
-
-    The directory contents are provided as:
-
-    1.  GX3 NCAR 4XDAILY
-
-        ```{=org}
-        #+BEGIN_QUOTE:
-        ```
-        -rw-r--r-- 1 dpath2o staff 1.1M 12 Dec 2003 cldf.1997.dat
-        -rw-r--r-- 1 dpath2o staff 1.1M 12 Dec 2003 prec.1997.dat
-        -rw-r--r-- 1 dpath2o staff 1.1M 12 Dec 2003 swdn.1997.dat
-
-        ```{=org}
-        #+END_QUOTE
-        ```
-
-    2.  GX3 NCAR MONTHLY
-
-        > -rw-r--r-- 1 dpath2o staff 129M 12 Dec 2003 dn10.1997.dat
-        > -rw-r--r-- 1 dpath2o staff 129M 12 Dec 2003 q~10~.1997.dat
-        > -rw-r--r-- 1 dpath2o staff 129M 12 Dec 2003 t~10~.1997.dat
-        > -rw-r--r-- 1 dpath2o staff 129M 12 Dec 2003 u~10~.1997.dat
-        > -rw-r--r-- 1 dpath2o staff 129M 12 Dec 2003 v~10~.1997.dat
+      q10        specific humidity @ 10 m
+      t10        air temperature @ 10 m
+      u10        zonal wind speed @ 10 m
+      v10        meridional wind speed @ 10 m
 
 3.  GX3 WW3
-
-    [One wave spectral
-    file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx3/WW3/ww3.20100101_efreq_remapgx3.nc)
-    is given with a total of four time steps and 25 frequencies. The
-    header is provided as:
-
-    > time = UNLIMITED ; // (4 currently) ni = 100 ; nj = 116 ; f = 25 ;
-    > variables: double time(time) ; time:standard~name~ = \"time\" ;
-    > time:long~name~ = \"julian day (UT)\" ; time:units = \"days since
-    > 1990-01-01 00:00:00\" ; time:calendar = \"standard\" ; time:axis =
-    > \"T\" ; float TLON(nj, ni) ; TLON:standard~name~ = \"longitude\" ;
-    > TLON:long~name~ = \"longitude\" ; TLON:units = \"degrees~east~\" ;
-    > TLON:~CoordinateAxisType~ = \"Lon\" ; float TLAT(nj, ni) ;
-    > TLAT:standard~name~ = \"latitude\" ; TLAT:long~name~ =
-    > \"latitude\" ; TLAT:units = \"degrees~north~\" ;
-    > TLAT:~CoordinateAxisType~ = \"Lat\" ; float f(f) ; f:long~name~ =
-    > \"wave~frequency~\" ; f:units = \"s-1\" ; f:axis = \"Hz\" ;
-    > f:standard~name~ = \"wave~frequency~\" ; float efreq(time, f, nj,
-    > ni) ; efreq:standard~name~ =
-    > \"power~spectraldensityofsurfaceelevation~\" ; efreq:long~name~ =
-    > \"wave~elevationspectrum~\" ; efreq:units = \"m2 s\" ;
-    > efreq:coordinates = \"TLAT TLON\" ; efreq:~FillValue~ =
-    > 9.96921e+36f ; efreq:missing~value~ = 9.96921e+36f ;
-    > efreq:globwave~name~ =
-    > \"power~spectraldensityofsurfaceelevation~\" ;
-    >
-    > // global attributes: :CDI = \"Climate Data Interface version
-    > 1.9.7.1 (<http://mpimet.mpg.de/cdi>)\" ; :history = \"Wed Sep 04
-    > 15:05:27 2019: cdo chname,ef,efreq ww3.20100101~efremapgx3~.nc
-    > ww3.20100101~efreqremapgx3~.nc`\nWed`{=latex} Sep 04 13:37:05
-    > 2019: cdo remapnn,../gx3~tgrid~\_.nc ww3.20100101~ef~\_.nc
-    > ww3.20100101~efremapgx3~.nc`\nWed`{=latex} Sep 4 13:36:54 2019:
-    > ncks -x -v MAPSTA ww3.20100101~ef~.nc
-    > ww3.20100101~ef~\_.nc`\nWed`{=latex} Sep 4 13:28:07 2019: ncatted
-    > -a coordinates,ef,c,c,longitude latitude ww3.20100101~ef~.nc\" ;
-    > :Conventions = \"CF-1.6\" ; :WAVEWATCH~IIIversionnumber~ =
-    > \"5.16\" ; :WAVEWATCH~IIIswitches~ = \"F90 NOGRB NOPA LRB4 NC4 PR3
-    > UQ FLX0 LN1 ST4 BT1 DB1 MLIM NL1 TR0 BS0 REF0 IS0 IC4 XX0 WNT1
-    > WNX1 CRT1 CRX1 O0 O1 O2 O3 O4 O5 O6 O7 O11 SHRD\" ; :product~name~
-    > = \"ww3.20100101~ef~.nc\" ; :area = \"POP 1 degree grid (gx1v6b)\"
-    > ; :latitude~resolution~ = \"n/a\" ; :longitude~resolution~ =
-    > \"n/a\" ; :southernmost~latitude~ = \"-79.22052\" ;
-    > :northernmost~latitude~ = \"89.70641\" ; :westernmost~longitude~ =
-    > \"1.4731102E-02\" ; :easternmost~longitude~ = \"359.9960\" ;
-    > :minimum~altitude~ = \"-12000 m\" ; :maximum~altitude~ = \"9000
-    > m\" ; :altitude~resolution~ = \"n/a\" ; :start~date~ =
-    > \"2010-01-01 00:00:00\" ; :stop~date~ = \"2010-01-01 18:00:00\" ;
-    > :NCO = \"netCDF Operators version 4.7.9 (Homepage =
-    > <http://nco.sf.net>, Code = <http://github.com/nco/nco>)\" ; :CDO
-    > = \"Climate Data Operators version 1.9.7.1
-    > (<http://mpimet.mpg.de/cdo>)\" ; }
+    One wave spectral file is given with a total of four time steps and 25 frequencies. 
 
 ### GX3 Initial Conditions
-
-There are a total of 12 initial condition files provided. With each file
-containing NIL time step across the This is interesting to me as I
-thought only one would be required. Nonetheless, the header of the first
-file is given below.
-
-> netcdf iced~gx3v6~.2005-01-01 { dimensions: ni = 100 ; nj = 116 ; ncat
-> = 5 ; variables: double uvel(nj, ni) ; double vvel(nj, ni) ; double
-> scale~factor~(nj, ni) ; double swvdr(nj, ni) ; double swvdf(nj, ni) ;
-> double swidr(nj, ni) ; double swidf(nj, ni) ; double strocnxT(nj, ni)
-> ; double strocnyT(nj, ni) ; double stressp~1~(nj, ni) ; double
-> stressp~2~(nj, ni) ; double stressp~3~(nj, ni) ; double stressp~4~(nj,
-> ni) ; double stressm~1~(nj, ni) ; double stressm~2~(nj, ni) ; double
-> stressm~3~(nj, ni) ; double stressm~4~(nj, ni) ; double
-> stress12~1~(nj, ni) ; double stress12~2~(nj, ni) ; double
-> stress12~3~(nj, ni) ; double stress12~4~(nj, ni) ; double iceumask(nj,
-> ni) ; double sst(nj, ni) ; double frzmlt(nj, ni) ; double
-> frz~onset~(nj, ni) ; double fsnow(nj, ni) ; double aicen(ncat, nj, ni)
-> ; double vicen(ncat, nj, ni) ; double vsnon(ncat, nj, ni) ; double
-> Tsfcn(ncat, nj, ni) ; double iage(ncat, nj, ni) ; double FY(ncat, nj,
-> ni) ; double alvl(ncat, nj, ni) ; double vlvl(ncat, nj, ni) ; double
-> apnd(ncat, nj, ni) ; double hpnd(ncat, nj, ni) ; double ipnd(ncat, nj,
-> ni) ; double dhs(ncat, nj, ni) ; double ffrac(ncat, nj, ni) ; double
-> fbrn(ncat, nj, ni) ; double first~ice~(ncat, nj, ni) ; double
-> sice001(ncat, nj, ni) ; double qice001(ncat, nj, ni) ; double
-> sice002(ncat, nj, ni) ; double qice002(ncat, nj, ni) ; double
-> sice003(ncat, nj, ni) ; double qice003(ncat, nj, ni) ; double
-> sice004(ncat, nj, ni) ; double qice004(ncat, nj, ni) ; double
-> sice005(ncat, nj, ni) ; double qice005(ncat, nj, ni) ; double
-> sice006(ncat, nj, ni) ; double qice006(ncat, nj, ni) ; double
-> sice007(ncat, nj, ni) ; double qice007(ncat, nj, ni) ; double
-> qsno001(ncat, nj, ni) ;
->
-> // global attributes: :istep1 = 87672 ; :time = 315619200. ;
-> :time~forc~ = 315619200. ; :nyr = 11 ; :month = 1 ; :mday = 1 ; :sec =
-> 0 ; :created = \"2021-03-19\" ; :history = \"Wed Apr 7 12:29:43 2021:
-> ncatted --attribute created,global,c,c,2021-03-19
-> iced~gx3v6~.2005-01-01.nc\" ; :NCO = \"netCDF Operators version 4.9.5
-> (Homepage = <http://nco.sf.net>, Code = <http://github.com/nco/nco>)\"
-> ; }
+There are a total of 12 initial condition files provided. With each file containing NIL time step across the This is interesting to me as I thought only one would be required. Nonetheless, the header of the first file is given below.
 
 ## GX1 Description
-
 Global One-Degree Cartesian
-
-### GX1 Grid
-
-For some reason the [GX1 grid
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/grid_gx1.bin)
-is in binary format and the header information is not easily accessible.
-
-### GX1 Bathymetry
-
-Header from the [GX1 bathymetry
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/grid_gx1.bin):
-
-> netcdf global~gx1~.bathy { dimensions: nj = 384 ; ni = 320 ;
-> variables: float Bathymetry(nj, ni) ; Bathymetry:long~name~ = \"ocean
-> bathymetry for grounding scheme\" ; Bathymetry:units = \"m\" ;
-> Bathymetry:coordinates = \"TLON TLAT\" ; Bathymetry:missing~value~ =
-> 1.e+30f ; Bathymetry:~FillValue~ = 1.e+30f ; float TLAT(nj, ni) ;
-> TLAT:long~name~ = \"T grid center latitude\" ; TLAT:units =
-> \"degrees~north~\" ; TLAT:missing~value~ = 1.e+30f ; TLAT:~FillValue~
-> = 1.e+30f ; float TLON(nj, ni) ; TLON:long~name~ = \"T grid center
-> longitude\" ; TLON:units = \"degrees~east~\" ; TLON:missing~value~ =
-> 1.e+30f ; TLON:~FillValue~ = 1.e+30f ;
->
-> // global attributes: :title = \"ocean bathymetry for grounding
-> scheme\" ; :source = \"created from bathy~ORCA025LIM~.std\" ; :history
-> = \"Mon Oct 29 16:01:01 2018: ncatted -a source,global,o,c,created
-> from bathy~ORCA025LIM~.std gx1~bathyTP10~.nc
-> gx1~bathyTP11~.nc`\n`{=latex}\", \"Mon Oct 29 16:00:02 2018: ncatted
-> -a contents,global,d,, gx1~bathyTP9~.nc
-> gx1~bathyTP10~.nc`\n`{=latex}\", \"Mon Oct 29 15:59:40 2018: ncatted
-> -a comment,global,d,, gx1~bathyTP8~.nc gx1~bathyTP9~.nc`\n`{=latex}\",
-> \"Mon Oct 29 15:59:33 2018: ncatted -a comment2,global,d,,
-> gx1~bathyTP7~.nc gx1~bathyTP8~.nc`\n`{=latex}\", \"Mon Oct 29 15:59:26
-> 2018: ncatted -a comment3,global,d,, gx1~bathyTP6~.nc
-> gx1~bathyTP7~.nc`\n`{=latex}\", \"Mon Oct 29 15:59:13 2018: ncatted -a
-> conventions,global,d,, gx1~bathyTP5~.nc
-> gx1~bathyTP6~.nc`\n`{=latex}\", \"Mon Oct 29 15:27:15 2018: ncatted -a
-> title,global,o,c,ocean bathymetry for grounding scheme
-> gx1~bathyTP4~.nc gx1~bathyTP5~.nc`\n`{=latex}\", \"Mon Oct 29 15:13:20
-> 2018: ncks -x -v time,time~bounds~ gx1~bathyTP3~.nc
-> gx1~bathyTP4~.nc`\n`{=latex}\", \"Mon Oct 29 15:13:04 2018: ncatted -a
-> units,Bathymetry,o,c,m gx1~bathyTP2~.nc
-> gx1~bathyTP3~.nc`\n`{=latex}\", \"Mon Oct 29 15:12:46 2018: ncatted -a
-> long~name~,Bathymetry,o,c,ocean bathymetry for grounding scheme
-> gx1~bathy~.nc gx1~bathyTP2~.nc`\n`{=latex}\", \"Fri Oct 26 13:28:47
-> 2018: ncrename -v tarea,Bathymetry tempgx1.nc`\n`{=latex}\", \"Thu Oct
-> 25 17:17:42 2018: ncks -x -v
-> ANGLE,ANGLET,NCAT,ULAT,ULON,VGRDa,aice,blkmask,hi,taubx,tauby,time~bounds~,tmask,uarea,uvel,vvel
-> tempgx1.nc tempgx1out.nc`\n`{=latex}\", \"This dataset was created on
-> 2018-10-22 at 18:12:11.5\" ; :io~flavor~ = \"io~netcdf~\" ; :NCO =
-> \"4.4.2\" ; }
-
-### GX1 Land Mask
-
-For some reason the [GX1 land mask
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx1/kmt_gx1.bin)
-is in binary format and the header information is not easily accessible.
 
 ### GX1 Forcing
 
-Four datasets are used for forcing: [*GX1 CESM*]{.spurious-link
-target="GX1 CESM"}, [*GX1 COREII*]{.spurious-link target="GX1 COREII"},
-[*GX1 JRA55*]{.spurious-link target="GX1 JRA55"}, and \[\[GX1 WOA\]\]. I
-find it interesting to note that WaveWatch III data is not provided.
+Four datasets are used for forcing *GX1 CESM*
 
 1.  GX1 CESM
-
-    One file provides monthly summarised oceanographic data in the
-    following format. Note that the time dimension is only 12 increments
-    in length.
-
-    > netcdf ocean~forcingclim2Dgx1~ { dimensions: time = 12 ; nj = 384
-    > ; ni = 320 ; variables: double area(nj, ni) ; area:long~name~ =
-    > \"area of grid cell in radians squared\" ; area:units = \"area\" ;
-    > int mask(nj, ni) ; mask:units = \"unitless\" ; mask:long~name~ =
-    > \"domain maskr\" ; mask:~FillValue~ = -2147483647 ;
-    > mask:missing~value~ = -2147483647 ; double xc(nj, ni) ;
-    > xc:missing~value~ = 9.96920996838687e+36 ; xc:~FillValue~ =
-    > 9.96920996838687e+36 ; xc:units = \"degrees east\" ; xc:long~name~
-    > = \"longitude of grid cell center\" ; double yc(nj, ni) ;
-    > yc:missing~value~ = 9.96920996838687e+36 ; yc:~FillValue~ =
-    > 9.96920996838687e+36 ; yc:units = \"degrees north\" ;
-    > yc:long~name~ = \"latitude of grid cell center\" ; float
-    > time(time) ; time:calendar = \"noleap\" ; time:long~name~ =
-    > \"observation time\" ; time:units = \"days since 0001-01-01
-    > 00:00:00\" ; float S(time, nj, ni) ; S:units = \"ppt\" ;
-    > S:long~name~ = \"salinity\" ; S:~FillValue~ = 9.96921e+36f ; float
-    > T(time, nj, ni) ; T:units = \"degC\" ; T:long~name~ =
-    > \"temperature\" ; T:~FillValue~ = 9.96921e+36f ; float U(time, nj,
-    > ni) ; U:units = \"m/s\" ; U:long~name~ = \"u ocean current\" ;
-    > U:~FillValue~ = 9.96921e+36f ; float V(time, nj, ni) ; V:units =
-    > \"m/s\" ; V:long~name~ = \"v ocean current\" ; V:~FillValue~ =
-    > 9.96921e+36f ; float dhdx(time, nj, ni) ; dhdx:units = \"m/m\" ;
-    > dhdx:long~name~ = \"ocean surface slope: zonal\" ;
-    > dhdx:~FillValue~ = 9.96921e+36f ; float dhdy(time, nj, ni) ;
-    > dhdy:units = \"m/m\" ; dhdy:long~name~ = \"ocean surface slope:
-    > meridional\" ; dhdy:~FillValue~ = 9.96921e+36f ; float hblt(time,
-    > nj, ni) ; hblt:units = \"m\" ; hblt:long~name~ = \"boundary layer
-    > depth\" ; hblt:~FillValue~ = 9.96921e+36f ; float qdp(time, nj,
-    > ni) ; qdp:units = \"W/m^2^\" ; qdp:long~name~ = \"ocean heat flux
-    > convergence\" ; qdp:~FillValue~ = 9.96921e+36f ;
-    >
-    > // global attributes: :creation~date~ = \"Tue Feb 17 09:45:48 MST
-    > 2015\" ; :comment = \"This data is on the displaced pole grid
-    > gx1v5\" ; :calendar = \"standard\" ; :author = \"D. Bailey\" ;
-    > :note3 = \"qdp is computed from depth summed ocean column\" ;
-    > :note2 = \"all fields interpolated to T-grid\" ; :note1 = \"fields
-    > computed from years 402 to 1510 monthly means from pop\" ;
-    > :description = \"Input data for DOCN7 mixed layer model from
-    > b.e11.B1850C5CN.f09~g16~.005\" ; :source = \"pop~frc~.ncl\" ;
-    > :conventions = \"CCSM data model domain description\" ; :title =
-    > \"Monthly averaged ocean forcing from POP output\" ; :history =
-    > \"Wed Mar 24 11:42:29 2021: ncatted --glb~attadd~
-    > description2=From the CESM-LE control run as in Kay et al. 2015
-    > pop~frc~.gx1.nc\" ; :description2 = \"From the CESM-LE control run
-    > as in Kay et al. 2015\" ; :NCO = \"netCDF Operators version 4.9.5
-    > (Homepage = <http://nco.sf.net>, Code =
-    > <http://github.com/nco/nco>)\" ; }
+    One file provides monthly summarised oceanographic data in the netCDF format. Note that the time dimension is only 12 increments in length.
 
 2.  GX1 COREII
-
-    These files are given as binary with two sub-directories
-    [4XDAILY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/4XDAILY)
-    and
-    [MONTHLY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/MONTHLY).
-    The file names indicate the representative variable contained
-    within.
-
-    Here is the directory listing of the
-    [4XDAILY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/4XDAILY/):
-
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 q~10~.2005.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 q~10~.2006.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 q~10~.2007.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 q~10~.2008.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 q~10~.2009.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 t~10~.2005.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 t~10~.2006.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 t~10~.2007.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 t~10~.2008.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 t~10~.2009.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 u~10~.2005.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 u~10~.2006.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 u~10~.2007.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 u~10~.2008.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 31 Aug 2017 u~10~.2009.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 v~10~.2005.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 v~10~.2006.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 v~10~.2007.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 30 Aug 2017 v~10~.2008.dat
-    > -rwxr-xr-x 1 dpath2o staff 1.3G 31 Aug 2017 v~10~.2009.dat
-
-    Here is the listing of the
-    [MONTHLY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/COREII/MONTHLY):
-
-    > -rw-r--r-- 1 dpath2o staff 11M 12 Jul 2012 cldf.omip.dat
-    > -rw-r--r-- 1 dpath2o staff 11M 12 Jul 2012 prec.nmyr.dat
+    These files are given as binary with two sub-directories, 4XDAILY and MONTHLY. The file names indicate the representative variable contained within.
 
 3.  GX1 JRA55
-
-    The forcing files are nearly identical to
-    [*GX3 JRA55*]{.spurious-link target="GX3 JRA55"} with the exception
-    of the change in grid. This is most notable in comparing the file
-    sizes -- [*GX3 JRA55*]{.spurious-link target="GX3 JRA55"} files are
-    0.9GB and these GX1 JRA55 files are 9.5GB. Here is the directory
-    listing of the
-    [8XDAILY](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/JRA55/8XDAILY/):
-
-    > -rw-r--r--@ 1 dpath2o staff 9.4G 22 Aug 2019
-    > JRA55~03hrforcing2005~.nc -rw-r--r-- 1 dpath2o staff 9.4G 22 Aug
-    > 2019 JRA55~03hrforcing2006~.nc -rw-r--r-- 1 dpath2o staff 9.4G 22
-    > Aug 2019 JRA55~03hrforcing2007~.nc -rw-r--r-- 1 dpath2o staff 9.4G
-    > 22 Aug 2019 JRA55~03hrforcing2008~.nc -rw-r--r-- 1 dpath2o staff
-    > 9.4G 22 Aug 2019 JRA55~03hrforcing2009~.nc
-
-    Here is the header information of the first file:
-
-    > netcdf JRA55~03hrforcing2005~ { dimensions: nj = 384 ; ni = 320 ;
-    > time = UNLIMITED ; // (2920 currently) variables: float LAT(nj,
-    > ni) ; LAT:long~name~ = \"Latitude\" ; LAT:units =
-    > \"degrees~north~\" ; float LON(nj, ni) ; LON:long~name~ =
-    > \"Longitude\" ; LON:units = \"degrees~east~\" ; float airtmp(time,
-    > nj, ni) ; airtmp:long~name~ = \"Air temperature\" ; airtmp:units =
-    > \"Kelvin\" ; airtmp:coordinates = \"LON LAT\" ; airtmp:~FillValue~
-    > = 1.e+30f ; float dlwsfc(time, nj, ni) ; dlwsfc:long~name~ =
-    > \"downward surface longwave\" ; dlwsfc:units = \"W/m^2^\" ;
-    > dlwsfc:coordinates = \"LON LAT\" ; dlwsfc:~FillValue~ = 1.e+30f ;
-    > float glbrad(time, nj, ni) ; glbrad:long~name~ = \"downward
-    > surface shortwave\" ; glbrad:units = \"W/m^2^\" ;
-    > glbrad:coordinates = \"LON LAT\" ; glbrad:~FillValue~ = 1.e+30f ;
-    > float spchmd(time, nj, ni) ; spchmd:long~name~ = \"Specific
-    > Humidity\" ; spchmd:units = \"kg/kg\" ; spchmd:coordinates = \"LON
-    > LAT\" ; spchmd:~FillValue~ = 1.e+30f ; float time(time) ;
-    > time:long~name~ = \"model time\" ; time:units = \"days since
-    > 1900-12-31 00:00:00\" ; time:calendar = \"standard\" ; float
-    > ttlpcp(time, nj, ni) ; ttlpcp:long~name~ = \"Total precipiation\"
-    > ; ttlpcp:units = \"kg m-2 s-1\" ; ttlpcp:coordinates = \"LON LAT\"
-    > ; ttlpcp:~FillValue~ = 1.e+30f ; ttlpcp:comment = \"derived from
-    > bucket dumps\" ; float wndewd(time, nj, ni) ; wndewd:long~name~ =
-    > \"x-ward winds\" ; wndewd:units = \"m/s\" ; wndewd:coordinates =
-    > \"LON LAT\" ; wndewd:~FillValue~ = 1.e+30f ; float wndnwd(time,
-    > nj, ni) ; wndnwd:long~name~ = \"y-ward winds\" ; wndnwd:units =
-    > \"m/s\" ; wndnwd:coordinates = \"LON LAT\" ; wndnwd:~FillValue~ =
-    > 1.e+30f ;
-    >
-    > // global attributes: :history = \"Mon Aug 5 15:31:32 2019: ncks
-    > -v time,LON,LAT,glbrad,dlwsfc,wndewd,wndnwd,airtmp,spchmd,ttlpcp
-    > JRA55~03hrforcing20050101~.00.netrad.nc
-    > JRA55~03hrforcing20050101~.00.nc\" ; :NCO = \"netCDF Operators
-    > version 4.7.5 (Homepage = <http://nco.sf.net>, Code =
-    > <http://github.com/nco/nco>)\" ; }
+    The forcing files are nearly identical to *GX3 JRA55*
 
 4.  GX1 WOA
-
-    Monthly statistics for silicate and nitrate are provided across two
-    files. The header information for these two files is provided.
-
-    [Nitrate](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/WOA/MONTHLY/nitrate_climatologyWOA_gx1v6f_20150107.nc)
-    file:
-
-    > netcdf nitrate~climatologyWOAgx1v6f20150107~ { dimensions: time =
-    > 12 ; nj = 384 ; ni = 320 ; variables: float time(time) ; int
-    > nj(nj) ; int ni(ni) ; float TLAT(nj, ni) ; TLAT:~FillValue~ =
-    > 1.e+30f ; float TLON(nj, ni) ; TLON:~FillValue~ = 1.e+30f ; double
-    > nitrate(time, nj, ni) ; nitrate:~FillValue~ = 1.00000001504747e+30
-    > ; }
-
-    [Silicate](file:///Volumes/ioa03/cice-dirs/input/CICE_data/forcing/gx1/WOA/MONTHLY/silicate_climatologyWOA_gx1v6f_20150107.nc)
-    file:
-
-    > netcdf silicate~climatologyWOAgx1v6f20150107~ { dimensions: time =
-    > 12 ; nj = 384 ; ni = 320 ; variables: float time(time) ;
-    > time:~FillValue~ = 9.96921e+36f ; int nj(nj) ; int ni(ni) ; float
-    > TLAT(nj, ni) ; TLAT:~FillValue~ = 1.e+30f ; float TLON(nj, ni) ;
-    > TLON:~FillValue~ = 1.e+30f ; float silicate(time, nj, ni) ;
-    > silicate:~FillValue~ = 1.e+30f ; }
+    Monthly statistics for silicate and nitrate are provided across twofiles. 
 
 ### GX1 Initial Conditions
+These files are nearly identical to the *GX3 Initial Conditions*
 
-These files are nearly identical to the
-[*GX3 Initial Conditions*]{.spurious-link
-target="GX3 Initial Conditions"} **other than the underlying grid**. So
-there are a total of 12 initial condition files provided. With each file
-containing NIL time step across the This is interesting to me as I
-thought only one would be required. Nonetheless, the header of the first
-file is given below.
-
-> netcdf iced~gx1v6~.2005-01-01 { dimensions: ni = 320 ; nj = 384 ; ncat
-> = 5 ; variables: double uvel(nj, ni) ; double vvel(nj, ni) ; double
-> scale~factor~(nj, ni) ; double swvdr(nj, ni) ; double swvdf(nj, ni) ;
-> double swidr(nj, ni) ; double swidf(nj, ni) ; double strocnxT(nj, ni)
-> ; double strocnyT(nj, ni) ; double stressp~1~(nj, ni) ; double
-> stressp~2~(nj, ni) ; double stressp~3~(nj, ni) ; double stressp~4~(nj,
-> ni) ; double stressm~1~(nj, ni) ; double stressm~2~(nj, ni) ; double
-> stressm~3~(nj, ni) ; double stressm~4~(nj, ni) ; double
-> stress12~1~(nj, ni) ; double stress12~2~(nj, ni) ; double
-> stress12~3~(nj, ni) ; double stress12~4~(nj, ni) ; double iceumask(nj,
-> ni) ; double sst(nj, ni) ; double frzmlt(nj, ni) ; double
-> frz~onset~(nj, ni) ; double fsnow(nj, ni) ; double aicen(ncat, nj, ni)
-> ; double vicen(ncat, nj, ni) ; double vsnon(ncat, nj, ni) ; double
-> Tsfcn(ncat, nj, ni) ; double iage(ncat, nj, ni) ; double FY(ncat, nj,
-> ni) ; double alvl(ncat, nj, ni) ; double vlvl(ncat, nj, ni) ; double
-> apnd(ncat, nj, ni) ; double hpnd(ncat, nj, ni) ; double ipnd(ncat, nj,
-> ni) ; double dhs(ncat, nj, ni) ; double ffrac(ncat, nj, ni) ; double
-> fbrn(ncat, nj, ni) ; double first~ice~(ncat, nj, ni) ; double
-> sice001(ncat, nj, ni) ; double qice001(ncat, nj, ni) ; double
-> sice002(ncat, nj, ni) ; double qice002(ncat, nj, ni) ; double
-> sice003(ncat, nj, ni) ; double qice003(ncat, nj, ni) ; double
-> sice004(ncat, nj, ni) ; double qice004(ncat, nj, ni) ; double
-> sice005(ncat, nj, ni) ; double qice005(ncat, nj, ni) ; double
-> sice006(ncat, nj, ni) ; double qice006(ncat, nj, ni) ; double
-> sice007(ncat, nj, ni) ; double qice007(ncat, nj, ni) ; double
-> qsno001(ncat, nj, ni) ;
->
-> // global attributes: :istep1 = 87672 ; :time = 315619200. ;
-> :time~forc~ = 315619200. ; :nyr = 11 ; :month = 1 ; :mday = 1 ; :sec =
-> 0 ; :created = \"2021-03-30\" ; :history = \"Fri Apr 2 08:48:44 2021:
-> ncatted --attribute created,global,c,c,2021-03-30
-> iced~gx1v6~.2005-01-01.nc\" ; :NCO = \"netCDF Operators version 4.9.5
-> (Homepage = <http://nco.sf.net>, Code = <http://github.com/nco/nco>)\"
-> ; }
 
 ## TX1 Description
 
 Global One-Degree Tri-polar
 
 ### TX1 Grid
-
-Here this [grid
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/grid_tx1.nc)
-is given in both NetCDF and binary format, hence here is the header
-contents of this file. This header contents indicates are fair amount
-more information than the [*GX3 Grid*]{.spurious-link target="GX3 Grid"}
-file.
-
-> netcdf grid~tx1~ { dimensions: nx = 360 ; ny = 300 ; nc = 4 ;
-> variables: double ulat(ny, nx) ; ulat:units = \"radians\" ; ulat:title
-> = \"Latitude of U points\" ; double ulon(ny, nx) ; ulon:units =
-> \"radians\" ; ulon:title = \"Longitude of U points\" ; double tlat(ny,
-> nx) ; tlat:units = \"radians\" ; tlat:title = \"Latitude of T points\"
-> ; double tlon(ny, nx) ; tlon:units = \"radians\" ; tlon:title =
-> \"Longitude of T points\" ; double htn(ny, nx) ; htn:units = \"cm\" ;
-> htn:title = \"Width of T cells on N side\" ; double hte(ny, nx) ;
-> hte:units = \"cm\" ; hte:title = \"Width of T cells on E side\" ;
-> double hun(ny, nx) ; hun:units = \"cm\" ; hun:title = \"Width of U
-> cells on N side\" ; double hue(ny, nx) ; hue:units = \"cm\" ;
-> hue:title = \"Width of U cells on E side\" ; double angle(ny, nx) ;
-> angle:units = \"radians\" ; angle:title = \"Rotation Angle of U
-> cells\" ; double angleT(ny, nx) ; angleT:units = \"radians\" ;
-> angleT:title = \"Rotation Angle of T cells\" ; double tarea(ny, nx) ;
-> tarea:units = \"m^2^\" ; tarea:title = \"area in m^2^ for T cells\" ;
-> double uarea(ny, nx) ; uarea:units = \"m^2^\" ; uarea:title = \"area
-> in m^2^ for U cells\" ; double lont~bonds~(nc, ny, nx) ;
-> lont~bonds~:units = \"radians\" ; lont~bonds~:title = \"long. of T
-> cell vertices\" ; double latt~bonds~(nc, ny, nx) ; latt~bonds~:units =
-> \"radians\" ; latt~bonds~:title = \"lat. of T cell vertices\" ; double
-> lonu~bonds~(nc, ny, nx) ; lonu~bonds~:units = \"radians\" ;
-> lonu~bonds~:title = \"long. of U cell vertices\" ; double
-> latu~bonds~(nc, ny, nx) ; latu~bonds~:units = \"radians\" ;
-> latu~bonds~:title = \"lat. of U cell vertices\" ; }
-
-### TX1 Bathymetry
-
-The [bathymetry
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/tx1_bathy.nc)
-for the tri-polar grid is pretty straight forward:
-
-> netcdf tx1~bathy~ { dimensions: dim~j~ = 240 ; dim~i~ = 360 ;
-> variables: double Bathymetry(dim~j~, dim~i~) ; Bathymetry:long~name~ =
-> \"ocean bathymetry for grounding scheme\" ; Bathymetry:units = \"m\" ;
-> Bathymetry:~FillValue~ = 1.e+30 ; double lat(dim~j~, dim~i~) ;
-> lat:long~name~ = \"Latitude\" ; lat:units = \"degrees~north~\" ;
-> lat:~FillValue~ = 1.e+30 ; double lon(dim~j~, dim~i~) ; lon:long~name~
-> = \"Longitude\" ; lon:units = \"degrees~east~\" ; lon:~FillValue~ =
-> 1.e+30 ;
->
-> // global attributes: :history = \"Wed Feb 10 21:25:30 2021: ncatted
-> -a units,Bathymetry,o,c,m temptx1.nc tx1~bathy~.nc`\n`{=latex}\",
-> \"Wed Feb 10 21:24:26 2021: ncatted -a long~name~,Bathymetry,o,c,ocean
-> bathymetry for grounding scheme temptx1.nc temptx1.nc`\n`{=latex}\",
-> \"Wed Feb 10 21:23:52 2021: ncks -x -v dx,dy,mask temptx1.nc
-> temptx1.nc`\n`{=latex}\", \"Wed Feb 10 21:22:19 2021: ncrename -v
-> ang,Bathymetry temptx1.nc\" ; :NCO = \"4.4.2\" ; }
-
-### TX1 Land Mask
-
-The [land mask
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/tx1/kmt_tx1.bin)
-is binary and cannot be easily shown here.
+Here this grid file is given in both NetCDF and binary format. The header contents indicates are fair amount more information than the *GX3 Grid* file.
 
 ### TX1 Forcing
-
-The only dataset utilised for the tri-polar forcing is JRA55. It is
-equivalent in it\'s structure and content to the other two JRA55
-([*GX3 JRA55*]{.spurious-link target="GX3 JRA55"} and
-[*GX1 JRA55*]{.spurious-link target="GX1 JRA55"}), but just re-gridded
-onto the [*TX1 Grid*]{.spurious-link target="TX1 Grid"}.
-
+The only dataset utilised for the tri-polar forcing is JRA55. It is equivalent in it\'s structure and content to the other two JRA55 (*GX3 JRA55* and *GX1 JRA55*), but just re-gridded onto the *TX1 Grid*.
 ### TX1 Initial Conditions
-
-There is no version 6 files provided [*CICE Consortium*]{.spurious-link
-target="CICE Consortium"}
+There is no version 6 files provided *CICE Consortium*
 
 ## Initial Conditions Discussion
 
-All three (GX3, GX1 and TX1) cases of
-[*CICE Consortium Test Data*]{.spurious-link
-target="CICE Consortium Test Data"} have the same structure of the
-initial condition files. Each case provides twelve files named for each
-month. The contents of those files show 56 gridded parameters over two
-and three dimensions (one categorical dimension and two spatial
-dimensions). There is not a time dimension. Hence time-step is implied
-as monthly with 12 files named for each month -- it is not known wether
-this is a snap snot or an average over the month. The table below is
-made in order to consolidate the initial condition parameters should at
-some point it be determined that initial conditions should be provided.
-The short name and description (the first two columns) are obtained from
-correlating the [*CICE Consortium Test Data*]{.spurious-link
-target="CICE Consortium Test Data"} information and the information
-found in the documentation, online
-[here](https://cice-consortium-cice.readthedocs.io/en/main/cice_index.html).
+All three (GX3, GX1 and TX1) cases of *CICE Consortium Test Data* have the same structure of the initial condition files. Each case provides twelve files named for each month. The contents of those files show 56 gridded parameters over two and three dimensions (one categorical dimension and two spatial dimensions). There is not a time dimension. Hence time-step is implied as monthly with 12 files named for each month -- it is not known wether this is a snap snot or an average over the month. The table below is made in order to consolidate the initial condition parameters should at some point it be determined that initial conditions should be provided. The short name and description (the first two columns) are obtained from correlating the *CICE Consortium Test Data* information and the information found in the documentation, online [here](https://cice-consortium-cice.readthedocs.io/en/main/cice_index.html).
 
   CICE6 short         CICE6 description                                    Dims           Units
   ------------------- ---------------------------------------------------- -------------- --------
@@ -752,9 +117,7 @@ found in the documentation, online
 
 # Climatological Datasets
 
-The following external datasets are relevant to stand-alone
-[*CICE6*]{.spurious-link target="CICE Consortium"}. Below is given
-information that is helpful to reference for this purpose.
+The following external datasets are relevant to stand-alone *CICE6*. Below is given information that is helpful to reference for this purpose.
 
 ## COREv2
 
