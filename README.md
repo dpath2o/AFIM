@@ -64,15 +64,21 @@ MyLO is the online learning environment at UTAS. MyLO stands for My Learning Onl
 2.  [AAPP Scholarship Top-up](https://universitytasmania.sharepoint.com/:w:/r/sites/AustralianAntarcticProgramPartnership/_layouts/15/Doc.aspx?sourcedoc=%7BD4678FC5-A847-4219-AC35-A9D8E68D830A%7D&file=AAPP%20top-up%20scholarship_FINAL_20200501.docx&action=default&mobileredirect=true)
 3.  [SCAR](https://www.scar.org/awards/fellowships/overview/)
 # Research <a name="research"></a>
-## Grounded Icebergs
-[./research/grounded_icebergs.org](./research/grounded_icebergs.org)
 ## Modelling 
-### CICE 
-[./MODELS/cice.md](./MODELS/cice.md)
-### MOM 
-[./MODELS/metroms.md](./MODELS/mom.md)
+### Results
+1. [Confirmation of Candidture and Paper 1](./research/cice6_standalone.md)
+2. [Paper 2 (placeholder)]()
+3. [Paper 3 (placeholder)]()
+### CICE6 
+[CICE6 foundational knowledge](./MODELS/cice.md)
+### MOM6 
+[(placeholder)](./MODELS/mom.md)
+### Coupler
+[(placeholder)]()
 ## Data
-[./data.md](./data.md)
+[Details about observational and remote sensing data](./data.md)
+### Grounded Icebergs
+[Details on grounded icebergs](./research/grounded_icebergs.org)
 ## Affiliations and Linkages
 ### Consortium on Ocean-Sea Ice Modelling in Australia ([COSIMA](http://cosima.org.au))
 ### [ACCESS-NRI](https://www.access-nri.org.au)
