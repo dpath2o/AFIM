@@ -1,56 +1,21 @@
 # Documentation
-
 ## [CICE5](https://cesmcice.readthedocs.io/en/latest/index.html)
-
 ## CICE6
+* [latest version](https://cice-consortium-cice.readthedocs.io/en/main/)
+* [CICE_6.2 PDF](https://cice-consortium-cice.readthedocs.io/_/downloads/en/cice6.2.0/pdf/)
+# [CICE Consortium (NCAR-CESM)](https://www.cesm.ucar.edu/models/cesm2/sea-ice)
 
-[PDF](https://cice-consortium-cice.readthedocs.io/_/downloads/en/cice6.2.0/pdf/)
-
-# CICE Consortium
-
-## CESM
-
-[NCAR-CESM](https://www.cesm.ucar.edu/models/cesm2/sea-ice)
-
-## CICE Github Repository
-
-<https://github.com/CICE-Consortium>
-
-### Resources Index
-
-<https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index>
-
-### CICE Consortium Test Data
-
-```{=org}
-#+LABEL: CICE6_Default_Forcing_and_IC
-```
-The *default* forcing data can be obtained here:
-<https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Data>
-
-[Standalone
-Forcing](https://cice-consortium-cice.readthedocs.io/en/master/developer_guide/dg_forcing.html)
-is described in detail and will be helpful when pulling in more forcing
-data than the *default*. The following two lists show the fields that
-are required for forcing. The documentation states that all the
-variables have reasonable static defaults that will be used in *default*
-mode. To advance the forcing, the subroutines `get_forcing_atmo` and
-`get_forcing_ocn` are called each timestep from the step loop. That
-subroutine computes the forcing year (`fyear`), calls the appropriate
-forcing data method, and then calls `prepare_forcing` which converts the
-input data fields to model forcing fields.
-
-Data was downloaded and unpacked into the following local directory,
-[/Volumes/ioa03/cice-dirs/input/CICE_data](file:///Volumes/ioa03/cice-dirs/input/CICE_data).
-
+## [CICE Github Repository](https://github.com/CICE-Consortium)
+### [Resources Index](https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index)
+### [CICE Consortium Test Data](https://github.com/CICE-Consortium/CICE/wiki/CICE-Input-Dat)
+#### [Standalone Forcing](https://cice-consortium-cice.readthedocs.io/en/master/developer_guide/dg_forcing.html)
+Describes details and helpful when pulling in more forcing data than the *default*. The following two lists show the fields that are required for forcing. The documentation states that all the
+variables have reasonable static defaults that will be used in *default* mode. To advance the forcing, the subroutines `get_forcing_atmo` and `get_forcing_ocn` are called each timestep from the step loop. That subroutine computes the forcing year (`fyear`), calls the appropriate forcing data method, and then calls `prepare_forcing` which converts the input data fields to model forcing fields.
 ## GX3 Description
-
 Global Three-Degree Cartesian
-
 ### GX3 Grid
 
-Header from the [GX3 grid
-file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/grid_gx3.nc):
+Header from the [GX3 grid file](file:///Volumes/ioa03/cice-dirs/input/CICE_data/grid/gx3/grid_gx3.nc):
 
 > netcdf grid~gx3~ { dimensions: y = 116 ; x = 100 ; variables: double
 > ulat(y, x) ; ulat:units = \"rad\" ; double ulon(y, x) ; ulon:units =
