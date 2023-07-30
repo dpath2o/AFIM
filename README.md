@@ -40,18 +40,16 @@ MyLO is the online learning environment at UTAS. MyLO stands for My Learning Onl
 -   [XGR502](https://www.utas.edu.au/courses/dvc-research/units/xgr502-communicating-research): Communicating Research
 ## Graduate Research Office 
 [Graduate Research Office for College of Science and Engineering](mailto:GraduateResearch.CoSE@utas.edu.au) telephone :: +61(0)3 6226 8559 Sandy Bay Campus Centenary Building Level 3, Room 303 SANDY BAY TAS 7005 [Sandy Bay Campus Map](file:///Users/dpath2o/Documents/orgs/figs/Sandy-Bay-Campus-Guide.pdf)
-## Institute of Marine and Antarctic Studies (IMAS)
+## [Institute of Marine and Antarctic Studies (IMAS)](https://www.imas.utas.edu.au)
 ### Key Personnel
-1.  Director of IMAS
-    -   Terry Bailey
-2.  Head of Oceans and Cryosphere
-    -   Neil Holbrook
+1.  Director: Terry Bailey
+2.  Head of Oceans and Cryosphere: Neil Holbrook
 ## [Australian Antarctic Program Project (AAPP)](http://aappartnership.org.au)
 1.  [Theme 3: Future of Antarctic Sea Ice, Krill and Ecosystems](https://aappartnership.org.au/theme-3/)
     1.  Project 6: Sea Ice
         1.  Leaders
             -   [Alex Fraser](https://aappartnership.org.au/our-researchers/#fraser)
-            -   [Petra Heil](hhttps://aappartnership.org.au/our-contributed-staff/#heil)
+            -   [Petra Heil](https://aappartnership.org.au/our-contributed-staff/#heil)
 2.  Personnel
     1.  AAPP Director: [Nathan Bindoff](mailto:n.bindoff@utas.edu.au)
     2.  Specific Administration Manager: [Wenneke Ten Hout](mailto:wenneke.tenhout@utas.edu.au)
