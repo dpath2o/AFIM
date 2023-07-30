@@ -77,43 +77,43 @@ All three (GX3, GX1 and TX1) cases of *CICE Consortium Test Data* have the same 
 
   | CICE6 short       |  CICE6 description                                 |    Dims      |   Units|
   |-------------------|----------------------------------------------------|--------------|--------|
-  |uvel               | sea ice velocity, eastward                         | ni, nj       | m/s    |
-  vvel                sea ice velocity, northward                          ni, nj         m/s
-  scale~factor~       timestep offsets in shortwave radiation components   ni, nj         \-
-  swvdr               incoming shortwave radiation, visible direct         ni, nj         W/m^2^
-  swvdf               incoming shortwave radiation, visible diffuse        ni, nj         W/m^2^
-  swidr               incoming shortwave radiation, infrared direct        ni, nj         W/m^2^
-  swidf               incoming shortwave radiation, infrared diffuse       ni, nj         W/m^2^
-  strocnxT            ice-ocean stress                                     ni, nj         N/m
-  strocnyT            ice-ocean stress                                     ni, nj         N/m
-  stressp\_\[1-4\]    internal strain tensor                               ni, nj         N/m
-  stressm\_\[1-4\]    internal strain tensor                               ni, nj         N/m
-  stress12\_\[1-4\]   internal strain tensor                               ni, nj         N/m
-  iceumask            the mask where there is ice in a gridcell            ni, nj         \-
-  sst                 sea surface temperature                              ni, nj         C
-  frzmlt              ice ocean heat exhange                               ni, nj         W/m^2^
-  frz~onset~          Julian day in which the onset of freezing occurs     ni, nj         \-
-  ulat                u-grid latitudes                                     ni, nj         \-
-  ulon                u-grid longitudes                                    ni, nj         \-
-  tlat                t-grid latitudes                                     ni, nj         \-
-  tlon                t-grid latitudes                                     ni, nj         \-
-  aicen               ice fraction per category                            ncat, ni, nj   \-
-  vicen               ice volume per unit area per category                ncat, ni, nj   \-
-  vsnon               snow volume per unit area per category               ncat, ni, nj   \-
-  Tsfcn               surface snow/ice temperature per category            ncat, ni, nj   C
-  iage                ice age                                              ncat, ni, nj   \-
-  FY                  first year ice area                                  ncat, ni, nj   \-
-  alvl                fraction of level ice area                           ncat, ni, nj   \-
-  vlvl                volume of the level ice area                         ncat, ni, nj   \-
-  apnd                fraction of ponds per cell                           ncat, ni, nj   \-
-  hpnd                depth of ponds per cell                              ncat, ni, nj   \-
-  ipnd                other pond characteristics                           ncat, ni, nj   \-
-  dhs                 \-                                                   ncat, ni, nj   \-
-  ffrac               \-                                                   ncat, ni, nj   \-
-  fbrs                \-                                                   ncat, ni, nj   \-
-  sice00\[1-5\]       \-                                                   ncat, ni, nj   \-
-  qice00\[1-5\]       \-                                                   ncat, ni, nj   \-
-  qsno00\[1-5\]       \-                                                   ncat, ni, nj   \-
+  |uvel               | sea ice velocity, eastward                         | nj, ni       | m/s    |
+  |vvel               | sea ice velocity, northward                        | nj, ni       | m/s    |
+  |scale factor       | timestep offsets in shortwave radiation components | nj, ni       |  \-    |
+  |swvdr               |incoming shortwave radiation, visible direct       | nj, ni       | W/m^2^ |
+  |swvdf               |incoming shortwave radiation, visible diffuse      | nj, ni       | W/m^2^ |
+  |swidr               |incoming shortwave radiation, infrared direct      | nj, ni       |  W/m^2^|
+  |swidf               |incoming shortwave radiation, infrared diffuse     | nj, ni       |  W/m^2^|
+  |strocnxT            |ice-ocean stress                                   | nj, ni       |  N/m   |
+  |strocnyT            |  ice-ocean stress                                 | nj, ni       |  N/m   |
+  |stressp\_\[1-4\]    |internal strain tensor                             |  nj, ni      |   N/m  |
+  |stressm\_\[1-4\]    |  internal strain tensor                           |  nj, ni      |   N/m  |
+  |stress12\_\[1-4\]   |internal strain tensor                             |  nj, ni      |  N/m   |
+  |iceumask            |the mask where there is ice in a gridcell          |  nj, ni      |  \-    |
+  |sst                 |sea surface temperature                            |  nj, ni      |  C     |
+  |frzmlt              |ice ocean heat exhange                             |  nj, ni      |  W/m^2^|
+  |frzonset            |Julian day in which the onset of freezing occurs   |  nj, ni      |   \-   |
+  |ulat                |u-grid latitudes                                   |  nj, ni      |   \-   |
+  |ulon                |u-grid longitudes                                  |  nj, ni      |   \-   |
+  |tlat                |t-grid latitudes                                   |  nj, ni      |   \-   |
+  |tlon                |t-grid latitudes                                   |  nj, ni      |   \-   |
+  |aicen               |ice fraction per category                          |  ncat, nj, ni|   \-   |
+  |vicen               |ice volume per unit area per category              |  ncat, nj, ni|   \-   |
+  |vsnon               |snow volume per unit area per category             |  ncat, nj, ni|   \-   |
+  |Tsfcn               |surface snow/ice temperature per category          |  ncat, nj, ni|   C    |
+  |iage                |ice age                                            |  ncat, nj, ni|   \-   |
+  |FY                  |first year ice area                                |  ncat, nj, ni|   \-   |
+  |alvl                |fraction of level ice area                         |  ncat, nj, ni|   \-   |
+  |vlvl                |volume of the level ice area                       |  ncat, nj, ni|   \-   |
+  |apnd                |fraction of ponds per cell                         |  ncat, nj, ni|   \-   |
+  |hpnd                |depth of ponds per cell                            |  ncat, nj, ni|   \-   |
+  |ipnd                |other pond characteristics                         |  ncat, nj, ni|   \-   |
+  |dhs                 |\-                                                 |  ncat, nj, ni|   \-   |
+  |ffrac               |\-                                                 |  ncat, nj, ni|   \-   |
+  |fbrs                |\-                                                 |  ncat, nj, ni|   \-   |
+  |sice00\[1-5\]       |\-                                                 |  ncat, nj, ni|   \-   |
+  |qice00\[1-5\]       |\-                                                 |  ncat, nj, ni|   \-   |
+  |qsno00\[1-5\]       |\-                                                 |  ncat, nj, ni|   \-   |
 
 # Climatological Datasets
 
