@@ -6,24 +6,27 @@ model_name      = 'CICE6'
 grid_res_str    = '0p25'
 fig_type        = 'png'
 ani_type        = 'gif'
-overwrite       = True
+overwrite       = False
 D_plt_base      = '/g/data/jk72/da1339/GRAPHICAL'
 D_afim_data     = '/g/data/jk72/da1339/afim_output'
 D_ani_base      = '/g/data/jk72/da1339/GRAPHICAL/animations'
-model_run_date  = ['20230727']
-mean_length_str = ['daily']
-atm_frcg_name   = ['jra55']
-ocn_frcg_name   = ['aom2']
-intervals       = ['-delay 100']
-D_afim_out      = ['/scratch/jk72/da1339/cice-dirs/runs/afim_025_jra55do_aom2/history/daily']
-var_names       = ['aice',
-                   'frazil',
-                   'hi',
-                   'uvel',
-                   'congel',
-                   'snowfrac',
-                   'Tsfc',
-                   'iage']
+model_run_date  = ['20230806',
+                   '20230807']
+mean_length_str = ['monthly',
+                   'monthly']
+atm_frcg_name   = ['jra55','jra55']
+ocn_frcg_name   = ['aom2','aom2']
+intervals       = ['-delay 100','-delay 110']
+D_afim_out      = ['/g/data/jk72/da1339/afim_output/20230807_jra55_aom2_3yr_bathy/history/monthly/',
+                   '/g/data/jk72/da1339/afim_output/20230807_jra55_aom2_3yr_FI/history/monthly/']
+var_names       = ['aice_m',
+                   'frazil_m',
+                   'hi_m',
+                   'uvel_m',
+                   'congel_m',
+                   'snowfrac_m',
+                   'Tsfc_m',
+                   'iage_m']
 cmaps           = ['cmocean/ice',
                    'cmocean/haline',
                    'cmocean/dense',

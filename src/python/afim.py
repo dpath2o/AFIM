@@ -105,7 +105,7 @@ def plot_cice_map(F_name        = '',
         d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d") - timedelta(days=1)        
         dt_str = d.strftime('%Y_%m')
     else:
-        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d")
+        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d") - timedelta(days=1)
         dt_str = d.strftime('%Y_%m_%d')
     D_plt = directory_name_from_model_parameters(directory_base  = D_plt_base,
                                                  model_name      = model_name,
