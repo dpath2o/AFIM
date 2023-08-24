@@ -3,6 +3,7 @@
 references/
 GRAPHICAL/
 DATA
+etc/
 admin/admin.org
 admin/2021-Jan-Graduate-Research-Candidate-Guide-1.2.pdf
 admin/Department of Justice : Statutory Declaration.pdf
@@ -27,4 +28,4 @@ src/python/.ipynb_checkpoints/149014799b0e4361bb20c311fcda417e-checkpoint.pdf
 src/python/.ipynb_checkpoints/Untitled-checkpoint.ipynb
 src/python/custom.cpt
 src/python/.ipynb_checkpoints/cice_analysis-checkpoint.ipynb
-src/python/__pycache__
+src/python/__pycache__etc/20230708_cice6p4_1yr_bran_mld50m/cice.runlog.230708-093325
