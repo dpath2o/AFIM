@@ -23,7 +23,7 @@ import cmocean              as cm
 import cartopy.crs          as ccrs
 import cartopy.feature      as cft
 import matplotlib.path      as mpath
-from datetime               import datetime, timedelta
+from datetime               import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 from dask.diagnostics       import ProgressBar
 from matplotlib.animation   import FuncAnimation
@@ -35,303 +35,78 @@ ncrcat = os.path.join('/','apps','nco','5.0.5','bin','ncrcat')
 ##############################################################################################################################################
 ######################################################## NON-CLASS FUNCTIONS #################################################################
 ##############################################################################################################################################
-def directory_name_from_model_parameters(directory_base  = '',
-                                         model_name      = '',
-                                         model_run_date  = '',
-                                         mean_length_str = '',
-                                         var_name        = '',
-                                         atm_frcg_name   = '',
-                                         ocn_frcg_name   = ''):
+def days_since_1601_to_date(days_since_1601):
+    start_date      = date(1601, 1, 1)
+    offset          = timedelta(days=days_since_1601)
+    result_date     = start_date + offset
+    print(result_date.strftime("%Y-%m-%d"))
+
+def compute_nsdic_grid_cell_areas(ds, proj_str):
+    a       = 6378273
+    b       = 6356889.449
+    geod    = Geod(a=a, b=b)
+    x_vals  = ds['xgrid'].values
+    y_vals  = ds['ygrid'].values
+    dx      = ds['xgrid'].diff('x').fillna(0)
+    dx_vals = np.append(dx, dx[-1])  # Repeat the last value
+    dy      = ds['ygrid'].diff('y').fillna(0)
+    dy_vals = np.append(dy, dy[-1])  # Repeat the last value
+    proj    = pyproj.Proj(proj_str)
+    A       = np.zeros((len(y_vals), len(x_vals)))
+    for i in range(len(y_vals)):
+        for j in range(len(x_vals)):
+            x  = x_vals[j]
+            y  = y_vals[i]
+            dx = dx_vals[j]
+            dy = dy_vals[i]
+            # Define the four corners of the cell
+            lon1, lat1 = proj(x, y, inverse=True)
+            lon2, lat2 = proj(x + dx, y, inverse=True)
+            lon3, lat3 = proj(x + dx, y + dy, inverse=True)
+            lon4, lat4 = proj(x, y + dy, inverse=True)
+            # Calculate the perimeter of the cell
+            perimeter = geod.line_length([lon1, lon2, lon3, lon4, lon1], [lat1, lat2, lat3, lat4, lat1])
+            # Calculate the area of the cell using Brahmagupta's formula
+            s       = perimeter / 2
+            a, _, _ = geod.inv(lon1, lat1, lon2, lat2)
+            b, _, _ = geod.inv(lon2, lat2, lon3, lat3)
+            c, _, _ = geod.inv(lon3, lat3, lon4, lat4)
+            d, _, _ = geod.inv(lon4, lat4, lon1, lat1)
+            A[i,j]  = np.sqrt((s - a) * (s - b) * (s - c) * (s - d))
+    return A
+
+# Function to compare a CICE run with NSDIC
+def compare_cice_nsdic(P_cice, NSDIC, grid_areas, proj_str, dt0='', dtN='', threshold=0.15, cice_reG_var='aice_m'):
     '''
     '''
-    if model_run_date and mean_length_str and var_name and atm_frcg_name and ocn_frcg_name:
-        D_ = os.path.join(directory_base,model_name,model_run_date,var_name,f'{atm_frcg_name}_{ocn_frcg_name}',mean_length_str)
-    elif not model_run_date and mean_length_str and var_name:
-        D_ = os.path.join(directory_base,model_name,var_name,mean_length_str)
-    elif not model_run_date and not mean_length_str and var_name:
-        D_ = os.path.join(directory_base,model_name,var_name)
-    elif not atm_frcg_name and not ocn_frcg_name:
-        D_ = os.path.join(directory_base,model_name,model_run_date,var_name,mean_length_str)
-    if not os.path.exists(D_): os.makedirs(D_)
-    return D_
-#############################################################################
-def filename_from_model_parameters(dt_str        = '',
-                                   img_type      = '',
-                                   atm_frcg_name = '',
-                                   ocn_frcg_name = '',
-                                   grid_res_str  = '',
-                                   var_name      = ''):
-    '''
-    '''
-    if atm_frcg_name and ocn_frcg_name and grid_res_str:
-        F_ = f'{dt_str}_{atm_frcg_name}_{ocn_frcg_name}_{grid_res_str}.{img_type}'
-    elif not atm_frcg_name and not ocn_frcg_name and not grid_res_str and var_name:
-        F_ = f'{dt_str}_{var_name}.{img_type}'
-    elif not atm_frcg_name and not ocn_frcg_name and not grid_res_str and not var_name:
-        F_ = f'{dt_str}.{img_type}'
-    return F_
-#############################################################################
-def plot_cice_map(F_name        = '',
-                  var_name      = 'aice',
-                  cbar_lab      = 'sea ice concentration',
-                  cbar_units    = '1/100',
-                  model_name    = '',
-                  model_run_date= '',
-                  atm_frcg_name = 'jra55do',
-                  ocn_frcg_name = 'aom2',
-                  vmin          = 0,
-                  vmax          = 1,
-                  region        = [0,360,-80,-50],
-                  mean_length_str = 'monthly',
-                  both_hemis    = True,
-                  spacing       = '10m',
-                  search_radius = '15m',
-                  cmap          = 'cmocean/ice',
-                  projection    = "S0/-90/15c",
-                  D_plt_base    = '/g/data/jk72/da1339/GRAPHICAL',
-                  img_type      = '',
-                  overwrite     = False):
-    '''
-    '''
-    c0 = time.process_time()
-    print(f'loading {F_name}')
-    ice = xr.load_dataset(F_name)
-    if var_name=='uvel' or var_name=='vvel' or var_name=='speed' or var_name=='velocity':
-        ice  = np.sqrt( ice.uvel**2 + ice.vvel**2 )
-        cmap = 'plasma'
-    else:
-        ice = ice[var_name]   
-    if mean_length_str=='mnthly' or mean_length_str=='monthly':
-        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d") - timedelta(days=1)        
-        dt_str = d.strftime('%Y_%m')
-    else:
-        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d") - timedelta(days=1)
-        dt_str = d.strftime('%Y_%m_%d')
-    D_plt = directory_name_from_model_parameters(directory_base  = D_plt_base,
-                                                 model_name      = model_name,
-                                                 model_run_date  = model_run_date,
-                                                 mean_length_str = mean_length_str,
-                                                 var_name        = var_name,
-                                                 atm_frcg_name   = atm_frcg_name,
-                                                 ocn_frcg_name   = ocn_frcg_name)
-    F_fig = filename_from_model_parameters(dt_str   = dt_str,
-                                           img_type = img_type)
-    P_fig = os.path.join(D_plt,F_fig)
-    if os.path.exists(P_fig) and not overwrite:
-        print(f'{P_fig} exists and not overwriting')
-        return
-    print(f'making CPT, {(time.process_time()-c0):.3f}')
-    pygmt.makecpt(cmap=cmap,series=[vmin,vmax],truncate=[vmin,vmax])
-    print(f'initialising figure, {(time.process_time()-c0):.3f}')
-    fig = pygmt.Figure()
-    if both_hemis:
-        tit_str = 'CICE6 {ms:s}_{vn:s}, {af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,of=ocn_frcg_name,ms=mean_length_str,vn=var_name,dt=dt_str)  
-        with fig.subplot(nrows=1, ncols=2, title=tit_str, figsize=("18c","9c"), autolabel=False, margins="0.25c"): 
-            with fig.set_panel(panel=0):
-                region=[0,360,-90,-50]
-                projection="S0/-90/?"
-                print(f'southern hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-                g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                                       y=np.ravel(ice.TLAT.data),
-                                       z=np.ravel(ice.data),
-                                       region=region,
-                                       spacing=spacing,
-                                       search_radius=search_radius)
-                fig.grdimage(g,region=region, projection=projection, frame=True, cmap=cmap)
-                fig.coast(land="#666666")
-            with fig.set_panel(panel=1):
-                region=[0,360,40,90]
-                projection="S0/90/?"
-                print(f'northern hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-                g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                                       y=np.ravel(ice.TLAT.data),
-                                       z=np.ravel(ice.data),
-                                       region=region,
-                                       spacing=spacing,
-                                       search_radius=search_radius)
-                fig.grdimage(g,region=region,projection=projection,frame=True,cmap=cmap)
-                fig.coast(land="#666666")
-                fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
-    else:
-        print(f'one hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-        g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                            y=np.ravel(ice.TLAT.data),
-                            z=np.ravel(ice.data),
-                            region=region,
-                            spacing=spacing,
-                            search_radius=search_radius)
-        tit_str = 'tCICE6 {ms:s}-{vn:s}, frcg-{af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,of=ocn_frcg_name,ms=mean_length_str,vn=var_name,dt=dt_str) 
-        fig.basemap(region=region, projection=projection, frame=["ag", tit_str])
-        fig.grdimage(g,cmap=cmap)
-        fig.colorbar(frame="JBC+l{:s}".format(cbar_lab))
-        fig.coast(land='brown')
-    fig.show()
-    print(f'saving figure to {P_fig} ... {(time.process_time()-c0):.3f}')
-    fig.savefig(P_fig)
-    print(f'saved figure {(time.process_time()-c0):.3f}')
-    os.system(f"ls -lh {P_fig}")
-############################################################################
-def plot_forcing_map(F_name        = '',
-                     var_name      = '',
-                     cbar_lab      = '',
-                     cbar_units    = '',
-                     model_name    = '',
-                     model_run_date= '',
-                  vmin          = 0,
-                  vmax          = 1,
-                  region        = [0,360,-80,-50],
-                  mean_length_str = 'monthly',
-                  both_hemis    = True,
-                  spacing       = '10m',
-                  search_radius = '15m',
-                  cmap          = 'cmocean/ice',
-                  projection    = "S0/-90/15c",
-                  D_plt_base    = '/g/data/jk72/da1339/GRAPHICAL',
-                  img_type      = ''):
-    '''
-    '''
-    c0 = time.process_time()
-    print(f'loading {F_name}')
-    ice = xr.load_dataset(F_name)
-    if var_name=='uvel' or var_name=='vvel' or var_name=='speed' or var_name=='velocity':
-        ice  = np.sqrt( ice.uvel**2 + ice.vvel**2 )
-        cmap = 'plasma'
-    else:
-        ice = ice[var_name]    
-    if mean_length_str=='mnthly' or mean_length_str=='monthly':
-        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d") - timedelta(days=1)        
-        dt_str = d.strftime('%Y_%m')
-    else:
-        d      = datetime.strptime(str(ice.time[0].data)[0:10], "%Y-%m-%d")
-        dt_str = d.strftime('%Y_%m_%d')
-    D_plt = directory_name_from_model_parameters(directory_base  = D_plt_base,
-                                                 model_name      = model_name,
-                                                 model_run_date  = model_run_date,
-                                                 mean_length_str = mean_length_str,
-                                                 var_name        = var_name)
-    F_fig = filename_from_model_parameters(var_name = var_name,
-                                           img_type = img_type,
-                                           dt_str   = dt_str)
-    P_fig = os.path.join(D_plt,F_fig)
-    print(f'making CPT, {(time.process_time()-c0):.3f}')
-    pygmt.makecpt(cmap=cmap,series=[vmin,vmax])
-    print(f'initialising figure, {(time.process_time()-c0):.3f}')
-    fig = pygmt.Figure()
-    #pygmt.config(FORMAT_GEO_MAP="ddd.x", MAP_FRAME_TYPE="plain")
-    if both_hemis:
-        tit_str = 'CICE6 {ms:s}_{vn:s}, {af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,of=ocn_frcg_name,ms=mean_length_str,vn=var_name,dt=dt_str)  
-        with fig.subplot(nrows=1, ncols=2, title=tit_str, figsize=("18c","9c"), autolabel=False, margins="0.25c"): 
-            with fig.set_panel(panel=0):
-                region=[0,360,-90,-50]
-                projection="S0/-90/?"
-                print(f'southern hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-                g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                                       y=np.ravel(ice.TLAT.data),
-                                       z=np.ravel(ice.data),
-                                       region=region,
-                                       spacing=spacing,
-                                       search_radius=search_radius)
-                fig.grdimage(g,region=region, projection=projection, frame=True, cmap=cmap)
-                fig.coast(land="#666666")
-            with fig.set_panel(panel=1):
-                region=[0,360,40,90]
-                projection="S0/90/?"
-                print(f'northern hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-                g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                                       y=np.ravel(ice.TLAT.data),
-                                       z=np.ravel(ice.data),
-                                       region=region,
-                                       spacing=spacing,
-                                       search_radius=search_radius)
-                fig.grdimage(g,region=region,projection=projection,frame=True,cmap=cmap)
-                fig.coast(land="#666666")
-                fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
-    else:
-        print(f'one hemisphere nearestest neighbour for GMT regular grid requirement {(time.process_time()-c0):.3f}')
-        g = pygmt.nearneighbor(x=np.ravel(ice.TLON.data),
-                            y=np.ravel(ice.TLAT.data),
-                            z=np.ravel(ice.data),
-                            region=region,
-                            spacing=spacing,
-                            search_radius=search_radius)
-        tit_str = 'tCICE6 {ms:s}-{vn:s}, frcg-{af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,of=ocn_frcg_name,ms=mean_length_str,vn=var_name,dt=dt_str) 
-        fig.basemap(region=region, projection=projection, frame=["ag", tit_str])
-        fig.grdimage(g,cmap=cmap)
-        fig.colorbar(frame="JBC+l{:s}".format(cbar_lab))
-        fig.coast(land='brown')
-    fig.show()
-    print(f'saving figure to {P_fig} ... {(time.process_time()-c0):.3f}')
-    fig.savefig(P_fig)
-    print(f'saved figure {(time.process_time()-c0):.3f}')
-    os.system(f"ls -lh {P_fig}")
-############################################################################
-# DEF ANIMATION FROM STILLS
-def animate_sequenced_figures(D_seq_fig       = '',
-                              D_ani_base      = '',
-                              var_name        = '',
-                              interval        = '-delay 100',
-                              img_in_type     = 'png',
-                              img_out_type    = 'gif',
-                              mean_length_str = '',
-                              model_name      = '',
-                              model_run_date  = '',
-                              atm_frcg_name   = '',
-                              ocn_frcg_name   = '',
-                              grid_res_str    = '',
-                              overwrite       = False):
-    '''
-    '''
-    c0 = time.process_time()
-    D_ = directory_name_from_model_parameters(directory_base  = D_ani_base,
-                                                 model_name      = model_name,
-                                                 model_run_date  = model_run_date,
-                                                 mean_length_str = mean_length_str,
-                                                 var_name        = var_name)
-    if img_out_type=='gif':
-        F_ = filename_from_model_parameters(atm_frcg_name   = atm_frcg_name,
-                                        ocn_frcg_name   = ocn_frcg_name,
-                                        grid_res_str    = grid_res_str,
-                                        img_type        = img_out_type,
-                                        dt_str          = model_run_date)
-        if os.path.exists(os.path.join(D_,F_)) and not overwrite:
-            print(f'{os.path.join(D_,F_)} exists and not overwriting')
-            return
-        print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
-        os.system(f"convert {interval} -loop 0 {D_seq_fig}/*.{img_in_type} -duplicate 1,-2-1 {os.path.join(D_,F_)}")
-    elif img_out_type=='mp4':
-        F_ = filename_from_model_parameters(atm_frcg_name   = atm_frcg_name,
-                                        ocn_frcg_name   = ocn_frcg_name,
-                                        grid_res_str    = grid_res_str,
-                                        img_type        = img_out_type,
-                                        dt_str          = model_run_date)
-        if os.path.exists(os.path.join(D_,F_)) and not overwrite:
-            print(f'{os.path.join(D_,F_)} exists and not overwriting')
-            return
-        print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
-        os.system(f"ffmpeg -framerate 1 -pattern_type glob -i {D_seq_fig}/*.{img_in_type} -c:v libx264 -r 30 -pix_fmt yuv420p {os.path.join(D_,F_)}")
-    elif img_out_type=='both':
-        F_ = filename_from_model_parameters(atm_frcg_name   = atm_frcg_name,
-                                        ocn_frcg_name   = ocn_frcg_name,
-                                        grid_res_str    = grid_res_str,
-                                        img_type        = 'gif',
-                                        dt_str          = model_run_date)
-        if os.path.exists(os.path.join(D_,F_)) and not overwrite:
-            print(f'{os.path.join(D_,F_)} exists and not overwriting')
-        else:
-            print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
-            os.system(f"convert {interval} -loop 0 {D_seq_fig}/*.{img_in_type} -duplicate 1,-2-1 {os.path.join(D_,F_)}")
-        F_ = filename_from_model_parameters(atm_frcg_name   = atm_frcg_name,
-                                        ocn_frcg_name   = ocn_frcg_name,
-                                        grid_res_str    = grid_res_str,
-                                        img_type        = 'mp4',
-                                        dt_str          = model_run_date)
-        if os.path.exists(os.path.join(D_,F_)) and not overwrite:
-            print(f'{os.path.join(D_,F_)} exists and not overwriting')
-        else:
-            print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
-            os.system(f"ffmpeg -framerate 1 -pattern_type glob -i '{D_seq_fig}/*.{img_in_type}' {os.path.join(D_,F_)}")
-    print(f'finished animating {(time.process_time()-c0):.3f}')
-    os.system(f"ls -lh {os.path.join(D_,F_)}")
+    CICE          = xr.open_mfdataset(P_cice, decode_coords=False)
+    time_index    = pd.DatetimeIndex(CICE['time'].values)
+    adjusted_time = time_index - pd.DateOffset(months=1)
+    CICE['time']  = adjusted_time.values
+    mask          = (CICE['TLAT'] < 0).compute()
+    CICE          = CICE.sel(time=slice(dt0,dtN))
+    CICE_SH       = CICE.where(mask, drop=True)
+    #Convert xgrid and ygrid to latitude and longitude, and add the new coordinates to NSDIC Dataset
+    in_proj            = pyproj.Proj(proj_str)
+    out_proj           = pyproj.Proj(proj="latlong", datum="WGS84")
+    transformer        = pyproj.Transformer.from_proj(in_proj, out_proj, always_xy=True)
+    xx, yy             = np.meshgrid(NSDIC['xgrid'].values, NSDIC['ygrid'].values)  # Make sure x_vals and y_vals are defined
+    lon_vals, lat_vals = transformer.transform(xx, yy)
+    NSDIC['latitude']  = (('y', 'x'), lat_vals)
+    NSDIC['longitude'] = (('y', 'x'), lon_vals)
+    # Define source grid from the subsetted CICE6 data
+    src_grid = xr.Dataset({'lat': (['nj', 'ni'], CICE_SH['TLAT'][0].values), 'lon': (['nj', 'ni'], CICE_SH['TLON'][0].values)})
+    # Define destination grid from NSIDC
+    dst_grid = xr.Dataset({'lat': (['y', 'x'], lat_vals), 'lon': (['y', 'x'], lon_vals)})
+    # Create regridder object
+    regridder = xe.Regridder(src_grid, dst_grid, method='bilinear', periodic=False)
+    # reG
+    reG_aice = regridder(CICE_SH[cice_reG_var])
+    # Maskthe concentration data based on threshold for CICE6. Then computing sea ice area extent of CICE6, which requires the above cell to be run first
+    mask_CICE                       = reG_aice > threshold
+    reG_aice['sea_ice_area_extent'] = (mask_CICE * reG_aice * grid_areas).sum(dim=['y', 'x'])/1e7
+    return reG_aice
+
 ############################################################################
 def compute_cice_area(CICE='',
                       threshold=0.15,
@@ -830,32 +605,743 @@ def xesmf_regrid_dataset(DS_src, DS_dst, F_DS_na,
     return DS_rg
 
 ##############################################################################################################################################
-############################################################### CLASSES ######################################################################
+############################################################### CICE ANALYSIS ######################################################################
 ##############################################################################################################################################
 
-# DIRECTORIES
+def read_json(filename):
+    '''Read a JSON file.
+
+    Parameters:
+    -----------
+    filename : str
+        Path to the JSON file.
+
+    Returns:
+    --------
+    dict
+        Dictionary containing the parsed JSON data.
+    '''
+    with open(filename, 'r') as file:
+        return json.load(file)
+
+class cice_analysis:
+    '''
+    CICE (Community Ice CodE) Analysis Class.
+
+    Description:
+    ------------
+    This class is designed to load and handle parameters and configurations for analyzing CICE datasets.
+    The class reads a JSON file containing necessary attributes and setups for the analysis, such as time frames,
+    thresholds, directories, titles, locations, and other specific parameters.
+
+    Attributes:
+    -----------
+    dt0 : str
+        Start date for the analysis period.
+        
+    dtN : str
+        End date for the analysis period.
+    
+    aice_thresh : float
+        Threshold value for the sea ice concentration.
+    
+    FI_thresh : float
+        Threshold value for some feature of interest (e.g., flux or intensity).
+    
+    aice_name : str
+        Variable name for sea ice concentration within the dataset.
+    
+    proc_period : str
+        Processing period or frequency for the data (e.g., 'monthly').
+    
+    P_nsdic : str
+        Path to some data directory or file, e.g., National Snow and Ice Data Center.
+    
+    model_run_date : str
+        Date the model was run.
+    
+    P_cices : str
+        Path to CICE data or files.
+    
+    titles : list of str
+        List of titles for plots or analysis tasks.
+    
+    olav_locs : list of lists
+        List of [longitude, latitude] locations related to the Olav region.
+    
+    maws_locs : list of lists
+        List of [longitude, latitude] locations related to the Maws region.
+    
+    spacing : str
+        Grid spacing for the GMT regular grid.
+    
+    search_radius : str
+        Search radius for GMT's nearneighbor algorithm.
+    
+    cmap_plot_cice : str
+        Color map for plotting CICE data.
+    
+    cice_labels : list of str
+        Labels for CICE data plots.
+    
+    region_names : list of str
+        Names of regions of interest.
+    
+    regions_info : dict
+        Dictionary containing additional info about the regions of interest.
+
+    Methods:
+    --------
+    Currently, this class doesn't define extra methods, but future implementations might include 
+    methods for data processing, plotting, and other analysis tasks.
+
+    Example:
+    --------
+    analysis = cice_analysis("config.json")
+    print(analysis.dt0)   # Prints the start date from the JSON configuration.
+
+    '''
+
+    def __init__(self, filename):
+        '''Initialize the cice_analysis object by reading parameters from a JSON file.'''
+        data = read_json(filename)
+        self.D_afim_output  = data['D_afim_output']
+        self.D_graphical    = data["D_graphical"]
+        self.D_obs          = data["D_obs"]
+        self.img_type       = data["img_type"]
+        self.G_res          = data["G_res"]
+        self.atm_frcg_name  = data["atm_forcing"]
+        self.ocn_frcg_name  = data["ocn_forcing"]
+        self.ic_source      = data["ic_source"]
+        self.dt0            = data['dt0']
+        self.dtN            = data['dtN']
+        self.aice_thresh    = data['aice_thresh']
+        self.FI_thresh      = data['FI_thresh']
+        self.frazil_thresh  = data['frazil_thresh']
+        self.aice_name      = data['aice_name']
+        self.spacing        = data['spacing']
+        self.search_radius  = data['search_radius']
+        self.proc_period    = data['proc_period']
+        self.P_nsdic        = data['P_nsdic']
+        self.afim_runs      = data['afim_runs']
+        self.cmap_plot_cice = data['cmap_plot_cice']
+        self.region_names   = data['region_names']
+        self.regions_info   = data['regions_info']
+        self.plt_mo_dict    = data['plt_mo_dict']
+        self.plt_stat_dict  = data['plt_stat_dict']
+        self.GI_locations   = ''
+
+    def build_data_path(self, model_run_dir, output_period, mf_switch=True, F_name=''):
+        '''
+        '''
+        if mf_switch:
+            self.P_afim = os.path.join(self.D_afim_output,model_run_dir,'history',output_period,"*.nc")
+        else:
+            self.P_afim = os.path.join(self.D_afim_output,model_run_dir,'history',output_period,F_name)  
+
+    def load_run_and_time_convert(self, mf_switch=True, monthly=True):
+        '''
+        Load CICE datasets and apply a hemisphere mask based on latitude.
+
+        Parameters:
+        -----------
+        P_cice : str
+            Path to the CICE dataset. 
+
+        mf_switch : bool, optional (default=True)
+            If True, use `xr.open_mfdataset` (multi-file dataset loading). If False, use `xr.open_dataset`.
+
+        which_hemisphere : str, optional (default='south')
+            Specifies the hemisphere for the masking. Can be 'south' or 'north'.
+
+        which_grid : str, optional (default='t')
+            Specifies the grid on which the mask will be applied. Can be 't' or 'u'.
+
+        daily_or_monthly : str, optional (default='monthly')
+            Specifies the frequency of the time data. Adjusts the time variable accordingly.
+
+        Returns:
+        --------
+        xarray.Dataset
+            The CICE dataset, subsetted by time and masked by hemisphere.
+
+        Description:
+        ------------
+        The function loads a CICE dataset (either from a single file or multiple files), adjusts its time
+        coordinates based on the provided frequency, and applies a mask based on the given hemisphere 
+        and grid type. The returned dataset contains only the data for the specified hemisphere.
+        '''
+        if mf_switch:
+            CICE = xr.open_mfdataset(self.P_afim)
+        else:
+            CICE = xr.open_dataset(self.P_afim)
+        time_index = pd.DatetimeIndex(CICE['time'].values)
+        if monthly:
+            adjusted_time = time_index - pd.DateOffset(months=1)
+        else:
+            adjusted_time = time_index - pd.DateOffset(days=1)
+        CICE['time'] = adjusted_time.values
+        self.CICE    = CICE.sel(time=slice(self.dt0,self.dtN))
+
+    def mask_hemisphere(self, which_hemisphere='south', which_grid='t'):
+        '''
+        Create a mask for either the northern or southern hemisphere based on specified grid points (either 't' or 'u').
+
+        Parameters:
+        - which_hemisphere (str, optional): Specify the hemisphere for which the mask should be created. 
+                                            Choices are 'south' (default) for the southern hemisphere and 'north' for the northern hemisphere.
+        - which_grid (str, optional): Specify the grid type on which the mask should be applied. 
+                                    Choices are 't' (default) for tracer grid points and 'u' for velocity grid points.
+
+        Sets:
+        - self.CICE_HEM (xarray.DataArray): A mask (boolean DataArray) based on the chosen hemisphere and grid. 
+                                            True for the specified hemisphere, and False otherwise.
+
+        Note:
+        - The function assumes that the global variable 'CICE' contains the grid latitude information in the variables 'TLAT' and 'ULAT'.
+        '''
+        # Mapping of which_grid to corresponding latitude variables
+        grid_to_lat = {'t': 'TLAT', 'u': 'ULAT'}
+        # Check for valid inputs
+        if which_grid not in grid_to_lat:
+            raise ValueError(f"Invalid grid type '{which_grid}'. Valid options are: {list(grid_to_lat.keys())}")
+        if which_hemisphere not in ['north', 'south']:
+            raise ValueError(f"Invalid hemisphere '{which_hemisphere}'. Valid options are: ['north', 'south']")
+        # Based on the specified hemisphere, determine the comparison operation
+        op = (lambda x: x < 0) if which_hemisphere == 'south' else (lambda x: x > 0)
+        # Create the mask
+        mask = op(self.CICE[grid_to_lat[which_grid]])
+        # Apply the mask to every variable in the dataset
+        self.CICE_HEM = self.CICE.where(mask)
+
+    def find_nearest_coordinates(self, GLAT, GLON, geo_locs):
+        '''
+        Identify the nearest geographic coordinates in a matrix to a set of reference coordinates.
+
+        Parameters:
+        -----------
+        GLAT : numpy.ndarray
+            Two-dimensional array (matrix) representing latitudes.
+
+        GLON : numpy.ndarray
+            Two-dimensional array (matrix) representing longitudes.
+
+        geo_locs : numpy.ndarray
+
+        Returns:
+        --------
+        (numpy.ndarray, numpy.ndarray)
+            Two arrays representing the longitudes and latitudes in GLON and GLAT, respectively, 
+            that are closest to the reference locations provided in `geo_locs`.
+
+        Description:
+        ------------
+        For each reference location in `geo_locs`, the function calculates the squared 
+        differences between the reference location and each coordinate pair in GLAT and GLON.
+        It then identifies the matrix indices where the total squared difference (latitude and 
+        longitude combined) is minimized. The function returns the GLON and GLAT values at these 
+        indices as the nearest coordinates to the reference location.
+        '''
+        result = []
+        for loc in geo_locs:
+            lat_diff = (GLAT - loc[1]) ** 2
+            lon_diff = (GLON - loc[0]) ** 2
+            total_diff = lat_diff + lon_diff
+            yi, xi = np.unravel_index(total_diff.argmin(), total_diff.shape)
+            result.append([GLON[yi, xi], GLAT[yi, xi]])
+        self.GI_locations = np.array(result)
+
+    @staticmethod
+    def get_iceberg_grid_indices(iceberg_lons, iceberg_lats, grid_lons, grid_lats):
+        """
+        Calculate the grid indices corresponding to specified iceberg positions.
+
+        This method determines the indices of grid cells that are closest to
+        given iceberg positions based on the provided grid longitude and latitude arrays.
+
+        Parameters:
+        - iceberg_lons (array-like): Longitudes of the icebergs.
+        - iceberg_lats (array-like): Latitudes of the icebergs.
+        - grid_lons (2D array-like): 2D array representing the grid cell center longitudes.
+        - grid_lats (2D array-like): 2D array representing the grid cell center latitudes.
+
+        Returns:
+        - list of tuples: Each tuple contains the (j, i) index corresponding to an iceberg position.
+        """
+
+        indices = []
+        for lon, lat in zip(iceberg_lons, iceberg_lats):
+            lon_diff = np.abs(grid_lons - lon)
+            lat_diff = np.abs(grid_lats - lat)
+            j, i = np.unravel_index(np.argmin(lon_diff + lat_diff), lon_diff.shape)
+            print(f"Iceberg at ({lon}, {lat}) is mapped to grid cell ({j}, {i})")
+            indices.append((j, i))
+        return indices
+    
+    @staticmethod
+    def get_cell_boundaries(lon, lat, GLON, GLAT):
+        """
+        Get the boundaries of a grid cell for a given geographic point.
+
+        This method returns the bounding longitudes and latitudes of a grid cell that 
+        is closest to the provided longitude and latitude point.
+
+        Parameters:
+        - lon (float): Longitude of the given point.
+        - lat (float): Latitude of the given point.
+        - GLON (2D array-like): 2D array representing the grid cell center longitudes.
+        - GLAT (2D array-like): 2D array representing the grid cell center latitudes.
+
+        Returns:
+        - list of floats: The boundaries of the grid cell in the format [min_lon, max_lon, min_lat, max_lat].
+        """
+
+        lon_diff         = np.abs(GLON - lon)
+        lat_diff         = np.abs(GLAT - lat)
+        j, i             = np.unravel_index(np.argmin(lon_diff + lat_diff), lon_diff.shape)
+        min_lon, max_lon = GLON[j, i], GLON[j, i+1]
+        min_lat, max_lat = GLAT[j, i], GLAT[j+1, i]
+        return [min_lon, max_lon, min_lat, max_lat]
+    
+    def construct_graphical_output_directory(self,
+                                            D_base           = '',
+                                            model_name       = '',
+                                            coast_name       = '',
+                                            mean_length_str  = '',
+                                            var_name         = ''):
+        '''
+        Construct a directory path for graphical outputs based on model parameters and characteristics.
+
+        Parameters:
+        - D_base (str): The base directory path. Defaults to self.D_graphical if not provided.
+        - model_name (str): Name of the model.
+        - var_name (str): Variable name.
+        - mean_length_str (str, optional): String representing the length of averaging or time-mean (e.g., "5day", "monthly").
+        
+        Sets:
+        - self.D_figure (str): Constructed directory path based on the provided parameters.
+
+        Note:
+        - The function checks if the directory exists and if not, it creates one.
+        '''
+        if not D_base    : D_base     = self.D_graphical
+        if not coast_name: coast_name = 'circumpolar'
+        if mean_length_str:
+            self.D_fig = os.path.join(D_base, model_name, coast_name, var_name, mean_length_str)
+        else:
+            self.D_fig = os.path.join(D_base, model_name, coast_name, var_name)
+        if not os.path.exists(self.D_fig): os.makedirs(self.D_fig)
+
+    def construct_date_string_from_model(self,t_inc,var_name):
+        '''
+        '''
+        if 'month' in self.CICE[var_name].dims:
+            self.fig_dt_str = f"month{date(1,t_inc,1).strftime('%m')}_{date(1,t_inc,1).strftime('%b')}"
+        else:
+            self.fig_dt_str = pd.Timestamp(self.CICE.isel(time=t_inc).time.values).to_pydatetime().strftime('%Y_%m_%d')
+    
+    def construct_graphical_output_filename(self,
+                                            dt_str        = '',
+                                            var_name      = '',
+                                            model_name    = '',
+                                            img_type      = '',
+                                            hemisphere    = 'sh',
+                                            atm_frcg_name = '',
+                                            ocn_frcg_name = '',
+                                            G_res         = ''):
+        '''
+        '''
+        if not img_type      : img_type = self.img_type
+        if not G_res         : G_res    = self.G_res
+        if not atm_frcg_name : atm_frcg_name = self.atm_frcg_name
+        if not ocn_frcg_name : ocn_frcg_name = self.ocn_frcg_name
+        if hemisphere=='both':
+            hemi_str = 'sh_nh'.upper()
+        else:
+            hemi_str = hemisphere.upper()
+        self.F_fig = f'{dt_str}_{model_name}_{var_name}_{hemi_str}_{atm_frcg_name}_{ocn_frcg_name}_{G_res}.{img_type}'
+    
+    def plot_cice_map(self, ds, t_inc,
+                      which_grid = 't', 
+                      var_name   = '', 
+                      cbar_lab   ='',
+                      cbar_units='',
+                      model_name='',
+                      atm_frcg_name='', 
+                      ocn_frcg_name='',
+                      vmin=0,
+                      vmax=1,
+                      tit_str='',
+                      coast_name='', 
+                      text_str='',
+                      text_loc='',
+                      region='', 
+                      gi_locs='',
+                      mean_length_str='',
+                      hemisphere='',
+                      spacing='', 
+                      search_radius='',
+                      cmap='',
+                      projection="", 
+                      D_plt_base='',
+                      overwrite=False,
+                      img_type=''):
+        '''
+        Plot sea ice maps using the Community Ice CodE (CICE) data.
+
+        Parameters:
+        -----------
+        ds : xarray.Dataset, optional
+            The dataset containing the sea ice data. Default is an empty string.
+
+        geo_stat_fig : bool, optional
+            Whether to plot geostationary figure. Default is False.
+
+        month : str, optional
+            Specify the month for which data is to be plotted. Default is an empty string.
+
+        which_grid : str, optional
+            Specify the grid of the dataset; can be 't' (temperature) or 'u' (u-component of wind). Default is 't'.
+
+        var_name : str, optional
+            Name of the variable in the dataset. Default is 'aice' (sea ice concentration).
+
+        cbar_lab : str, optional
+            Label for the colorbar. Default is 'sea ice concentration'.
+
+        cbar_units : str, optional
+            Units for the colorbar. Default is '1/100'.
+
+        model_name : str, optional
+            Name of the model used for the data. Default is an empty string.
+
+        model_run_date : str, optional
+            Date the model was run. Default is an empty string.
+
+        self.atm_frcg_name : str, optional
+            Atmospheric forcing name. Default is 'jra55do'.
+
+        ocn_frcg_name : str, optional
+            Ocean forcing name. Default is 'aom2'.
+
+        vmin, vmax : int or float, optional
+            Minimum and maximum values for the colorbar. Default is 0 and 1 respectively.
+
+        tit_str : str, optional
+            Title for the plot. Default is an empty string.
+
+        coast_name : str, optional
+            Name of the coastline data. Default is an empty string.
+
+        text_str : str, optional
+            Text to display on the plot. Default is 'Cape Darnley'.
+
+        text_loc : list of float, optional
+            [longitude, latitude] location for displaying the text on the plot. Default is [68, -68.5].
+
+        region : list of float, optional
+            [west, east, south, north] boundaries for the region to be plotted. Default is [0, 360, -80, -50].
+
+        gi_locs : str or list, optional
+            Locations for the grounding line (glacier front). Default is an empty string.
+
+        mean_length_str : str, optional
+            Time averaging for the model output; can be 'monthly' or other strings representing different time averaging. Default is 'monthly'.
+
+        hemisphere : str, optional
+            Hemisphere for plotting; can be 'sh' (southern hemisphere), 'nh' (northern hemisphere) or 'both'. Default is 'sh'.
+
+        spacing : str, optional
+            Grid spacing for the GMT regular grid. Default is '10m'.
+
+        search_radius : str, optional
+            Search radius for GMT's nearneighbor algorithm. Default is '15m'.
+
+        cmap : str, optional
+            Color map for the plot. Default is 'cmocean/ice'.
+
+        projection : str, optional
+            Projection type for GMT. Default is "S0/-90/15c".
+
+        D_plt_base : str, optional
+            Base directory path for saving the plot. Default is '/g/data/jk72/da1339/GRAPHICAL'.
+
+        overwrite : bool, optional
+            Whether to overwrite the existing file or not. Default is False.
+
+        img_type : str, optional
+            Type of image to be saved, e.g., 'png', 'jpg'. Default is 'png'.
+
+        Returns:
+        --------
+        None
+
+        Description:
+        ------------
+        This function generates a sea ice concentration map using the CICE dataset and GMT's (Generic Mapping Tools) pygmt library. 
+        The function offers flexibility to define various parameters such as the grid type, time frame, projection, 
+        and region for the plot. It can be used to visualize the sea ice concentration data for a specific model, 
+        forcing, and time period.
+
+        '''
+        c0 = time.process_time()
+        dat = np.ravel(ds[var_name].data)
+        dat = np.clip(dat, vmin, vmax)
+        if which_grid=='t':
+            lat = np.ravel(ds.TLAT.data)
+            lon = np.ravel(ds.TLON.data)
+        elif which_grid=='u':
+            lat = np.ravel(ds.ULAT.data)
+            lon = np.ravel(ds.ULON.data)
+        self.construct_date_string_from_model(t_inc,var_name)
+        self.construct_graphical_output_directory(D_base          = D_plt_base,
+                                                  model_name      = model_name,
+                                                  coast_name      = coast_name,
+                                                  mean_length_str = mean_length_str,
+                                                  var_name        = var_name)
+        self.construct_graphical_output_filename(dt_str     = self.fig_dt_str,
+                                                 model_name = model_name,
+                                                 var_name   = var_name,
+                                                 hemisphere = hemisphere,
+                                                 img_type   = img_type)
+        self.P_fig = os.path.join(self.D_fig,self.F_fig)
+        if os.path.exists(self.P_fig) and not overwrite:
+            print(f'{self.P_fig} exists and not overwriting')
+            return
+        if not tit_str:
+            tit_str = 'CICE6 {ms:s}_{vn:s}, {af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,
+                                                                          of=ocn_frcg_name,
+                                                                          ms=mean_length_str,
+                                                                          vn=var_name,
+                                                                          dt=self.fig_dt_str)  
+        print(f'initialising figure, {(time.process_time()-c0):.3f}')
+        pygmt.config(COLOR_BACKGROUND='black',COLOR_NAN='black')
+        if hemisphere=='both':
+            reg = [0,360,-90,90]
+            print(f'making surface, {(time.process_time()-c0):.3f}')
+            #m   = pygmt.blockmean(x=lon, y=lat, z=dat, region=reg, spacing=spacing)
+            #g   = pygmt.surface(data=m, region=reg, spacing=spacing)
+            g   = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=reg, spacing=spacing, search_radius=search_radius)
+            fig = pygmt.Figure()
+            print(f'making CPT, vmin:{vmin}, vmax:{vmax}, {(time.process_time()-c0):.3f}')
+            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin,vmax], output='tmp.cpt')
+            with fig.subplot(nrows=1, ncols=2, title=tit_str, figsize=("18c","9c"), autolabel=False, margins="0.25c"): 
+                with fig.set_panel(panel=0):
+                    reg_sh  = [0,360,-90,-50]
+                    proj_sh = "S0/-90/?"
+                    fig.grdimage(grid=g, region=reg_sh, projection=proj_sh, cmap='tmp.cpt', nan_transparent=True)
+                    fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
+                with fig.set_panel(panel=1):
+                    reg_nh  = [0,360,40,90]
+                    proj_nh = "S0/90/?"
+                    fig.grdimage(grid=g, region=reg_nh, projection=proj_nh, cmap='tmp.cpt', nan_transparent=True)
+                    fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
+                    fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
+        else:
+            print(f'making surface, {(time.process_time()-c0):.3f}')
+            #m   = pygmt.blockmean(x=lon, y=lat, z=dat, region=region, spacing=spacing)
+            #g   = pygmt.surface(data=m, region=region, spacing=spacing)
+            g   = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=region, spacing=spacing, search_radius=search_radius)
+            fig = pygmt.Figure()
+            print(f'making CPT, vmin:{vmin}, vmax:{vmax}, {(time.process_time()-c0):.3f}')
+            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin,vmax], output='tmp.cpt')
+            #print(f'making grdimage with {cmap}, {(time.process_time()-c0):.3f}')
+            fig.grdimage(grid=g, region=region, projection=projection, cmap='tmp.cpt')#, nan_transparent=True)
+            fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
+            for gi_loc in gi_locs: 
+                fig.plot(x=gi_loc[0], y=gi_loc[1], style="c.25c", fill="black", pen="2p")
+            fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
+            fig.basemap(frame=['a', f'WSne+t"{tit_str}"'])
+            fig.text(x=text_loc[0], y=text_loc[1], text=text_str, font="12p,Helvetica-Bold,white")
+        fig.show()
+        print(f'saving figure to {self.P_fig} ... {(time.process_time()-c0):.3f}')
+        fig.savefig(self.P_fig)
+        print(f'saved figure {(time.process_time()-c0):.3f}\n')
+        #os.system(f"ls -lh {self.P_fig}")
+
+    @staticmethod
+    def animate_sequenced_figures(D_seq_fig       = '',
+                                  D_ani_base      = '',
+                                  var_name        = '',
+                                  interval        = '-delay 100',
+                                  img_in_type     = 'png',
+                                  img_out_type    = 'gif',
+                                  mean_length_str = '',
+                                  model_name      = '',
+                                  model_run_date  = '',
+                                  atm_frcg_name   = '',
+                                  ocn_frcg_name   = '',
+                                  grid_res_str    = '',
+                                  overwrite       = False):
+        '''
+        Convert a sequence of still images into an animation format (GIF, MP4, or both).
+
+        Parameters:
+        -----------
+        D_seq_fig : str
+            Directory containing the sequence of still images to be animated.
+
+        D_ani_base : str
+            Base directory where the animation file will be saved.
+
+        var_name : str
+            Variable name.
+
+        interval : str, default='-delay 100'
+            Time interval between frames in the animation (specific to ImageMagick's `convert` command).
+
+        img_in_type : str, default='png'
+            Image file extension of the input still images.
+
+        img_out_type : str, default='gif'
+            Desired animation format (can be 'gif', 'mp4', or 'both').
+
+        mean_length_str : str
+            String representing the averaging length/period.
+
+        model_name : str
+            Name of the model being used.
+
+        model_run_date : str
+            Date when the model was run.
+
+        self.atm_frcg_name : str
+            Atmospheric forcing name.
+
+        ocn_frcg_name : str
+            Ocean forcing name.
+
+        grid_res_str : str
+            String indicating the grid resolution.
+
+        overwrite : bool, default=False
+            If True, will overwrite existing animation files. If False, will skip if file exists.
+
+        Returns:
+        --------
+        None
+
+        Description:
+        ------------
+        This method converts a sequence of still images located in `D_seq_fig` into an animation format
+        based on the `img_out_type` parameter. The resulting animation will be saved in a directory constructed
+        from various model parameters. If the output animation file already exists and `overwrite` is set to False,
+        the animation process will be skipped.
+        '''
+        c0 = time.process_time()
+        D_ = construct_graphical_output_directory(directory_base  = D_ani_base,
+                                                    model_name      = model_name,
+                                                    model_run_date  = model_run_date,
+                                                    mean_length_str = mean_length_str,
+                                                    var_name        = var_name)
+        if img_out_type=='gif':
+            F_ = construct_graphical_output_filename(atm_frcg_name   = self.atm_frcg_name,
+                                            ocn_frcg_name   = ocn_frcg_name,
+                                            grid_res_str    = grid_res_str,
+                                            img_type        = img_out_type,
+                                            dt_str          = model_run_date)
+            if os.path.exists(os.path.join(D_,F_)) and not overwrite:
+                print(f'{os.path.join(D_,F_)} exists and not overwriting')
+                return
+            print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
+            os.system(f"convert {interval} -loop 0 {D_seq_fig}/*.{img_in_type} -duplicate 1,-2-1 {os.path.join(D_,F_)}")
+        elif img_out_type=='mp4':
+            F_ = construct_graphical_output_filename(atm_frcg_name   = self.atm_frcg_name,
+                                            ocn_frcg_name   = ocn_frcg_name,
+                                            grid_res_str    = grid_res_str,
+                                            img_type        = img_out_type,
+                                            dt_str          = model_run_date)
+            if os.path.exists(os.path.join(D_,F_)) and not overwrite:
+                print(f'{os.path.join(D_,F_)} exists and not overwriting')
+                return
+            print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
+            os.system(f"ffmpeg -framerate 1 -pattern_type glob -i {D_seq_fig}/*.{img_in_type} -c:v libx264 -r 30 -pix_fmt yuv420p {os.path.join(D_,F_)}")
+        elif img_out_type=='both':
+            F_ = construct_graphical_output_filename(atm_frcg_name   = self.atm_frcg_name,
+                                            ocn_frcg_name   = ocn_frcg_name,
+                                            grid_res_str    = grid_res_str,
+                                            img_type        = 'gif',
+                                            dt_str          = model_run_date)
+            if os.path.exists(os.path.join(D_,F_)) and not overwrite:
+                print(f'{os.path.join(D_,F_)} exists and not overwriting')
+            else:
+                print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
+                os.system(f"convert {interval} -loop 0 {D_seq_fig}/*.{img_in_type} -duplicate 1,-2-1 {os.path.join(D_,F_)}")
+            F_ = construct_graphical_output_filename(atm_frcg_name   = self.atm_frcg_name,
+                                            ocn_frcg_name   = ocn_frcg_name,
+                                            grid_res_str    = grid_res_str,
+                                            img_type        = 'mp4',
+                                            dt_str          = model_run_date)
+            if os.path.exists(os.path.join(D_,F_)) and not overwrite:
+                print(f'{os.path.join(D_,F_)} exists and not overwriting')
+            else:
+                print(f'converting stills in {D_seq_fig}/*.{img_in_type}\n to animation file {os.path.join(D_,F_)}\n{(time.process_time()-c0):.3f}')
+                os.system(f"ffmpeg -framerate 1 -pattern_type glob -i '{D_seq_fig}/*.{img_in_type}' {os.path.join(D_,F_)}")
+        print(f'finished animating {(time.process_time()-c0):.3f}')
+        os.system(f"ls -lh {os.path.join(D_,F_)}")
+
+##############################################################################################################################################
+############################################################### CICE PREP ######################################################################
+##############################################################################################################################################
 class cice_prep:
     '''
-    This class is written to prepare datasets for CICE6 input, either forcing files or initial conditions. It
-    works from a supplied JSON file for defining the parameters required.
+    cice_prep: A utility for preparing datasets for CICE6 input.
 
-    External software dependencies:
-    - CDO
-    *** With this dependency, the user must edit this module's global variable "cdo" (just a few lines above these words),
-        and provide the path location to the binary cdo executables.
+    The `cice_prep` class facilitates the generation of input datasets for CICE6 
+    from various sources, such as BRAN climatology or ERA5 climatology. The class 
+    relies on a JSON configuration file to determine its parameters.
 
-    Internal software dependencies:
-    *** Author recommends using package manager "Anaconda" to download, install and manage the following packages. Version
-        dependencies with the following packages are not being rigorously accounted for by the author of this module and
-        hence errors and crashes of internal functions and classes of this module may occur do to differences in versions
-        in which the author wrote the package and versions that the current user is using.
+    External Dependencies:
+    ----------------------
+    - CDO: Climate Data Operators.
+        * To use this, modify the module's global variable "cdo" to point to the CDO executable path.
+
+    Internal Dependencies:
+    ----------------------
+    It's recommended to use the Anaconda package manager to handle these dependencies. 
+    Note: Exact version compatibility is not rigorously tracked, so some issues might arise from version mismatches.
+
     - xarray
     - metpy
     - pygmt
     - numpy
     - pandas
     - json
-    
+
+    Initialization:
+    ---------------
+    The class initialization requires a JSON configuration file with the following key fields:
+
+    Basic Configurations:
+    - CICE_ver: Version of CICE. (Default: 6)
+    - start_date: Date to start data consideration. (Default: "2010-01-01")
+    - n_months: Number of months for data consideration from the start date. (Default: 12)
+    - n_years: Duration in years. (Default: 2)
+    - G_res: Grid resolution of CICE, used in filenames and directories. (Default: "0p1")
+    - regrid_interp_type: Interpolation method for regridding. (Default: "bilinear")
+
+    Directory Paths:
+    - D_data: Base directory for data output.
+    - D_BRAN: Location of BRAN climatology data.
+    - D_ERA5: Location of ERA5 climatology data.
+    - D_modin: Used in earlier module versions, may not be necessary.
+    - D_graph: Directory where plots/figures/animations are stored.
+    - D_access-om2_out: Specifies which ACCESS-OM2 cycle data is considered.
+
+    File Paths:
+    - F_amo2bath: File path for bathymetry (may not be currently used, but relevant for potential plotting).
+    - F_G_CICE: Contains the spherical grid for CICE.
+    - F_G_BRAN: Contains the spherical grid for BRAN climatology.
+    - F_G_ERA5: Contains the spherical grid for ERA5 climatology.
+    - F_BRAN_weights: After generating using the `cice_prep.esmf_generate_weights` method, this file is used for BRAN climatology regridding.
+    - F_ERA5_weights: Similarly, used for ERA5 climatology regridding after generation.
+
+    And other parameters specific to the datasets and grids involved.
+
+    Parameters:
+    -----------
+    - FJSON (str): Path to the JSON configuration file.
+    - **kwargs: Additional keyword arguments.
     '''
     def __init__(self,FJSON='',**kwargs):
         '''
@@ -991,6 +1477,16 @@ class cice_prep:
     ############################################################################################
     def time_series_day_month_start_or_end(self,start_date='',n_months='',n_years='',month_start=True):
         '''
+        Generates a date range based on given parameters.
+
+        Parameters:
+        - start_date (str, default=''): The starting date. If not provided, will use the class's start_date.
+        - n_months (str, default=''): Number of months for the period. If not provided, will use the class's n_months.
+        - n_years (str, default=''): Number of years for the period. If not provided, will use the class's n_years.
+        - month_start (bool, default=True): If True, will start the date range at the beginning of the month; otherwise, will start at the end of the month.
+
+        Returns:
+        - DateRange: A Pandas date range object based on the provided or default parameters.
         '''
         if not n_months:
             n_mos = self.n_months
@@ -1013,6 +1509,15 @@ class cice_prep:
     ############################################################################################
     def define_datetime_object(self,start_date='',year_offset=0,full_datetime=False):
         '''
+        Returns a datetime object based on the given parameters.
+
+        Parameters:
+        - start_date (str, default=''): The date to begin with. If not provided, will use the class's start_date.
+        - year_offset (int, default=0): The number of years to offset from the given start_date.
+        - full_datetime (bool, default=False): If True, expects start_date in the format '%Y-%m-%d %H:%M'. If False, expects '%Y-%m-%d'.
+
+        Returns:
+        - datetime_obj: A datetime object based on the provided or default parameters with the year_offset applied.
         '''
         if not start_date: start_date = self.start_date
         if full_datetime:
@@ -1023,12 +1528,28 @@ class cice_prep:
     ############################################################################################
     def year_string_from_datetime_object(self,dt_obj):
         '''
+        Returns a year string from a datetime object.
+
+        Parameters:
+        - dt_obj (datetime): A datetime object.
+
+        Returns:
+        - str: A string representing the year from the provided datetime object.
         '''
         return dt_obj.strftime('%Y')
     
     ############################################################################################
     def define_era5_variable_path(self,var_name='',stt='',stp=''):
         '''
+        Constructs and returns the file path for a specified ERA5 variable.
+
+        Parameters:
+        - var_name (str, default=''): The name of the ERA5 variable.
+        - stt (str, default=''): The start date/time. If not provided, will use the class's time_series_day_month_start_or_end() function.
+        - stp (str, default=''): The stop date/time. If not provided, will use the class's time_series_day_month_end() function.
+
+        Returns:
+        - str: A constructed file path string for the specified ERA5 variable.
         '''
         if not stt:
             stt = self.time_series_day_month_start_or_end()
