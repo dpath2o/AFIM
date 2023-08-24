@@ -1,1 +1,0 @@
-# UTas_HDR_ResearchPlan_TeX_Template
