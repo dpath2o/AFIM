@@ -36,12 +36,32 @@ ncrcat = os.path.join('/','apps','nco','5.0.5','bin','ncrcat')
 ######################################################## NON-CLASS FUNCTIONS #################################################################
 ##############################################################################################################################################
 def days_since_1601_to_date(days_since_1601):
+    """
+    Converts a given number of days since January 1, 1601, to a human-readable date format.
+    
+    Parameters:
+        days_since_1601 (int): The number of days since January 1, 1601.
+    
+    Output:
+        Prints the calculated date in the YYYY-MM-DD format.
+    """
     start_date      = date(1601, 1, 1)
     offset          = timedelta(days=days_since_1601)
     result_date     = start_date + offset
     print(result_date.strftime("%Y-%m-%d"))
 
+############################################################################
 def compute_nsdic_grid_cell_areas(ds, proj_str):
+    """
+    Computes the area of each grid cell in a given dataset using a specific projection string.
+    
+    Parameters:
+        ds (xarray.Dataset): The dataset containing grid information.
+        proj_str (str): The PROJ string describing the coordinate system.
+        
+    Returns:
+        numpy.ndarray: 2D array containing the area of each grid cell.
+    """
     a       = 6378273
     b       = 6356889.449
     geod    = Geod(a=a, b=b)
@@ -75,10 +95,25 @@ def compute_nsdic_grid_cell_areas(ds, proj_str):
             A[i,j]  = np.sqrt((s - a) * (s - b) * (s - c) * (s - d))
     return A
 
+############################################################################
 # Function to compare a CICE run with NSDIC
 def compare_cice_nsdic(P_cice, NSDIC, grid_areas, proj_str, dt0='', dtN='', threshold=0.15, cice_reG_var='aice_m'):
-    '''
-    '''
+    """
+    Compares CICE model output with NSIDC observations.
+    
+    Parameters:
+        P_cice (str): Path to CICE model output files.
+        NSDIC (xarray.Dataset): NSIDC observation dataset.
+        grid_areas (numpy.ndarray): 2D array containing the area of each grid cell.
+        proj_str (str): The PROJ string describing the coordinate system.
+        dt0 (str): The start date for slicing time, format YYYY-MM-DD. Default is an empty string.
+        dtN (str): The end date for slicing time, format YYYY-MM-DD. Default is an empty string.
+        threshold (float): Threshold for masking ice concentration. Default is 0.15.
+        cice_reG_var (str): CICE variable name for regridding. Default is 'aice_m'.
+        
+    Returns:
+        xarray.DataArray: Regridded CICE sea ice area extent data.
+    """
     CICE          = xr.open_mfdataset(P_cice, decode_coords=False)
     time_index    = pd.DatetimeIndex(CICE['time'].values)
     adjusted_time = time_index - pd.DateOffset(months=1)
@@ -112,9 +147,18 @@ def compute_cice_area(CICE='',
                       threshold=0.15,
                       hemisphere='sp',
                       monthly=True):
-    '''
-    compute the total ice area based on 'aice' variable and threshold concentration
-    '''
+    """
+    Computes the total ice area based on a given threshold concentration and specified hemisphere.
+    
+    Parameters:
+        CICE (xarray.Dataset): The dataset containing CICE model variables.
+        threshold (float): The threshold for ice concentration. Default is 0.15.
+        hemisphere (str): Specifies the hemisphere ('sp' for South Pole, 'np' for North Pole). Default is 'sp'.
+        monthly (bool): Indicates whether to use monthly ('aice_m') or general ('aice') variable. Default is True.
+        
+    Returns:
+        float: The total area of ice in the specified hemisphere that exceeds the threshold concentration.
+    """
     if hemisphere=='sp':
         lat_slice = (-90,-45)
     elif hemisphere=='np':
@@ -137,11 +181,54 @@ def compute_cice_area(CICE='',
             x2, y2, z2 = np.cos(coords[j][1]) * np.cos(coords[j][0]), np.cos(coords[j][1]) * np.sin(coords[j][0]), np.sin(coords[j][1])
             area      += (x1 * y2 - x2 * y1) * (y1 + y2 + z1 + z2)
     return abs(area) / 2
+
+############################################################################
+def find_indices_within_region(LAT, LON, regn):
+    """
+    Find the indices of grid cells within a specified geographical region.
+    
+    This function takes in 2D arrays or DataArrays of latitude and longitude 
+    coordinates, and a list representing the bounding box of a geographical 
+    region. It returns the indices of the grid cells that are located within 
+    the specified region.
+    
+    Parameters:
+    LAT (np.array or xr.DataArray): 2D array representing the latitudes of the grid cells.
+    LON (np.array or xr.DataArray): 2D array representing the longitudes of the grid cells.
+    regn (list or tuple): A list or tuple containing the bounding box of the region 
+          in the format [min_longitude, max_longitude, min_latitude, max_latitude].
+          
+    Returns:
+    tuple: A tuple containing two arrays. The first array represents the row indices, 
+           and the second array represents the column indices of the grid cells 
+           within the specified region.
+    
+    Example:
+    --------
+    LAT  = np.array([[1, 2], [3, 4]])
+    LON  = np.array([[5, 6], [7, 8]])
+    regn = [5, 7, 1, 3]
+    
+    row_indices, col_indices = find_indices_within_region(LAT, LON, regn)
+    # row_indices = [0, 1]
+    # col_indices = [0, 1]
+    """
+    ln_mn,ln_mx,lt_mn,lt_mx = regn
+    mask                    = (LAT >= lt_mn) & (LAT <= lt_mx) & (LON >= ln_mn) & (LON <= ln_mx)
+    return np.where(mask)
+
 ############################################################################
 def compute_sfc_qsat(d2m, sp):
-    '''
-    compute specific humidity at 2-metres based on dewpoint and surface pressure
-    '''
+    """
+    Computes specific humidity at 2-meters based on dewpoint and surface pressure.
+    
+    Parameters:
+        d2m (float): Dewpoint temperature at 2 meters.
+        sp (float): Surface pressure.
+        
+    Returns:
+        float: Specific humidity at 2-meters.
+    """
     Rdry = 287.0597
     Rvap = 461.5250
     a1   = 611.21
@@ -153,9 +240,18 @@ def compute_sfc_qsat(d2m, sp):
 
 ############################################################################
 def compute_ocn_sfc_slope(eta, dxdy_array, direction='x', grid_scale_factor=100):
-    '''
-    grid_scale_factor assumes dxdy_array is in cm and eta is m
-    '''
+    """
+    Computes sea surface slope in a specified direction.
+    
+    Parameters:
+        eta (float or xarray.DataArray): Sea surface height.
+        dxdy_array (float or xarray.DataArray): Grid spacing array. Assumed to be in cm.
+        direction (str): The direction for which to compute the sea surface slope ('x' or 'y'). Default is 'x'.
+        grid_scale_factor (int): Scale factor to convert dxdy_array units to match eta. Default is 100.
+        
+    Returns:
+        xarray.DataArray: Sea surface slope in the specified direction with appropriate units and attributes.
+    """
     if direction=='x':
         dhdx                    = eta / (dxdy_array/grid_scale_factor)
         dhdx.attrs['units']     = 'meters'
@@ -168,20 +264,20 @@ def compute_ocn_sfc_slope(eta, dxdy_array, direction='x', grid_scale_factor=100)
         return dhdy
     
 ############################################################################
-def compute_ocn_heat_flux_at_depth(rho_D,cp_D,D,F_net,dTdt_D,
-                                   time_unit_to_seconds=3600):
+def compute_ocn_heat_flux_at_depth(rho_D, cp_D, D, F_net, dTdt_D, time_unit_to_seconds=3600):
     '''
-    Returns the ocean heat flux at depth in W/m^2
+    Computes the ocean heat flux at a specific depth in W/m^2.
     
-    Requires:
-        rho, rho_D, density at depth, in kg/m^2
-        cp, cp_D, heat capacity at depth, in J/(kg*C)
-        depth, D, in metres
-        dTdt_D, time derivative of temperature at depth,
-                assumes in C/hr, but if time derivative is different
-                then the option to provide the correct unit of time in
-                seconds is provided, (i.e. default is 3600 seconds)
-        F_net, atmospheric heat flux at surface, W/m^2
+    Parameters:
+        rho_D (float): Density at depth, in kg/m^3.
+        cp_D (float): Heat capacity at depth, in J/(kg*C).
+        D (float): Depth in meters.
+        F_net (float): Atmospheric heat flux at surface, in W/m^2.
+        dTdt_D (float): Time derivative of temperature at depth, in C/hr by default.
+        time_unit_to_seconds (int): Conversion factor for time derivative unit to seconds. Default is 3600 seconds.
+        
+    Returns:
+        float: Ocean heat flux at specified depth in W/m^2.
         
     Unit analysis on assumption of time derivative:
         
@@ -202,7 +298,14 @@ def compute_ocn_heat_flux_at_depth(rho_D,cp_D,D,F_net,dTdt_D,
 ############################################################################
 def compute_ocn_pressure_at_depth(D,latitude):
     '''
-    Calculates pressure in dbars from depth in meters.
+    Calculates the pressure at a specific depth in the ocean in dbars.
+    
+    Parameters:
+        D (float): Depth in meters.
+        latitude (float): Latitude in degrees.
+        
+    Returns:
+        float: Pressure in dbars.
     
     REFERENCE:
     Saunders, P.M. 1981
@@ -217,12 +320,15 @@ def compute_ocn_pressure_at_depth(D,latitude):
 ############################################################################
 def compute_ocn_secant_bulk_modulus(S,T,P):
     '''
-     Secant Bulk Modulus (K) of Sea Water using Equation of state 1980. 
-     UNESCO polynomial implementation.
-     
-     P in dbar
-     T in Celsius
-     S in PSU
+    Computes the Secant Bulk Modulus (K) of sea water using Equation of State 1980 (UNESCO).
+    
+    Parameters:
+        S (float): Salinity in PSU.
+        T (float): Temperature in Celsius.
+        P (float): Pressure in dbar.
+        
+    Returns:
+        float: Secant Bulk Modulus in appropriate units.
      
      REFERENCES:
       Fofonoff, P. and Millard, R.C. Jr
@@ -468,6 +574,16 @@ def compute_ocn_heat_capacity_at_depth(S,T,D,latitude):
 ############################################################################
 def compute_ocn_density_at_depth_alternative_method(S,T,D,latitude):
     '''
+    Calculate the density of seawater at a given depth, temperature, salinity, and latitude.
+    
+    Parameters:
+    S (float)        : Salinity (in PSU)
+    T (float)        : Temperature (in degrees Celsius)
+    D (float)        : Depth (in meters)
+    latitude (float) : Latitude (in degrees)
+    
+    Returns:
+    float: Density of seawater (in kg/m^3)
     '''
     # depth to pressure
     P = compute_ocn_pressure_at_depth(D,latitude)
@@ -531,7 +647,14 @@ def compute_ocn_density_at_depth_alternative_method(S,T,D,latitude):
 ############################################################################
 def compute_diffuse_sfc_em(em_sfc, em_toa):
     '''
-    a simple function to compute the diffuse short/long wave EM at surface
+    Compute the diffuse electromagnetic radiation at the surface based on total radiation at surface and top of the atmosphere.
+    
+    Parameters:
+    em_sfc (float) : Electromagnetic radiation at surface (W/m^2)
+    em_toa (float) : Electromagnetic radiation at top of atmosphere (W/m^2)
+    
+    Returns:
+    float: Diffuse electromagnetic radiation at surface (W/m^2)
     '''
     k_t = em_sfc / em_toa
     return 0.952 - 1.041 * np.exp(-np.exp((2.3 - 4.702*k_t)))
@@ -539,14 +662,28 @@ def compute_diffuse_sfc_em(em_sfc, em_toa):
 ############################################################################
 def compute_u2_from_u10(u10):
     '''
-    a simple function transfer/compute wind speed at 2-metres from reported wind speed at 10-metres
+    Compute wind speed at 2 meters from reported wind speed at 10 meters.
+    
+    Parameters:
+    u10 (float) : Wind speed at 10 meters (in m/s)
+    
+    Returns:
+    float : Wind speed at 2 meters (in m/s)
     '''
     return (u10 * 4.87) / np.log((67.8 * 10) - 5.42)
 
 ############################################################################
 def compute_sfc_airrho(t2m, d2m, sp):
     '''
-    compute atmospheric air density at the surface based on temperature, dewpoint and surface pressure using metpy calculation
+    Compute air density at the surface based on temperature, dewpoint, and surface pressure.
+    
+    Parameters:
+    t2m (float) : Temperature at 2 meters (in Kelvin)
+    d2m (float) : Dewpoint at 2 meters (in Kelvin)
+    sp  (float) : Surface pressure (in Pascal)
+    
+    Returns:
+    float : Air density at the surface (in kg/m^3)
     '''
     RH  = mpc.relative_humidity_from_dewpoint(t2m,d2m)
     r   = mpc.mixing_ratio_from_relative_humidity(sp, t2m, RH)
@@ -555,7 +692,14 @@ def compute_sfc_airrho(t2m, d2m, sp):
 ############################################################################
 def compute_sfc_qsat(d2m, sp):
     '''
-    compute specific humidity at 2-metres based on dewpoint and surface pressure
+    Compute specific humidity at 2 meters based on dewpoint and surface pressure.
+    
+    Parameters:
+    d2m (float) : Dewpoint at 2 meters (in Kelvin)
+    sp  (float) : Surface pressure (in Pascal)
+    
+    Returns:
+    float : Specific humidity at 2 meters (dimensionless)
     '''
     Rdry = 287.0597
     Rvap = 461.5250
@@ -569,16 +713,33 @@ def compute_sfc_qsat(d2m, sp):
 ############################################################################
 def ocean_temp_from_theta(p0, p):
     '''
-    compute ocean temperature from potential temperature
-    p0 :: reference pressure [db]
-    p  :: pressure at level [db]
-
+    Compute ocean temperature from potential temperature.
+    
+    Parameters:
+    p0 (float) : Reference pressure in decibars (db)
+    p  (float) : Pressure at the desired level in decibars (db)
+    
+    Returns:
+    [Currently, this function doesn't return anything; you might want to implement this.]
+    
+    Note:
+    This function currently calculates the pressure difference but doesn't compute the ocean temperature from potential temperature.
     '''
     dp = p0 - p
 
 ############################################################################
 def update_frame(frame):
     '''
+    Update the visualization frame for animation.
+    
+    Parameters:
+    frame (int or float) : The frame index to update the visualization with.
+    
+    Returns:
+    None
+    
+    Note:
+    This function assumes that 'cax' and 'ds' are predefined. Make sure these variables are properly initialized before calling the function.
     '''
     cax.set_array( ds.isel(time=frame).values.flatten() )
 
@@ -590,6 +751,20 @@ def xesmf_regrid_dataset(DS_src, DS_dst, F_DS_na,
                          F_weights='',
                          multi_file=False):
     '''
+    Regrid a given dataset from source grid to destination grid using xESMF.
+    
+    Parameters:
+    DS_src (xarray.Dataset) : Source dataset
+    DS_dst (xarray.Dataset) : Destination dataset
+    F_DS_na (str)           : File name or path of the dataset to be regridded
+    method (str)            : Regridding method; default is 'bilinear'
+    periodic (bool)         : Whether the grid is periodic; default is True
+    reuse_weights (bool)    : Whether to reuse weights; default is True
+    F_weights (str)         : File name for saving/loading regridding weights; default is ''
+    multi_file (bool)       : Whether to open multiple files; default is False
+    
+    Returns:
+    xarray.Dataset : Regridded dataset
     '''
     print("regridding file: ",F_DS_na)
     rg = xe.Regridder(DS_src, DS_dst, 
@@ -772,7 +947,14 @@ class cice_analysis:
         and grid type. The returned dataset contains only the data for the specified hemisphere.
         '''
         if mf_switch:
-            CICE = xr.open_mfdataset(self.P_afim)
+            #from dask.distributed import Client, LocalCluster
+            #cluster = LocalCluster(n_workers=7, threads_per_worker=1)
+            #client = Client(cluster)
+            #chnk = {'nj': 108, 'ni': 144}
+            CICE = xr.open_mfdataset(self.P_afim)#,chunks=chnk)
+            # Open the dataset with Dask for parallel loading
+            #CICE = xr.open_mfdataset(self.P_afim, chunks=chnk, engine='netcdf4', parallel=True)
+            #client.close()
         else:
             CICE = xr.open_dataset(self.P_afim)
         time_index = pd.DatetimeIndex(CICE['time'].values)
@@ -781,6 +963,10 @@ class cice_analysis:
         else:
             adjusted_time = time_index - pd.DateOffset(days=1)
         CICE['time'] = adjusted_time.values
+        CICE         = CICE.assign_coords(tlon_i=('ni', CICE['TLON'][0,:].values))
+        CICE         = CICE.assign_coords(tlat_i=('nj', CICE['TLAT'][:,0].values))
+        CICE         = CICE.assign_coords(ulon_i=('ni', CICE['ULON'][0,:].values))
+        CICE         = CICE.assign_coords(ulat_i=('nj', CICE['ULAT'][:,0].values))
         self.CICE    = CICE.sel(time=slice(self.dt0,self.dtN))
 
     def mask_hemisphere(self, which_hemisphere='south', which_grid='t'):
@@ -932,13 +1118,42 @@ class cice_analysis:
             self.D_fig = os.path.join(D_base, model_name, coast_name, var_name)
         if not os.path.exists(self.D_fig): os.makedirs(self.D_fig)
 
-    def construct_date_string_from_model(self,t_inc,var_name):
-        '''
-        '''
-        if 'month' in self.CICE[var_name].dims:
-            self.fig_dt_str = f"month{date(1,t_inc,1).strftime('%m')}_{date(1,t_inc,1).strftime('%b')}"
-        else:
-            self.fig_dt_str = pd.Timestamp(self.CICE.isel(time=t_inc).time.values).to_pydatetime().strftime('%Y_%m_%d')
+    def construct_date_string_from_model(self, t_inc=None, t_search=None, var_name='', user_data=None):
+        """
+        Construct a date string based on the provided time index or search time and variable name.
+        The date string will be stored in the instance variable `self.fig_dt_str`.
+
+        Args:
+            t_inc (int or None): Time index for which to construct the date string.
+            t_search (str or None): A string representing the time to search for.
+            var_name (str): Name of the variable.
+            user_data (xarray.Dataset or None): Optional user-provided data. If provided,
+                the time will be extracted from this data instead of the model data.
+
+        Raises:
+            ValueError: If both `t_inc` and `t_search` are None or if an error occurs while
+                constructing the date string.
+        """
+        if t_inc is None and t_search is None:
+            raise ValueError("Either t_inc or t_search must be provided.")
+
+        try:
+            if t_search:
+                time_val = pd.Timestamp(t_search)
+                data = user_data if user_data is not None else self.CICE
+                if 'time' in data:
+                    t_index = abs(data['time'] - np.datetime64(time_val)).argmin().item()
+                    time_val = data.isel(time=t_index).time.values
+                else:
+                    raise ValueError(f"No 'time' dimension found in the data for var_name={var_name}.")
+            else:
+                data = user_data if user_data is not None else self.CICE
+                time_val = data.isel(time=t_inc).time.values
+
+            self.fig_dt_str = pd.Timestamp(time_val).to_pydatetime().strftime('%Y_%m_%d')
+        except Exception as e:
+            raise ValueError(f"Unable to construct date string for t_inc={t_inc}, t_search={t_search}, var_name={var_name}. Error: {e}")
+
     
     def construct_graphical_output_filename(self,
                                             dt_str        = '',
@@ -960,117 +1175,206 @@ class cice_analysis:
         else:
             hemi_str = hemisphere.upper()
         self.F_fig = f'{dt_str}_{model_name}_{var_name}_{hemi_str}_{atm_frcg_name}_{ocn_frcg_name}_{G_res}.{img_type}'
+
+    def update_attrs(self, source_dict, var_inc, model_run_name, dt_str, 
+                    tit_str=None, cbar_lab=None, cbar_units=None, cmap=None, grid_type=None):
+        """
+        Update attributes for a given variable.
+        
+        Args:
+            source_dict (dict): Dictionary containing metadata information for various variables.
+            var_inc (str): Name of the variable of interest.
+            tit_str (str, optional): User-defined title string. Defaults to None.
+            cbar_lab (str, optional): User-defined colorbar label. Defaults to None.
+            cbar_units (str, optional): User-defined colorbar units. Defaults to None.
+            cmap (str, optional): User-defined colormap. Defaults to None.
+            grid_type (str, optional): User-defined grid type. Defaults to None.
+            
+        Returns:
+            tuple: Descriptions, labels, units, colormaps, and grid types associated with the variable.
+        """
+        tit_str    = tit_str    or f"{source_dict['var_descs'][var_inc]} {model_run_name} {dt_str}"
+        cbar_lab   = cbar_lab   or source_dict['var_labs'][var_inc]
+        cbar_units = cbar_units or source_dict['var_units'][var_inc]
+        cmap       = cmap       or source_dict['var_cmaps'][var_inc]
+        grid_type  = grid_type  or source_dict['var_grids'][var_inc].upper()
+        return tit_str, cbar_lab, cbar_units, cmap, grid_type
+
+
+    def spatially_trim_data_to_region(self, dat, glon_str, glat_str, region=None):
+        """
+        Trim spatial data to a specified region.
+        
+        Args:
+            dat (xarray.DataArray or similar): The data array containing spatial information.
+            glon_str (str): The longitude variable key in 'dat'.
+            glat_str (str): The latitude variable key in 'dat'.
+            region (tuple, optional): A tuple (lon_min, lon_max, lat_min, lat_max) defining the region to trim to.
+            
+        Returns:
+            tuple: Trimmed data, latitudes, and longitudes.
+        """
+        if region:
+            lon_key, lat_key = f"{glon_str}", f"{glat_str}"
+            dat = dat.where((dat[lon_key] >= region[0]) & (dat[lon_key] <= region[1]) & (dat[lat_key] >= region[2]) & (dat[lat_key] <= region[3]))
+        lon = np.ravel(dat[glon_str].values)
+        lat = np.ravel(dat[glat_str].values)
+        dat = np.ravel(dat.values)
+        mask = ~np.isnan(dat)
+        return dat[mask], lat[mask], lon[mask]
+
+    def set_vmin_vmax(self, dat, source_dict, var_inc):
+        """
+        Determine minimum and maximum values for a data array based on a source dictionary.
+        
+        Args:
+            dat (array): Data array to find vmin and vmax for.
+            source_dict (dict): Dictionary containing vmin and vmax information for various variables.
+            var_inc (str): Name of the variable of interest.
+            
+        Returns:
+            tuple: Computed or specified vmin and vmax values.
+        """
+        if dat.size == 0:
+            print("Warning: Skipping this t_inc, as the data array is empty.")
+            return None, None  # This will indicate to the caller that it should skip this iteration
+        if not source_dict['var_vmins'][var_inc]:
+            vmin = np.nanmin(dat)
+        else:
+            vmin = source_dict['var_vmins'][var_inc]
+        if not source_dict['var_vmaxs'][var_inc]:
+            vmax = np.nanmax(dat)
+        else:
+            vmax = source_dict['var_vmaxs'][var_inc]
+        return vmin, vmax
     
-    def plot_cice_map(self, ds, t_inc,
-                      which_grid = 't', 
-                      var_name   = '', 
-                      cbar_lab   ='',
-                      cbar_units='',
-                      model_name='',
-                      atm_frcg_name='', 
-                      ocn_frcg_name='',
-                      vmin=0,
-                      vmax=1,
-                      tit_str='',
-                      coast_name='', 
-                      text_str='',
-                      text_loc='',
-                      region='', 
-                      gi_locs='',
-                      mean_length_str='',
-                      hemisphere='',
-                      spacing='', 
-                      search_radius='',
-                      cmap='',
-                      projection="", 
-                      D_plt_base='',
-                      overwrite=False,
-                      img_type=''):
+    def plot_cice_map(self, 
+                        model_run_name  = None,
+                        t_inc           = None,
+                        user_data       = None,
+                        t_search        = None,
+                        region_key      = None,
+                        region          = None,
+                        hemisphere      = None,
+                        model_name      = None,
+                        coast_name      = None,
+                        var_name        = None,
+                        var_inc         = None,
+                        grid_type       = None,
+                        cbar_lab        = None,
+                        cbar_units      = None,
+                        vmin            = None,
+                        vmax            = None,
+                        nodata          = None,
+                        tit_str         = None,
+                        text_str        = None,
+                        text_loc        = None,
+                        gi_locs         = None,
+                        mean_length_str = 'monthly',
+                        mo_or_ti        = 'time',
+                        spacing         = None,
+                        search_radius   = None,
+                        cmap            = None,
+                        projection      = None,
+                        D_plt_base      = None,
+                        overwrite       = False,
+                        img_type        = None,
+                        show_fig        = False):
         '''
-        Plot sea ice maps using the Community Ice CodE (CICE) data.
+        Plot sea ice maps using the Community Ice CodE (CICE) data or user-provided data.
 
         Parameters:
         -----------
-        ds : xarray.Dataset, optional
-            The dataset containing the sea ice data. Default is an empty string.
+        model_run_name : str, optional
+            Name of the model run to use from the CICE dataset. Default is None.
 
-        geo_stat_fig : bool, optional
-            Whether to plot geostationary figure. Default is False.
+        t_inc : int, optional
+            Time increment index for the CICE dataset. Required if user_data is not provided. Default is None.
 
-        month : str, optional
-            Specify the month for which data is to be plotted. Default is an empty string.
+        user_data : xarray.Dataset, optional
+            A user-provided dataset containing sea ice data. If provided, the method will use user_data 
+            instead of data from the CICE dataset, and parameters t_inc and var_inc will be ignored. 
+            Default is None.
 
-        which_grid : str, optional
-            Specify the grid of the dataset; can be 't' (temperature) or 'u' (u-component of wind). Default is 't'.
+        t_search : str, optional
+            A string representing the time to search for in user_data when it is provided. It should 
+            be in a format that can be converted to np.datetime64. Required if user_data is provided. 
+            Default is None.
+
+        region_key : str, optional
+            A key representing a predefined region in the regions_info dictionary. Default is ''.
 
         var_name : str, optional
-            Name of the variable in the dataset. Default is 'aice' (sea ice concentration).
+            The name of the variable in the dataset to plot. Required if user_data is provided. Default is ''.
 
         cbar_lab : str, optional
-            Label for the colorbar. Default is 'sea ice concentration'.
+            Label for the colorbar. Default is ''.
 
         cbar_units : str, optional
-            Units for the colorbar. Default is '1/100'.
+            Units for the colorbar. Default is ''.
 
         model_name : str, optional
-            Name of the model used for the data. Default is an empty string.
-
-        model_run_date : str, optional
-            Date the model was run. Default is an empty string.
-
-        self.atm_frcg_name : str, optional
-            Atmospheric forcing name. Default is 'jra55do'.
-
-        ocn_frcg_name : str, optional
-            Ocean forcing name. Default is 'aom2'.
+            Name of the model used for the data. Default is ''.
 
         vmin, vmax : int or float, optional
-            Minimum and maximum values for the colorbar. Default is 0 and 1 respectively.
+            Minimum and maximum values for the colorbar. Default is ''.
+
+        nodata : str, optional
+            Value representing no data in the dataset. Default is ''.
+
+        var_inc : str, optional
+            Variable increment in the CICE dataset. Ignored if user_data is provided. Default is ''.
 
         tit_str : str, optional
-            Title for the plot. Default is an empty string.
+            Title for the plot. Default is ''.
 
         coast_name : str, optional
-            Name of the coastline data. Default is an empty string.
+            Name of the coastline data. Default is ''.
 
         text_str : str, optional
-            Text to display on the plot. Default is 'Cape Darnley'.
+            Text to display on the plot. Default is ''.
 
         text_loc : list of float, optional
-            [longitude, latitude] location for displaying the text on the plot. Default is [68, -68.5].
+            [longitude, latitude] location for displaying the text on the plot. Default is ''.
 
         region : list of float, optional
-            [west, east, south, north] boundaries for the region to be plotted. Default is [0, 360, -80, -50].
+            [west, east, south, north] boundaries for the region to be plotted. Required if user_data is provided. 
+            Default is ''.
 
         gi_locs : str or list, optional
-            Locations for the grounding line (glacier front). Default is an empty string.
+            Locations for the grounding line (glacier front). Default is ''.
 
         mean_length_str : str, optional
-            Time averaging for the model output; can be 'monthly' or other strings representing different time averaging. Default is 'monthly'.
+            Time averaging for the model output; can be 'monthly' or other strings representing different 
+            time averaging. Default is 'monthly'.
 
         hemisphere : str, optional
-            Hemisphere for plotting; can be 'sh' (southern hemisphere), 'nh' (northern hemisphere) or 'both'. Default is 'sh'.
+            Hemisphere for plotting; can be 'sh' (southern hemisphere), 'nh' (northern hemisphere) or 'both'. 
+            Default is ''.
 
         spacing : str, optional
-            Grid spacing for the GMT regular grid. Default is '10m'.
+            Grid spacing for the GMT regular grid. Default is ''.
 
         search_radius : str, optional
-            Search radius for GMT's nearneighbor algorithm. Default is '15m'.
+            Search radius for GMT's nearneighbor algorithm. Default is ''.
 
         cmap : str, optional
-            Color map for the plot. Default is 'cmocean/ice'.
+            Color map for the plot. Default is ''.
 
         projection : str, optional
-            Projection type for GMT. Default is "S0/-90/15c".
+            Projection type for GMT. Default is ''.
 
         D_plt_base : str, optional
-            Base directory path for saving the plot. Default is '/g/data/jk72/da1339/GRAPHICAL'.
+            Base directory path for saving the plot. Default is ''.
 
         overwrite : bool, optional
             Whether to overwrite the existing file or not. Default is False.
 
         img_type : str, optional
-            Type of image to be saved, e.g., 'png', 'jpg'. Default is 'png'.
+            Type of image to be saved, e.g., 'png', 'jpg'. Default is ''.
+
+        show_fig : bool, optional
+            Whether to show the figure or not. Default is False.
 
         Returns:
         --------
@@ -1078,22 +1382,54 @@ class cice_analysis:
 
         Description:
         ------------
-        This function generates a sea ice concentration map using the CICE dataset and GMT's (Generic Mapping Tools) pygmt library. 
-        The function offers flexibility to define various parameters such as the grid type, time frame, projection, 
-        and region for the plot. It can be used to visualize the sea ice concentration data for a specific model, 
-        forcing, and time period.
-
+        This function generates a sea ice concentration map using either the CICE dataset or a user-provided dataset, 
+        utilizing GMT's (Generic Mapping Tools) pygmt library. The function offers flexibility to define various 
+        parameters such as the grid type, time frame, projection, and region for the plot. It can be used to visualize 
+        the sea ice concentration data for a specific model, forcing, and time period, either from the predefined CICE 
+        dataset or from a user-provided dataset.
         '''
         c0 = time.process_time()
-        dat = np.ravel(ds[var_name].data)
-        dat = np.clip(dat, vmin, vmax)
-        if which_grid=='t':
-            lat = np.ravel(ds.TLAT.data)
-            lon = np.ravel(ds.TLON.data)
-        elif which_grid=='u':
-            lat = np.ravel(ds.ULAT.data)
-            lon = np.ravel(ds.ULON.data)
-        self.construct_date_string_from_model(t_inc,var_name)
+        # If user_data is provided, t_search, var_name, and region must also be provided
+        if user_data is not None and (t_search is None or var_name is None or region is None):
+            raise ValueError("t_search, var_name, and region are required when user_data is provided.")
+        # If region_key is provided, use it to set up other parameters
+        if region_key:
+            region_info = self.regions_info.get(region_key, {})
+            region      = region or region_info.get('region')
+            hemisphere  = hemisphere or ('both' if region_key == 'circumpolar' else 'sh')
+            coast_name  = coast_name or region_info.get('coast_name')
+            projection  = projection or region_info.get('projection')
+            text_str    = text_str or region_info.get('text_string')
+            text_loc    = text_loc or region_info.get('text_location')
+        # If var_inc is provided, use it to set up other parameters
+        if var_inc:
+            source_dict = self.plt_mo_dict if mo_or_ti == 'time' else self.plt_stat_dict
+            var_info    = source_dict.get(var_inc, {})
+            tit_str     = tit_str or f"{var_info.get('var_descs', 'Unknown')} {model_run_name} {self.fig_dt_str}"
+            cbar_lab    = cbar_lab or var_info.get('var_labs', 'BLANK LABEL')
+            cbar_units  = cbar_units or var_info.get('var_units', 'unitless')
+            cmap        = cmap or var_info.get('var_cmaps', cm.thermal)
+            grid_type   = grid_type or var_info.get('var_grids', 'T').upper()
+        else:
+            projection = "S0/-90/25c"
+            tit_str    = tit_str or f"{model_run_name} {self.fig_dt_str}"
+            cbar_lab   = cbar_lab or 'BLANK LABEL'
+            cbar_units = cbar_units or 'unitless'
+            cmap       = cmap or "cmocean/amp"
+            grid_type  = grid_type or 'T'
+            hemisphere = 'sh'
+        # Construct the date string
+        try:
+            self.construct_date_string_from_model(t_inc=t_inc, t_search=t_search, var_name=var_name, user_data=user_data)
+        except ValueError as e:
+            print(f"Error constructing date string: {e}")
+            return
+        # Set up the remaining parameters
+        glon_str, glat_str = f"{grid_type}LON", f"{grid_type}LAT"
+        model_name         = model_name or self.afim_runs.get(model_run_name, {}).get('long_name', 'Unknown')
+        spacing            = spacing or self.spacing
+        search_radius      = search_radius or self.search_radius
+        D_plt_base         = D_plt_base or self.D_graphical  # assuming self.D_plt_base is a class attribute for default base directory
         self.construct_graphical_output_directory(D_base          = D_plt_base,
                                                   model_name      = model_name,
                                                   coast_name      = coast_name,
@@ -1108,56 +1444,98 @@ class cice_analysis:
         if os.path.exists(self.P_fig) and not overwrite:
             print(f'{self.P_fig} exists and not overwriting')
             return
-        if not tit_str:
-            tit_str = 'CICE6 {ms:s}_{vn:s}, {af:s}/{of:s}, {dt:s}'.format(af=atm_frcg_name,
-                                                                          of=ocn_frcg_name,
-                                                                          ms=mean_length_str,
-                                                                          vn=var_name,
-                                                                          dt=self.fig_dt_str)  
+        if user_data is not None:
+            if not t_search or not var_name or not region:
+                raise ValueError("t_search, var_name, and region are required when user_data is provided.")
+            t_index = abs(user_data['time'] - np.datetime64(t_search)).argmin().item()
+            dat = user_data.isel(time=t_index)[var_name]
+            dat, lat, lon = self.spatially_trim_data_to_region(dat, glon_str, glat_str, region)
+            source_dict = None
+        else:
+            if hemisphere in ['sh', 'nh']:
+                region = self.regions_info[region_key]['region']
+                if mo_or_ti == 'time':
+                    dat = self.CICE.isel(time=t_inc)[var_name]
+                else:
+                    dat = self.CICE.isel(month=t_inc-1)[var_name]
+                dat, lat, lon = self.spatially_trim_data_to_region(dat, glon_str, glat_str, region)
+            else:
+                if mo_or_ti == 'time':
+                    dat = np.ravel(self.CICE.isel(time=t_inc)[var_name].values)
+                else:
+                    dat = np.ravel(self.CICE.isel(month=t_inc-1)[var_name].values)
+                lat = np.ravel(self.CICE[glat_str].data)
+                lon = np.ravel(self.CICE[glon_str].data)
+            try:
+                vmin, vmax = self.set_vmin_vmax(dat, source_dict, var_inc)
+            except ValueError as e:
+                print(f"Encountered an error for model_run_name: {model_run_name}, t_inc: {t_inc}, Error: {e}")
+                return  # Skip the current iteration and return immediately
+            if vmin >= vmax or vmin==vmax:
+                print(f"vmin should be less than vmax. Got vmin={vmin}, vmax={vmax} ... skipping {t_inc}")
+                return
+            if not gi_locs:
+                self.find_nearest_coordinates(self.CICE[glat_str].values,
+                                            self.CICE[glon_str].values,
+                                            self.regions_info[region_key]['gi_locations'])
+                gi_locs = self.GI_locations
+        if len(dat)==0 or not len(lat)==len(dat) or not len(lon)==len(dat):
+            print(f"Encountered a data shape empty of data shape mis-match for model_run_name: {model_run_name}, t_inc: {t_inc}")
+            print(f'dat shape: {np.shape(dat)}')
+            print(f'lat shape: {np.shape(lat)}')
+            print(f'lon shape: {np.shape(lon)}')
+            print(f'ABORT plotting of {self.P_fig}')
+            return  # Skip the current iteration and return immediately
         print(f'initialising figure, {(time.process_time()-c0):.3f}')
-        pygmt.config(COLOR_BACKGROUND='black',COLOR_NAN='black')
+        pygmt.config(COLOR_BACKGROUND='white',COLOR_NAN='white')
         if hemisphere=='both':
             reg = [0,360,-90,90]
             print(f'making surface, {(time.process_time()-c0):.3f}')
-            #m   = pygmt.blockmean(x=lon, y=lat, z=dat, region=reg, spacing=spacing)
-            #g   = pygmt.surface(data=m, region=reg, spacing=spacing)
-            g   = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=reg, spacing=spacing, search_radius=search_radius)
+            try:
+                g = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=reg, spacing=spacing, search_radius=search_radius, nodata=nodata)
+            except ValueError as e:
+                print(f"Encountered an error for model_run_name: {model_run_name}, t_inc: {t_inc}, Error: {e}")
+                return  # Skip the current iteration and return immediately
             fig = pygmt.Figure()
             print(f'making CPT, vmin:{vmin}, vmax:{vmax}, {(time.process_time()-c0):.3f}')
-            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin,vmax], output='tmp.cpt')
+            F_cpt = os.path.join(self.D_fig,"tmp.cpt")
+            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin, vmax], output=F_cpt)
             with fig.subplot(nrows=1, ncols=2, title=tit_str, figsize=("18c","9c"), autolabel=False, margins="0.25c"): 
                 with fig.set_panel(panel=0):
                     reg_sh  = [0,360,-90,-50]
                     proj_sh = "S0/-90/?"
-                    fig.grdimage(grid=g, region=reg_sh, projection=proj_sh, cmap='tmp.cpt', nan_transparent=True)
+                    fig.grdimage(grid=g, region=reg_sh, projection=proj_sh, cmap=F_cpt, nan_transparent=True)
                     fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
                 with fig.set_panel(panel=1):
-                    reg_nh  = [0,360,40,90]
+                    reg_nh  = [0,360,45,90]
                     proj_nh = "S0/90/?"
-                    fig.grdimage(grid=g, region=reg_nh, projection=proj_nh, cmap='tmp.cpt', nan_transparent=True)
+                    fig.grdimage(grid=g, region=reg_nh, projection=proj_nh, cmap=F_cpt, nan_transparent=True)
                     fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
                     fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
         else:
             print(f'making surface, {(time.process_time()-c0):.3f}')
-            #m   = pygmt.blockmean(x=lon, y=lat, z=dat, region=region, spacing=spacing)
-            #g   = pygmt.surface(data=m, region=region, spacing=spacing)
-            g   = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=region, spacing=spacing, search_radius=search_radius)
+            try:
+                g = pygmt.nearneighbor(x=lon, y=lat, z=dat, region=region, spacing=spacing, search_radius=search_radius, nodata=nodata)
+            except ValueError as e:
+                print(f"Encountered an error for model_run_name: {model_run_name}, t_inc: {t_inc}, Error: {e}")
+                return  # Skip the current iteration and return immediately
             fig = pygmt.Figure()
             print(f'making CPT, vmin:{vmin}, vmax:{vmax}, {(time.process_time()-c0):.3f}')
-            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin,vmax], output='tmp.cpt')
-            #print(f'making grdimage with {cmap}, {(time.process_time()-c0):.3f}')
-            fig.grdimage(grid=g, region=region, projection=projection, cmap='tmp.cpt')#, nan_transparent=True)
+            F_cpt = os.path.join(self.D_fig,"tmp.cpt")
+            pygmt.makecpt(cmap=cmap, no_bg=True, series=[vmin, vmax], output=F_cpt)
+            fig.grdimage(grid=g, region=region, projection=projection, cmap=F_cpt)
             fig.colorbar(frame=[f"x+l{cbar_lab}", f"y+l{cbar_units}"], position="JRM")
-            for gi_loc in gi_locs: 
-                fig.plot(x=gi_loc[0], y=gi_loc[1], style="c.25c", fill="black", pen="2p")
+            if gi_locs is not None:
+                for gi_loc in gi_locs: 
+                    fig.plot(x=gi_loc[0], y=gi_loc[1], style="c.25c", fill="black", pen="2p")
             fig.coast(shorelines=True, borders=["1", "2"], land="#666666")
             fig.basemap(frame=['a', f'WSne+t"{tit_str}"'])
-            fig.text(x=text_loc[0], y=text_loc[1], text=text_str, font="12p,Helvetica-Bold,white")
-        fig.show()
+            if (text_loc is not None) and (text_str is not None):
+                fig.text(x=text_loc[0], y=text_loc[1], text=text_str, font="12p,Helvetica-Bold,white")
+        if show_fig: fig.show()
         print(f'saving figure to {self.P_fig} ... {(time.process_time()-c0):.3f}')
         fig.savefig(self.P_fig)
         print(f'saved figure {(time.process_time()-c0):.3f}\n')
-        #os.system(f"ls -lh {self.P_fig}")
 
     @staticmethod
     def animate_sequenced_figures(D_seq_fig       = '',

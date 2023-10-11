@@ -57,5 +57,5 @@
   "F_ERA5_reG_form"    : "ERA5_hourly_forcing_{yr:s}.nc",
   "F_ERA5_reG_form_tmp": "ERA5_hourly_forcing_{res:s}_{dt_str:s}.nc",
   "F_BRAN_reG_form"    : "BRAN_daily_forcing_{res:s}_{yr:s}.nc",
-  "nsdic_proj_str"     : "+proj=stere +lat_0=-90 +lat_ts=-70 +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs",
+  "nsdic_proj_str"     : "+proj=stere +lat_0=-90 +lat_ts=-70 +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs"
 }

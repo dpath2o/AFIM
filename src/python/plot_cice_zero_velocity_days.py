@@ -1,65 +1,27 @@
 import afim
+import time
 import numpy  as np
-from datetime import date
-
-dt0            = '2005-01-01'
-dtN            = '2007-12-31'
-proc_period    = 'daily' #or 'monthly'
-P_nsdic        = '/g/data/jk72/da1339/SeaIce/nsdic/G02202_V4/south/seaice_conc_monthly_sh_2005-2015.nc'
-P_cices        = [f'/g/data/jk72/da1339/afim_output/20230802_jra55_aom2_10yr/history/{proc_period}/*.nc',
-                  f'/g/data/jk72/da1339/afim_output/20230807_jra55_aom2_3yr_bathy/history/{proc_period}/*.nc',
-                  f'/g/data/jk72/da1339/afim_output/20230807_jra55_aom2_3yr_FI/history/{proc_period}/*.nc',
-                  f'/g/data/jk72/da1339/afim_output/20230813_jra55_aom2_3yr_GI10m/history/{proc_period}/*.nc',
-                  f'/g/data/jk72/da1339/afim_output/20230814_jra55_aom2_3yr_GIneg0p2m/history/{proc_period}/*.nc']
-ln_olav        = [ 49.1, 46.9, 46.3, 45.9, 45.1, 44.7, 44.3, 43.9, 43.1, 42.7, 42.1, 41.5, 41.0, 40.2, 39.7]
-lt_olav        = [-66.5,-66.9,-67.1,-67.3,-67.5,-67.5,-67.6,-67.7,-67.9,-67.7,-67.9,-68.0,-68.3,-68.3,-68.5]
-ln_maws        = [ 62.3, 62.5, 62.9, 63.1, 63.5, 64.0, 65.0, 65.2, 65.5, 66.5, 66.7, 67.0, 67.7, 68.1, 70.0, 70.0, 70.3, 70.3, 70.3]
-lt_maws        = [-66.8,-66.8,-66.8,-66.9,-67.0,-67.2,-67.0,-67.0,-67.0,-67.0,-67.0,-67.1,-67.5,-67.5,-67.5,-67.7,-67.2,-67.5,-67.7]
-FI_thresh      = 0.001
-spacing        = '15m'
-search_radius  = '15m'
-cmap           = 'cmocean/amp'
-cice_labels    = ['CICE6-baseline','CICE6-bathy','CICE6-FI-noGI','CICE6-GI-10m','CICE6-GI-neg0p2m']
-regions        = ['prince olav coast', 'mawson coast', 'sabrina coast']
-projections    = {'prince olav coast' : 'S45/-90/25c',
-                  'mawson coast'      : 'S67/-90/25c',
-                  'sabrina coast'     : 'S119/-90/25c'}
-regions        = {'prince olav coast' : (35,50,-71,-65),
-                  'mawson coast'      : (60,75,-69,-65),
-                  'sabrina coast'     : (112,127,-69,-65)}
-coast_names    = {'prince olav coast' : 'olav',
-                  'mawson coast'      : 'mawson',
-                  'sabrina coast'     : 'sabrina'}
-text_strings   = {'prince olav coast' : 'Lutzow-Holm Bay',
-                  'mawson coast'      : 'Cape Darnley',
-                  'sabrina coast'     : 'Sabrina Coast'}
-text_locations = {'prince olav coast' : [40,-70.5],
-                  'mawson coast'      : [68,-68.5],
-                  'sabrina coast'     : [119,-68.5]}
-
-for i,model_run_name in enumerate(cice_labels):
-    CICE_SH               = afim.cice_load_and_mask(P_cices[i], dt0=dt0, dtN=dtN, mf_switch=True, which_grid='u', daily_or_monthly='daily')
-    speed                 = np.sqrt(CICE_SH['uvel'] ** 2 + CICE_SH['vvel'] ** 2)
-    vel0_days             = speed <= FI_thresh
-    vel0_days_monthly_sum = vel0_days.groupby('time.month').sum(dim='time')
-    for region in regions:
-        if region=='prince olav coast':
-            gi_lons, gi_lats = afim.find_nearest_coordinates(CICE_SH['TLAT'].values, CICE_SH['TLON'].values, lt_olav, ln_olav)
-        elif region=='mawson coast':
-            gi_lons, gi_lats = afim.find_nearest_coordinates(CICE_SH['TLAT'].values, CICE_SH['TLON'].values, lt_maws, ln_maws)
-        # iceberg_indices = get_iceberg_grid_indices(lon_maws, lat_maws, CICE_SH['TLON'].values, CICE_SH['TLAT'].values)
-        # GI_mask = create_iceberg_mask(iceberg_indices, CICE_SH['TLON'].values.shape)
-        for month in vel0_days_monthly_sum.month.values:
-            afim.plot_zero_ice_speed_day_count(vel0_days_monthly_sum.sel(month=month), #GI_mask,
-                                               proj           = projections[region],
-                                               reg            = regions[region],
-                                               cmap           = cmap,
-                                               spac           = spacing,
-                                               sr             = search_radius,
-                                               cst_name       = coast_names[region],
-                                               text_str       = text_strings[region],
-                                               text_loc       = text_locations[region],
-                                               month_label    = date(1,month,1).strftime('%b'), 
-                                               model_run_name = model_run_name, 
-                                               gi_lons        = gi_lons,
-                                               gi_lats        = gi_lats)
+cice_anal = afim.cice_analysis('/home/581/da1339/AFIM/src/python/afim_cice_analysis.json')
+c0        = time.process_time()
+for run_inc,model_run_name in enumerate(cice_anal.afim_runs.keys()):
+    cice_anal.build_data_path(cice_anal.afim_runs[model_run_name]['run_dir'], 'daily', mf_switch=True)
+    cice_anal.load_run_and_time_convert(mf_switch=True, monthly=False)
+    print(f'main: finished opening {cice_anal.P_afim}, {(time.process_time()-c0):.3f}')
+    cice_anal.CICE['icespd']        = np.sqrt(cice_anal.CICE['uvel'] ** 2 + cice_anal.CICE['vvel'] ** 2)
+    condition                       = cice_anal.CICE['aice'] < cice_anal.aice_thresh
+    cice_anal.CICE['icespd']        = cice_anal.CICE['icespd'].where(~condition, 99999)
+    cice_anal.CICE['zero_vel_days'] = (cice_anal.CICE['icespd'] <= cice_anal.FI_thresh).groupby('time.month').sum(dim='time')
+    #cice_anal.CICE['frazil_grow_days'] = (cice_anal.CICE['frazil'] >= cice_anal.frazil_thresh).groupby('time.month').sum(dim='time')
+    plt_vars = ['zero_vel_days']#,'frazil_grow_days']
+    for var_inc,var_key in enumerate(cice_anal.plt_stat_dict['var_keys']):
+        for reg_inc,region_key in enumerate(cice_anal.regions_info.keys()):
+            for t_inc in cice_anal.CICE[var_key].month.values:
+                print(f'main: plotting {model_run_name}, variable: {var_key}, time increment: {t_inc}, processing time (s): {(time.process_time()-c0):.3f}')
+                cice_anal.plot_cice_map(model_run_name, t_inc,
+                                        region_key      = region_key,
+                                        var_name        = var_key,
+                                        var_inc         = var_inc,
+                                        nodata          = '0',
+                                        mo_or_ti        = 'month',
+                                        overwrite       = False)
+                print(f'main: completed {model_run_name}, variable: {var_key}, time increment: {t_inc}, processing time (s): {(time.process_time()-c0):.3f}\n\n')
