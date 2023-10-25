@@ -51,6 +51,31 @@ def days_since_1601_to_date(days_since_1601):
     print(result_date.strftime("%Y-%m-%d"))
 
 ############################################################################
+def plot_cartopy_pcolormesh(da=None, lon_name='longitude', lat_name='latitude', 
+                            figsize=(10,6), region=[0,360,-90,-50], t_str=None, projection=ccrs.SouthPolarStereo(),
+                            cmap=cm.cm.ice, vmin=0, vmax=1, cbar_label='Sea Ice Concentration (%)',
+                            title="", D_save=None, F_save=None, save=True, show=True):
+    fig, ax        = plt.subplots(1,1, figsize=figsize, dpi=150, facecolor="w", subplot_kw=dict(projection=projection))
+    theta          = np.linspace(0, 2*np.pi, 100)
+    center, radius = [0.5, 0.5], 0.5
+    verts          = np.vstack([np.sin(theta), np.cos(theta)]).T
+    circle         = mpath.Path(verts * radius + center)
+    ax.set_extent(region, ccrs.PlateCarree())
+    ax.set_boundary(circle, transform = ax.transAxes)
+    ax.add_feature(cft.LAND, color='darkgrey')
+    ax.add_feature(cft.COASTLINE, linewidth=.5)
+    pcm = ax.pcolormesh(da[lon_name], da[lat_name], da, cmap=cmap, vmin=vmin, vmax=vmax, transform=ccrs.PlateCarree())
+    plt.colorbar(pcm, label=cbar_label)
+    plt.title(title)
+    ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.25, linestyle='--')
+    if save:
+        if not os.path.exists(D_save): os.makedirs(D_save)
+        plt.savefig(os.path.join(D_save,F_save))
+    if show:
+        plt.show()
+    plt.close()
+    
+############################################################################
 def compute_nsdic_grid_cell_areas(ds, proj_str):
     """
     Computes the area of each grid cell in a given dataset using a specific projection string.
@@ -779,9 +804,9 @@ def xesmf_regrid_dataset(DS_src, DS_dst, F_DS_na,
     DS_rg = rg(DS_na)
     return DS_rg
 
-##############################################################################################################################################
-############################################################### CICE ANALYSIS ######################################################################
-##############################################################################################################################################
+#####################################################################################################
+############################################ CICE ANALYSIS ##########################################
+#####################################################################################################
 
 def read_json(filename):
     '''Read a JSON file.
