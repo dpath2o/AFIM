@@ -23,7 +23,6 @@ notes/
 presentations/
 research/_minted-grounded_icebergs/14BEE328FE6848C0433345AF77EFD300685BE7B9256B973C6FE57F12789B213A.pygtex
 research/
-src/CICE/
 research/auto/
 src/python/.gitignore
 src/python/.ipynb_checkpoints
@@ -50,3 +49,37 @@ src/CICE_6p4/codecov.yml
 src/CICE_6p4/configuration
 src/CICE_6p4/doc
 src/CICE_6p4/icepack
+admin/COSIMA Top Up Justification.docx
+admin/Doctors note.pdf
+admin/HDR-Examinations-Procedure.pdf
+admin/PROJECT_PROPOSAL.pdf
+admin/admin.html
+admin/computing.html
+admin/meetings.html
+src/CICE/.github/
+src/CICE/.gitignore
+src/CICE/.gitmodules
+src/CICE/.travis.yml
+src/CICE/.zenodo.json
+src/CICE/CONTRIBUTING.md
+src/CICE/DistributionPolicy.pdf
+src/CICE/LICENSE.pdf
+src/CICE/README.md
+src/CICE/afim_0p1/
+src/CICE/afim_0p1_mpi/
+src/CICE/cice.setup
+src/CICE/cicecore/
+src/CICE/codecov.yml
+src/CICE/configuration/
+src/CICE/doc/
+src/CICE/icepack/
+src/afim-analysis.e93464799
+src/afim-analysis.o93464799
+src/python/drift_lr_sh_agg.nc
+src/sh/wget-log
+time_series.xml
+src/python/.ipynb_checkpoints/afim-checkpoint.py
+src/python/.ipynb_checkpoints/cice_analysis-checkpoint.ipynb
+src/python/.ipynb_checkpoints/cice_prep-checkpoint.ipynb
+src/python/__pycache__/afim.cpython-310.pyc
+src/python/__pycache__/afim.cpython-39.pyc
