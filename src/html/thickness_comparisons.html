@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sea Ice Thickness Difference Maps: NSIDC - CICE6-standalone</title>
+    <style>
+        .container {
+            display: flex;
+            justify-content: center;
+        }
+        .animation-container {
+            width: 50%;
+            padding: 10px;
+            text-align: center;
+        }
+        .animation {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="animation-container">
+            <h2>ESA_CCI_thick_v_CICE6_bathy</h2>
+            <input type="range" id="bathy-slider" min="0" max="35" value="0">
+            <br>
+            <img id="bathy-animation" class="animation" src="">
+        </div>
+        <div class="animation-container">
+            <h2>ESA_CCI_thick_v_CICE6_neg0p2m</h2>
+            <input type="range" id="neg0p2m-slider" min="0" max="35" value="0">
+            <br>
+            <img id="neg0p2m-animation" class="animation" src="">
+        </div>
+    </div>
+    <script>
+        const bathySlider = document.getElementById("bathy-slider");
+        const neg0p2mSlider = document.getElementById("neg0p2m-slider");
+        const bathyAnimation = document.getElementById("bathy-animation");
+        const neg0p2mAnimation = document.getElementById("neg0p2m-animation");
+
+        const basePathBathy = "GRAPHICAL/dif_maps/ESA_CCI_thick_v_CICE6_bathy/";
+        const basePathNeg0p2m = "GRAPHICAL/dif_maps/ESA_CCI_thick_v_CICE6_neg0p2m/";
+
+        bathySlider.addEventListener("input", updateBathyAnimation);
+        neg0p2mSlider.addEventListener("input", updateNeg0p2mAnimation);
+
+        function updateBathyAnimation() {
+            const frameNumber = bathySlider.value;
+            const imagePath = basePathBathy + getImageFileName(frameNumber);
+            bathyAnimation.src = imagePath;
+        }
+
+        function updateNeg0p2mAnimation() {
+            const frameNumber = neg0p2mSlider.value;
+            const imagePath = basePathNeg0p2m + getImageFileNameNeg0p2m(frameNumber);
+            neg0p2mAnimation.src = imagePath;
+        }
+
+        function getImageFileName(frameNumber) {
+            const year = Math.floor(frameNumber / 12) + 2005;
+            const month = (frameNumber % 12 + 1).toString().padStart(2, "0");
+            return year + "-" + month + "_hi_diffs_CICE_bathy_ESA_CCI_L3C_envisat_SH.png";
+        }
+
+        function getImageFileNameNeg0p2m(frameNumber) {
+            const year = Math.floor(frameNumber / 12) + 2005;
+            const month = (frameNumber % 12 + 1).toString().padStart(2, "0");
+            return year + "-" + month + "_hi_diffs_CICE_neg0p2m_ESA_CCI_L3C_envisat_SH.png";
+        }
+
+        // Initial load
+        updateBathyAnimation();
+        updateNeg0p2mAnimation();
+    </script>
+</body>
+</html>
+
+
+
+

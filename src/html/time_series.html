@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Series PNG Files</title>
+    <style>
+        .file-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .file-item img {
+            max-width: 100px;
+            height: auto;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Time Series PNG Files</h1>
+    <div id="file-list">
+        <!-- The list of PNG files will be generated here -->
+    </div>
+    <script>
+        const fileList = document.getElementById("file-list");
+        const basePath = "GRAPHICAL/time_series/";
+
+        // List of PNG file names
+        const pngFiles = [
+            "time_series_Prydz Bay_ESA_CCI_and_CICE6_bathy.png",
+            "time_series_Prydz Bay_ESA_CCI_and_CICE6_neg0p2m.png",
+            "time_series_Prydz Bay_NSIDC_and_CICE6_bathy.png",
+            "time_series_Prydz Bay_NSIDC_and_CICE6_neg0p2m.png",
+            "time_series_Ross Sea_ESA_CCI_and_CICE6_bathy.png",
+            "time_series_Ross Sea_ESA_CCI_and_CICE6_neg0p2m.png",
+            "time_series_Ross Sea_NSIDC_and_CICE6_bathy.png",
+            "time_series_Ross Sea_NSIDC_and_CICE6_neg0p2m.png",
+            "time_series_Totten Ice Shelf_ESA_CCI_and_CICE6_bathy.png",
+            "time_series_Totten Ice Shelf_ESA_CCI_and_CICE6_neg0p2m.png",
+            "time_series_Totten Ice Shelf_NSIDC_and_CICE6_bathy.png",
+            "time_series_Totten Ice Shelf_NSIDC_and_CICE6_neg0p2m.png",
+            "time_series_Weddell Sea_ESA_CCI_and_CICE6_bathy.png",
+            "time_series_Weddell Sea_ESA_CCI_and_CICE6_neg0p2m.png",
+            "time_series_Weddell Sea_NSIDC_and_CICE6_bathy.png",
+            "time_series_Weddell Sea_NSIDC_and_CICE6_neg0p2m.png"
+        ];
+
+        // Generate the list of PNG files with images
+        pngFiles.forEach((fileName) => {
+            const fileItem = document.createElement("div");
+            fileItem.className = "file-item";
+
+            const img = document.createElement("img");
+            img.src = basePath + fileName;
+
+            const fileNameElement = document.createElement("span");
+            fileNameElement.textContent = fileName;
+
+            fileItem.appendChild(img);
+            fileItem.appendChild(fileNameElement);
+
+            fileList.appendChild(fileItem);
+
+            // Debugging: Log the image source URLs to the console
+            console.log(img.src);
+        });
+    </script>
+</body>
+</html>
+
+
