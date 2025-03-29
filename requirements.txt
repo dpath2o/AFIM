@@ -1,0 +1,14 @@
+xarray
+numpy
+pandas
+pygmt
+matplotlib
+dask
+xesmf
+geopandas
+netCDF4
+scipy
+cmocean
+cartopy
+seaborn
+tqdm

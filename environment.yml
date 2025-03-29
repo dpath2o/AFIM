@@ -1,0 +1,25 @@
+name: AFIM
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - xarray
+  - numpy
+  - pandas
+  - matplotlib
+  - pygmt
+  - dask
+  - xesmf
+  - geopandas
+  - netCDF4
+  - scipy
+  - cmocean
+  - cartopy
+  - seaborn
+  - tqdm
+  - pip
+  - pip:
+      - sphinx
+      - myst-parser
+      - sphinx_rtd_theme
