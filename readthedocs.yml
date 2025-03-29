@@ -9,7 +9,7 @@ build:
 python:
   install:
     - method: pip
-      path: ./src
+      path: .
     - requirements: src/requirements.txt
 
 sphinx:
@@ -18,3 +18,4 @@ sphinx:
 formats:
   - pdf
   - htmlzip
+
