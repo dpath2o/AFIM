@@ -16,6 +16,3 @@ from .fast_ice_processor import FastIceProcessor
 from .pack_ice_processor import PackIceProcessor
 from .sea_ice_plotter import SeaIcePlotter
 from .grounded_iceberg_processor import GroundedIcebergProcessor
-
-
-
