@@ -12,3 +12,4 @@ cmocean
 cartopy
 seaborn
 tqdm
+nbsphinx

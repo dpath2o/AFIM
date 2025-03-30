@@ -21,5 +21,6 @@ dependencies:
   - pip
   - pip:
       - sphinx
+      - nbsphinx
       - myst-parser
       - sphinx_rtd_theme
