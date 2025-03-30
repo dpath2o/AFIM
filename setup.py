@@ -36,6 +36,14 @@ setup(
         "myst-parser",
         "sphinx_rtd_theme",
     ],
+    extras_require={
+        "docs": [
+            "sphinx",
+            "sphinx_rtd_theme",
+            "nbsphinx",
+            "myst-parser",
+        ],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Programming Language :: Python :: 3",

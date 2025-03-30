@@ -1,4 +1,4 @@
-dimport xarray as xr
+import xarray as xr
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -87,7 +87,7 @@ class FastIceProcessor:
     The FastIceProcessor is typically run in a loop using a driver script
     such as [`compute_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/src/python/compute_fast_ice.py):
 
-    ```python
+    python:
     from datetime import datetime, timedelta
     from fast_ice_processor import FastIceProcessor
 
@@ -99,7 +99,6 @@ class FastIceProcessor:
     while current_date <= dt_end - timedelta(days=15):
         proc.process_window(current_date)
         current_date += timedelta(days=15)
-    ```
 
     For more, see the full project repository:
     🔗 https://github.com/dpath2o/AFIM

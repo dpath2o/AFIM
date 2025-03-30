@@ -85,7 +85,7 @@ class PackIceProcessor:
     See the external loop driver script `compute_pack_ice.py`, which uses this
     class to process a time series:
 
-    ```python
+    python:
     from datetime import datetime, timedelta
     from pack_ice_processor import PackIceProcessor
 
@@ -97,7 +97,7 @@ class PackIceProcessor:
     while current_date <= dt_end - timedelta(days=15):
         PI = processor.process_window(current_date)
         current_date += timedelta(days=15)
-    ```
+    
     See full codebase at: https://github.com/dpath2o/AFIM
     """
 
