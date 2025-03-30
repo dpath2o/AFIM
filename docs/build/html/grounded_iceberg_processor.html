@@ -1,0 +1,395 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>grounded_iceberg_processor module &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="&lt;no title&gt;" href="notebooks/fi_anal.html" />
+    <link rel="prev" title="sea_ice_plotter module" href="sea_ice_plotter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Package Modules</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="fast_ice_processor.html">fast_ice_processor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pack_ice_processor.html">pack_ice_processor module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sea_ice_plotter.html">sea_ice_plotter module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">grounded_iceberg_processor module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.G_t"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.G_t</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.G_u"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.G_u</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_mask"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.GI_mask</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lons"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.GI_lons</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lats"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.GI_lats</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lon_cells"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.GI_lon_cells</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lat_cells"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.GI_lat_cells</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.KMT_path"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.KMT_path</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.total_area"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.total_area</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.use_gi"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.use_gi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.logger"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.logger</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.apply_thinning"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.apply_thinning()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.check_existing_files"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.check_existing_files()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.count_icebergs"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.count_icebergs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_AFIM_GI"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.load_AFIM_GI()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_existing_thinned"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.load_existing_thinned()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_grid_and_landmask"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.load_grid_and_landmask()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_ice_shelves"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.load_ice_shelves()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.modify_kmt"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.modify_kmt()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.process_raw_iceberg_csv"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.process_raw_iceberg_csv()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#grounded_iceberg_processor.GroundedIcebergProcessor.save_thinned_and_kmt"><code class="docutils literal notranslate"><span class="pre">GroundedIcebergProcessor.save_thinned_and_kmt()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">&lt;no title&gt;</a></li>
+      <li class="breadcrumb-item active">grounded_iceberg_processor module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/grounded_iceberg_processor.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-grounded_iceberg_processor">
+<span id="grounded-iceberg-processor-module"></span><h1>grounded_iceberg_processor module<a class="headerlink" href="#module-grounded_iceberg_processor" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">grounded_iceberg_processor.</span></span><span class="sig-name descname"><span class="pre">GroundedIcebergProcessor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sim_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Class to preprocess grounded iceberg data for use in sea ice model analysis.</p>
+<p>This class loads grounded iceberg shapefiles, converts them to the model grid,
+applies probabilistic thinning (if requested), and generates a modified landmask
+(KMT array) for grounded iceberg-affected grid cells. These modifications are
+used when analyzing fast ice and pack ice fields in CICE model output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>config</strong> (<em>dict</em>) – Configuration dictionary (typically loaded from afim_cice_analysis.json).</p></li>
+<li><p><strong>sim_name</strong> (<em>str</em>) – Simulation name (used for locating paths and logs).</p></li>
+<li><p><strong>P_gi_shp</strong> (<em>str</em><em> or </em><em>Path</em><em>, </em><em>optional</em>) – Path to grounded iceberg shapefile (overrides config).</p></li>
+<li><p><strong>P_KMT</strong> (<em>str</em><em> or </em><em>Path</em><em>, </em><em>optional</em>) – Path to KMT landmask NetCDF file (overrides config).</p></li>
+<li><p><strong>thin_prob</strong> (<em>float</em><em>, </em><em>optional</em>) – Probability threshold for thinning grounded iceberg cells (0–1 range).
+If None, no thinning is applied.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.G_t">
+<span class="sig-name descname"><span class="pre">G_t</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.G_t" title="Link to this definition"></a></dt>
+<dd><p>Model T-grid loaded from NetCDF (with lon/lat/area).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.Dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.G_u">
+<span class="sig-name descname"><span class="pre">G_u</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.G_u" title="Link to this definition"></a></dt>
+<dd><p>Model U-grid loaded from NetCDF (with lon/lat).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.Dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.GI_mask">
+<span class="sig-name descname"><span class="pre">GI_mask</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_mask" title="Link to this definition"></a></dt>
+<dd><p>Binary mask (1 where grounded iceberg exists).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.DataArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.GI_lons">
+<span class="sig-name descname"><span class="pre">GI_lons</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lons" title="Link to this definition"></a></dt>
+<dd><p>Longitude of grounded iceberg centroids (for plotting).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.GI_lats">
+<span class="sig-name descname"><span class="pre">GI_lats</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lats" title="Link to this definition"></a></dt>
+<dd><p>Latitude of grounded iceberg centroids (for plotting).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.GI_lon_cells">
+<span class="sig-name descname"><span class="pre">GI_lon_cells</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lon_cells" title="Link to this definition"></a></dt>
+<dd><p>Longitude of affected model grid cells (for KMT plotting).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.GI_lat_cells">
+<span class="sig-name descname"><span class="pre">GI_lat_cells</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.GI_lat_cells" title="Link to this definition"></a></dt>
+<dd><p>Latitude of affected model grid cells (for KMT plotting).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.KMT_path">
+<span class="sig-name descname"><span class="pre">KMT_path</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.KMT_path" title="Link to this definition"></a></dt>
+<dd><p>Path to landmask (KMT) file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.total_area">
+<span class="sig-name descname"><span class="pre">total_area</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.total_area" title="Link to this definition"></a></dt>
+<dd><p>Total area (in m²) affected by grounded icebergs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.use_gi">
+<span class="sig-name descname"><span class="pre">use_gi</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.use_gi" title="Link to this definition"></a></dt>
+<dd><p>True if grounded iceberg masking is active.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.logger">
+<span class="sig-name descname"><span class="pre">logger</span></span><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.logger" title="Link to this definition"></a></dt>
+<dd><p>Logger instance for status and debugging messages.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>logging.Logger</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Examples</p>
+<p>Load grounded iceberg and landmask information:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">grounded_iceberg_processor</span> <span class="kn">import</span> <span class="n">GroundedIcebergProcessor</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">proc</span> <span class="o">=</span> <span class="n">GroundedIcebergProcessor</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">sim_name</span><span class="o">=</span><span class="s2">&quot;Rothrock&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">proc</span><span class="o">.</span><span class="n">load_GI</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gi_mask</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">GI_mask</span>
+</pre></div>
+</div>
+<p>Plot modified landmask with PyGMT:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">fig</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">proc</span><span class="o">.</span><span class="n">GI_lon_cells</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">proc</span><span class="o">.</span><span class="n">GI_lat_cells</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;c0.1c&quot;</span><span class="p">,</span> <span class="n">fill</span><span class="o">=</span><span class="s2">&quot;purple&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">fig</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">proc</span><span class="o">.</span><span class="n">GI_lons</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">proc</span><span class="o">.</span><span class="n">GI_lats</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;s0.1c&quot;</span><span class="p">,</span> <span class="n">fill</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p class="rubric">References</p>
+<p>Full AFIM repository: <a class="reference external" href="https://github.com/dpath2o/AFIM">https://github.com/dpath2o/AFIM</a>
+JSON config:          AFIM/JSONs/afim_cice_analysis.json
+Shapefile source:     SCAR Antarctic Digital Database (ADD) or similar</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.apply_thinning">
+<span class="sig-name descname"><span class="pre">apply_thinning</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">p_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scaling_exponent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.apply_thinning"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.apply_thinning" title="Link to this definition"></a></dt>
+<dd><p>Apply probabilistic thinning to the grounded iceberg mask based on iceberg counts.</p>
+<section id="parameters">
+<h2>Parameters:<a class="headerlink" href="#parameters" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>p_min<span class="classifier">float</span></dt><dd><p>Minimum probability of retaining a cell with low counts.</p>
+</dd>
+<dt>p_max<span class="classifier">float</span></dt><dd><p>Maximum probability of retaining a cell with high counts.</p>
+</dd>
+<dt>scaling_exponent<span class="classifier">float</span></dt><dd><p>Controls steepness of probability scaling with count.</p>
+</dd>
+</dl>
+</section>
+<section id="sets">
+<h2>Sets:<a class="headerlink" href="#sets" title="Link to this heading"></a></h2>
+<p>self.GI_thin_da : xarray.DataArray
+self.GI_thin_mask : ndarray (boolean)
+self.GI_thin_fact : float (fraction thinned out)</p>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.check_existing_files">
+<span class="sig-name descname"><span class="pre">check_existing_files</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.check_existing_files"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.check_existing_files" title="Link to this definition"></a></dt>
+<dd><p>Check whether the expected output files already exist and raise an error
+unless <cite>overwrite=True</cite> was set in the constructor.</p>
+<p>This is a safeguard against overwriting KMT or GI-thinned NetCDFs that
+might have been used in a numerical simulation.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.count_icebergs">
+<span class="sig-name descname"><span class="pre">count_icebergs</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.count_icebergs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.count_icebergs" title="Link to this definition"></a></dt>
+<dd><p>Count grounded icebergs per grid cell from cleaned data.</p>
+<p>Aggregates mapped iceberg coordinates to form a 2D count array.
+Sets <cite>self.GI_cnts</cite> as an xarray DataArray.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.load_AFIM_GI">
+<span class="sig-name descname"><span class="pre">load_AFIM_GI</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.load_AFIM_GI"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_AFIM_GI" title="Link to this definition"></a></dt>
+<dd><p>Load pre-generated grounded iceberg mask and modified KMT information.</p>
+<p>This method does not create new files or apply thinning. It reads existing
+outputs from NetCDF files based on the configured simulation dictionary.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.load_existing_thinned">
+<span class="sig-name descname"><span class="pre">load_existing_thinned</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.load_existing_thinned"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_existing_thinned" title="Link to this definition"></a></dt>
+<dd><p>Load previously saved thinned grounded iceberg data and modified KMT file.</p>
+<p>Sets the attributes <cite>self.GI_thin_da</cite>, <cite>self.GI_thin_mask</cite>, and <cite>self.GI_KMT</cite>
+if their respective NetCDF files exist.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.load_grid_and_landmask">
+<span class="sig-name descname"><span class="pre">load_grid_and_landmask</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.load_grid_and_landmask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_grid_and_landmask" title="Link to this definition"></a></dt>
+<dd><p>Load the CICE grid (t-grid and u-grid) and the landmask (KMT).</p>
+<p>Coordinates are converted to degrees and standardized to [-180, 180].
+Sets attributes <cite>self.G_t</cite>, <cite>self.G_u</cite>, and <cite>self.KMT</cite>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.load_ice_shelves">
+<span class="sig-name descname"><span class="pre">load_ice_shelves</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.load_ice_shelves"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.load_ice_shelves" title="Link to this definition"></a></dt>
+<dd><p>Load Antarctic ice shelf polygons from a shapefile into the processor.</p>
+<p>This sets the <cite>self.antarctic_ice_shelves</cite> attribute for optional overlay
+during plotting. Geometries are cleaned, reprojected, and buffered.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.modify_kmt">
+<span class="sig-name descname"><span class="pre">modify_kmt</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.modify_kmt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.modify_kmt" title="Link to this definition"></a></dt>
+<dd><p>Modify the model KMT (landmask) by setting grounded iceberg cells to land (value=0).</p>
+<p>Sets <cite>self.GI_KMT</cite> as an xarray DataArray with the modified landmask.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.process_raw_iceberg_csv">
+<span class="sig-name descname"><span class="pre">process_raw_iceberg_csv</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.process_raw_iceberg_csv"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.process_raw_iceberg_csv" title="Link to this definition"></a></dt>
+<dd><p>Load and spatially map raw grounded iceberg locations from CSV to the model grid.</p>
+<p>Uses a KD-tree nearest-neighbor search to assign iceberg coordinates to grid cells.
+Sets <cite>self.GI_clean</cite> with attached (nj, ni) indices.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="grounded_iceberg_processor.GroundedIcebergProcessor.save_thinned_and_kmt">
+<span class="sig-name descname"><span class="pre">save_thinned_and_kmt</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/grounded_iceberg_processor.html#GroundedIcebergProcessor.save_thinned_and_kmt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#grounded_iceberg_processor.GroundedIcebergProcessor.save_thinned_and_kmt" title="Link to this definition"></a></dt>
+<dd><p>Save the thinned grounded iceberg counts and modified KMT landmask to NetCDF files.</p>
+<p>File paths are generated from the config template using GI thinning factor and version.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="sea_ice_plotter.html" class="btn btn-neutral float-left" title="sea_ice_plotter module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="notebooks/fi_anal.html" class="btn btn-neutral float-right" title="&lt;no title&gt;" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

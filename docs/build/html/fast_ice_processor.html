@@ -1,0 +1,470 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>fast_ice_processor &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="pack_ice_processor module" href="pack_ice_processor.html" />
+    <link rel="prev" title="&lt;no title&gt;" href="modules.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Package Modules</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">fast_ice_processor</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.config"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.config</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.roll_win"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.roll_win</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.var_list"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.var_list</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.chunk_dict"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.chunk_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.FI_thresh"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.FI_thresh</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.SIC_thresh"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.SIC_thresh</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.SIC_scale"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.SIC_scale</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.cm2m_fact"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.cm2m_fact</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.sim_dir"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.sim_dir</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.CICE_dict"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.CICE_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.regrid_weights_path"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.regrid_weights_path</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.gi_processor"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.gi_processor</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.use_gi"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.use_gi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.apply_FI_mask"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.apply_FI_mask()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.compute_fast_ice_outputs"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.compute_fast_ice_outputs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.compute_rolling_averages"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.compute_rolling_averages()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.define_hemisphere"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.define_hemisphere()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.load_data_window"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.load_data_window()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.process_window"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.process_window()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.regrid_to_tgrid"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.regrid_to_tgrid()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.setup_logging"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.setup_logging()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast_ice_processor.FastIceProcessor.slice_hemisphere"><code class="docutils literal notranslate"><span class="pre">FastIceProcessor.slice_hemisphere()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#fast_ice_processor.suppress_stderr"><code class="docutils literal notranslate"><span class="pre">suppress_stderr()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pack_ice_processor.html">pack_ice_processor module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sea_ice_plotter.html">sea_ice_plotter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="grounded_iceberg_processor.html">grounded_iceberg_processor module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">&lt;no title&gt;</a></li>
+      <li class="breadcrumb-item active">fast_ice_processor</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/fast_ice_processor.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-fast_ice_processor">
+<span id="fast-ice-processor"></span><h1>fast_ice_processor<a class="headerlink" href="#module-fast_ice_processor" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">fast_ice_processor.</span></span><span class="sig-name descname"><span class="pre">FastIceProcessor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sim_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">json_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">roll_win</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Class to compute Fast Ice metrics from sea ice model output.</p>
+<p>This processor applies a rolling window to compute spatial and temporal
+characteristics of fast ice using sea ice concentration and velocity thresholds.</p>
+<p>Fast ice is defined as sea ice with concentration above a threshold and
+velocity below a threshold (i.e., stationary sea ice).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sim_name</strong> (<em>str</em>) – Name of the simulation (used to resolve directory paths and configuration).</p></li>
+<li><p><strong>json_path</strong> (<em>str</em><em>, </em><em>optional</em>) – Path to the JSON configuration file. If None, the default config is used.</p></li>
+<li><p><strong>roll_win</strong> (<em>int</em><em>, </em><em>optional</em>) – Rolling window size in days (default is 15 or value specified in config).</p></li>
+<li><p><strong>P_log</strong> (<em>str</em><em> or </em><em>Path</em><em>, </em><em>optional</em>) – Path to output log file. Defaults to <cite>logs/FastIceProcessor_{sim_name}.log</cite>.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.config">
+<span class="sig-name descname"><span class="pre">config</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.config" title="Link to this definition"></a></dt>
+<dd><p>Full configuration dictionary loaded from JSON.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.roll_win">
+<span class="sig-name descname"><span class="pre">roll_win</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.roll_win" title="Link to this definition"></a></dt>
+<dd><p>Length of the rolling window in days.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.var_list">
+<span class="sig-name descname"><span class="pre">var_list</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.var_list" title="Link to this definition"></a></dt>
+<dd><p>List of variable names to extract from CICE history files.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.chunk_dict">
+<span class="sig-name descname"><span class="pre">chunk_dict</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.chunk_dict" title="Link to this definition"></a></dt>
+<dd><p>Dictionary of chunking strategy for xarray open_mfdataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.FI_thresh">
+<span class="sig-name descname"><span class="pre">FI_thresh</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.FI_thresh" title="Link to this definition"></a></dt>
+<dd><p>Speed threshold (m/s) below which ice is considered fast.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.SIC_thresh">
+<span class="sig-name descname"><span class="pre">SIC_thresh</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.SIC_thresh" title="Link to this definition"></a></dt>
+<dd><p>Sea ice concentration threshold for defining fast ice.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.SIC_scale">
+<span class="sig-name descname"><span class="pre">SIC_scale</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.SIC_scale" title="Link to this definition"></a></dt>
+<dd><p>Scaling factor to convert area units (typically to 1e6 km²).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.cm2m_fact">
+<span class="sig-name descname"><span class="pre">cm2m_fact</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.cm2m_fact" title="Link to this definition"></a></dt>
+<dd><p>Conversion factor for cm to m.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.sim_dir">
+<span class="sig-name descname"><span class="pre">sim_dir</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.sim_dir" title="Link to this definition"></a></dt>
+<dd><p>Path to simulation output directory for daily NetCDF files.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Path</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.CICE_dict">
+<span class="sig-name descname"><span class="pre">CICE_dict</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.CICE_dict" title="Link to this definition"></a></dt>
+<dd><p>Dictionary of CICE-specific variable/dimension names.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.regrid_weights_path">
+<span class="sig-name descname"><span class="pre">regrid_weights_path</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.regrid_weights_path" title="Link to this definition"></a></dt>
+<dd><p>File path for xESMF weights from u-grid to t-grid regridding.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str or Path</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.gi_processor">
+<span class="sig-name descname"><span class="pre">gi_processor</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.gi_processor" title="Link to this definition"></a></dt>
+<dd><p>Grid and landmask handler for simulation-specific preprocessing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor" title="grounded_iceberg_processor.GroundedIcebergProcessor">GroundedIcebergProcessor</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.use_gi">
+<span class="sig-name descname"><span class="pre">use_gi</span></span><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.use_gi" title="Link to this definition"></a></dt>
+<dd><p>If True, grounded iceberg landmask is used during processing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Examples</p>
+<p>Basic usage (single timestep):</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">proc</span> <span class="o">=</span> <span class="n">FastIceProcessor</span><span class="p">(</span><span class="s2">&quot;Rothrock&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ds</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">process_window</span><span class="p">(</span><span class="n">datetime</span><span class="p">(</span><span class="mi">1994</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">save_zarr</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Batch processing over time:</p>
+<p>The FastIceProcessor is typically run in a loop using a driver script
+such as [<cite>compute_fast_ice.py</cite>](<a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/src/python/compute_fast_ice.py">https://github.com/dpath2o/AFIM/blob/main/src/python/compute_fast_ice.py</a>):</p>
+<p>python:
+from datetime import datetime, timedelta
+from fast_ice_processor import FastIceProcessor</p>
+<p>dt_start = datetime(1993, 1, 1)
+dt_end   = datetime(1999, 12, 31)
+proc = FastIceProcessor(“Rothrock”, roll_win=15)
+current_date = dt_start + timedelta(days=15)</p>
+<dl class="simple">
+<dt>while current_date &lt;= dt_end - timedelta(days=15):</dt><dd><p>proc.process_window(current_date)
+current_date += timedelta(days=15)</p>
+</dd>
+</dl>
+<p>For more, see the full project repository:
+🔗 <a class="reference external" href="https://github.com/dpath2o/AFIM">https://github.com/dpath2o/AFIM</a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.apply_FI_mask">
+<span class="sig-name descname"><span class="pre">apply_FI_mask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">roll_dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.apply_FI_mask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.apply_FI_mask" title="Link to this definition"></a></dt>
+<dd><p>Apply fast ice masking based on thresholds for concentration and velocity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>roll_dict</strong> (<em>dict</em>) – Dictionary of rolling-averaged variables.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Masked variables and binary fast ice mask.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.compute_fast_ice_outputs">
+<span class="sig-name descname"><span class="pre">compute_fast_ice_outputs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">roll_mask_vars</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.compute_fast_ice_outputs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.compute_fast_ice_outputs" title="Link to this definition"></a></dt>
+<dd><p>Compute fast ice metrics: 1D, 2D, and 3D outputs for spatial and temporal aggregation.</p>
+<p>This method is the backbone of the class and is intended to be called by <cite>process_window()</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>roll_mask_vars</strong> (<em>dict</em><em> of </em><em>xarray.DataArray</em>) – Masked variables used for final computations.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Final dataset with all fast ice metrics.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.Dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.compute_rolling_averages">
+<span class="sig-name descname"><span class="pre">compute_rolling_averages</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ds</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.compute_rolling_averages"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.compute_rolling_averages" title="Link to this definition"></a></dt>
+<dd><p>Compute rolling averages over time for each fast ice-related variable.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ds</strong> (<em>xarray.Dataset</em>) – Dataset of raw model fields.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary with variable names as keys and rolling-averaged DataArrays as values.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict of xarray.DataArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.define_hemisphere">
+<span class="sig-name descname"><span class="pre">define_hemisphere</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hemisphere</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.define_hemisphere"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.define_hemisphere" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.load_data_window">
+<span class="sig-name descname"><span class="pre">load_data_window</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.load_data_window"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.load_data_window" title="Link to this definition"></a></dt>
+<dd><p>Slice dataset for the currently defined hemisphere.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ds</strong> (<em>xarray.Dataset</em>) – Input dataset.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dataset sliced along nj dimension.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.Dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.process_window">
+<span class="sig-name descname"><span class="pre">process_window</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtC</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hemisphere</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'south'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ow_zarrs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_zarrs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.process_window"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.process_window" title="Link to this definition"></a></dt>
+<dd><p>Main entry point to process fast ice metrics for a single central date.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dtC</strong> (<em>datetime</em>) – Central date for the rolling window.</p></li>
+<li><p><strong>hemisphere</strong> (<em>str</em>) – Hemisphere to process (‘north’ or ‘south’).</p></li>
+<li><p><strong>ow_zarrs</strong> (<em>bool</em>) – Overwrite existing Zarr file if True.</p></li>
+<li><p><strong>save_zarr</strong> (<em>bool</em>) – Save result to disk as a Zarr dataset if True.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Fast ice dataset containing all computed metrics.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>xarray.Dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.regrid_to_tgrid">
+<span class="sig-name descname"><span class="pre">regrid_to_tgrid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ds</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.regrid_to_tgrid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.regrid_to_tgrid" title="Link to this definition"></a></dt>
+<dd><p>Regrid vector components (uvel, vvel) from u-grid to t-grid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ds</strong> (<em>xarray.Dataset</em>) – Dataset containing ‘uvel’ and ‘vvel’.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Regridded u and v velocities.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple of xarray.DataArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.setup_logging">
+<span class="sig-name descname"><span class="pre">setup_logging</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">logfile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.setup_logging"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.setup_logging" title="Link to this definition"></a></dt>
+<dd><p>Setup logging to console and file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>logfile</strong> (<em>str</em><em> or </em><em>Path</em><em>, </em><em>optional</em>) – Log file path. If None, defaults to stdout only.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="fast_ice_processor.FastIceProcessor.slice_hemisphere">
+<span class="sig-name descname"><span class="pre">slice_hemisphere</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ds</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#FastIceProcessor.slice_hemisphere"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.FastIceProcessor.slice_hemisphere" title="Link to this definition"></a></dt>
+<dd><p>Define which hemisphere slice to use.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hemisphere</strong> (<em>str</em>) – Hemisphere keyword (‘north’ or ‘south’) to configure slicing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="fast_ice_processor.suppress_stderr">
+<span class="sig-prename descclassname"><span class="pre">fast_ice_processor.</span></span><span class="sig-name descname"><span class="pre">suppress_stderr</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/fast_ice_processor.html#suppress_stderr"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fast_ice_processor.suppress_stderr" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="modules.html" class="btn btn-neutral float-left" title="&lt;no title&gt;" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pack_ice_processor.html" class="btn btn-neutral float-right" title="pack_ice_processor module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

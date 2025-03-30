@@ -1,0 +1,329 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>&lt;no title&gt; &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="grounded_iceberg_processor module" href="../grounded_iceberg_processor.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Package Modules</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../fast_ice_processor.html">fast_ice_processor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pack_ice_processor.html">pack_ice_processor module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sea_ice_plotter.html">sea_ice_plotter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../grounded_iceberg_processor.html">grounded_iceberg_processor module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">&lt;no title&gt;</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/notebooks/fi_anal.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span> <span class="nn">os</span><span class="o">,</span> <span class="nn">pygmt</span>
+<span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s1">&#39;/home/581/da1339/AFIM/src/python&#39;</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">fast_ice_processor</span> <span class="kn">import</span> <span class="n">FastIceProcessor</span>
+<span class="c1">#from fast_ice_plotter   import FastIcePlotter</span>
+<span class="kn">from</span> <span class="nn">pack_ice_processor</span> <span class="kn">import</span> <span class="n">PackIceProcessor</span>
+<span class="kn">from</span> <span class="nn">sea_ice_plotter</span>    <span class="kn">import</span> <span class="n">SeaIcePlotter</span>
+<span class="c1">#from grounded_iceberg_processor import GroundedIcebergProcessor</span>
+<span class="kn">import</span> <span class="nn">numpy</span>            <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span>           <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">xarray</span>           <span class="k">as</span> <span class="nn">xr</span>
+<span class="kn">from</span> <span class="nn">datetime</span>           <span class="kn">import</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">datetime</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dt_test</span>  <span class="o">=</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">1993</span><span class="p">,</span><span class="mi">8</span><span class="p">,</span><span class="mi">14</span><span class="p">)</span>
+<span class="n">sim_name</span>  <span class="o">=</span> <span class="s1">&#39;Cstar-max&#39;</span>
+<span class="n">PI_proc</span>  <span class="o">=</span> <span class="n">PackIceProcessor</span><span class="p">(</span><span class="n">sim_name</span><span class="p">)</span>
+<span class="n">PI</span>       <span class="o">=</span> <span class="n">PI_proc</span><span class="o">.</span><span class="n">process_window</span><span class="p">(</span><span class="n">dt_test</span><span class="p">,</span> <span class="n">save_zarr</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+2025-03-30 06:32:41,527 - INFO -
+
+Processing PI window centered on 1993-08-14 00:00:00 for southern hemisphere
+2025-03-30 06:32:57,266 - INFO - Loaded dataset with shape: Frozen({&#39;time&#39;: 15, &#39;nj&#39;: 1080, &#39;ni&#39;: 1440})
+INFO:Cstar-max_PI:Loaded dataset with shape: Frozen({&#39;time&#39;: 15, &#39;nj&#39;: 1080, &#39;ni&#39;: 1440})
+2025-03-30 06:32:57,821 - INFO - Regridding uvel and vvel to T-grid...
+INFO:Cstar-max_PI:Regridding uvel and vvel to T-grid...
+--------------------------------------------------------------------------
+WARNING: There was an error initializing an OpenFabrics device.
+
+  Local host:   gadi-hmem-clx-0039
+  Local device: mlx5_0
+--------------------------------------------------------------------------
+2025-03-30 06:37:39,690 - INFO - compute pack ice 1D variables:
+INFO:Cstar-max_PI:compute pack ice 1D variables:
+2025-03-30 06:37:41,078 - INFO -        time taken: 1.3746061325073242 seconds
+INFO:Cstar-max_PI:      time taken: 1.3746061325073242 seconds
+2025-03-30 06:37:41,081 - INFO -        time taken: 1.3779168128967285 seconds
+INFO:Cstar-max_PI:      time taken: 1.3779168128967285 seconds
+2025-03-30 06:37:41,082 - INFO - coarsen pack ice rolling averages to 15-days--i.e. 3D variables
+INFO:Cstar-max_PI:coarsen pack ice rolling averages to 15-days--i.e. 3D variables
+2025-03-30 06:37:41,842 - INFO -        time taken: 0.7585623264312744 seconds
+INFO:Cstar-max_PI:      time taken: 0.7585623264312744 seconds
+2025-03-30 06:37:41,844 - INFO - compute temporal sums to give spatial distributions over time--i.e. 2D variables
+INFO:Cstar-max_PI:compute temporal sums to give spatial distributions over time--i.e. 2D variables
+2025-03-30 06:37:41,846 - INFO -        temporal mean over the period 1993-08-07 to 1993-08-21
+INFO:Cstar-max_PI:      temporal mean over the period 1993-08-07 to 1993-08-21
+2025-03-30 06:37:42,041 - INFO -        time taken: 0.1925971508026123 seconds
+INFO:Cstar-max_PI:      time taken: 0.1925971508026123 seconds
+2025-03-30 06:37:42,042 - INFO - create output dataset:
+INFO:Cstar-max_PI:create output dataset:
+2025-03-30 06:37:42,049 - INFO -        time taken: 0.0058422088623046875 seconds
+INFO:Cstar-max_PI:      time taken: 0.0058422088623046875 seconds
+2025-03-30 06:37:42,054 - INFO - Pack ice processing complete.
+INFO:Cstar-max_PI:Pack ice processing complete.
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dt0_str</span>  <span class="o">=</span> <span class="s2">&quot;1993-01-01&quot;</span>
+<span class="n">dtN_str</span>  <span class="o">=</span> <span class="s2">&quot;1993-12-31&quot;</span>
+<span class="n">sim_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;ustar-low&quot;</span><span class="p">,</span> <span class="s2">&quot;Cstar-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Cstar-min&quot;</span><span class="p">,</span> <span class="s2">&quot;Pstar-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Pstar-min&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ktens-nil&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-min&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-max&quot;</span><span class="p">,</span> <span class="s2">&quot;gi-max&quot;</span><span class="p">,</span> <span class="s2">&quot;gi-min&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Rothrock&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-pack&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-fast&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-max&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-def&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;elps-mid&quot;</span><span class="p">,</span> <span class="s2">&quot;baseline&quot;</span>
+<span class="p">]</span>
+<span class="k">for</span> <span class="n">sim_name</span> <span class="ow">in</span> <span class="n">sim_names</span><span class="p">:</span>
+    <span class="n">FI_plot</span>  <span class="o">=</span> <span class="n">FastIcePlotter</span><span class="p">(</span><span class="n">sim_name</span><span class="p">,</span> <span class="n">dt0_str</span><span class="p">,</span> <span class="n">dtN_str</span><span class="p">,</span> <span class="n">show_figs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">single_figure</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">FI_plot</span><span class="o">.</span><span class="n">prepare_data_for_plotting</span><span class="p">(</span><span class="n">var_name</span><span class="o">=</span><span class="s1">&#39;FISH_SD&#39;</span><span class="p">)</span>
+    <span class="n">FI_plot</span><span class="o">.</span><span class="n">plot_regions</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dt0_str</span>  <span class="o">=</span> <span class="s2">&quot;1993-01-30&quot;</span>
+<span class="n">dtN_str</span>  <span class="o">=</span> <span class="s2">&quot;1994-12-31&quot;</span>
+<span class="n">sim_name</span> <span class="o">=</span> <span class="s1">&#39;ktens-max&#39;</span>
+<span class="n">plotter</span> <span class="o">=</span> <span class="n">SeaIcePlotter</span><span class="p">(</span><span class="n">sim_name</span><span class="p">,</span> <span class="n">dt0_str</span><span class="p">,</span> <span class="n">dtN_str</span><span class="p">,</span> <span class="n">show_figs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ice_type</span><span class="o">=</span><span class="s1">&#39;PI&#39;</span><span class="p">)</span>
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot_timeseries</span><span class="p">(</span><span class="n">var_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;PI_STRESS&quot;</span><span class="p">])</span>
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot_timeseries_compare</span><span class="p">(</span>
+    <span class="n">comparison_name</span> <span class="o">=</span> <span class="s2">&quot;tensile-stars&quot;</span><span class="p">,</span>
+    <span class="n">sim_names</span>       <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;baseline&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Pstar-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Cstar-min&quot;</span><span class="p">],</span>
+    <span class="n">var_name</span>        <span class="o">=</span> <span class="s2">&quot;PIA&quot;</span><span class="p">,</span>
+    <span class="n">label_dict</span>      <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;baseline&quot;</span>  <span class="p">:</span> <span class="s2">&quot;tensile = 0.2, Pstar = 2.75e4, Cstar = 20&quot;</span><span class="p">,</span>
+                       <span class="s2">&quot;ktens-max&quot;</span> <span class="p">:</span> <span class="s2">&quot;tensile = 0.3, Pstar = 2.75e4, Cstar = 20&quot;</span><span class="p">,</span>
+                       <span class="s2">&quot;Pstar-max&quot;</span> <span class="p">:</span> <span class="s2">&quot;tensile = 0.2, Pstar = 5e4   , Cstar = 20&quot;</span><span class="p">,</span>
+                       <span class="s2">&quot;Cstar-min&quot;</span> <span class="p">:</span> <span class="s2">&quot;tensile = 0.2, Pstar = 2.75e4, Cstar = 10&quot;</span><span class="p">})</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">FileNotFoundError</span>                         Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[2], line 4</span>
+<span class="ansi-green-intense-fg ansi-bold">      2</span> dtN_str  <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">1994-12-31</span><span style="color: rgb(175,0,0)">&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">      3</span> sim_name <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">ktens-max</span><span style="color: rgb(175,0,0)">&#39;</span>
+<span class="ansi-green-fg">----&gt; 4</span> plotter <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">SeaIcePlotter</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">sim_name</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">dt0_str</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">dtN_str</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">show_figs</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(0,135,0)">True</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">ice_type</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(175,0,0)">&#39;</span><span class="ansi-yellow-bg" style="color: rgb(175,0,0)">PI</span><span class="ansi-yellow-bg" style="color: rgb(175,0,0)">&#39;</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">      5</span> plotter<span style="color: rgb(98,98,98)">.</span>plot_timeseries(var_names<span style="color: rgb(98,98,98)">=</span>[<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">PI_STRESS</span><span style="color: rgb(175,0,0)">&#34;</span>])
+<span class="ansi-green-intense-fg ansi-bold">      6</span> plotter<span style="color: rgb(98,98,98)">.</span>plot_timeseries_compare(
+<span class="ansi-green-intense-fg ansi-bold">      7</span>     comparison_name <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">tensile-stars</span><span style="color: rgb(175,0,0)">&#34;</span>,
+<span class="ansi-green-intense-fg ansi-bold">      8</span>     sim_names       <span style="color: rgb(98,98,98)">=</span> [<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">baseline</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">ktens-max</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Pstar-max</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Cstar-min</span><span style="color: rgb(175,0,0)">&#34;</span>],
+<span class="ansi-green-fg">   (...)</span>
+<span class="ansi-green-intense-fg ansi-bold">     12</span>                        <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Pstar-max</span><span style="color: rgb(175,0,0)">&#34;</span> : <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">tensile = 0.2, Pstar = 5e4   , Cstar = 20</span><span style="color: rgb(175,0,0)">&#34;</span>,
+<span class="ansi-green-intense-fg ansi-bold">     13</span>                        <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Cstar-min</span><span style="color: rgb(175,0,0)">&#34;</span> : <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">tensile = 0.2, Pstar = 2.75e4, Cstar = 10</span><span style="color: rgb(175,0,0)">&#34;</span>})
+
+File <span class="ansi-green-fg">~/AFIM/src/python/sea_ice_plotter.py:138</span>, in <span class="ansi-cyan-fg">SeaIcePlotter.__init__</span><span class="ansi-blue-fg">(self, sim_name, dt0_str, dtN_str, json_path, hemisphere, overwrite, show_figs, prepare, single_figure, ice_type)</span>
+<span class="ansi-green-intense-fg ansi-bold">    136</span>     <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>dtN_str <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>
+<span class="ansi-green-intense-fg ansi-bold">    137</span> <span class="ansi-bold" style="color: rgb(0,135,0)">else</span>:
+<span class="ansi-green-fg">--&gt; 138</span>     zarr_pairs <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_find_nearest_zarr_file</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">dt0_str</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">end_date_str</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">dtN_str</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    139</span>     <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>P_zarr_list     <span style="color: rgb(98,98,98)">=</span> [p <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> p, _ <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> zarr_pairs]
+<span class="ansi-green-intense-fg ansi-bold">    140</span>     <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>plt_dt_str_list <span style="color: rgb(98,98,98)">=</span> [d <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> _, d <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> zarr_pairs]
+
+File <span class="ansi-green-fg">~/AFIM/src/python/sea_ice_plotter.py:186</span>, in <span class="ansi-cyan-fg">SeaIcePlotter._find_nearest_zarr_file</span><span class="ansi-blue-fg">(self, start_date_str, end_date_str)</span>
+<span class="ansi-green-intense-fg ansi-bold">    184</span> all_files <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">sorted</span>(<span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>D_FI<span style="color: rgb(98,98,98)">.</span>glob(<span style="color: rgb(175,0,0)">f</span><span style="color: rgb(175,0,0)">&#34;</span><span class="ansi-bold" style="color: rgb(175,95,135)">{</span>F_prefix<span class="ansi-bold" style="color: rgb(175,95,135)">}</span><span style="color: rgb(175,0,0)">_ice_*.zarr</span><span style="color: rgb(175,0,0)">&#34;</span>))
+<span class="ansi-green-intense-fg ansi-bold">    185</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> all_files:
+<span class="ansi-green-fg">--&gt; 186</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">FileNotFoundError</span>(<span style="color: rgb(175,0,0)">f</span><span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">No Zarr files found in </span><span class="ansi-bold" style="color: rgb(175,95,135)">{</span><span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>D_FI<span class="ansi-bold" style="color: rgb(175,95,135)">}</span><span style="color: rgb(175,0,0)">&#34;</span>)
+<span class="ansi-green-intense-fg ansi-bold">    187</span> file_dates <span style="color: rgb(98,98,98)">=</span> [(f, extract_date(f)) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> f <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> all_files]
+<span class="ansi-green-intense-fg ansi-bold">    188</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> end_date_str <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>:
+
+<span class="ansi-red-fg">FileNotFoundError</span>: No Zarr files found in /g/data/gv90/da1339/afim_output/ktens-max/PI
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">afim_anal</span> <span class="o">=</span> <span class="n">AFIM</span><span class="o">.</span><span class="n">analysis</span><span class="p">()</span>
+<span class="k">if</span> <span class="s1">&#39;hs&#39;</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">afim_anal</span><span class="o">.</span><span class="n">plot_var_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># After the loop, create an animation using ffmpeg (example command)</span>
+<span class="c1"># Assuming you&#39;re working in a Unix-like environment with ffmpeg installed:</span>
+<span class="k">for</span> <span class="n">region_name</span> <span class="ow">in</span> <span class="n">regions</span><span class="p">:</span>
+    <span class="n">D_save</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;/g/data/jk72/da1339/GRAPHICAL/AFIM/</span><span class="si">{</span><span class="n">run_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var_name</span><span class="si">}</span><span class="s2">/regional_cartopy/</span><span class="si">{</span><span class="n">region_name</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">D_ani</span>  <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;/g/data/jk72/da1339/GRAPHICAL/animations&quot;</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ffmpeg -framerate 2 -pattern_type glob -i &#39;</span><span class="si">{</span><span class="n">D_save</span><span class="si">}</span><span class="s2">/*.png&#39; -c:v libx264 -pix_fmt yuv420p </span><span class="si">{</span><span class="n">D_ani</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">run_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">var_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">region_name</span><span class="si">}</span><span class="s2">.mp4&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+
+<span class="n">sim_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Cstar-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Cstar-min&quot;</span><span class="p">,</span> <span class="s2">&quot;Pstar-max&quot;</span><span class="p">,</span> <span class="s2">&quot;Pstar-min&quot;</span><span class="p">,</span> <span class="s2">&quot;Rothrock&quot;</span><span class="p">,</span> <span class="s2">&quot;baseline&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;elps-def&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-fast&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-max&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-mid&quot;</span><span class="p">,</span> <span class="s2">&quot;elps-pack&quot;</span><span class="p">,</span> <span class="s2">&quot;gi-max&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gi-min&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-max&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-min&quot;</span><span class="p">,</span> <span class="s2">&quot;ktens-nil&quot;</span><span class="p">,</span> <span class="s2">&quot;oras-sfc-ctl&quot;</span><span class="p">,</span> <span class="s2">&quot;ustar-low&quot;</span><span class="p">,</span> <span class="s2">&quot;van_achter&quot;</span><span class="p">]</span>
+
+<span class="n">pbs_template</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;#!/bin/bash</span>
+<span class="s2">#PBS -N PI-proc-</span><span class="si">{name}</span>
+<span class="s2">#PBS -P gv90</span>
+<span class="s2">#PBS -l walltime=10:00:00</span>
+<span class="s2">#PBS -q normalbw</span>
+<span class="s2">#PBS -l mem=20GB</span>
+<span class="s2">#PBS -l ncpus=28</span>
+<span class="s2">#PBS -l storage=gdata/cj50+gdata/jk72+scratch/jk72+gdata/ik11+gdata/hh5+gdata/rt52+gdata/gb6+gdata/gv90</span>
+<span class="s2">#PBS -M daniel.atwater@utas.edu.au</span>
+
+<span class="s2">module purge</span>
+<span class="s2">module use /g/data/hh5/public/modules</span>
+<span class="s2">module load conda/analysis3</span>
+
+<span class="s2">cd ~/AFIM/src/python/</span>
+<span class="s2">python3 ./compute_pack_ice.py </span><span class="si">{name}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/home/581/da1339/AFIM/src/sh/analysis&quot;</span><span class="p">)</span>
+<span class="n">output_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">sim</span> <span class="ow">in</span> <span class="n">sim_names</span><span class="p">:</span>
+    <span class="n">script_content</span> <span class="o">=</span> <span class="n">pbs_template</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">sim</span><span class="p">)</span>
+    <span class="n">script_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output_dir</span><span class="p">,</span><span class="sa">f</span><span class="s2">&quot;PI-proc_</span><span class="si">{</span><span class="n">sim</span><span class="si">}</span><span class="s2">.pbs&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">script_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">script_content</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Generated </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">sim_names</span><span class="p">)</span><span class="si">}</span><span class="s2"> PBS scripts in: </span><span class="si">{</span><span class="n">output_dir</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../grounded_iceberg_processor.html" class="btn btn-neutral float-left" title="grounded_iceberg_processor module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

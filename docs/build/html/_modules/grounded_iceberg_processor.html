@@ -1,0 +1,535 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>grounded_iceberg_processor &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Package Modules</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../fast_ice_processor.html">fast_ice_processor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pack_ice_processor.html">pack_ice_processor module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sea_ice_plotter.html">sea_ice_plotter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../grounded_iceberg_processor.html">grounded_iceberg_processor module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">grounded_iceberg_processor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for grounded_iceberg_processor</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">xarray</span> <span class="k">as</span> <span class="nn">xr</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial</span> <span class="kn">import</span> <span class="n">cKDTree</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pygmt</span>
+<span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+
+<div class="viewcode-block" id="GroundedIcebergProcessor">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor">[docs]</a>
+<span class="k">class</span> <span class="nc">GroundedIcebergProcessor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class to preprocess grounded iceberg data for use in sea ice model analysis.</span>
+
+<span class="sd">    This class loads grounded iceberg shapefiles, converts them to the model grid,</span>
+<span class="sd">    applies probabilistic thinning (if requested), and generates a modified landmask</span>
+<span class="sd">    (KMT array) for grounded iceberg-affected grid cells. These modifications are</span>
+<span class="sd">    used when analyzing fast ice and pack ice fields in CICE model output.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    config     : dict</span>
+<span class="sd">                 Configuration dictionary (typically loaded from afim_cice_analysis.json).</span>
+<span class="sd">    sim_name   : str</span>
+<span class="sd">                 Simulation name (used for locating paths and logs).</span>
+<span class="sd">    P_gi_shp   : str or Path, optional</span>
+<span class="sd">                 Path to grounded iceberg shapefile (overrides config).</span>
+<span class="sd">    P_KMT      : str or Path, optional</span>
+<span class="sd">                 Path to KMT landmask NetCDF file (overrides config).</span>
+<span class="sd">    thin_prob  : float, optional</span>
+<span class="sd">                 Probability threshold for thinning grounded iceberg cells (0–1 range).</span>
+<span class="sd">                 If None, no thinning is applied.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    G_t           : xarray.Dataset</span>
+<span class="sd">                    Model T-grid loaded from NetCDF (with lon/lat/area).</span>
+<span class="sd">    G_u           : xarray.Dataset</span>
+<span class="sd">                    Model U-grid loaded from NetCDF (with lon/lat).</span>
+<span class="sd">    GI_mask       : xarray.DataArray</span>
+<span class="sd">                    Binary mask (1 where grounded iceberg exists).</span>
+<span class="sd">    GI_lons       : np.ndarray</span>
+<span class="sd">                    Longitude of grounded iceberg centroids (for plotting).</span>
+<span class="sd">    GI_lats       : np.ndarray</span>
+<span class="sd">                    Latitude of grounded iceberg centroids (for plotting).</span>
+<span class="sd">    GI_lon_cells  : np.ndarray</span>
+<span class="sd">                    Longitude of affected model grid cells (for KMT plotting).</span>
+<span class="sd">    GI_lat_cells  : np.ndarray</span>
+<span class="sd">                    Latitude of affected model grid cells (for KMT plotting).</span>
+<span class="sd">    KMT_path      : str</span>
+<span class="sd">                    Path to landmask (KMT) file.</span>
+<span class="sd">    total_area    : float</span>
+<span class="sd">                    Total area (in m²) affected by grounded icebergs.</span>
+<span class="sd">    use_gi        : bool</span>
+<span class="sd">                    True if grounded iceberg masking is active.</span>
+<span class="sd">    logger        : logging.Logger</span>
+<span class="sd">                    Logger instance for status and debugging messages.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Load grounded iceberg and landmask information:</span>
+
+<span class="sd">    &gt;&gt;&gt; from grounded_iceberg_processor import GroundedIcebergProcessor</span>
+<span class="sd">    &gt;&gt;&gt; proc = GroundedIcebergProcessor(config, sim_name=&quot;Rothrock&quot;)</span>
+<span class="sd">    &gt;&gt;&gt; proc.load_GI()</span>
+<span class="sd">    &gt;&gt;&gt; gi_mask = proc.GI_mask</span>
+
+<span class="sd">    Plot modified landmask with PyGMT:</span>
+
+<span class="sd">    &gt;&gt;&gt; fig.plot(x=proc.GI_lon_cells, y=proc.GI_lat_cells, style=&quot;c0.1c&quot;, fill=&quot;purple&quot;)</span>
+<span class="sd">    &gt;&gt;&gt; fig.plot(x=proc.GI_lons, y=proc.GI_lats, style=&quot;s0.1c&quot;, fill=&quot;black&quot;)</span>
+
+<span class="sd">    References</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Full AFIM repository: https://github.com/dpath2o/AFIM</span>
+<span class="sd">    JSON config:          AFIM/JSONs/afim_cice_analysis.json</span>
+<span class="sd">    Shapefile source:     SCAR Antarctic Digital Database (ADD) or similar</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">sim_name</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the GroundedIcebergProcessor with configuration data and simulation name.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        config : dict</span>
+<span class="sd">            Dictionary loaded from a JSON config file.</span>
+<span class="sd">        sim_name : str</span>
+<span class="sd">            The name of the simulation to process.</span>
+<span class="sd">        overwrite : bool, optional</span>
+<span class="sd">            If True, allows overwriting of existing NetCDF outputs. Defaults to False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sim_name</span> <span class="o">=</span> <span class="n">sim_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sim_config</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;sim_dict&#39;</span><span class="p">][</span><span class="n">sim_name</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;CICE_dict&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;GI_dict&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">FIC_scale</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FIC_scale&quot;</span><span class="p">,</span> <span class="mf">1e9</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_fact</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sim_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;GI_thin_fact&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_version</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sim_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;GI_version&#39;</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_version_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_version</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="s1">&#39;p&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overwrite</span> <span class="o">=</span> <span class="n">overwrite</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ice_shelves_loaded</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_fact</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">GI_thin_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_fact</span><span class="si">:</span><span class="s2">0.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="s1">&#39;p&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;D_GI_thin&#39;</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;GI_thin_fmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">GI_thin_fact</span><span class="o">=</span><span class="n">GI_thin_str</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_version_str</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;D_GI_thin&#39;</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;KMT_mod_fmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">GI_thin_fact</span><span class="o">=</span><span class="n">GI_thin_str</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_version_str</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">use_gi</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s1">&#39;P_KMT&#39;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">use_gi</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">total_area</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">CICE_grid_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s1">&#39;P_G&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;spatial_dims&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">))</span>
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.load_ice_shelves">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.load_ice_shelves">[docs]</a>
+    <span class="k">def</span> <span class="nf">load_ice_shelves</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load Antarctic ice shelf polygons from a shapefile into the processor.</span>
+
+<span class="sd">        This sets the `self.antarctic_ice_shelves` attribute for optional overlay</span>
+<span class="sd">        during plotting. Geometries are cleaned, reprojected, and buffered.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">coast_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;pygmt_dict&#39;</span><span class="p">][</span><span class="s1">&#39;P_coast_shape&#39;</span><span class="p">]</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="n">coast_path</span><span class="p">)</span>
+        <span class="n">shelves</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;POLY_TYPE&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;S&#39;</span><span class="p">]</span>
+        <span class="n">shelves</span> <span class="o">=</span> <span class="n">shelves</span><span class="p">[</span><span class="o">~</span><span class="n">shelves</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">is_empty</span> <span class="o">&amp;</span> <span class="n">shelves</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">notnull</span><span class="p">()]</span>
+        <span class="n">shelves</span> <span class="o">=</span> <span class="n">shelves</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="s2">&quot;EPSG:4326&quot;</span><span class="p">)</span>
+        <span class="n">shelves</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">shelves</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">antarctic_ice_shelves</span> <span class="o">=</span> <span class="n">shelves</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ice_shelves_loaded</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.check_existing_files">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.check_existing_files">[docs]</a>
+    <span class="k">def</span> <span class="nf">check_existing_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check whether the expected output files already exist and raise an error</span>
+<span class="sd">        unless `overwrite=True` was set in the constructor.</span>
+
+<span class="sd">        This is a safeguard against overwriting KMT or GI-thinned NetCDFs that</span>
+<span class="sd">        might have been used in a numerical simulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">overwrite</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Thinned GI file or KMT file already exists:</span><span class="se">\n</span><span class="s2">  - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">  - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">These files may have been used in model simulations. Set `overwrite=True` in the constructor to allow overwriting.&quot;</span>
+                <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.load_existing_thinned">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.load_existing_thinned">[docs]</a>
+    <span class="k">def</span> <span class="nf">load_existing_thinned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load previously saved thinned grounded iceberg data and modified KMT file.</span>
+
+<span class="sd">        Sets the attributes `self.GI_thin_da`, `self.GI_thin_mask`, and `self.GI_KMT`</span>
+<span class="sd">        if their respective NetCDF files exist.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_da</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_da</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">GI_KMT</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.load_AFIM_GI">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.load_AFIM_GI">[docs]</a>
+    <span class="k">def</span> <span class="nf">load_AFIM_GI</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load pre-generated grounded iceberg mask and modified KMT information.</span>
+
+<span class="sd">        This method does not create new files or apply thinning. It reads existing</span>
+<span class="sd">        outputs from NetCDF files based on the configured simulation dictionary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_gi</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_grid_and_landmask</span><span class="p">()</span>
+        <span class="n">GI_locs</span>             <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dataset_path</span><span class="p">)</span>
+        <span class="n">G_pts</span>               <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s2">&quot;lon&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s2">&quot;lat&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()))</span>
+        <span class="n">GI_pts</span>              <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">GI_locs</span><span class="p">[</span><span class="s2">&quot;lon&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">GI_locs</span><span class="p">[</span><span class="s2">&quot;lat&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">))</span>
+        <span class="n">tree</span>                <span class="o">=</span> <span class="n">cKDTree</span><span class="p">(</span><span class="n">G_pts</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">nrst_i</span>           <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">GI_pts</span><span class="p">)</span>
+        <span class="n">nj</span><span class="p">,</span> <span class="n">ni</span>              <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">nj_i</span><span class="p">,</span> <span class="n">ni_i</span>          <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unravel_index</span><span class="p">(</span><span class="n">nrst_i</span><span class="p">,</span> <span class="p">(</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">))</span>
+        <span class="n">GI_mask</span>             <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+        <span class="n">GI_mask</span><span class="p">[</span><span class="n">nj_i</span><span class="p">,</span> <span class="n">ni_i</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">GI_total_area</span>       <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s2">&quot;area&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">GI_mask</span><span class="p">])</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">FIC_scale</span>
+        <span class="n">KMT_orig</span>            <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s1">&#39;P_KMT&#39;</span><span class="p">])</span>
+        <span class="n">KMT_mod</span>             <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="p">)</span>
+        <span class="n">kmt_orig_arr</span>        <span class="o">=</span> <span class="n">KMT_orig</span><span class="p">[</span><span class="s1">&#39;kmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">kmt_mod_arr</span>         <span class="o">=</span> <span class="n">KMT_mod</span><span class="p">[</span><span class="s1">&#39;kmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">lat_arr</span>             <span class="o">=</span> <span class="n">KMT_mod</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">lon_arr</span>             <span class="o">=</span> <span class="n">KMT_mod</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">lon_arr_wrapped</span>     <span class="o">=</span> <span class="p">(</span><span class="n">lon_arr</span> <span class="o">+</span> <span class="mi">360</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span>
+        <span class="n">diff_mask</span>           <span class="o">=</span> <span class="p">(</span><span class="n">kmt_orig_arr</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">kmt_mod_arr</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">nj</span><span class="p">,</span> <span class="n">ni</span>              <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">diff_mask</span><span class="p">)</span>
+        <span class="n">lon_grid_cells</span>      <span class="o">=</span> <span class="n">lon_arr_wrapped</span><span class="p">[</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">]</span>
+        <span class="n">lat_grid_cells</span>      <span class="o">=</span> <span class="n">lat_arr</span><span class="p">[</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_mask</span>        <span class="o">=</span> <span class="n">GI_mask</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total_area</span>     <span class="o">=</span> <span class="n">GI_total_area</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_lons</span>        <span class="o">=</span> <span class="n">GI_locs</span><span class="p">[</span><span class="s2">&quot;lon&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_lats</span>        <span class="o">=</span> <span class="n">GI_locs</span><span class="p">[</span><span class="s2">&quot;lat&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_lon_cells</span>   <span class="o">=</span> <span class="n">lon_grid_cells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_lat_cells</span>   <span class="o">=</span> <span class="n">lat_grid_cells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nj_i</span>           <span class="o">=</span> <span class="n">nj_i</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ni_i</span>           <span class="o">=</span> <span class="n">ni_i</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.load_grid_and_landmask">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.load_grid_and_landmask">[docs]</a>
+    <span class="k">def</span> <span class="nf">load_grid_and_landmask</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load the CICE grid (t-grid and u-grid) and the landmask (KMT).</span>
+
+<span class="sd">        Coordinates are converted to degrees and standardized to [-180, 180].</span>
+<span class="sd">        Sets attributes `self.G_t`, `self.G_u`, and `self.KMT`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">grid_ds</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">CICE_grid_path</span><span class="p">)</span>
+        <span class="n">kmt_ds</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KMT_path</span><span class="p">)</span>
+        <span class="n">G_t</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">({</span>
+            <span class="s1">&#39;lat&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="n">grid_ds</span><span class="o">.</span><span class="n">tlat</span><span class="o">.</span><span class="n">data</span> <span class="o">*</span> <span class="mi">180</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">),</span>
+            <span class="s1">&#39;lon&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="p">((</span><span class="n">grid_ds</span><span class="o">.</span><span class="n">tlon</span><span class="o">.</span><span class="n">data</span> <span class="o">*</span> <span class="mi">180</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">+</span> <span class="mi">180</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span><span class="p">)</span> <span class="o">-</span> <span class="mi">180</span><span class="p">),</span>
+            <span class="s1">&#39;area&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="n">grid_ds</span><span class="o">.</span><span class="n">tarea</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+        <span class="p">})</span>
+        <span class="n">G_u</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">({</span>
+            <span class="s1">&#39;lat&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="n">grid_ds</span><span class="o">.</span><span class="n">ulat</span><span class="o">.</span><span class="n">data</span> <span class="o">*</span> <span class="mi">180</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">),</span>
+            <span class="s1">&#39;lon&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="p">((</span><span class="n">grid_ds</span><span class="o">.</span><span class="n">ulon</span><span class="o">.</span><span class="n">data</span> <span class="o">*</span> <span class="mi">180</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">+</span> <span class="mi">180</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span><span class="p">)</span> <span class="o">-</span> <span class="mi">180</span><span class="p">),</span>
+            <span class="s1">&#39;area&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;ni&#39;</span><span class="p">),</span> <span class="n">grid_ds</span><span class="o">.</span><span class="n">uarea</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+        <span class="p">})</span>
+        <span class="n">KMT</span> <span class="o">=</span> <span class="n">kmt_ds</span><span class="o">.</span><span class="n">kmt</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_gi</span> <span class="ow">and</span> <span class="s1">&#39;ny&#39;</span> <span class="ow">in</span> <span class="n">KMT</span><span class="o">.</span><span class="n">dims</span> <span class="ow">and</span> <span class="s1">&#39;nx&#39;</span> <span class="ow">in</span> <span class="n">KMT</span><span class="o">.</span><span class="n">dims</span><span class="p">:</span>
+            <span class="n">KMT</span> <span class="o">=</span> <span class="n">KMT</span><span class="o">.</span><span class="n">rename</span><span class="p">({</span><span class="s1">&#39;ny&#39;</span><span class="p">:</span> <span class="s1">&#39;nj&#39;</span><span class="p">,</span> <span class="s1">&#39;nx&#39;</span><span class="p">:</span> <span class="s1">&#39;ni&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span> <span class="o">=</span> <span class="n">G_t</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">G_u</span> <span class="o">=</span> <span class="n">G_u</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">KMT</span> <span class="o">=</span> <span class="n">KMT</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.process_raw_iceberg_csv">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.process_raw_iceberg_csv">[docs]</a>
+    <span class="k">def</span> <span class="nf">process_raw_iceberg_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load and spatially map raw grounded iceberg locations from CSV to the model grid.</span>
+
+<span class="sd">        Uses a KD-tree nearest-neighbor search to assign iceberg coordinates to grid cells.</span>
+<span class="sd">        Sets `self.GI_clean` with attached (nj, ni) indices.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">raw_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;P_raw&#39;</span><span class="p">]</span>
+        <span class="n">GI_raw</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">raw_path</span><span class="p">)</span>
+        <span class="n">GI_clean</span> <span class="o">=</span> <span class="n">GI_raw</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">,</span> <span class="s1">&#39;Y&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">G_pts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()))</span>
+        <span class="n">tree</span> <span class="o">=</span> <span class="n">cKDTree</span><span class="p">(</span><span class="n">G_pts</span><span class="p">)</span>
+        <span class="n">GI_locs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">GI_clean</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">GI_clean</span><span class="p">[</span><span class="s1">&#39;Y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">))</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">nrst_i</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">GI_locs</span><span class="p">)</span>
+        <span class="n">nj</span><span class="p">,</span> <span class="n">ni</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">nj_i</span><span class="p">,</span> <span class="n">ni_i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unravel_index</span><span class="p">(</span><span class="n">nrst_i</span><span class="p">,</span> <span class="p">(</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">))</span>
+        <span class="n">GI_clean</span><span class="p">[</span><span class="s1">&#39;nj_index&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">nj_i</span>
+        <span class="n">GI_clean</span><span class="p">[</span><span class="s1">&#39;ni_index&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ni_i</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_clean</span> <span class="o">=</span> <span class="n">GI_clean</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.count_icebergs">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.count_icebergs">[docs]</a>
+    <span class="k">def</span> <span class="nf">count_icebergs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Count grounded icebergs per grid cell from cleaned data.</span>
+
+<span class="sd">        Aggregates mapped iceberg coordinates to form a 2D count array.</span>
+<span class="sd">        Sets `self.GI_cnts` as an xarray DataArray.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">nj</span><span class="p">,</span> <span class="n">ni</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">GI_cnts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nj</span><span class="p">,</span> <span class="n">ni</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+        <span class="n">GI_cnts_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_clean</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">&#39;nj_index&#39;</span><span class="p">,</span> <span class="s1">&#39;ni_index&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;count&#39;</span><span class="p">)</span>
+        <span class="n">GI_cnts</span><span class="p">[</span><span class="n">GI_cnts_df</span><span class="p">[</span><span class="s1">&#39;nj_index&#39;</span><span class="p">],</span> <span class="n">GI_cnts_df</span><span class="p">[</span><span class="s1">&#39;ni_index&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">GI_cnts_df</span><span class="p">[</span><span class="s1">&#39;count&#39;</span><span class="p">]</span>
+        <span class="n">GI_cnts_da</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span><span class="n">GI_cnts</span><span class="p">,</span> <span class="n">dims</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;GI_counts&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_cnts</span> <span class="o">=</span> <span class="n">GI_cnts_da</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.apply_thinning">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.apply_thinning">[docs]</a>
+    <span class="k">def</span> <span class="nf">apply_thinning</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">p_max</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">scaling_exponent</span><span class="o">=</span><span class="mf">1.5</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Apply probabilistic thinning to the grounded iceberg mask based on iceberg counts.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        p_min : float</span>
+<span class="sd">            Minimum probability of retaining a cell with low counts.</span>
+<span class="sd">        p_max : float</span>
+<span class="sd">            Maximum probability of retaining a cell with high counts.</span>
+<span class="sd">        scaling_exponent : float</span>
+<span class="sd">            Controls steepness of probability scaling with count.</span>
+
+<span class="sd">        Sets:</span>
+<span class="sd">        ------</span>
+<span class="sd">        self.GI_thin_da : xarray.DataArray</span>
+<span class="sd">        self.GI_thin_mask : ndarray (boolean)</span>
+<span class="sd">        self.GI_thin_fact : float (fraction thinned out)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_cnts</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;=</span> <span class="mi">1</span>
+        <span class="n">counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_cnts</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">thin_mask</span><span class="p">,</span> <span class="n">thin_fact</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_thin_mask</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">counts</span><span class="p">,</span> <span class="n">p_min</span><span class="p">,</span> <span class="n">p_max</span><span class="p">,</span> <span class="n">scaling_exponent</span><span class="p">)</span>
+        <span class="n">GI_thinned</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">*</span> <span class="n">thin_mask</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_da</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span><span class="n">GI_thinned</span><span class="p">,</span> <span class="n">dims</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;GI_thinned_counts&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_mask</span> <span class="o">=</span> <span class="n">thin_mask</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_fact</span> <span class="o">=</span> <span class="n">thin_fact</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.modify_kmt">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.modify_kmt">[docs]</a>
+    <span class="k">def</span> <span class="nf">modify_kmt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Modify the model KMT (landmask) by setting grounded iceberg cells to land (value=0).</span>
+
+<span class="sd">        Sets `self.GI_KMT` as an xarray DataArray with the modified landmask.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">kmt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">KMT</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">thin_nj</span><span class="p">,</span> <span class="n">thin_ni</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_mask</span><span class="p">)</span>
+        <span class="n">kmt</span><span class="p">[</span><span class="n">thin_nj</span><span class="p">,</span> <span class="n">thin_ni</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">GI_KMT</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">kmt</span><span class="p">,</span>
+            <span class="n">dims</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span><span class="p">,</span>
+            <span class="n">coords</span><span class="o">=</span><span class="p">{</span>
+                <span class="s1">&#39;lat&#39;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">),</span>
+                <span class="s1">&#39;lon&#39;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">spatial_dims</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+            <span class="p">},</span>
+            <span class="n">name</span><span class="o">=</span><span class="s1">&#39;CICE_landmask_with_GI_as_land&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_KMT</span> <span class="o">=</span> <span class="n">GI_KMT</span></div>
+
+
+<div class="viewcode-block" id="GroundedIcebergProcessor.save_thinned_and_kmt">
+<a class="viewcode-back" href="../grounded_iceberg_processor.html#grounded_iceberg_processor.GroundedIcebergProcessor.save_thinned_and_kmt">[docs]</a>
+    <span class="k">def</span> <span class="nf">save_thinned_and_kmt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Save the thinned grounded iceberg counts and modified KMT landmask to NetCDF files.</span>
+
+<span class="sd">        File paths are generated from the config template using GI thinning factor and version.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">GI_thin_fact_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_fact</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="s1">&#39;p&#39;</span><span class="p">)</span>
+        <span class="n">F_thin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;GI_thin_fmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">GI_thin_fact</span><span class="o">=</span><span class="n">GI_thin_fact_str</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_version_str</span><span class="p">)</span>
+        <span class="n">F_KMT_mod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;KMT_mod_fmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">GI_thin_fact</span><span class="o">=</span><span class="n">GI_thin_fact_str</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_version_str</span><span class="p">)</span>
+        <span class="n">P_thin</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;D_GI_thin&#39;</span><span class="p">],</span> <span class="n">F_thin</span><span class="p">)</span>
+        <span class="n">P_KMT_mod</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">GI_dict</span><span class="p">[</span><span class="s1">&#39;D_GI_thin&#39;</span><span class="p">],</span> <span class="n">F_KMT_mod</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_thin_da</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">P_thin</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;w&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GI_KMT</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">P_KMT_mod</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;w&#39;</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_is_isolated</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">mask</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determine if a given grid cell is isolated (no grounded icebergs in 8-connected neighbors).</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        y, x : int</span>
+<span class="sd">            Grid coordinates to test.</span>
+<span class="sd">        mask : ndarray</span>
+<span class="sd">            Boolean mask where True = grounded iceberg.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if isolated, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ny</span><span class="p">,</span> <span class="n">nx</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">adjacent_coords</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">y</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">y</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="p">(</span><span class="n">y</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">+</span><span class="mi">1</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">y</span><span class="p">,</span>   <span class="n">x</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>          <span class="p">(</span><span class="n">y</span><span class="p">,</span>   <span class="n">x</span><span class="o">+</span><span class="mi">1</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">y</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">y</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="p">(</span><span class="n">y</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">adj_y</span><span class="p">,</span> <span class="n">adj_x</span> <span class="ow">in</span> <span class="n">adjacent_coords</span><span class="p">:</span>
+            <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">adj_y</span> <span class="o">&lt;</span> <span class="n">ny</span> <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">adj_x</span> <span class="o">&lt;</span> <span class="n">nx</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">mask</span><span class="p">[</span><span class="n">adj_y</span><span class="p">,</span> <span class="n">adj_x</span><span class="p">]:</span>
+                    <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_thin_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">counts</span><span class="p">,</span> <span class="n">p_min</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">p_max</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">scaling_exponent</span><span class="o">=</span><span class="mf">2.0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Perform probabilistic thinning of grounded iceberg cells based on their counts.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        mask : ndarray</span>
+<span class="sd">            Boolean array of original grounded iceberg presence.</span>
+<span class="sd">        counts : ndarray</span>
+<span class="sd">            Corresponding iceberg counts.</span>
+<span class="sd">        p_min : float</span>
+<span class="sd">            Minimum probability of retaining a cell.</span>
+<span class="sd">        p_max : float</span>
+<span class="sd">            Maximum probability of retaining a cell.</span>
+<span class="sd">        scaling_exponent : float</span>
+<span class="sd">            Controls how sharply retention probability scales with count.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        thinned_mask : ndarray (bool)</span>
+<span class="sd">            Mask after thinning.</span>
+<span class="sd">        GI_thinning_factor : float</span>
+<span class="sd">            Fraction of cells that were removed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ny</span><span class="p">,</span> <span class="n">nx</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">thinned_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+        <span class="n">count_min</span><span class="p">,</span> <span class="n">count_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmin</span><span class="p">(</span><span class="n">counts</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmax</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">count_max</span> <span class="o">&gt;</span> <span class="n">count_min</span><span class="p">:</span>
+            <span class="n">norm_counts</span> <span class="o">=</span> <span class="p">(</span><span class="n">counts</span> <span class="o">-</span> <span class="n">count_min</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">count_max</span> <span class="o">-</span> <span class="n">count_min</span><span class="p">)</span>
+            <span class="n">norm_counts</span> <span class="o">=</span> <span class="n">norm_counts</span> <span class="o">**</span> <span class="n">scaling_exponent</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">norm_counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span>
+        <span class="n">retain_probs</span> <span class="o">=</span> <span class="n">p_min</span> <span class="o">+</span> <span class="n">norm_counts</span> <span class="o">*</span> <span class="p">(</span><span class="n">p_max</span> <span class="o">-</span> <span class="n">p_min</span><span class="p">)</span>
+        <span class="n">retained_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">total_count</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">count_nonzero</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ny</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nx</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">mask</span><span class="p">[</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">]:</span>
+                    <span class="n">retain_prob</span> <span class="o">=</span> <span class="n">retain_probs</span><span class="p">[</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_isolated</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">mask</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">retain_prob</span><span class="p">:</span>
+                        <span class="n">thinned_mask</span><span class="p">[</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="n">retained_count</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">GI_thinning_factor</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="p">(</span><span class="n">retained_count</span> <span class="o">/</span> <span class="n">total_count</span><span class="p">)</span> <span class="k">if</span> <span class="n">total_count</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">thinned_mask</span><span class="p">,</span> <span class="n">GI_thinning_factor</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,466 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sea_ice_plotter module &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="grounded_iceberg_processor module" href="grounded_iceberg_processor.html" />
+    <link rel="prev" title="pack_ice_processor module" href="pack_ice_processor.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Package Modules</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="fast_ice_processor.html">fast_ice_processor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pack_ice_processor.html">pack_ice_processor module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">sea_ice_plotter module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.config"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.config</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.P_zarr"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.P_zarr</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_var_dict"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_var_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_df"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_df</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_region"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_region</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.create_animation"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.create_animation()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.define_hemisphere"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.define_hemisphere()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_facet_regions"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_facet_regions()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_map"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_map()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_map_grounded_icebergs"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_map_grounded_icebergs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_path"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_path()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_regions"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_regions()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_regions_grounded_icebergs"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_regions_grounded_icebergs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_sectors_grounded_icebergs"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_sectors_grounded_icebergs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_timeseries"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_timeseries()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.plot_timeseries_compare"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.plot_timeseries_compare()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea_ice_plotter.SeaIcePlotter.prepare_data_for_plotting"><code class="docutils literal notranslate"><span class="pre">SeaIcePlotter.prepare_data_for_plotting()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="grounded_iceberg_processor.html">grounded_iceberg_processor module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">&lt;no title&gt;</a></li>
+      <li class="breadcrumb-item active">sea_ice_plotter module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/sea_ice_plotter.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-sea_ice_plotter">
+<span id="sea-ice-plotter-module"></span><h1>sea_ice_plotter module<a class="headerlink" href="#module-sea_ice_plotter" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sea_ice_plotter.</span></span><span class="sig-name descname"><span class="pre">SeaIcePlotter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sim_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt0_str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtN_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">json_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hemisphere</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_figs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prepare</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_figure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ice_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'FI'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Class to plot fast ice and pack ice fields from AFIM simulations.</p>
+<p>This class supports reading spatial and temporal Zarr datasets
+for fast or pack ice and generates static maps or time series
+visualisations using PyGMT.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sim_name</strong> (<em>str</em>) – Name of the simulation (used to locate output directories).</p></li>
+<li><p><strong>dt0_str</strong> (<em>str</em>) – Start date string (format: YYYY-MM-DD).</p></li>
+<li><p><strong>dtN_str</strong> (<em>str</em><em>, </em><em>optional</em>) – End date string. Required for multi-date plots.</p></li>
+<li><p><strong>json_path</strong> (<em>str</em><em> or </em><em>Path</em><em>, </em><em>optional</em>) – Path to the AFIM project JSON configuration.</p></li>
+<li><p><strong>hemisphere</strong> (<em>str</em><em>, </em><em>optional</em>) – Hemisphere to focus on (‘north’ or ‘south’). Defaults to config setting.</p></li>
+<li><p><strong>overwrite</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, overwrite existing figures (default: False).</p></li>
+<li><p><strong>show_figs</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, display figures after creation (default: False).</p></li>
+<li><p><strong>prepare</strong> (<em>bool</em><em>, </em><em>optional</em>) – Whether to load plotting data during initialisation (default: True).</p></li>
+<li><p><strong>single_figure</strong> (<em>bool</em><em>, </em><em>optional</em>) – Treat input date as single date, even if dtN_str is passed (default: False).</p></li>
+<li><p><strong>ice_type</strong> (<em>str</em><em>, </em><em>optional</em>) – Type of ice being plotted (‘fast’ or ‘pack’). Affects file/path resolution.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.config">
+<span class="sig-name descname"><span class="pre">config</span></span><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.config" title="Link to this definition"></a></dt>
+<dd><p>Full project configuration dictionary from JSON.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.P_zarr">
+<span class="sig-name descname"><span class="pre">P_zarr</span></span><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.P_zarr" title="Link to this definition"></a></dt>
+<dd><p>Path to the main Zarr dataset being plotted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Path</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_var_dict">
+<span class="sig-name descname"><span class="pre">plot_var_dict</span></span><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_var_dict" title="Link to this definition"></a></dt>
+<dd><p>Plotting configuration for variables (colorbars, units, ranges).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_df">
+<span class="sig-name descname"><span class="pre">plot_df</span></span><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_df" title="Link to this definition"></a></dt>
+<dd><p>Flat dataframe of points to plot (lat/lon/dat triples).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_region">
+<span class="sig-name descname"><span class="pre">plot_region</span></span><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_region" title="Link to this definition"></a></dt>
+<dd><p>Region name if plotting subregions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">sea_ice_plotter</span> <span class="kn">import</span> <span class="n">SeaIcePlotter</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">plotter</span> <span class="o">=</span> <span class="n">SeaIcePlotter</span><span class="p">(</span><span class="s2">&quot;Rothrock&quot;</span><span class="p">,</span> <span class="s2">&quot;1994-09-08&quot;</span><span class="p">,</span> <span class="n">ice_type</span><span class="o">=</span><span class="s2">&quot;fast&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">plotter</span><span class="o">.</span><span class="n">plot_map</span><span class="p">(</span><span class="n">region_name</span><span class="o">=</span><span class="s2">&quot;Weddell&quot;</span><span class="p">,</span> <span class="n">text_str</span><span class="o">=</span><span class="s2">&quot;Fast Ice&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.create_animation">
+<span class="sig-name descname"><span class="pre">create_animation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">codec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'libx264'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.create_animation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.create_animation" title="Link to this definition"></a></dt>
+<dd><p>Create an MP4 animation from saved PNG frames.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>region_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Region label used in filename paths.</p></li>
+<li><p><strong>var_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Variable name to animate. Defaults to self.var_name.</p></li>
+<li><p><strong>fps</strong> (<em>int</em>) – Frames per second for the output video.</p></li>
+<li><p><strong>suffix</strong> (<em>str</em>) – File extension for input PNGs (default: .png).</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This method uses <cite>ffmpeg</cite> under the hood. It must be installed and accessible
+in the system path.
+Output file is written to self.D_graph with a standard MP4 filename.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.define_hemisphere">
+<span class="sig-name descname"><span class="pre">define_hemisphere</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hemisphere</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.define_hemisphere"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.define_hemisphere" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_facet_regions">
+<span class="sig-name descname"><span class="pre">plot_facet_regions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(15,</span> <span class="pre">10)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_facet_regions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_facet_regions" title="Link to this definition"></a></dt>
+<dd><p>Create a multi-panel (faceted) plot of multiple regions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>regions</strong> (<em>list</em><em> of </em><em>str</em>) – List of region names from config[‘AF_regions’].</p></li>
+<li><p><strong>layout</strong> (<em>str</em>) – Facet layout, e.g., “3x2”.</p></li>
+<li><p><strong>label_dict</strong> (<em>dict</em><em>, </em><em>optional</em>) – Custom label for each region (title).</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This method generates a grid of subplots using PyGMT subplot
+functionality. It relies on region extents defined in config[‘AF_regions’].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_map">
+<span class="sig-name descname"><span class="pre">plot_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">projection</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap_reverse</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">series</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sq_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.03</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cbar_pos</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'JBC+w10c/0.5c+mc+h'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cbar_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ice_shelves</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">water_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'black'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">land_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'seashell'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shoreline_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'.2p,white'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plain_frame</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frame</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_loc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_font</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'12p,Courier-Bold,black'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_justify</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'LM'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_fill</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'white'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text_pen</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'0.5p,black'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P_png</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ow_fig</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_figs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_map" title="Link to this definition"></a></dt>
+<dd><p>Plot sea ice field using PyGMT for either regional or hemispheric view.</p>
+<p>This method uses <cite>self.plot_df</cite> to create a PyGMT scatter map.
+It supports configurable options for color map, scale, annotations,
+regional focus, and overlays such as grounded icebergs or shelves.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>projection</strong> (<em>str</em><em>, </em><em>optional</em>) – GMT-style projection string.</p></li>
+<li><p><strong>region</strong> (<em>list</em><em> or </em><em>str</em><em>, </em><em>optional</em>) – Geographic extent as [lon_min, lon_max, lat_min, lat_max].</p></li>
+<li><p><strong>region_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Label for regional subdirectory.</p></li>
+<li><p><strong>cmap</strong> (<em>str</em><em>, </em><em>optional</em>) – Colormap to use.</p></li>
+<li><p><strong>cmap_reverse</strong> (<em>bool</em><em>, </em><em>optional</em>) – Whether to reverse the colormap.</p></li>
+<li><p><strong>series</strong> (<em>tuple</em><em>, </em><em>optional</em>) – Min/max data values for colorbar.</p></li>
+<li><p><strong>sq_size</strong> (<em>float</em><em>, </em><em>optional</em>) – Size of PyGMT square symbol.</p></li>
+<li><p><strong>dt_str</strong> (<em>str</em><em>, </em><em>optional</em>) – Date label override for the plot.</p></li>
+<li><p><strong>cbar_pos</strong> (<em>str</em><em>, </em><em>optional</em>) – PyGMT colorbar position string.</p></li>
+<li><p><strong>cbar_str</strong> (<em>str</em><em>, </em><em>optional</em>) – Colorbar label.</p></li>
+<li><p><strong>units</strong> (<em>str</em><em>, </em><em>optional</em>) – Units string for axis.</p></li>
+<li><p><strong>ice_shelves</strong> (<em>bool</em><em>, </em><em>optional</em>) – Whether to overlay Antarctic ice shelves.</p></li>
+<li><p><strong>water_color</strong> (<em>str</em><em>, </em><em>optional</em>) – Color to fill water bodies.</p></li>
+<li><p><strong>land_color</strong> (<em>str</em><em>, </em><em>optional</em>) – Color to fill land.</p></li>
+<li><p><strong>shoreline_str</strong> (<em>str</em><em>, </em><em>optional</em>) – Style string for shorelines.</p></li>
+<li><p><strong>plain_frame</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, removes axis labels and title.</p></li>
+<li><p><strong>frame</strong> (<em>str</em><em> or </em><em>list</em><em>, </em><em>optional</em>) – Frame formatting.</p></li>
+<li><p><strong>text_loc</strong> (<em>list</em><em> or </em><em>tuple</em><em>, </em><em>optional</em>) – Text label location (lon, lat).</p></li>
+<li><p><strong>text_str</strong> (<em>str</em><em>, </em><em>optional</em>) – Label to overlay on map.</p></li>
+<li><p><strong>text_font</strong> (<em>str</em><em>, </em><em>optional</em>) – Font specification for label.</p></li>
+<li><p><strong>text_justify</strong> (<em>str</em><em>, </em><em>optional</em>) – Justification of text.</p></li>
+<li><p><strong>text_fill</strong> (<em>str</em><em>, </em><em>optional</em>) – Fill behind text.</p></li>
+<li><p><strong>text_pen</strong> (<em>str</em><em>, </em><em>optional</em>) – Outline around text.</p></li>
+<li><p><strong>P_png</strong> (<em>str</em><em>, </em><em>optional</em>) – Override output file path.</p></li>
+<li><p><strong>ow_fig</strong> (<em>bool</em><em>, </em><em>optional</em>) – Force overwrite for this plot.</p></li>
+<li><p><strong>show_figs</strong> (<em>bool</em><em>, </em><em>optional</em>) – Force show for this plot.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_map_grounded_icebergs">
+<span class="sig-name descname"><span class="pre">plot_map_grounded_icebergs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">region</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">projection</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sq_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_thinned</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_map_grounded_icebergs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_map_grounded_icebergs" title="Link to this definition"></a></dt>
+<dd><p>Create a PyGMT map of grounded iceberg data for a single Antarctic region.</p>
+<section id="parameters">
+<h2>Parameters:<a class="headerlink" href="#parameters" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>region<span class="classifier">list</span></dt><dd><p>GMT-style region bounding box [lon_min, lon_max, lat_min, lat_max].</p>
+</dd>
+<dt>region_name<span class="classifier">str</span></dt><dd><p>Name of the region (used in filename or title).</p>
+</dd>
+<dt>projection<span class="classifier">str</span></dt><dd><p>PyGMT polar projection string (e.g., ‘S0/-90/17.5c’).</p>
+</dd>
+<dt>sq_size<span class="classifier">float</span></dt><dd><p>Size of square markers for grounded icebergs.</p>
+</dd>
+<dt>cmap<span class="classifier">str</span></dt><dd><p>Colormap to use for iceberg count shading.</p>
+</dd>
+<dt>save_path<span class="classifier">str</span></dt><dd><p>Full path to save output PNG.</p>
+</dd>
+<dt>use_thinned<span class="classifier">bool</span></dt><dd><p>Whether to use thinned counts or raw grounded iceberg counts.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_path">
+<span class="sig-name descname"><span class="pre">plot_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sim_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">D_graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hemisphere</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_path" title="Link to this definition"></a></dt>
+<dd><p>Generate figure output path and filename for the current plotting configuration.</p>
+<p>This method sets <cite>self.P_png</cite> to a resolved PNG file path that depends on
+simulation name, hemisphere, plotting region, and selected variable.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>region</strong> (<em>str</em><em>, </em><em>optional</em>) – Region name, e.g., “Weddell”, used for subdirectory.</p></li>
+<li><p><strong>sim_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Simulation name override. Defaults to <cite>self.sim_name</cite>.</p></li>
+<li><p><strong>var_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Variable name override. Defaults to <cite>self.var_name</cite>.</p></li>
+<li><p><strong>D_graph</strong> (<em>Path</em><em>, </em><em>optional</em>) – Directory to write to. Defaults to internal plot path.</p></li>
+<li><p><strong>hemisphere</strong> (<em>str</em><em>, </em><em>optional</em>) – Hemisphere label for folder structure.</p></li>
+<li><p><strong>Sets</strong></p></li>
+<li><p><strong>----</strong></p></li>
+<li><p><strong>self.P_png</strong> (<em>str</em>) – Full file path to the output PNG.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_regions">
+<span class="sig-name descname"><span class="pre">plot_regions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reg_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">water_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'white'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_regions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_regions" title="Link to this definition"></a></dt>
+<dd><p>Generate a set of regional maps based on AFIM regional dictionary.</p>
+<p>This method loops through region definitions from config and calls
+<cite>plot_map()</cite> with their geographic bounds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>reg_dict</strong> (<em>dict</em><em>, </em><em>optional</em>) – Dictionary of AFIM-defined regions (defaults to config).</p></li>
+<li><p><strong>include</strong> (<em>list</em><em>, </em><em>optional</em>) – If provided, only plot these region names.</p></li>
+<li><p><strong>exclude</strong> (<em>list</em><em>, </em><em>optional</em>) – If provided, skip these region names.</p></li>
+<li><p><strong>water_color</strong> (<em>str</em><em>, </em><em>optional</em>) – Water fill color for PyGMT coast (default: ‘white’).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_regions_grounded_icebergs">
+<span class="sig-name descname"><span class="pre">plot_regions_grounded_icebergs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">use_thinned</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sq_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'viridis'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_regions_grounded_icebergs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_regions_grounded_icebergs" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_sectors_grounded_icebergs">
+<span class="sig-name descname"><span class="pre">plot_sectors_grounded_icebergs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">kmt_orig_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kmt_mod_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_sectors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sector_width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">40</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_lon</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">marker_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'0.1c'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overlay_ice_shelves</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_sectors_grounded_icebergs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_sectors_grounded_icebergs" title="Link to this definition"></a></dt>
+<dd><p>Plot sector-based PyGMT maps of newly inserted grounded iceberg cells based on changes in KMT.</p>
+<section id="id1">
+<h2>Parameters:<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>kmt_orig_path<span class="classifier">str</span></dt><dd><p>Path to original KMT file before grounded iceberg masking.</p>
+</dd>
+<dt>kmt_mod_path<span class="classifier">str</span></dt><dd><p>Path to modified KMT file after grounded iceberg masking.</p>
+</dd>
+<dt>n_sectors<span class="classifier">int</span></dt><dd><p>Number of longitude sectors to divide the Southern Ocean.</p>
+</dd>
+<dt>sector_width<span class="classifier">int</span></dt><dd><p>Width of each longitude sector in degrees.</p>
+</dd>
+<dt>lat_limit<span class="classifier">float</span></dt><dd><p>Latitude cutoff to restrict plotted points (typically -60 for Antarctic shelf).</p>
+</dd>
+<dt>start_lon<span class="classifier">float</span></dt><dd><p>Starting longitude for sector division (0 for Greenwich).</p>
+</dd>
+<dt>marker_size<span class="classifier">str</span></dt><dd><p>Marker size string for PyGMT (e.g., “0.1c”).</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_timeseries">
+<span class="sig-name descname"><span class="pre">plot_timeseries</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">var_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_png</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_timeseries"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_timeseries" title="Link to this definition"></a></dt>
+<dd><p>Plot fast ice time series from a multi-day Zarr dataset.</p>
+<p>This method extracts one or more 1D variables (e.g., FIA, FIV, etc.)
+from the Zarr time series dataset and plots them over time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>var_names</strong> (<em>list</em><em> of </em><em>str</em><em>, </em><em>optional</em>) – List of variable names to plot. Defaults to [‘FIA’].</p></li>
+<li><p><strong>label</strong> (<em>str</em><em>, </em><em>optional</em>) – Legend label for this simulation (used if comparing multiple).</p></li>
+<li><p><strong>save_png</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, save the figure as a PNG. If False, display interactively.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Requires that self.P_zarr_list is defined (i.e., for multi-date mode).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.plot_timeseries_compare">
+<span class="sig-name descname"><span class="pre">plot_timeseries_compare</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sim_names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_png</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">comparison_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'baseline-comparison'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.plot_timeseries_compare"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.plot_timeseries_compare" title="Link to this definition"></a></dt>
+<dd><p>Plot the specified fast ice variable from multiple simulations for comparison.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sim_names</strong> (<em>list</em><em> of </em><em>str</em>) – List of simulation names to compare.</p></li>
+<li><p><strong>var_name</strong> (<em>str</em>) – Name of the variable to plot (default is “FIA”).</p></li>
+<li><p><strong>label_dict</strong> (<em>dict</em><em>, </em><em>optional</em>) – Dictionary mapping sim_name to label to use in plot legend.</p></li>
+<li><p><strong>save_png</strong> (<em>bool</em>) – Whether to save the figure as PNG (default True).</p></li>
+<li><p><strong>comparison_name</strong> (<em>str</em>) – Identifier for the saved filename.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This method instantiates temporary SeaIcePlotter instances
+for each simulation and collects their time series data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sea_ice_plotter.SeaIcePlotter.prepare_data_for_plotting">
+<span class="sig-name descname"><span class="pre">prepare_data_for_plotting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">P_zarr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sea_ice_plotter.html#SeaIcePlotter.prepare_data_for_plotting"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sea_ice_plotter.SeaIcePlotter.prepare_data_for_plotting" title="Link to this definition"></a></dt>
+<dd><p>Load and prepare Zarr data for plotting, handling both single and multi-date windows.</p>
+<p>Reads the Zarr file(s), extracts the plotting variable, and flattens the
+non-zero/non-NaN points into a pandas DataFrame. This prepares the data
+for visualisation with PyGMT scatter plotting.</p>
+<p>For time-averaged variables (e.g., multi-day averages), this method loops over
+the available Zarr files and computes the mean field across time. For single-date
+variables (e.g., FIC), only one Zarr file is read.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>P_zarr</strong> (<em>Path</em><em>, </em><em>optional</em>) – Explicit path to the Zarr file (used for single-date cases).</p></li>
+<li><p><strong>var_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Variable name to load. Defaults to <cite>self.default_var</cite>.</p></li>
+<li><p><strong>Sets</strong></p></li>
+<li><p><strong>----</strong></p></li>
+<li><p><strong>self.plot_df</strong> (<em>pandas.DataFrame</em>) – Columns are ‘lat’, ‘lon’, and ‘dat’ (flattened field).</p></li>
+<li><p><strong>self.var_name</strong> (<em>str</em>) – Name of the loaded variable.</p></li>
+<li><p><strong>self.plt_dt_str</strong> (<em>str</em>) – Date string for plot title or filename.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pack_ice_processor.html" class="btn btn-neutral float-left" title="pack_ice_processor module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="grounded_iceberg_processor.html" class="btn btn-neutral float-right" title="grounded_iceberg_processor module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

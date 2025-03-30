@@ -1,17 +1,31 @@
-.. AFIM documentation master file, created by
-   sphinx-quickstart on Sun Mar 30 09:29:35 2025.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. AFIM documentation master file
+AFIM Python Package Documentation
+=================================
 
-AFIM documentation
-==================
-
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
-
+AFIM (Antarctic Fast Ice and Pack Ice Metrics) is a Python library to analyse and visualise CICE model output, focused on sea ice processes.
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 1
+   :caption: Package Modules
 
+   modules
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples
+
+   notebooks/fi_anal.ipynb
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Scripts
+
+   scripts/compute_fast_ice.py
+   scripts/compute_pack_ice.py
+
+Indices and Tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
