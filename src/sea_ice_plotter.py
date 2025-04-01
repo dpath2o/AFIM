@@ -65,7 +65,8 @@ class SeaIcePlotter:
     """
 
     def __init__(self, sim_name, dt0_str, dtN_str=None, json_path=None, hemisphere=None, overwrite=False,
-                 show_figs=False, prepare=True, single_figure=False, ice_type='FI'):
+                 show_figs=False, prepare=True, single_figure=False, ice_type='FI', mask_fast_ice=False,
+                 compute_rolling_mean=False):
         """
         Initialise the SeaIcePlotter class and resolve data paths and plotting config.
 
@@ -97,13 +98,15 @@ class SeaIcePlotter:
         """
         self.sim_name    = sim_name
         self.ice_type    = ice_type.upper()  # 'FI' or 'PI'
+        self.mask_fi     = mask_fast_ice
+        self.compute_rolling_mean = compute_rolling_mean
         if json_path is None:
-            json_path = "/home/581/da1339/AFIM/src/AFIM/JSONs/afim_cice_analysis.json"
+            json_path = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
         with open(json_path, 'r') as f:
             self.config = json.load(f)
-
         self.ow_fig         = overwrite
         self.show_figs      = show_figs
+        self.SIC_scale      = self.config.get("SIC_scale", 1e12)
         self.hemisphere     = hemisphere or self.config.get('hemisphere', 'south')
         self.plot_var_dict  = self.config["plot_var_dict"]
         self.pygmt_dict     = self.config["pygmt_dict"]
@@ -111,11 +114,9 @@ class SeaIcePlotter:
         self.CICE_dict      = self.config["CICE_dict"]
         self.GI_dict        = self.config["GI_dict"]
         self.default_var    = self.config.get(f"default_plot_var_{self.ice_type}", f"{self.ice_type}C")
-
-        self.D_FI    = Path(self.config['D_dict']['AFIM_out'], sim_name, self.ice_type)
+        self.D_zarr    = Path(self.config['D_dict']['AFIM_out'], sim_name, self.ice_type)
         self.D_graph = Path(self.config['D_dict']['graph'], 'AFIM', sim_name, self.ice_type)
         self.D_ts    = Path(self.config['D_dict']['graph'], 'timeseries')
-
         self.gi_processor   = GroundedIcebergProcessor(self.config, sim_name)
         self.use_gi         = self.gi_processor.use_gi
         if self.use_gi:
@@ -129,17 +130,23 @@ class SeaIcePlotter:
         self.define_hemisphere(self.hemisphere)
 
         if dtN_str is None or single_figure:
-            P_zarr, self.plt_dt_str = self._find_nearest_zarr_file(dt0_str)
+            P_zarr, self.plt_dt_str = self._find_nearest_zarr_file(start_date_str=dt0_str)
             print(f"Using nearest Zarr file: {P_zarr.name}")
             self.P_zarr  = P_zarr
             self.dt0_str = self.plt_dt_str
             self.dtN_str = None
         else:
-            zarr_pairs = self._find_nearest_zarr_file(dt0_str, end_date_str=dtN_str)
-            self.P_zarr_list     = [p for p, _ in zarr_pairs]
-            self.plt_dt_str_list = [d for _, d in zarr_pairs]
-            self.dt0_str = self.plt_dt_str_list[0]
-            self.dtN_str = self.plt_dt_str_list[-1]
+            zarr_pairs = self._find_nearest_zarr_file(start_date_str=dt0_str, end_date_str=dtN_str)
+            if zarr_pairs is not None:
+                self.P_zarr_list     = [p for p, _ in zarr_pairs]
+                self.plt_dt_str_list = [d for _, d in zarr_pairs]
+                self.dt0_str = self.plt_dt_str_list[0]
+                self.dtN_str = self.plt_dt_str_list[-1]
+            else:
+                self.P_zarr_list     = []
+                self.plt_dt_str_list = []
+                self.dt0_str         = dt0_str
+                self.dtN_str         = dtN_str if dtN_str is not None else self.config.get("dtN_str","1999-12-31")
 
         if prepare and dtN_str is None:
             self.prepare_data_for_plotting()
@@ -154,7 +161,7 @@ class SeaIcePlotter:
             self.hemisphere_map_extent = [-180, 180, -90, -55]
             self.hemisphere_map_text_location = [0, -89]
 
-    def _find_nearest_zarr_file(self, start_date_str, end_date_str=None):
+    def _find_nearest_zarr_file(self, start_date_str=None, end_date_str=None):
         """
         Find nearest matching Zarr file(s) to a given start (and optional end) date.
 
@@ -175,15 +182,19 @@ class SeaIcePlotter:
         Path or list of (Path, str)
             The closest file path (and its matched date string) or list of such pairs.
         """
+        start_date_str = start_date_str if start_date_str is not None else self.dt0_str
+        end_date_str   = end_date_str if end_date_str is not None else self.dtN_str
         if self.ice_type.upper()=='FI':
             F_prefix = "fast_ice"
         elif self.ice_type.upper()=='PI':
             F_prefix = "pack_ice"
         def extract_date(f):
-            return datetime.strptime(f.stem.replace(f"{F_prefix}_ice_", ""), "%Y-%m-%d")
-        all_files = sorted(self.D_FI.glob(f"{F_prefix}_ice_*.zarr"))
+            return datetime.strptime(f.stem.replace(f"{F_prefix}_", ""), "%Y-%m-%d")
+        all_files = sorted(self.D_zarr.glob(f"{F_prefix}_*.zarr"))
         if not all_files:
-            raise FileNotFoundError(f"No Zarr files found in {self.D_FI}")
+            print(f"No Zarr files found in {self.D_zarr}")
+            print("returning empty list")
+            return
         file_dates = [(f, extract_date(f)) for f in all_files]
         if end_date_str is None:
             target_date = datetime.strptime(start_date_str, "%Y-%m-%d")
@@ -193,8 +204,37 @@ class SeaIcePlotter:
         end_dt   = datetime.strptime(end_date_str, "%Y-%m-%d")
         in_range = [(f, d.strftime("%Y-%m-%d")) for f, d in file_dates if start_dt <= d <= end_dt]
         if not in_range:
-            raise FileNotFoundError(f"No Zarr files found between {start_date_str} and {end_date_str} in {self.D_FI}")
-        return in_range
+            print(f"No Zarr files found between {start_date_str} and {end_date_str} in {self.D_zarr}")
+            print("returning empty list")
+            return
+        else:
+            return in_range
+
+    def create_cbar_frame(self, series, label, units=None, max_ann_steps=10):
+        """
+        Given a data range and label, create GMT-style cbar string.
+        """
+        vmin, vmax = series
+        vrange = vmax - vmin
+        raw_step = vrange / max_ann_steps
+        exp = np.floor(np.log10(raw_step))
+        base = 10 ** exp
+        mult = raw_step / base
+        if mult < 1.5:
+            ann_step = base * 1
+        elif mult < 3:
+            ann_step = base * 2
+        elif mult < 7:
+            ann_step = base * 5
+        else:
+            ann_step = base * 10
+        tick_step = ann_step / 5
+        ann_str = f"{ann_step:.3f}".rstrip("0").rstrip(".")
+        tick_str = f"{tick_step:.3f}".rstrip("0").rstrip(".")
+        if units is not None:
+            self.cbar_frame = [f"a{ann_str}f{tick_str}+l{label}",f"y+l {units}"]
+        else:
+            self.cbar_frame = f"a{ann_str}f{tick_str}+l{label}"
 
     def prepare_data_for_plotting(self, P_zarr=None, var_name=None):
         """
@@ -226,9 +266,7 @@ class SeaIcePlotter:
         """
         if var_name is None:
             var_name = self.default_var
-
         time_avg_vars = [f"{self.ice_type}P"] + [f"{self.ice_type}{s}_SD" for s in ["HI", "STH", "SH", "DIV", "AG", "AD", "AT", "VD", "VT", "STR"]]
-
         if self.dtN_str is not None and var_name in time_avg_vars:
             print(f"⏳ Aggregating spatial field over time for variable: {var_name}")
             sum_da = None
@@ -253,17 +291,14 @@ class SeaIcePlotter:
             dat = avg_da
             mask = (~np.isnan(dat)) & (dat != 0)
             self.var_name = var_name
-            self.plot_df = pd.DataFrame({
-                "lat": lat.ravel()[mask.ravel()],
-                "lon": lon.ravel()[mask.ravel()],
-                "dat": dat.ravel()[mask.ravel()]
-            })
+            self.plot_df = pd.DataFrame({"lat": lat.ravel()[mask.ravel()],
+                                         "lon": lon.ravel()[mask.ravel()],
+                                         "dat": dat.ravel()[mask.ravel()]})
             dt0 = datetime.strptime(self.dt0_str, "%Y-%m-%d")
             dtN = datetime.strptime(self.dtN_str, "%Y-%m-%d")
             dt_mid = dt0 + (dtN - dt0) / 2
             self.plt_dt_str = dt_mid.strftime("%Y-%m-%d")
             return
-
         if P_zarr is None:
             P_zarr = self.P_zarr
         ds = xr.open_zarr(P_zarr)
@@ -275,11 +310,9 @@ class SeaIcePlotter:
         dat = da.values
         mask = ~np.isnan(dat)
         self.var_name = var_name
-        self.plot_df = pd.DataFrame({
-            "lat": lat.ravel()[mask.ravel()],
-            "lon": lon.ravel()[mask.ravel()],
-            "dat": dat.ravel()[mask.ravel()]
-        })
+        self.plot_df = pd.DataFrame({"lat": lat.ravel()[mask.ravel()],
+                                     "lon": lon.ravel()[mask.ravel()],
+                                     "dat": dat.ravel()[mask.ravel()]})
 
     def plot_path(self, region=None, sim_name=None, var_name=None, D_graph=None, hemisphere=None):
         """
@@ -693,122 +726,161 @@ class SeaIcePlotter:
                 fig.show()
             # Optional: fig.savefig(f"sector_{i+1:02d}_grounded_icebergs.png", dpi=300)
 
+    def _process_pack_ice(self, sim_name, required_vars):
+        """
+        auto-process using PackIceProcessor if missing.
+        """
+        from pack_ice_processor import PackIceProcessor  # Avoid circular import
+        processor = PackIceProcessor(
+            sim_name=sim_name,
+            dt0_str=self.dt0_str,
+            dtN_str=self.dtN_str,
+            mask_fast_ice=self.mask_fi,
+            compute_rolling_mean=self.compute_rolling_mean
+            )
+        ds = processor.process_window(var_list=required_vars, save_zarr=False)
+        return ds
+
     def plot_timeseries(self, var_names=None, label=None, save_png=True):
         """
-        Plot fast ice time series from a multi-day Zarr dataset.
+        Plot sea ice time series for a single simulation.
 
-        This method extracts one or more 1D variables (e.g., FIA, FIV, etc.)
-        from the Zarr time series dataset and plots them over time.
+        For pack ice (PI), it plots two subplots:
+        - Top: PIA and SIA
+        - Bottom: PIE and SIE
 
-        Parameters
-        ----------
-        var_names : list of str, optional
-                     List of variable names to plot. Defaults to ['FIA'].
-        label     : str, optional
-                     Legend label for this simulation (used if comparing multiple).
-        save_png  : bool, optional
-                     If True, save the figure as a PNG. If False, display interactively.
-
-        Notes
-        -----
-        Requires that self.P_zarr_list is defined (i.e., for multi-date mode).
+        If Zarr files are missing, will auto-generate using PackIceProcessor.
         """
-        if self.dtN_str is None or not hasattr(self, 'P_zarr_list'):
-            raise ValueError("Time series plotting requires a defined date range (dtN_str).")
+        if self.dtN_str is None:
+            raise ValueError("Time series plotting requires a defined dtN_str.")
         if var_names is None:
-            var_names = [f"{self.ice_type}A"]
+            if self.ice_type == "PI":
+                var_names = ["PIA", "SIA", "PIE", "SIE"]
+            else:
+                var_names = [f"{self.ice_type}A"]
         all_time = []
         data_dict = {var: [] for var in var_names}
-        for P_zarr in self.P_zarr_list:
-            ds = xr.open_zarr(P_zarr)
+        if not getattr(self, 'P_zarr_list', []):
+            print(f"⏳ No Zarr time series found, generating for vars: {var_names}")
+            ds = self._process_pack_ice(self.sim_name, var_names)
             if "time" not in ds:
-                raise KeyError(f"'time' coordinate not found in {P_zarr}")
+                raise KeyError("Processed dataset missing 'time' coordinate")
             times = pd.to_datetime(ds["time"].values)
             all_time.extend(times)
             for var in var_names:
-                if var in ds:
-                    values = ds[var].values
-                    if values.ndim != 1 or len(values) != len(times):
-                        print(f"⚠️ Shape mismatch for '{var}' in {P_zarr.name}: {values.shape}")
-                    data_dict[var].extend(values)
+                if var not in ds:
+                    print(f"⚠️ Variable '{var}' missing from processed dataset.")
+                    data_dict[var] = [np.nan] * len(times)
                 else:
-                    print(f"⚠️ Variable '{var}' missing in {P_zarr.name}, filling with NaN.")
-                    data_dict[var].extend([np.nan] * len(times))
-        df = pd.DataFrame(data=data_dict, index=pd.to_datetime(all_time))
-        df = df.sort_index()
-        plt.figure(figsize=(10, 6))
-        for var in var_names:
-            plot_label = f"{label} ({var})" if label and len(var_names) > 1 else (label or var)
-            plt.plot(df.index, df[var], label=plot_label)
-        plt.xlabel("Date")
-        plt.ylabel("Value")
-        title_vars = ", ".join(var_names)
-        plt.title(f"{self.sim_name} {self.ice_type} Time Series ({title_vars})")
-        plt.grid(True, linestyle="--", alpha=0.5)
-        plt.legend()
-        if self.show_figs and not save_png:
-            plt.show()
+                    data_dict[var] = ds[var].values.tolist()
         else:
-            var_str = "_".join(var_names)
-            F_save = f"{self.sim_name}_{var_str}_{self.dt0_str}_to_{self.dtN_str}.png"
-            P_save = Path(self.D_ts, F_save)
-            plt.savefig(P_save)
-            print(f"✅ Saved comparison plot to: {P_save}")
+            for P_zarr in self.P_zarr_list:
+                ds = xr.open_zarr(P_zarr)
+                if "time" not in ds:
+                    raise KeyError(f"'time' coordinate not found in {P_zarr}")
+                times = pd.to_datetime(ds["time"].values)
+                all_time.extend(times)
+                for var in var_names:
+                    values = ds.get(var, np.full(len(times), np.nan))
+                    data_dict[var].extend(values)
 
-    def plot_timeseries_compare(self, sim_names, var_name=None, label_dict=None, save_png=True,
-                                comparison_name='baseline-comparison'):
+        df = pd.DataFrame(data=data_dict, index=pd.to_datetime(all_time)).sort_index()
+
+        if self.ice_type == "PI":
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+            fig.subplots_adjust(hspace=0.3)
+
+            # Top: PIA and SIA
+            for var in ["PIA", "SIA"]:
+                if var in df:
+                    plot_label = f"{label} ({var})" if label else var
+                    ax1.plot(df.index, df[var], label=plot_label)
+            ax1.set_ylabel("Area (10³ km²)")
+            ax1.set_title(f"{self.sim_name} Pack Ice Area (PIA/SIA)")
+            ax1.grid(True, linestyle="--", alpha=0.5)
+            ax1.legend()
+
+            # Bottom: PIE and SIE
+            for var in ["PIE", "SIE"]:
+                if var in df:
+                    plot_label = f"{label} ({var})" if label else var
+                    ax2.plot(df.index, df[var], label=plot_label)
+            ax2.set_xlabel("Date")
+            ax2.set_ylabel("Extent (10³ km²)")
+            ax2.set_title(f"{self.sim_name} Pack Ice Extent (PIE/SIE)")
+            ax2.grid(True, linestyle="--", alpha=0.5)
+            ax2.legend()
+
+            if self.show_figs and not save_png:
+                plt.show()
+            else:
+                F_save = f"{self.sim_name}_PIA_PIE_{self.dt0_str}_to_{self.dtN_str}.png"
+                P_save = Path(self.D_ts, F_save)
+                plt.savefig(P_save)
+                print(f"✅ Saved dual subplot to: {P_save}")
+
+        else:
+            # Fallback: single timeseries plot for non-PI types
+            plt.figure(figsize=(10, 6))
+            for var in var_names:
+                plot_label = f"{label} ({var})" if label and len(var_names) > 1 else (label or var)
+                plt.plot(df.index, df[var], label=plot_label)
+            plt.xlabel("Date")
+            plt.ylabel("Value")
+            title_vars = ", ".join(var_names)
+            plt.title(f"{self.sim_name} {self.ice_type} Time Series ({title_vars})")
+            plt.grid(True, linestyle="--", alpha=0.5)
+            plt.legend()
+
+            if self.show_figs and not save_png:
+                plt.show()
+            else:
+                var_str = "_".join(var_names)
+                F_save = f"{self.sim_name}_{var_str}_{self.dt0_str}_to_{self.dtN_str}.png"
+                P_save = Path(self.D_ts, F_save)
+                plt.savefig(P_save)
+                print(f"✅ Saved plot to: {P_save}")
+
+    def plot_timeseries_compare(self, sim_names, var_name=None, label_dict=None,
+                                save_png=True, comparison_name="comparison"):
         """
-        Plot the specified fast ice variable from multiple simulations for comparison.
-
-        Parameters
-        ----------
-        sim_names      : list of str
-                         List of simulation names to compare.
-        var_name       : str
-                         Name of the variable to plot (default is "FIA").
-        label_dict     : dict, optional
-                         Dictionary mapping sim_name to label to use in plot legend.
-        save_png       : bool
-                         Whether to save the figure as PNG (default True).
-        comparison_name: str
-                         Identifier for the saved filename.
-
-        Notes
-        -----
-        This method instantiates temporary SeaIcePlotter instances
-        for each simulation and collects their time series data.
+        Compare a variable across multiple simulations. If var_name == 'PIA',
+        will also include NSIDC SIA by default if configured.
         """
         if self.dtN_str is None:
             raise ValueError("Comparison requires a defined dtN_str at SeaIcePlotter init.")
-        if not isinstance(sim_names, list):
-            raise TypeError("sim_names must be a list of simulation names.")
+
         var_name = var_name or f"{self.ice_type}A"
         plt.figure(figsize=(10, 6))
+
         for sim in sim_names:
-            other = SeaIcePlotter(sim, self.dt0_str, self.dtN_str, ice_type=self.ice_type)
-            if not hasattr(other, 'P_zarr_list'):
-                raise AttributeError(f"No Zarr paths loaded for simulation: {sim}")
-            time_list = []
-            value_list = []
-            for P_zarr in other.P_zarr_list:
+            t0 = time.time()
+            print(f"🔄 Processing simulation {sim} for variable {var_name}")
+            sim_plotter = SeaIcePlotter(sim, self.dt0_str, self.dtN_str, ice_type=self.ice_type)
+            if not sim_plotter.check_zarr_exists(var_name):
+                print(f"ℹ️ Zarr for '{var_name}' not found, generating with PackIceProcessor...")
+                from AFIM.src.pack_ice_processor import PackIceProcessor
+                proc = PackIceProcessor(sim_name=sim, dt0_str=self.dt0_str, dtN_str=self.dtN_str)
+                proc.process_window(var_list=[var_name], save_zarr=True)
+
+            time_list, value_list = [], []
+            for P_zarr in sim_plotter.P_zarr_list:
                 ds = xr.open_zarr(P_zarr)
-                if "time" not in ds or var_name not in ds:
-                    print(f"⚠️ Missing 'time' or '{var_name}' in {P_zarr}")
-                    continue
-                times = pd.to_datetime(ds["time"].values)
-                values = ds[var_name].values
-                if values.ndim != 1 or len(values) != len(times):
-                    print(f"⚠️ Shape mismatch in {P_zarr.name}: {values.shape}")
-                    continue
-                time_list.extend(times)
-                value_list.extend(values)
-            if len(time_list) == 0:
-                print(f"⚠️ No valid data loaded for simulation: {sim}")
+                if "time" in ds and var_name in ds:
+                    time_list.extend(pd.to_datetime(ds["time"].values))
+                    value_list.extend(ds[var_name].values)
+            if not time_list:
+                print(f"⚠️ No data loaded for simulation: {sim}")
                 continue
-            df = pd.DataFrame({var_name: value_list}, index=pd.to_datetime(time_list))
-            df = df.sort_index()
+            df = pd.DataFrame({var_name: value_list}, index=pd.to_datetime(time_list)).sort_index()
             label = label_dict.get(sim, sim) if label_dict else sim
             plt.plot(df.index, df[var_name], label=label)
+            print(f"✅ Added {sim}.{var_name} to plot in {time.time()-t0:.2f} seconds")
+
+        # NSIDC overlay
+        if var_name == "PIA" and self.config["NSIDC_dict"].get("plot_SIA", True):
+            self._plot_nsidc_overlay()
+
         plt.xlabel("Date")
         plt.ylabel(var_name)
         plt.title(f"{self.ice_type} Time Series Comparison: {var_name}")

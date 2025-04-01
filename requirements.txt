@@ -13,3 +13,5 @@ cartopy
 seaborn
 tqdm
 nbsphinx
+pyproj
+zarr

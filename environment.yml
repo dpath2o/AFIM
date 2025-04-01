@@ -1,3 +1,4 @@
+# environment.yml
 name: AFIM
 channels:
   - conda-forge
@@ -7,8 +8,8 @@ dependencies:
   - xarray
   - numpy
   - pandas
-  - matplotlib
   - pygmt
+  - matplotlib
   - dask
   - xesmf
   - geopandas
@@ -18,9 +19,12 @@ dependencies:
   - cartopy
   - seaborn
   - tqdm
+  - pyproj        # <-- Add this
+  - zarr          # <-- Add this
   - pip
   - pip:
-      - sphinx
-      - nbsphinx
       - myst-parser
+      - sphinx
       - sphinx_rtd_theme
+      - nbsphinx     # <-- only if you want Jupyter notebook support
+

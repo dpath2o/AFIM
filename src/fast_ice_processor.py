@@ -125,7 +125,7 @@ class FastIceProcessor:
         self.sim_name = sim_name
         # Load config
         if json_path is None:
-            json_path = "/home/581/da1339/AFIM/src/AFIM/JSONs/afim_cice_analysis.json"
+            json_path = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
         with open(json_path, 'r') as f:
             self.config = json.load(f)
         # Rolling window
@@ -304,7 +304,7 @@ class FastIceProcessor:
         -------
         tuple
             Masked variables and binary fast ice mask.
-        """    
+        """
         mask = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
         return {k: v.where(mask) for k, v in roll_dict.items()}, mask
 

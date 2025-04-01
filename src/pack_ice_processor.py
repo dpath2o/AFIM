@@ -97,38 +97,69 @@ class PackIceProcessor:
     while current_date <= dt_end - timedelta(days=15):
         PI = processor.process_window(current_date)
         current_date += timedelta(days=15)
-    
+
     See full codebase at: https://github.com/dpath2o/AFIM
     """
-
-    def __init__(self, sim_name, json_path=None, roll_win=None, P_log=None):
+    def __init__(self, sim_name, dt0_str=None, dtN_str=None, mask_fast_ice=False, compute_rolling_mean=True,
+                 hemisphere=None, P_log=None, json_path=None):
+        """
+        Initialize the PackIceProcessor.
+        """
         self.sim_name = sim_name
+        self.mask_fi  = mask_fast_ice
+        self.use_gi   = False  # GI excluded for pack ice
+
         if json_path is None:
-            json_path = "/home/581/da1339/AFIM/src/AFIM/JSONs/afim_cice_analysis.json"
+            json_path = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
         with open(json_path, 'r') as f:
             self.config = json.load(f)
 
-        self.roll_win = roll_win or self.config.get('roll_win', 15)
+        self.dt0_str  = dt0_str if dt0_str is not None else self.config.get("dt0_str", "1993-01-01")
+        self.dtN_str  = dtN_str if dtN_str is not None else self.config.get("dtN_str", "1999-12-31")
+        self.dt_range = pd.date_range(self.dt0_str, self.dtN_str)
+        self.dt0      = self.dt_range[0]
+        self.dtN      = self.dt_range[-1]
+
+        # Set rolling window behavior
+        if self.mask_fi:
+            self.compute_rolling_mean = True
+        else:
+            self.compute_rolling_mean = compute_rolling_mean
+
+        self.roll_win = self.config.get("roll_win", 15) if self.compute_rolling_mean else 1
+
+        # Center dates for rolling window processing
+        if self.compute_rolling_mean:
+            self.dtC_list = pd.date_range(
+                self.dt0 + pd.Timedelta(days=self.roll_win // 2),
+                self.dtN - pd.Timedelta(days=self.roll_win // 2),
+                freq=f"{self.roll_win}D"
+            )
+        else:
+            self.dtC_list = [self.dt0 + pd.Timedelta(days=len(self.dt_range) // 2)]
+
+        # First center date for logging/debugging
+        self.dtC     = self.dtC_list[0]
+        self.dtC_str = self.dtC.strftime("%Y-%m-%d")
 
         if P_log is None:
             P_log = Path(self.config['D_dict']['logs'], f"PackIceProcessor_{sim_name}.log")
         self.setup_logging(logfile=P_log)
 
-        self.sim_config      = self.config['sim_dict'][sim_name]
-        self.json_hemisphere = self.config.get('hemisphere', 'south')
-        self.var_list        = self.config['CICE_dict']['FI_vars']
-        self.chunk_dict      = self.config['CICE_dict']['FI_chunks']
-        self.FI_thresh       = self.config.get("FI_thresh", 5e-4)
-        self.SIC_thresh      = self.config.get("SIC_thresh", 0.15)
-        self.SIC_scale       = self.config.get("SIC_thresh", 1e12)
-        self.cm2m_fact       = self.config.get("cm2m_fact", 0.01)
-
+        # Simulation and config metadata
+        self.sim_config           = self.config['sim_dict'][sim_name]
         self.sim_dir              = Path(self.config['D_dict']['AFIM_out'], sim_name, "history", "daily")
+        self.gi_processor         = GroundedIcebergProcessor(self.config, sim_name)
+        self.gi_processor.load_grid_and_landmask()
+        hemisphere                = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
+        self.define_hemisphere(hemisphere)
+        self.FI_thresh            = self.config.get("FI_thresh", 5e-4)
+        self.SIC_thresh           = self.config.get("SIC_thresh", 0.15)
+        self.SIC_scale            = self.config.get("SIC_scale", 1e12)
+        self.cm2m_fact            = self.config.get("cm2m_fact", 0.01)
         self.CICE_dict            = self.config['CICE_dict']
-        self.regrid_weights_path  = self.CICE_dict['P_reG_u2t_weights']
+        self.regrid_weights_path = self.CICE_dict['P_reG_u2t_weights']
 
-        self.gi_processor = GroundedIcebergProcessor(self.config, sim_name)
-        self.use_gi       = False  # GI excluded for pack ice
 
     def setup_logging(self, logfile=None):
         """
@@ -162,74 +193,152 @@ class PackIceProcessor:
         hemisphere : str
                      Hemisphere to define ('north' or 'south'). Determines nj slice.
         """
-        if hemisphere is None:
-            hemisphere = self.json_hemisphere
         if hemisphere.lower() in ['north', 'northern', 'nh', 'n', 'no']:
             self.hemisphere_nj_slice = slice(540, 1080)
+            self.hemisphere_abbreviation = 'nh'
+            self.hemisphere = 'north'
         elif hemisphere.lower() in ['south', 'southern', 'sh', 's', 'so']:
             self.hemisphere_nj_slice = slice(0, 540)
+            self.hemisphere_abbreviation = 'sh'
+            self.hemisphere = 'south'
         else:
             raise ValueError(f"Invalid hemisphere: {hemisphere}")
 
-    def slice_hemisphere(self, ds):
-        """
-        Apply hemisphere-specific slicing to dataset.
+    def slice_hemisphere(self, var_dict):
+        return {k: v.isel(nj=self.hemisphere_nj_slice) for k, v in var_dict.items()}
 
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Dataset to slice.
+    def _extract_cice_vars_from_PI_var_dict(self, var_list):
+        pi_meta = self.config["PI_var_dict"]
+        var_set = set()
+        for v in var_list:
+            meta = pi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable")
+            vec_vars = meta.get("CICE_vector_variables", [])
+            # Skip derived output variables that aren't actually in the model dataset
+            if cice_var and cice_var not in ['speed', 'strint', 'strair', 'strocn', 'strtlt', 'strcor']:
+                var_set.add(cice_var)
+                # Always add vector components
+            if isinstance(vec_vars, list):
+                var_set.update(vec_vars)
+        # Always include aice (used in masking and core metrics)
+        var_set.add("aice")
+        self.logger.debug(f"🧾 CICE variables required for computation: {sorted(var_set)}")
+        return sorted(var_set)
 
-        Returns
-        -------
-        ds_sliced : xarray.Dataset
-                    Dataset restricted to nj range of chosen hemisphere.
-        """
-        return ds.isel(nj=self.hemisphere_nj_slice)
+    def load_data_window(self, process_NSIDC=None):
+        if not hasattr(self, 'var_list'):
+            raise AttributeError("`self.var_list` must be defined before calling load_data_window().")
+        self.process_NSIDC = process_NSIDC if process_NSIDC is not None else self.config["NSIDC_dict"].get("process_SIA", False)
+        P_CICE_orgs = [
+            self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc"
+            for d in self.dt_range if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()
+        ]
+        if not P_CICE_orgs:
+            raise FileNotFoundError(f"No CICE files found for window around {self.dtC}")
+        self.logger.debug(f"Loading model files: {P_CICE_orgs}")
+        t1 = time.time()
+        preprocess = lambda ds: ds[list(self.var_list)]
+        CICE = xr.open_mfdataset(P_CICE_orgs, combine='by_coords', parallel=True,
+                                 preprocess=preprocess)#, chunks=self.chunk_dict)
+        self.logger.info(f"✅ Model dataset loaded: shape {CICE.sizes}, time: {time.time() - t1:.2f} s")
+        if not self.process_NSIDC:
+            return CICE
+        # Load NSIDC observational data
+        self.logger.info(f"🧭 Including NSIDC SIA/SIE into model dataset for {self.sim_name}")
+        D_NSIDC_orgs = Path(self.config["NSIDC_dict"]["D_original"], self.hemisphere, "daily")
+        F_vers_dict = self.config["NSIDC_dict"]["file_versions"]
+        F_vers_sorted = sorted(F_vers_dict.items(), key=lambda x: datetime.strptime(x[1], "%Y-%m-%d") if x[1] else datetime.min)
+        P_NSIDC_orgs = []
+        for d in self.dt_range:
+            dt_str_nohyph = d.strftime('%Y%m%d')
+            fver = next((ver for ver, date_str in reversed(F_vers_sorted)
+                         if date_str and d >= datetime.strptime(date_str, "%Y-%m-%d")), F_vers_sorted[0][0])
+            filename = f"seaice_conc_daily_{self.hemisphere_abbreviation}_{dt_str_nohyph}_{fver}_v04r00.nc"
+            P_NSIDC_orgs.append(D_NSIDC_orgs / filename)
+        self.logger.debug(f"Loading NSIDC files: {P_NSIDC_orgs}")
+        t1 = time.time()
+        # Manually load and concat files
+        ds_list = []
+        for f in sorted(P_NSIDC_orgs):
+            ds = xr.open_dataset(f)
+            ds_list.append(ds)
+        NSIDC = xr.concat(ds_list, dim=self.config["NSIDC_dict"]["time_dim"])
+        #NSIDC = xr.open_mfdataset(P_NSIDC_orgs, parallel=True)
+        self.logger.info(f"✅ NSIDC dataset loaded: shape {NSIDC.sizes}, time: {time.time() - t1:.2f} s")
+        NSIDC = self._convert_NSIDC_cartesian_to_spherical(NSIDC)
+        NSIDC_out = self._compute_NSIDC_SIA_SIE(NSIDC)
+        self.logger.info(f"✅ NSIDC processing complete, time: {time.time() - t1:.2f} s")
+        self._NSIDC_SIC = NSIDC_out['SIC']  # Store separately so it’s not merged
+        self._NSIDC_SIA = NSIDC_out['SIA']
+        self._NSIDC_SIE = NSIDC_out['SIE']
+        return CICE
 
-    def load_data_window(self):
-        """
-        Load NetCDF files spanning the rolling window centered on the current date.
-
-        Returns
-        -------
-        ds : xarray.Dataset
-             Dataset containing selected variables over rolling window.
-
-        Raises
-        ------
-        FileNotFoundError
-            If no NetCDF files found for the window around dtC.
-        """
-        dates = pd.date_range(self.dtC - pd.Timedelta(days=self.roll_win // 2),
-                              self.dtC + pd.Timedelta(days=self.roll_win // 2))
-        self.dt0_str = dates[0].strftime('%Y-%m-%d')
-        self.dtN_str = dates[-1].strftime('%Y-%m-%d')
-        files = [self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc" for d in dates if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()]
-        if not files:
-            raise FileNotFoundError(f"No files found for window around {self.dtC}")
-        preprocess = lambda ds: ds[self.var_list]
-        ds = xr.open_mfdataset(files, combine='by_coords', parallel=True,
-                               preprocess=preprocess, chunks=self.chunk_dict)
-        self.logger.info(f"Loaded dataset with shape: {ds.sizes}")
-        if 'aice' not in ds or ds['aice'].sizes['time'] < self.roll_win:
-            self.logger.warning("aice is missing or too short after loading files")
+    def _convert_NSIDC_cartesian_to_spherical(self, ds):
+        from pyproj import CRS, Transformer
+        time_dim = self.config['NSIDC_dict']['time_dim']
+        x_dim    = self.config['NSIDC_dict']['x_dim']
+        y_dim    = self.config['NSIDC_dict']['y_dim']
+        x_coord  = self.config['NSIDC_dict']['x_coord']
+        y_coord  = self.config['NSIDC_dict']['y_coord']
+        self.logger.info("🧭 Converting NSIDC Cartesian to spherical coordinates:")
+        t1 = time.time()
+        crs_proj = CRS.from_proj4(self.config["NSIDC_dict"]["projection_string"])
+        crs_wgs84 = CRS.from_epsg(4326)
+        transformer = Transformer.from_crs(crs_proj, crs_wgs84, always_xy=True)
+        x, y = ds[x_coord].values, ds[y_coord].values
+        X, Y = np.meshgrid(x, y)
+        lon, lat = transformer.transform(X, Y)
+        ds['lon'] = ((y_dim, x_dim), lon)
+        ds['lat'] = ((y_dim, x_dim), lat)
+        ds = ds.swap_dims({time_dim: 'time'})
+        self.logger.info(f"\t✅ Conversion complete in {time.time()-t1:.2f} seconds")
         return ds
 
+    def _compute_NSIDC_SIA_SIE(self, ds):
+        t1 = time.time()
+        SIC_name = self.config["NSIDC_dict"]["SIC_name"]
+        flags = self.config["NSIDC_dict"]["cdr_seaice_conc_flags"]
+        y_dim = self.config["NSIDC_dict"]["y_dim"]
+        x_dim = self.config["NSIDC_dict"]["x_dim"]
+        aice = ds[SIC_name]
+        for flag in flags:
+            aice = xr.where(aice == flag / 100, np.nan, aice)
+        area = xr.open_dataset(self.config["NSIDC_dict"]["P_cell_area"]).cell_area
+        mask = aice > self.SIC_thresh
+        SIA = (aice * area).where(mask.notnull()).sum(dim=[y_dim, x_dim], skipna=True)
+        SIE = (mask * area).sum(dim=[y_dim, x_dim], skipna=True)
+        aice = aice.where(mask)
+        if self.compute_rolling_mean:
+            SIA = SIA.rolling(time=self.roll_win, center=True).mean()
+            SIE = SIE.rolling(time=self.roll_win, center=True).mean()
+            aice = aice.rolling(time=self.roll_win, center=True).mean()
+        attrs = ds.attrs.copy()
+        if self.compute_rolling_mean:
+            proc_notes = f"SIA/SIE calculated with threshold {self.SIC_thresh} and rolling window {self.roll_win}"
+        else:
+            proc_notes = f"SIA/SIE calculated with threshold {self.SIC_thresh}"
+        attrs.update({
+            "processed_by": "PackIceProcessor",
+            "source": "NSIDC CDR",
+            "processing_notes": proc_notes
+        })
+        ds_out = xr.Dataset(
+            {
+                'SIA': (('time',), SIA.data/self.SIC_scale),
+                'SIE': (('time',), SIE.data/self.SIC_scale),
+                'SIC': (('time', y_dim, x_dim), aice.data)
+            },
+            coords={
+                'time': SIA['time'],
+                'lat': ds['lat'],
+                'lon': ds['lon']
+            },
+            attrs=attrs
+        )
+        self.logger.info(f"✅ Computed SIA/SIE in {time.time() - t1:.2f} seconds")
+        return ds_out
+
     def regrid_to_tgrid(self, ds):
-        """
-        Regrid velocity components from u-grid to t-grid using xESMF.
-
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Dataset containing 'uvel' and 'vvel'.
-
-        Returns
-        -------
-        U, V : xarray.DataArray
-               Regridded u- and v-velocity fields on the t-grid.
-        """
         self.logger.info("Regridding uvel and vvel to T-grid...")
         with suppress_stderr():
             regridder = xe.Regridder(self.gi_processor.G_u, self.gi_processor.G_t,
@@ -237,496 +346,293 @@ class PackIceProcessor:
                                      weights=self.regrid_weights_path)
         U = regridder(ds['uvel'])
         V = regridder(ds['vvel'])
-        return self.slice_hemisphere(U), self.slice_hemisphere(V)
+        #return self.slice_hemisphere(U), self.slice_hemisphere(V)
+        return U,V
 
-    def compute_rolling_averages(self, ds):
-        """
-        Compute rolling averages over specified time window for relevant variables.
+    def apply_PI_mask(self, var_dict):
+        self.logger.info("applying mask")
+        if self.mask_fi:
+            fi_mask = (var_dict['aice'] > self.SIC_thresh) & (var_dict['speed'] <= self.FI_thresh)
+            pi_mask = (var_dict['aice'] > self.SIC_thresh) & (~fi_mask)
+        else:
+            pi_mask = (var_dict['aice'] > self.SIC_thresh)
+        # need to save a sliced mask for use in PIE calculation later
+        self.pi_mask = pi_mask.isel(nj=self.hemisphere_nj_slice)
+        return {k: v.where(pi_mask) for k, v in var_dict.items()}
 
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Dataset to compute rolling means on.
+    def dataset_to_dictionary(self, ds, var_list=None):
+        pi_meta = self.config["PI_var_dict"]
+        full_dict = {}
 
-        Returns
-        -------
-        roll_dict : dict of xarray.DataArray
-                    Dictionary of rolled variables including derived metrics.
-        """
-        U, V = self.regrid_to_tgrid(ds)
-        ds = self.slice_hemisphere(ds)
-        roll = lambda v: ds[v].rolling(time=self.roll_win, center=True, min_periods=1).mean()
-        return {
-            'aice': roll('aice'),
-            'hi': roll('hi'),
-            'strength': roll('strength'),
-            'shear': roll('shear'),
-            'divu': roll('divu'),
-            'iage': roll('iage'),
-            'daidtd': roll('daidtd'),
-            'daidtt': roll('daidtt'),
-            'dvidtd': roll('dvidtd'),
-            'dvidtt': roll('dvidtt'),
-            'frazil': roll('frazil'),
-            'strint': np.sqrt(ds['strintx']**2 + ds['strinty']**2).rolling(time=self.roll_win, center=True, min_periods=1).mean(),
-            'speed': np.sqrt(U**2 + V**2).rolling(time=self.roll_win, center=True, min_periods=1).mean()
-        }
+        # Always include base vars
+        base_vars = ['aice']
+        if self.process_NSIDC:
+            base_vars += ['_NSIDC_SIC', '_NSIDC_SIE', '_NSIDC_SIA']
+        for v in base_vars:
+            if v in ds:
+                full_dict[v] = ds[v]
 
-    def apply_PI_mask(self, roll_dict):
-        """
-        Apply pack ice mask based on concentration and speed thresholds.
+        # Compute speed if masking fast ice
+        if self.mask_fi:
+            U, V = self.regrid_to_tgrid(ds)
+            full_dict['speed'] = np.sqrt(U**2 + V**2)
 
-        Parameters
-        ----------
-        roll_dict : dict
-                    Dictionary of rolling-averaged variables.
+        # Add variables needed for var_list
+        for out_var in var_list:
+            meta = pi_meta.get(out_var, {})
+            cice_var = meta.get("CICE_variable")
+            vec_vars = meta.get("CICE_vector_variables", [])
 
-        Returns
-        -------
-        masked_dict : dict
-                      Dictionary with pack ice mask applied.
-        pi_mask     : xarray.DataArray
-                      Boolean mask array where pack ice criteria are met.
-        """
-        fi_mask = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
-        pi_mask = (roll_dict['aice'] > self.SIC_thresh) & (~fi_mask)
-        return {k: v.where(pi_mask) for k, v in roll_dict.items()}, pi_mask
+            if vec_vars and cice_var:
+                if all(vv in ds for vv in vec_vars):
+                    # Derived variable from vector components
+                    full_dict[cice_var] = np.sqrt(sum([ds[vv] ** 2 for vv in vec_vars]))
+                else:
+                    missing = [vv for vv in vec_vars if vv not in ds]
+                    self.logger.debug(
+                        f"⚠️ Skipping vector-derived var {out_var} — missing components: {missing}"
+                    )
 
-    def compute_pack_ice_outputs(self, roll_mask_vars):
-        """
-        Compute summary metrics and spatial/temporal diagnostics from masked variables.
+            elif cice_var and cice_var in ds:
+                # Scalar variable available directly in ds
+                full_dict[cice_var] = ds[cice_var]
 
-        This is the backbone method of the class and is intended to be called
-        from the `process_window()` method. It performs the heavy-lifting for
-        summarising pack ice across multiple time scales and dimensions.
+        self.logger.debug(f"🧾 dataset_to_dictionary keys: {list(full_dict.keys())}")
 
-        Parameters
-        ----------
-        roll_mask_vars : dict
-                         Dictionary of masked and rolled variables.
+        # Apply rolling mean if enabled
+        if self.compute_rolling_mean:
+            self.logger.info("compute rolling mean")
+            roll = lambda da: da.rolling(time=self.roll_win, center=True, min_periods=1).mean()
+            return {k: roll(v) for k, v in full_dict.items()}
+        else:
+            return full_dict
 
-        Returns
-        -------
-        PI : xarray.Dataset
-             Output dataset containing 1D, 2D, and 3D pack ice metrics.
-
-        Notes
-        -----
-        This method computes metrics like total area, volume, mechanical/thermo growth,
-        stress, shear, divergence, aging, speed, and frazil formation. Includes
-        both time-series, coarsened 3D fields, and spatial frequency summaries.
-        """
-        roll_mask_vars = {k: v.compute() for k, v in roll_mask_vars.items()}
+    def compute_pack_ice_outputs(self, mask_vars, var_list=None):
         grid_cell_area = self.gi_processor.G_t['area'].isel(nj=self.hemisphere_nj_slice)
         spatial_dims   = self.CICE_dict['spatial_dims']
         time_dim       = self.CICE_dict['time_dim']
-        time_coords    = roll_mask_vars['aice'].time.values
+        time_coords    = mask_vars['aice'].time.values
         lon_coords     = self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values
         lat_coords     = self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values
-        lon_coord_name = self.CICE_dict['FI_lon_coord']
-        lat_coord_name = self.CICE_dict['FI_lat_coord']
-        FI_time_dim    = self.CICE_dict['FI_time_dim']
         cm2m           = self.cm2m_fact
-        roll_win       = self.roll_win
+        roll_win       = self.roll_win if self.compute_rolling_mean else 1
+        if self.mask_fi:
+            lon_coord_name = self.CICE_dict['FI_lon_coord']
+            lat_coord_name = self.CICE_dict['FI_lat_coord']
+            FI_time_dim    = self.CICE_dict['FI_time_dim']
+            three_dims     = self.CICE_dict['FI_three_dims']
+        else:
+            lon_coord_name = self.CICE_dict['FI_lon_coord']
+            lat_coord_name = self.CICE_dict['FI_lat_coord']
+            FI_time_dim    = self.CICE_dict['time_dim']
+            three_dims     = self.CICE_dict['three_dims']
+        mask_vars_hem = self.slice_hemisphere(mask_vars)
+        pi_meta = self.config["PI_var_dict"]
+        # Categorize var_list by dimension
+        one_d_list = [v for v in var_list if pi_meta.get(v, {}).get("dimensions") == "1D"]
+        three_d_list = [v for v in var_list if pi_meta.get(v, {}).get("dimensions") == "3D"]
+        two_d_list = [v for v in var_list if pi_meta.get(v, {}).get("dimensions") == "2D"]
+        #########################
+        ### 1D Variables
+        #########################
         self.logger.info("compute pack ice 1D variables:")
-        t0       = time.time()
-        pia_roll = ((roll_mask_vars['aice']        * grid_cell_area).sum(dim=spatial_dims, skipna=True) / self.SIC_scale)
-        piv_roll = ((roll_mask_vars['hi']          * grid_cell_area).sum(dim=spatial_dims, skipna=True) / self.SIC_scale)
-        pisth_td = ((roll_mask_vars['strength']    * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pish_td  = ((roll_mask_vars['shear']       * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pidiv_td = ((roll_mask_vars['divu']        * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        piag_td  = ((grid_cell_area / roll_mask_vars['iage']).sum(dim=spatial_dims, skipna=True))
-        piad_td  = ((roll_mask_vars['daidtd']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        piat_td  = ((roll_mask_vars['daidtt']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pivd_td  = ((roll_mask_vars['dvidtd']*cm2m * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pivt_td  = ((roll_mask_vars['dvidtt']*cm2m * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pistr_td = ((roll_mask_vars['strint']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pispd_td = ((roll_mask_vars['speed']       * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        pifzl_td = ((roll_mask_vars['frazil']*cm2m * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        PIA       = (time_dim,
-                    pia_roll.data,
-                    {'units'      : '1e6-km^2',
-                     'long_name'  : 'pack ice area',
-                     'description': 'pack ice area summed over spatial extent and masked for pack ice criteria'})
-        PIV       = (time_dim,
-                    piv_roll.data,
-                    {'units'      : '1e6-km^3',
-                     'long_name'  : 'pack ice volume',
-                     'description': 'pack ice volume summed over spatial extent and masked for pack ice criteria'})
-        PI_STRONG = (time_dim,
-                    pisth_td.data,
-                    {'units'      : 'N',
-                     'long_name'  : 'pack ice strength',
-                     'description': 'sea ice strength times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_SHEAR  = (time_dim,
-                    pish_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'pack ice shear rate',
-                     'description': 'sea ice shear times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_DIV    = (time_dim,
-                     pidiv_td.data,
-                     {'units'      : 'm^2/day',
-                      'long_name'  : 'pack ice divergence rate',
-                      'description': 'sea ice divergence times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_AGING  = (time_dim,
-                    piag_td.data,
-                    {'units'      : 'm^2/year',
-                     'long_name'  : 'pack ice ageing rate',
-                     'description': 'sea ice area divided by ice age summed over spatial extent and masked with pack ice criteria'})
-        PI_AGROM  = (time_dim,
-                    piad_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'pack ice mechanical area growth rate',
-                     'description': 'sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_AGROT  = (time_dim,
-                    piat_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'pack ice thermodynamic area growth rate',
-                     'description': 'sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_VGROM  = (time_dim,
-                    pivd_td.data,
-                    {'units'      : 'm^3/day',
-                     'long_name'  : 'pack ice mechanical volume growth rate',
-                     'description': 'sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_VGROT  = (time_dim,
-                    pivt_td.data,
-                    {'units'      : 'm^3/day',
-                     'long_name'  : 'pack ice thermodynamic volume growth rate',
-                     'description': 'sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_STRESS = (time_dim,
-                     pistr_td.data,
-                     {'units'      : 'N',
-                      'long_name'  : 'pack ice internal stress',
-                      'description': 'sea ice internal stress times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_SPEED  = (time_dim,
-                    pispd_td.data,
-                    {'units'      : 'm^3/second',
-                     'long_name'  : 'pack ice speed',
-                     'description': 'sea ice speed times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        PI_FRAZIL = (time_dim,
-                    pifzl_td.data,
-                    {'units'      : 'm^3/day',
-                     'long_name'  : 'pack ice frazil volumetric growth',
-                     'description': 'sea ice frazil growth rate times grid cell area summed over spatial extent and masked with pack ice criteria'})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
-        #################################
-        #######   3D VARIABLES   ########
-        ################################
-        self.logger.info(f"coarsen pack ice rolling averages to {roll_win}-days--i.e. 3D variables")
-        t0    = time.time()
-        pic   = roll_mask_vars['aice'].coarsen(time=roll_win, boundary="trim").mean()
-        pihi  = roll_mask_vars['hi'].coarsen(time=roll_win, boundary="trim").mean()
-        pisth = roll_mask_vars['strength'].coarsen(time=roll_win, boundary="trim").mean()
-        pish  = roll_mask_vars['shear'].coarsen(time=roll_win, boundary="trim").mean()
-        pidiv = roll_mask_vars['divu'].coarsen(time=roll_win, boundary="trim").mean()
-        piag  = roll_mask_vars['iage'].coarsen(time=roll_win, boundary="trim").mean()
-        piad  = roll_mask_vars['daidtd'].coarsen(time=roll_win, boundary="trim").mean()
-        piat  = roll_mask_vars['daidtt'].coarsen(time=roll_win, boundary="trim").mean()
-        pivd  = roll_mask_vars['dvidtd'].coarsen(time=roll_win, boundary="trim").mean()
-        pivt  = roll_mask_vars['dvidtt'].coarsen(time=roll_win, boundary="trim").mean()
-        pistr = roll_mask_vars['strint'].coarsen(time=roll_win, boundary="trim").mean()
-        pispd = roll_mask_vars['speed'].coarsen(time=roll_win, boundary="trim").mean()
-        pifzl = roll_mask_vars['frazil'].coarsen(time=roll_win, boundary="trim").mean()*cm2m
-        PI_time_coords = pic.time.values
-        PIC   = (self.CICE_dict['FI_three_dims'],
-                 pic.values,
-                 {'units'      : '%/grid-cell',
-                  'long_name'  : 'pack ice concentration',
-                  'description': 'sea ice concentration per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIHI  = (self.CICE_dict['FI_three_dims'],
-                 pihi.values,
-                 {'units'      : 'm',
-                  'long_name'  : 'pack ice thickness',
-                  'description': 'sea ice thickness per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PISTH = (self.CICE_dict['FI_three_dims'],
-                 pisth.values,
-                 {'units'      : 'N/m',
-                  'long_name'  : 'pack ice strength',
-                  'description': 'sea ice strength per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PISH  = (self.CICE_dict['FI_three_dims'],
-                 pish.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'pack ice shear',
-                  'description': 'sea ice shear per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIDIV = (self.CICE_dict['FI_three_dims'],
-                 pidiv.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'pack ice divergence',
-                  'description': 'sea ice divergence per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIAG  = (self.CICE_dict['FI_three_dims'],
-                 piag.values,
-                 {'units'      : 'years',
-                  'long_name'  : 'pack ice age',
-                  'description': 'sea ice age per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIAD  = (self.CICE_dict['FI_three_dims'],
-                 piad.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'pack ice area tendency dynamics (mechanical)',
-                  'description': 'sea ice area tendency dynamics (mechanical) per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIAT  = (self.CICE_dict['FI_three_dims'],
-                 piat.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'pack ice area tendency thermodynamics',
-                  'description': 'sea ice area tendency thermodynamics per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIVD  = (self.CICE_dict['FI_three_dims'],
-                 pivd.values,
-                 {'units'      : 'cm/day',
-                  'long_name'  : 'pack ice volume tendency dynamics (mechanical)',
-                  'description': 'sea ice volume tendency dynamics (mechanical) per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIVT  = (self.CICE_dict['FI_three_dims'],
-                 pivt.values,
-                 {'units'      : 'cm/day',
-                  'long_name'  : 'pack ice volume tendency thermodynamics',
-                  'description': 'sea ice volume tendency thermodynamics per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PISTR = (self.CICE_dict['FI_three_dims'],
-                 pistr.values,
-                 {'units'      : 'N/m^2',
-                  'long_name'  : 'pack ice internal stress',
-                  'description': 'sea ice internal stress per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PISPD = (self.CICE_dict['FI_three_dims'],
-                 pispd.values,
-                 {'units'      : 'm/s',
-                  'long_name'  : 'pack ice speed',
-                  'description': 'sea ice speed per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        PIFZL = (self.CICE_dict['FI_three_dims'],
-                 pifzl.values,
-                 {'units'      : 'm/day',
-                  'long_name'  : 'pack ice frazil growth rate',
-                  'description': 'sea ice frazil growth rate per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window'})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
-        #################################
-        #######   2D VARIABLES   ########
-        ################################
-        self.logger.info("compute temporal sums to give spatial distributions over time--i.e. 2D variables")
-        self.logger.info(f"\ttemporal mean over the period {self.dt0_str} to {self.dtN_str}")
-        t0       = time.time()
-        pic_sd   = pic.sum(dim=time_dim)   / len(pic.time)                                              #units: % grid cell covered in sea ice
-        pihi_sd  = pihi.sum(dim=time_dim)  / (len(pihi.time)  * roll_mask_vars['hi'].max().values)      #units: m
-        pisth_sd = pisth.sum(dim=time_dim) / (len(pisth.time) * roll_mask_vars['strength'].max().values)#units: N/m
-        pish_sd  = pish.sum(dim=time_dim)  / (len(pish.time)  * roll_mask_vars['shear'].max().values)   #units: 1/day
-        pidiv_sd = pidiv.sum(dim=time_dim) / (len(pidiv.time) * roll_mask_vars['divu'].max().values)    #units: 1/day
-        piag_sd  = piag.sum(dim=time_dim)  / (len(piag.time)  * roll_mask_vars['iage'].max().values)    #units: years
-        piad_sd  = piad.sum(dim=time_dim)  / (len(piad.time)  * roll_mask_vars['daidtd'].max().values)  #units: 1/day
-        piat_sd  = piat.sum(dim=time_dim)  / (len(piat.time)  * roll_mask_vars['daidtt'].max().values)  #units: 1/day
-        pivd_sd  = pivd.sum(dim=time_dim)  / (len(pivd.time)  * roll_mask_vars['dvidtd'].max().values)  #units: cm/day
-        pivt_sd  = pivt.sum(dim=time_dim)  / (len(pivt.time)  * roll_mask_vars['dvidtt'].max().values)  #units: cm/day
-        pistr_sd = pistr.sum(dim=time_dim) / (len(pistr.time) * roll_mask_vars['strint'].max().values)  #units: N/m^2
-        pispd_sd = pispd.sum(dim=time_dim) / (len(pispd.time) * roll_mask_vars['speed'].max().values)   #units: m/s
-        pifzl_sd = pifzl.sum(dim=time_dim) / (len(pifzl.time) * roll_mask_vars['frazil'].max().values)   #units: cm/day
-        PIC_SD   = (spatial_dims,
-                    pic_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice concentration frequency',
-                     'description' : 'sum of sea ice concentration per grid cell over time masked with pack ice criteria and divide by total temporal length',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIHI_SD  = (spatial_dims,
-                    pihi_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice thickness frequency',
-                     'description' : 'sum of sea ice thickness per grid cell over time multiplied by maximum thickness and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PISTH_SD = (spatial_dims,
-                    pisth_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice strength frequency',
-                     'description' : 'sum of sea ice strength per grid cell over time divided by max strength and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PISH_SD  = (spatial_dims,
-                    pish_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice shear frequency',
-                     'description' : 'sum of sea ice shear per grid cell over time divided by max shear and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIDIV_SD = (spatial_dims,
-                    pidiv_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice divergence frequency',
-                     'description' : 'sum of sea ice divergence per grid cell over time divided by max divergence and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIAG_SD  = (spatial_dims,
-                    piag_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice age frequency',
-                     'description' : 'sum of sea ice age per grid cell over time divided by max age and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIAD_SD  = (spatial_dims,
-                    piad_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice area-mechanical-tendency frequency',
-                     'description' : 'sum of sea ice area-mechanical-tendency per grid cell over time divided by max decrement and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIAT_SD  = (spatial_dims,
-                    piat_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice area-thermodynamic-tendency frequency',
-                     'description' : 'sum of sea ice area-thermodynamic-tendency per grid cell over time divided by max increment and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIVD_SD  = (spatial_dims,
-                    pivd_sd.values*cm2m,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice volume-mechanical-tendency frequency',
-                     'description' : 'sum of sea ice volume-mechanical-tendency decrement per grid cell over time divided by max decrement and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIVT_SD  = (spatial_dims,
-                    pivt_sd.values*cm2m,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice volume-thermodynamic-tendency frequency',
-                     'description' : 'sum of sea ice volume-thermodynamic-tendency per grid cell over time divided by max increment and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PISTR_SD = (spatial_dims,
-                    pistr_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice internal stress frequency',
-                     'description' : 'sum of sea ice internal stress per grid cell over time divided by max stress and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PISPD_SD = (spatial_dims,
-                    pispd_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice speed frequency',
-                     'description' : 'sum of sea ice speed per grid cell over time divided by max speed and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        PIFZL_SD = (spatial_dims,
-                    pifzl_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'pack ice frazil rate frequency',
-                     'description' : 'sum of sea ice frazil rate per grid cell over time divided by max frazil growth rate and masked with pack ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
-        #######################################
-        #######      OUTPUT DATASET     #######
-        #######################################
+        one_d_metrics = {}
+        for v in one_d_list:
+            if v.endswith("_SD") or (v in ['SIA','SIE','SIC']):
+                continue
+            meta = pi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable", None)
+            self.logger.debug(f"📦 Available keys in mask_vars_hem: {list(mask_vars_hem.keys())}")
+            if not cice_var or cice_var not in mask_vars_hem.keys():
+                self.logger.warning(f"⚠️ Skipping 1D metric {v} — source variable '{cice_var}' missing.")
+                continue
+            else:
+                self.logger.debug(f"✅ Creating 1D metric {v} — source variable '{cice_var}'")
+            if v == "PIA":
+                one_d_metrics[v] = ((mask_vars_hem[cice_var] * grid_cell_area).sum(dim=spatial_dims)) / self.SIC_scale
+            elif v == "PIE" and hasattr(self, "pi_mask"):
+                one_d_metrics[v] = ((self.pi_mask * grid_cell_area).sum(dim=spatial_dims)) / self.SIC_scale
+            elif "AGING" in v:
+                one_d_metrics[v] = (grid_cell_area / mask_vars_hem[cice_var]).sum(dim=spatial_dims)
+            elif "VGRO" in v or "FRAZIL" in v:
+                one_d_metrics[v] = (mask_vars_hem[cice_var] * cm2m * grid_cell_area).sum(dim=spatial_dims)
+            else:
+                one_d_metrics[v] = (mask_vars_hem[cice_var] * grid_cell_area).sum(dim=spatial_dims)
+        one_d_vars = {k: xr.DataArray(data=v.data,
+                                      dims=(time_dim,),
+                                      coords={time_dim: time_coords},
+                                      attrs=pi_meta.get(k, {}))
+                      for k, v in one_d_metrics.items()}
+        self.logger.info(f"\t1D vars computed: {list(one_d_vars.keys())}")
+        #########################
+        ### 3D Variables
+        #########################
+        self.logger.info("compute pack ice 3D variables:")
+        three_d_vars = {}
+        for v in three_d_list:
+            if v.endswith("_SD") or (v in ['SIA','SIE','SIC']):
+                continue
+            meta = pi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable", None)
+            self.logger.debug(f"📦 Available keys in mask_vars_hem: {list(mask_vars_hem.keys())}")
+            if not cice_var or cice_var not in mask_vars_hem.keys():
+                self.logger.warning(f"⚠️ Skipping 3D metric {v} — source variable '{cice_var}' missing.")
+                continue
+            else:
+                self.logger.debug(f"✅ Creating 3D metric {v} — source variable '{cice_var}'")
+            try:
+                if self.compute_rolling_mean:
+                    data = mask_vars_hem[cice_var].coarsen(time=roll_win, boundary="trim").mean()
+                    time_coords_3d = data.time.values
+                    time_dim = FI_time_dim
+                else:
+                    data = mask_vars_hem[cice_var]
+                    time_coords_3d = time_coords
+                if "VGRO" in v or "FZL" in v:
+                    data = data * cm2m
+                three_d_vars[v] = xr.DataArray(data=data.data,
+                                               dims=three_dims,
+                                               coords={time_dim: time_coords_3d,
+                                                       lon_coord_name: (spatial_dims, lon_coords),
+                                                       lat_coord_name: (spatial_dims, lat_coords)},
+                                               attrs=meta)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Skipping 3D var {v} due to error: {e}")
+        self.logger.info(f"\t3D vars computed: {list(three_d_vars.keys())}")
+        #########################
+        ### 2D Variables
+        #########################
+        self.logger.info("compute temporal means to give spatial distributions over time (2D)")
+        two_d_vars = {}
+        for v in two_d_list:
+            if not v.endswith("_SD"):
+                continue
+            if v in ['SIA','SIE','SIC']:
+                continue
+            base = v.replace("_SD", "")
+            meta = pi_meta.get(v, {})
+            cice_var = pi_meta.get(base, {}).get("CICE_variable", None)
+            self.logger.debug(f"📦 Available keys in mask_vars_hem: {list(mask_vars_hem.keys())}")
+            if not cice_var or cice_var not in mask_vars_hem.keys():
+                self.logger.warning(f"⚠️ Skipping 2D var {v} due to missing base variable '{cice_var}'")
+                continue
+            else:
+                self.logger.debug(f"✅ Creating 2D metric {v} — source variable '{cice_var}'")
+            try:
+                da = mask_vars_hem[cice_var]
+                # Determine time dimension automatically
+                time_dim_auto = next((d for d in da.dims if d in ['time', 't', 't_fi']), None)
+                if not time_dim_auto:
+                    raise ValueError(f"No valid time dimension found for 2D variable {v}")
+                norm = da.sizes[time_dim_auto]
+                data_sum = da.sum(dim=time_dim_auto)
+                if base in ["PIHI", "PISTH", "PISH", "PIDIV", "PIAG", "PIAD", "PIAT",
+                            "PIVD", "PIVT", "PISTR", "PISPD", "PIFZL"]:
+                    max_val = da.max().values
+                    data_mean = data_sum / (norm * max_val)
+                else:
+                    data_mean = data_sum / norm
+                two_d_vars[v] = xr.DataArray(data=data_mean.data,
+                                             dims=spatial_dims,
+                                             coords={lon_coord_name: (spatial_dims, lon_coords),
+                                                     lat_coord_name: (spatial_dims, lat_coords)},
+                                             attrs={**meta,
+                                                    "start_time": self.dt0_str.isoformat() if isinstance(self.dt0_str, datetime) else self.dt0_str,
+                                                    "stop_time": self.dtN_str.isoformat() if isinstance(self.dtN_str, datetime) else self.dtN_str})
+            except Exception as e:
+                self.logger.warning(f"⚠️ Skipping 2D var {v} due to error: {e}")
+        self.logger.info(f"\t2D vars computed: {list(two_d_vars.keys())}")
+        #########################
+        ### Final Dataset
+        #########################
         self.logger.info("create output dataset:")
-        t0 = time.time()
-        PI = xr.Dataset(
-            {# 1D variables
-                'PIA'       : PIA,
-                'PIV'       : PIV,
-                'PI_STRONG' : PI_STRONG,
-                'PI_SHEAR'  : PI_SHEAR,
-                'PI_DIV'    : PI_DIV,
-                'PI_AGING'  : PI_AGING,
-                'PI_AGROM'  : PI_AGROM,
-                'PI_AGROT'  : PI_AGROT,
-                'PI_VGROM'  : PI_VGROM,
-                'PI_VGROT'  : PI_VGROT,
-                'PI_STRESS' : PI_STRESS,
-                'PI_SPEED'  : PI_SPEED,
-                'PI_FRAZIL' : PI_FRAZIL,
-            # 2D variables
-                'PIC_SD'   : PIC_SD,
-                'PIHI_SD'  : PIHI_SD,
-                'PISTH_SD' : PISTH_SD,
-                'PISH_SD'  : PISH_SD,
-                'PIDIV_SD' : PIDIV_SD,
-                'PIAG_SD'  : PIAG_SD,
-                'PIAD_SD'  : PIAD_SD,
-                'PIAT_SD'  : PIAT_SD,
-                'PIVD_SD'  : PIVD_SD,
-                'PIVT_SD'  : PIVT_SD,
-                'PISTR_SD' : PISTR_SD,
-                'PISPD_SD' : PISPD_SD,
-                'PIFZL_SD' : PIFZL_SD,
-            # 3D variables
-                'PIC'   : PIC,
-                'PIHI'  : PIHI,
-                'PISTH' : PISTH,
-                'PISH'  : PISH,
-                'PIDIV' : PIDIV,
-                'PIAG'  : PIAG,
-                'PIAD'  : PIAD,
-                'PIAT'  : PIAT,
-                'PIVD'  : PIVD,
-                'PIVT'  : PIVT,
-                'PISTR' : PISTR,
-                'PISPD' : PISPD,
-                'PIFZL' : PIFZL
-            },
-            coords = {time_dim        : (time_dim     , time_coords),
-                      FI_time_dim     : (FI_time_dim  , PI_time_coords),
-                      lon_coord_name  : (spatial_dims , lon_coords),
-                      lat_coord_name  : (spatial_dims , lat_coords) }
-        )
-        PI.attrs = {"title"              : "Pack ice analysed from numerical sea ice model simulations",
-                    "summary"            : "This dataset includes sea ice variables and derived metrics "\
-                                           "using a rolling window method then masking variables for threshold "\
-                                           "values of sea ice concentration and sea ice speed.",
-                    "source"             : "CICE v6.4.1 model output",
-                    "creator_name"       : "Daniel Patrick Atwater",
-                    "creator_email"      : "daniel.atwater@utas.edu.au",
-                    "institution"        : "Institute of Marine and Antarctic Studies--University of Tasmania",
-                    "history"            : f"Created on {datetime.now().isoformat()}",
-                    "references"         : "",
-                    "conventions"        : "CF-1.8",
-                    "fast_ice_criteria"  : f"aice > {self.SIC_thresh} and speed <= {self.FI_thresh} m/s",
-                    "pack_ice_criteria"  : f"aice > {self.SIC_thresh} and not fast_ice_criteria",
-                    "landmask_file"      : self.gi_processor.KMT_path,
-                    "time_coverage_start": self.dt0_str,
-                    "time_coverage_end"  : self.dtN_str,
-                    "roll_window_days"   : roll_win,
-                    "geospatial_lat_min" : float(np.min(lat_coords)),
-                    "geospatial_lat_max" : float(np.max(lat_coords)),
-                    "geospatial_lon_min" : float(np.min(lon_coords)),
-                    "geospatial_lon_max" : float(np.max(lon_coords))}
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+        PI = xr.Dataset({**one_d_vars, **three_d_vars, **two_d_vars})
+        if self.process_NSIDC:
+            for var in ['SIA', 'SIE', 'SIC']:
+                da = getattr(self, f"_NSIDC_{var}", None)
+                if da is not None:
+                    meta = pi_meta.get(var, {})
+                    PI[var] = xr.DataArray(data=da.data, dims=da.dims, coords=da.coords, attrs=meta)
+        fi_criteria = (f"aice > {self.SIC_thresh} and speed <= {self.FI_thresh} m/s"
+                       if self.mask_fi else "fast ice masking not employed on this dataset")
+        PI.attrs = {"title": "Pack ice analysed from numerical sea ice model simulations",
+                    "summary": "Pack ice metrics computed from model output, masked by fast ice criteria where requested.",
+                    "source": "CICE v6.4.1 model output",
+                    "creator_name": "Daniel Patrick Atwater",
+                    "creator_email": "daniel.atwater@utas.edu.au",
+                    "institution": "Institute of Marine and Antarctic Studies--University of Tasmania",
+                    "history": f"Created on {datetime.now().isoformat()}",
+                    "conventions": "CF-1.8",
+                    "fast_ice_criteria": fi_criteria,
+                    "pack_ice_criteria": f"aice > {self.SIC_thresh} and not fast_ice_criteria",
+                    "landmask_file": self.gi_processor.KMT_path,
+                    "time_coverage_start": self.dt0_str.isoformat() if isinstance(self.dt0_str, datetime) else self.dt0_str,
+                    "time_coverage_end": self.dtN_str.isoformat() if isinstance(self.dtN_str, datetime) else self.dtN_str,
+                    "roll_window_days": roll_win,
+                    "geospatial_lat_min": float(np.min(lat_coords)),
+                    "geospatial_lat_max": float(np.max(lat_coords)),
+                    "geospatial_lon_min": float(np.min(lon_coords)),
+                    "geospatial_lon_max": float(np.max(lon_coords))}
         return PI
 
-    def process_window(self, dtC, hemisphere='south', ow_zarrs=False, save_zarr=True):
-        """
-        High-level method to process a centered time window and save Zarr output.
-
-        Parameters
-        ----------
-        dtC       : datetime
-                    Center date of the rolling window.
-        hemisphere: str, optional
-                    Hemisphere to process ('north' or 'south'). Default is 'south'.
-        ow_zarrs  : bool, optional
-                    If True, overwrite existing Zarr outputs. Default is False.
-        save_zarr : bool, optional
-                    Whether to save output to disk as a Zarr store. Default is True.
-
-        Returns
-        -------
-        PI : xarray.Dataset
-             Dataset with processed pack ice metrics.
-        """
+    def process_window(self, var_list=None, save_zarr=False, ow_zarrs=False):
         import dask
         dask.config.set(scheduler='single-threaded')
-        self.dtC = dtC
-        self.logger.info(f"\n\nProcessing PI window centered on {self.dtC} for {hemisphere}ern hemisphere")
-        self.define_hemisphere(hemisphere)
-        ds = self.load_data_window()
-        self.gi_processor.load_grid_and_landmask()
-        roll_avg_dict     = self.compute_rolling_averages(ds)
-        PI_masked_vars, _ = self.apply_PI_mask(roll_avg_dict)
-        PI                = self.compute_pack_ice_outputs(PI_masked_vars)
-        if save_zarr:
-            D_PI_zarr = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "PI")
-            F_PI_zarr = f"pack_ice_{self.dtC.strftime('%Y-%m-%d')}.zarr"
-            if not os.path.exists(D_PI_zarr):
-                os.makedirs(D_PI_zarr)
-            P_PI_zarr = Path(D_PI_zarr,F_PI_zarr)
-            if not os.path.exists(P_PI_zarr) or (os.path.exists(P_PI_zarr) and ow_zarrs):
-                self.logger.info(f"*** writing PI to disk: {P_PI_zarr}")
-                t0 = time.time()
-                PI.to_zarr(P_PI_zarr, mode='w')
-                self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
-            else:
-                self.logger.info("PI already exists or over-writting zarrs disabled ***")
-                self.logger.info(f"\tskipping: {P_PI_zarr}")
-        self.logger.info("Pack ice processing complete.")
-        return PI  # placeholder for final dataset creation
+        pi_meta = self.config["PI_var_dict"]
+        valid_keys = set(pi_meta.keys())
+        # ⬇️ Force full computation if saving with fast ice masking
+        if save_zarr and self.mask_fi:
+            var_list = list(valid_keys)
+        elif var_list is None:
+            var_list = list(valid_keys) if self.mask_fi else ['PIA', 'PIE']
+        else:
+            var_list = [v for v in var_list if v in valid_keys]
+        self.requested_PI_vars = var_list  # ✅ Used by load_data_window()
+        if not var_list:
+            self.logger.warning("⚠️ No valid output variables selected — nothing will be computed.")
+        else:
+            self.logger.debug(f"✅ Pack ice variables selected for output: {var_list}")
+        # ✅ Extract required CICE variables for loading
+        self.var_list = self._extract_cice_vars_from_PI_var_dict(var_list)
+        if self.mask_fi and save_zarr:
+            ds_all = []
+            for dtC in self.dtC_list:
+                self.dtC = dtC
+                self.dt_range = pd.date_range(
+                    dtC - pd.Timedelta(days=self.roll_win // 2),
+                    dtC + pd.Timedelta(days=self.roll_win // 2)
+                )
+                ds = self.load_data_window()
+                self.logger.debug(f"📦 Variables in loaded dataset: {list(ds.data_vars)}")
+                ds_dict = self.dataset_to_dictionary(ds, self.requested_PI_vars)
+                masked_vars = self.apply_PI_mask(ds_dict)
+                PI = self.compute_pack_ice_outputs(masked_vars, var_list=self.requested_PI_vars)
+                # Output path
+                D_PI_zarr = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "PI")
+                F_PI_zarr = f"pack_ice_{dtC.strftime('%Y-%m-%d')}.zarr"
+                P_PI_zarr = D_PI_zarr / F_PI_zarr
+                if not D_PI_zarr.exists():
+                    os.makedirs(D_PI_zarr)
+
+                if not P_PI_zarr.exists() or ow_zarrs:
+                    self.logger.info(f"*** writing PI to disk: {P_PI_zarr}")
+                    PI.to_zarr(P_PI_zarr, mode='w')
+                else:
+                    self.logger.info(f"Zarr exists or overwriting disabled: {P_PI_zarr}")
+                ds_all.append(PI)
+            PI_merged = xr.concat(ds_all, dim='time')
+            self.logger.info("✅ Pack ice processing complete.")
+            return PI_merged
+        else:
+            # Interactive mode with first center date
+            self.dtC = self.dtC_list[0]
+            self.dt_range = pd.date_range(
+                self.dtC - pd.Timedelta(days=self.roll_win // 2),
+                self.dtC + pd.Timedelta(days=self.roll_win // 2)
+            )
+            ds = self.load_data_window()
+            ds_dict = self.dataset_to_dictionary(ds, self.requested_PI_vars)
+            masked_vars = self.apply_PI_mask(ds_dict)
+            PI = self.compute_pack_ice_outputs(masked_vars, var_list=self.requested_PI_vars)
+            self.logger.info("✅ Pack ice processing complete.")
+            return PI
