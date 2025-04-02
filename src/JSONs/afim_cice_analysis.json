@@ -35,9 +35,8 @@
                             "FI_three_dims"     : ["t_fi","nj","ni"],
                             "FI_lon_coord"      : "lon",
                             "FI_lat_coord"      : "lat",
-                            "FI_vars"           : ["aice", "uvel", "vvel", "tarea", "hi", "shear",
-                                                   "strength", "frazil", "strintx", "strinty", "iage",
-                                                   "divu", "daidtd", "daidtt", "dvidtd", "dvidtt"],
+                            "FI_cice_vars_reqd" : ["aice", "uvel", "vvel", "tarea", "hi"]
+                            "FI_cice_vars_ext"  : ["shear","strength", "frazil", "strintx", "strinty", "iage", "divu", "daidtd", "daidtt", "dvidtd", "dvidtt"],
                             "FI_chunks"         : { "time" : 15 ,
                                                     "nj"   : 540,
                                                     "ni"   : 1440}},
@@ -53,7 +52,9 @@
                             "D_AF2020_db_org"      : "/g/data/jk72/af1544/fraser2020_data/",
                             "F_AF2020_db_org"      : "FastIce_70*.nc",
                             "P_AF2020_cli_csv"     : "/g/data/gv90/da1339/SeaIce/FI_obs/AF_extents_climatologies_v2_2.csv",
-                            "P_AF_2020db"          : "/g/data/jk72/da1339/SeaIce/FI_obs/AF_FI_2020db.nc"},
+                            "P_AF_2020db_avg"      : "/g/data/gv90/da1339/SeaIce/FI_obs/AF_FI_2020db_18yr-avg_gridded.zarr",
+                            "AF_reG_weights"       : "/g/data/gv90/da1339/grids/weights/AF_FI_obs_TO_G0p125_Reg_BIL.nc",
+                            "projection_epsg"    : 3412},
     "NSIDC_dict"         : {"D_original"            : "/g/data/gv90/da1339/SeaIce/nsidc/G02202_V4",
                             "process_SIA"           : true,
                             "plot_SIA"              : true,
@@ -815,528 +816,273 @@
                                             "series"   : [0,1],
                                             "cmap"     : "cmocean/speed",
                                             "reverse"  : false} },
-    "FI_var_dict": {
-  "FIA": {
-    "units": "1000-km^2",
-    "long_name": "fast ice area",
-    "description": "sea ice area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "aice"
-  },
-  "FIV": {
-    "units": "1000-km^3",
-    "long_name": "fast ice volume",
-    "description": "sea ice volume summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "hi"
-  },
-  "FI_STRONG": {
-    "units": "N",
-    "long_name": "fast ice strength",
-    "description": "sea ice strength times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "strength"
-  },
-  "FI_SHEAR": {
-    "units": "m^2/day",
-    "long_name": "fast ice shear rate",
-    "description": "sea ice shear times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "shear"
-  },
-  "FI_DIV": {
-    "units": "m^2/day",
-    "long_name": "fast ice divergence rate",
-    "description": "sea ice divergence times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "divu"
-  },
-  "FI_AGING": {
-    "units": "m^2/year",
-    "long_name": "fast ice ageing rate",
-    "description": "sea ice area divided by ice age summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "iage"
-  },
-  "FI_AGROM": {
-    "units": "m^2/day",
-    "long_name": "fast ice mechanical area growth rate",
-    "description": "sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "daidtd"
-  },
-  "FI_AGROT": {
-    "units": "m^2/day",
-    "long_name": "fast ice thermodynamic area growth rate",
-    "description": "sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "daidtt"
-  },
-  "FI_VGROM": {
-    "units": "m^3/day",
-    "long_name": "fast ice mechanical volume growth rate",
-    "description": "sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "dvidtd"
-  },
-  "FI_VGROT": {
-    "units": "m^3/day",
-    "long_name": "fast ice thermodynamic volume growth rate",
-    "description": "sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "dvidtt"
-  },
-  "FI_STRESS": {
-    "units": "N",
-    "long_name": "fast ice internal stress",
-    "description": "sea ice internal stress times grid cell area summed over spatial extent and masked with fast ice criteria",
-    "CICE_variable": "strint"
-  },
-  "FIC": {
-    "units": "%/grid-cell",
-    "long_name": "fast ice concentration",
-    "description": "sea ice concentration per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "aice"
-  },
-  "FIHI": {
-    "units": "m",
-    "long_name": "fast ice thickness",
-    "description": "sea ice thickness per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "hi"
-  },
-  "FISTH": {
-    "units": "N/m",
-    "long_name": "fast ice strength",
-    "description": "sea ice strength per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "strength"
-  },
-  "FISH": {
-    "units": "%/day",
-    "long_name": "fast ice shear",
-    "description": "sea ice shear per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "shear"
-  },
-  "FIDIV": {
-    "units": "%/day",
-    "long_name": "fast ice divergence",
-    "description": "sea ice divergence per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "divu"
-  },
-  "FIAG": {
-    "units": "years",
-    "long_name": "fast ice age",
-    "description": "sea ice age per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "iage"
-  },
-  "FIAD": {
-    "units": "%/day",
-    "long_name": "fast ice area tendency dynamics (mechanical)",
-    "description": "sea ice area tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "daidtd"
-  },
-  "FIAT": {
-    "units": "%/day",
-    "long_name": "fast ice area tendency thermodynamics",
-    "description": "sea ice area tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "daidtt"
-  },
-  "FIVD": {
-    "units": "cm/day",
-    "long_name": "fast ice volume tendency dynamics (mechanical)",
-    "description": "sea ice volume tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "dvidtd"
-  },
-  "FIVT": {
-    "units": "cm/day",
-    "long_name": "fast ice volume tendency thermodynamics",
-    "description": "sea ice volume tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "dvidtt"
-  },
-  "FISTR": {
-    "units": "N/m^2",
-    "long_name": "fast ice internal stress",
-    "description": "sea ice internal stress per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
-    "CICE_variable": "strint"
-  },
-  "FIP": {
-    "units": "% (()/)",
-    "long_name": "fast ice persistence",
-    "description": "sum of sea ice concentration per grid cell over time masked with fast ice criteria and divide by total temporal length",
-    "CICE_variable": "aice"
-  },
-  "FIHI_SD": {
-    "units": "% (m)",
-    "long_name": "fast ice thickness spatial distribution over time",
-    "description": "sum of sea ice thickness per grid cell over time multiplied by maximum thickness and masked with fast ice criteria",
-    "CICE_variable": "hi"
-  },
-  "FISTH_SD": {
-    "units": "% (N/m)",
-    "long_name": "fast ice strength spatial distribution over time",
-    "description": "sum of sea ice strength per grid cell over time divided by max strength and masked with fast ice criteria",
-    "CICE_variable": "strength"
-  },
-  "FISH_SD": {
-    "units": "% (1/day)",
-    "long_name": "fast ice shear spatial distribution over time",
-    "description": "sum of sea ice shear per grid cell over time divided by max shear and masked with fast ice criteria",
-    "CICE_variable": "shear"
-  },
-  "FIDIV_SD": {
-    "units": "% (1/day)",
-    "long_name": "fast ice divergence spatial distribution over time",
-    "description": "sum of sea ice divergence per grid cell over time divided by max divergence and masked with fast ice criteria",
-    "CICE_variable": "divu"
-  },
-  "FIAG_SD": {
-    "units": "% (years)",
-    "long_name": "fast ice age spatial distribution over time",
-    "description": "sum of sea ice age per grid cell over time divided by max age and masked with fast ice criteria",
-    "CICE_variable": "iage"
-  },
-  "FIAD_SD": {
-    "units": "% (1/day)",
-    "long_name": "fast ice area-mechanical-tendency spatial distribution over time",
-    "description": "sum of ice area-mechanical-tendency per grid cell over time divided by max decrement and masked with fast ice criteria",
-    "CICE_variable": "daidtd"
-  },
-  "FIAT_SD": {
-    "units": "% (1/day)",
-    "long_name": "fast ice area-thermodynamic-tendency spatial distribution over time",
-    "description": "sum of ice area-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria",
-    "CICE_variable": "daidtt"
-  },
-  "FIVD_SD": {
-    "units": "% (m/day)",
-    "long_name": "fast ice volume-mechanical-tendency spatial distribution over time",
-    "description": "sum of ice volume-mechanical-tendency decrement per grid cell over time divided by max decrement and masked with fast ice criteria",
-    "CICE_variable": "dvidtd"
-  },
-  "FIVT_SD": {
-    "units": "% (m/day)",
-    "long_name": "fast ice volume-thermodynamic-tendency spatial distribution over time",
-    "description": "sum of ice volume-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria",
-    "CICE_variable": "dvidtt"
-  },
-  "FISTR_SD": {
-    "units": "% (N/m^2)",
-    "long_name": "fast ice internal stress spatial distribution over time",
-    "description": "sum of ice internal stress per grid cell over time divided by max stress and masked with fast ice criteria",
-    "CICE_variable": "strint"
-  }
-    },
-    "PI_var_dict": {
-        "PIA": {
-            "units": "1e6-km^2",
-            "long_name": "pack ice area",
-            "description": "pack ice area summed over spatial extent and masked for pack ice criteria",
-            "CICE_variable": "aice",
-            "dimensions": "1D"
-        },
-    "PIE": {
-      "units": "1e6-km^2",
-      "long_name": "pack ice extent",
-      "description": "pack ice extent summed over spatial extent and masked for pack ice criteria",
-      "CICE_variable": "aice",
-      "dimensions": "1D"
-    },
-    "SIA": {
-      "units": "1e6-km^2",
-      "long_name": "NSIDC sea ice area",
-      "description": "NSIDC sea ice area",
-      "dimensions": "1D"
-    },
-    "SIE": {
-      "units": "1e6-km^2",
-      "long_name": "NSIDC sea ice extent",
-      "description": "NSIDC sea ice extent",
-      "dimensions": "1D"
-    },
-    "SIC": {
-      "units": "%/grid-cell",
-      "long_name": "NSIDC sea ice concentration",
-      "description": "NSIDC sea ice concentration",
-      "dimensions": "3D"
-    },
-    "PIV": {
-      "units": "1e6-km^3",
-      "long_name": "pack ice volume",
-      "description": "pack ice volume summed over spatial extent and masked for pack ice criteria",
-      "CICE_variable": "hi",
-      "dimensions": "1D"
-    },
-    "PI_STRONG": {
-      "units": "N",
-      "long_name": "pack ice strength",
-      "description": "sea ice strength times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "strength",
-      "dimensions": "1D"
-    },
-    "PI_SHEAR": {
-      "units": "m^2/day",
-      "long_name": "pack ice shear rate",
-      "description": "sea ice shear times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "shear",
-      "dimensions": "1D"
-    },
-    "PI_DIV": {
-      "units": "m^2/day",
-      "long_name": "pack ice divergence rate",
-      "description": "sea ice divergence times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "divu",
-      "dimensions": "1D"
-    },
-    "PI_AGING": {
-      "units": "m^2/year",
-      "long_name": "pack ice ageing rate",
-      "description": "sea ice area divided by ice age summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "iage",
-      "dimensions": "1D"
-    },
-    "PI_AGROM": {
-      "units": "m^2/day",
-      "long_name": "pack ice mechanical area growth rate",
-      "description": "sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "daidtd",
-      "dimensions": "1D"
-    },
-    "PI_AGROT": {
-      "units": "m^2/day",
-      "long_name": "pack ice thermodynamic area growth rate",
-      "description": "sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "daidtt",
-      "dimensions": "1D"
-    },
-    "PI_VGROM": {
-      "units": "m^3/day",
-      "long_name": "pack ice mechanical volume growth rate",
-      "description": "sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "dvidtd",
-      "dimensions": "1D"
-    },
-    "PI_VGROT": {
-      "units": "m^3/day",
-      "long_name": "pack ice thermodynamic volume growth rate",
-      "description": "sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "dvidtt",
-      "dimensions": "1D"
-    },
-    "PI_STRESS": {
-      "units": "N",
-      "long_name": "pack ice internal stress",
-      "description": "sea ice internal stress times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "strint",
-      "CICE_vector_variables": [
-        "strintx",
-        "strinty"
-      ],
-      "dimensions": "1D"
-    },
-    "PI_SPEED": {
-      "units": "m^3/second",
-      "long_name": "pack ice speed",
-      "description": "sea ice speed times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "speed",
-      "CICE_vector_variables": [
-        "uvel",
-        "vvel"
-      ],
-      "dimensions": "1D"
-    },
-    "PI_FRAZIL": {
-      "units": "m^3/day",
-      "long_name": "pack ice frazil volumetric growth",
-      "description": "sea ice frazil growth rate times grid cell area summed over spatial extent and masked with pack ice criteria",
-      "CICE_variable": "frazil",
-      "dimensions": "1D"
-    },
-    "PIC": {
-      "units": "%/grid-cell",
-      "long_name": "pack ice concentration",
-      "description": "sea ice concentration per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "aice",
-      "dimensions": "3D"
-    },
-    "PIHI": {
-      "units": "m",
-      "long_name": "pack ice thickness",
-      "description": "sea ice thickness per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "hi",
-      "dimensions": "3D"
-    },
-    "PISTH": {
-      "units": "N/m",
-      "long_name": "pack ice strength",
-      "description": "sea ice strength per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "strength",
-      "dimensions": "3D"
-    },
-    "PISH": {
-      "units": "%/day",
-      "long_name": "pack ice shear",
-      "description": "sea ice shear per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "shear",
-      "dimensions": "3D"
-    },
-    "PIDIV": {
-      "units": "%/day",
-      "long_name": "pack ice divergence",
-      "description": "sea ice divergence per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "divu",
-      "dimensions": "3D"
-    },
-    "PIAG": {
-      "units": "years",
-      "long_name": "pack ice age",
-      "description": "sea ice age per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "iage",
-      "dimensions": "3D"
-    },
-    "PIAD": {
-      "units": "%/day",
-      "long_name": "pack ice area tendency dynamics (mechanical)",
-      "description": "sea ice area tendency dynamics (mechanical) per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "daidtd",
-      "dimensions": "3D"
-    },
-    "PIAT": {
-      "units": "%/day",
-      "long_name": "pack ice area tendency thermodynamics",
-      "description": "sea ice area tendency thermodynamics per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "daidtt",
-      "dimensions": "3D"
-    },
-    "PIVD": {
-      "units": "cm/day",
-      "long_name": "pack ice volume tendency dynamics (mechanical)",
-      "description": "sea ice volume tendency dynamics (mechanical) per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "dvidtd",
-      "dimensions": "3D"
-    },
-    "PIVT": {
-      "units": "cm/day",
-      "long_name": "pack ice volume tendency thermodynamics",
-      "description": "sea ice volume tendency thermodynamics per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "dvidtt",
-      "dimensions": "3D"
-    },
-    "PISTR": {
-      "units": "N/m^2",
-      "long_name": "pack ice internal stress",
-      "description": "sea ice internal stress per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "strint",
-      "CICE_vector_variables": [
-        "strintx",
-        "strinty"
-      ],
-      "dimensions": "3D"
-    },
-    "PISPD": {
-      "units": "m/s",
-      "long_name": "pack ice speed",
-      "description": "sea ice speed per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "speed",
-      "CICE_vector_variables": [
-        "uvel",
-        "vvel"
-      ],
-      "dimensions": "3D"
-    },
-    "PIFZL": {
-      "units": "m/day",
-      "long_name": "pack ice frazil growth rate",
-      "description": "sea ice frazil growth rate per grid cell masked with pack ice criteria and coarsened to pack ice mask temporal window",
-      "CICE_variable": "frazil",
-      "dimensions": "3D"
-    },
-    "PIC_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice concentration frequency",
-      "description": "sum of sea ice concentration per grid cell over time masked with pack ice criteria and divide by total temporal length",
-      "CICE_variable": "aice",
-      "dimensions": "2D"
-    },
-    "PIHI_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice thickness frequency",
-      "description": "sum of sea ice thickness per grid cell over time multiplied by maximum thickness and masked with pack ice criteria",
-      "CICE_variable": "hi",
-      "dimensions": "2D"
-    },
-    "PISTH_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice strength frequency",
-      "description": "sum of sea ice strength per grid cell over time divided by max strength and masked with pack ice criteria",
-      "CICE_variable": "strength",
-      "dimensions": "2D"
-    },
-    "PISH_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice shear frequency",
-      "description": "sum of sea ice shear per grid cell over time divided by max shear and masked with pack ice criteria",
-      "CICE_variable": "shear",
-      "dimensions": "2D"
-    },
-    "PIDIV_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice divergence frequency",
-      "description": "sum of sea ice divergence per grid cell over time divided by max divergence and masked with pack ice criteria",
-      "CICE_variable": "divu",
-      "dimensions": "2D"
-    },
-    "PIAG_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice age frequency",
-      "description": "sum of sea ice age per grid cell over time divided by max age and masked with pack ice criteria",
-      "CICE_variable": "iage",
-      "dimensions": "2D"
-    },
-    "PIAD_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice area-mechanical-tendency frequency",
-      "description": "sum of sea ice area-mechanical-tendency per grid cell over time divided by max decrement and masked with pack ice criteria",
-      "CICE_variable": "daidtd",
-      "dimensions": "2D"
-    },
-    "PIAT_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice area-thermodynamic-tendency frequency",
-      "description": "sum of sea ice area-thermodynamic-tendency per grid cell over time divided by max increment and masked with pack ice criteria",
-      "CICE_variable": "daidtt",
-      "dimensions": "2D"
-    },
-    "PIVD_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice volume-mechanical-tendency frequency",
-      "description": "sum of sea ice volume-mechanical-tendency decrement per grid cell over time divided by max decrement and masked with pack ice criteria",
-      "CICE_variable": "dvidtd",
-      "dimensions": "2D"
-    },
-    "PIVT_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice volume-thermodynamic-tendency frequency",
-      "description": "sum of sea ice volume-thermodynamic-tendency per grid cell over time divided by max increment and masked with pack ice criteria",
-      "CICE_variable": "dvidtt",
-      "dimensions": "2D"
-    },
-    "PISTR_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice internal stress frequency",
-      "description": "sum of sea ice internal stress per grid cell over time divided by max stress and masked with pack ice criteria",
-      "CICE_variable": "strint",
-      "CICE_vector_variables": [
-        "strintx",
-        "strinty"
-      ],
-      "dimensions": "2D"
-    },
-    "PISPD_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice speed frequency",
-      "description": "sum of sea ice speed per grid cell over time divided by max speed and masked with pack ice criteria",
-      "CICE_variable": "speed",
-      "CICE_vector_variables": [
-        "uvel",
-        "vvel"
-      ],
-      "dimensions": "2D"
-    },
-    "PIFZL_SD": {
-      "units": "% (1/day)",
-      "long_name": "pack ice frazil rate frequency",
-      "description": "sum of sea ice frazil rate per grid cell over time divided by max frazil growth rate and masked with pack ice criteria",
-      "CICE_variable": "frazil",
-      "dimensions": "2D"
-    }
-  }
+    "FI_var_dict": {"FIA_OBS"   : {"units"         : "1000-km^3",
+                                   "long_name"     : "observational fast ice area",
+                                   "description"   : "fast ice area as observsed by Alex Fraser's 2020 fast ice dataset",
+                                   "dimensions"    : "1D"},
+                    "FI_OBS"    : {"units"         : "1",
+                                   "long_name"     : "observational fast ice per grid cell",b
+                                   "description"   : "fast ice as observed by Alex Fraser's 2020 fast ice dataset and re-gridded to CICE simulation grid",
+                                   "dimensions"    : "3D"},
+                    "FIP_OBS"   : {"units"         : "1",
+                                   "long_name"     : "observational fast ice persistence",
+                                   "description"   : "fast ice as observed by Alex Fraser's 2020 fast ice dataset and re-gridded to CICE simulation grid",
+                                   "dimensions"    : "2D"},
+                    "FIA"       : {"units"         : "1000-km^2",
+                                   "long_name"     : "fast ice area",
+                                   "description"   : "sea ice area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "aice",
+                                   "dimensions"    : "1D" },
+                    "FIE"       : {"units"         : "1000-km^2",
+                                   "long_name"     : "fast ice extent",
+                                   "description"   : "sea ice extent summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "aice",
+                                   "dimensions"    : "1D" },
+                    "FIV"       : {"units"         : "1000-km^3",
+                                   "long_name"     : "fast ice volume",
+                                   "description"   : "sea ice volume summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "hi",
+                                   "dimensions"    : "1D" },
+                    "FI_STRONG" : {"units"         : "N",
+                                   "long_name"     : "fast ice strength",
+                                   "description"   : "sea ice strength times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "strength",
+                                   "dimensions"    : "1D" },
+                    "FI_SHEAR"  : {"units"         : "m^2/day",
+                                   "long_name"     : "fast ice shear rate",
+                                   "description"   : "sea ice shear times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "shear",
+                                   "dimensions"    : "1D" },
+                    "FI_DIV"    : {"units"         : "m^2/day",
+                                   "long_name"     : "fast ice divergence rate",
+                                   "description"   : "sea ice divergence times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "divu",
+                                   "dimensions"    : "1D" },
+                    "FI_AGING"  : {"units"         : "m^2/year",
+                                   "long_name"     : "fast ice ageing rate",
+                                   "description"   : "sea ice area divided by ice age summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "iage",
+                                   "dimensions"    : "1D" },
+                    "FI_AGROM"  : {"units"         : "m^2/day",
+                                   "long_name"     : "fast ice area growth rate from mechanical redistribution",
+                                   "description"   : "sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "daidtd",
+                                   "dimensions"    : "1D" },
+                    "FI_AGROT"  : {"units"         : "m^2/day",
+                                   "long_name"     : "fast ice area growth rate from thermodynamics",
+                                   "description"   : "sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "daidtt",
+                                   "dimensions"    : "1D" },
+                    "FI_VGROM"  : {"units"         : "m^3/day",
+                                   "long_name"     : "fast ice volumetric growth rate from mechanical redistribution",
+                                   "description"   : "sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "dvidtd",
+                                   "dimensions"    : "1D" },
+                    "FI_VGROT"  : {"units"         : "m^3/day",
+                                   "long_name"     : "fast ice volumetric growth rate from thermodynamics",
+                                   "description"   : "sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "dvidtt",
+                                   "dimensions"    : "1D" },
+                    "FI_STRESS" : {"units"         : "N",
+                                   "long_name"     : "fast ice internal stress",
+                                   "description"   : "sea ice internal stress times grid cell area summed over spatial extent and masked with fast ice criteria",
+                                   "CICE_variable" : "strint",
+                                   "CICE_vec_vars" : ["strintx","strinty"],
+                                   "dimensions"    : "1D"},
+                    "FIC"       : {"units"         : "%/grid-cell",
+                                   "long_name"     : "fast ice concentration",
+                                   "description"   : "sea ice concentration per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                   "CICE_variable" : "aice",
+                                   "dimensions"    : "3D"},
+                    "FIHI"      : {"units"         : "m",
+                                   "long_name"     : "fast ice thickness",
+                                   "description"   : "sea ice thickness per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                   "CICE_variable" : "hi",
+                                   "dimensions"    : "3D"},
+                   "FISTH"     : {"units": "N/m",
+                                  "long_name": "fast ice strength",
+                                  "description": "sea ice strength per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "strength",
+                                  "dimensions": "3D"},
+                   "FISH"      : {"units": "%/day",
+                                  "long_name": "fast ice shear",
+                                  "description": "sea ice shear per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "shear",
+                                  "dimensions": "3D"},
+                   "FIDIV"     : {"units": "%/day",
+                                  "long_name": "fast ice divergence",
+                                  "description": "sea ice divergence per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "divu",
+                                  "dimensions": "3D"},
+                   "FIAG"      : {"units": "years",
+                                  "long_name": "fast ice age",
+                                  "description": "sea ice age per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "iage",
+                                  "dimensions": "3D"},
+                   "FIAD"      : {"units": "%/day",
+                                  "long_name": "fast ice area tendency dynamics (mechanical)",
+                                  "description": "sea ice area tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "daidtd",
+                                  "dimensions": "3D"},
+                   "FIAT"      : {"units": "%/day",
+                                  "long_name": "fast ice area tendency thermodynamics",
+                                  "description": "sea ice area tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "daidtt",
+                                  "dimensions": "3D"},
+                   "FIVD"      : {"units": "cm/day",
+                                  "long_name": "fast ice volume tendency dynamics (mechanical)",
+                                  "description": "sea ice volume tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "dvidtd",
+                                  "dimensions": "3D"},
+                   "FIVT"      : {"units": "cm/day",
+                                  "long_name": "fast ice volume tendency thermodynamics",
+                                  "description": "sea ice volume tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "dvidtt",
+                                  "dimensions": "3D"},
+                   "FISTR"     : {"units": "N/m^2",
+                                  "long_name": "fast ice internal stress",
+                                  "description": "sea ice internal stress per grid cell masked with fast ice criteria and coarsened to temporal averaging window",
+                                  "CICE_variable": "strint",
+                                  "CICE_vec_vars": ["strintx","strinty"],
+                                  "dimensions": "3D"},
+                   "FIP"       : {"units": "% (()/)",
+                                  "long_name": "fast ice persistence",
+                                  "description": "sum of sea ice concentration per grid cell over time masked with fast ice criteria and divide by total temporal length",
+                                  "CICE_variable": "aice",
+                                  "dimensions": "2D"},
+                   "FIHI_SD"   : {"units": "% (m)",
+                                  "long_name": "fast ice thickness spatial distribution over time",
+                                  "description": "sum of sea ice thickness per grid cell over time multiplied by maximum thickness and masked with fast ice criteria",
+                                  "CICE_variable": "hi",
+                                  "dimensions": "2D"},
+                   "FISTH_SD"  : {"units": "% (N/m)",
+                                  "long_name": "fast ice strength spatial distribution over time",
+                                  "description": "sum of sea ice strength per grid cell over time divided by max strength and masked with fast ice criteria",
+                                  "CICE_variable": "strength",
+                                  "dimensions": "2D"},
+                   "FISH_SD"   : {"units": "% (1/day)",
+                                  "long_name": "fast ice shear spatial distribution over time",
+                                  "description": "sum of sea ice shear per grid cell over time divided by max shear and masked with fast ice criteria",
+                                  "CICE_variable": "shear",
+                                  "dimensions": "2D"},
+                   "FIDIV_SD"  : {"units": "% (1/day)",
+                                  "long_name": "fast ice divergence spatial distribution over time",
+                                  "description": "sum of sea ice divergence per grid cell over time divided by max divergence and masked with fast ice criteria",
+                                  "CICE_variable": "divu",
+                                  "dimensions": "2D"},
+                   "FIAG_SD"   : {"units": "% (years)",
+                                  "long_name": "fast ice age spatial distribution over time",
+                                  "description": "sum of sea ice age per grid cell over time divided by max age and masked with fast ice criteria",
+                                  "CICE_variable": "iage",
+                                  "dimensions": "2D"},
+                   "FIAD_SD"   : {"units": "% (1/day)",
+                                  "long_name": "fast ice area-mechanical-tendency spatial distribution over time",
+                                  "description": "sum of ice area-mechanical-tendency per grid cell over time divided by max decrement and masked with fast ice criteria",
+                                  "CICE_variable": "daidtd",
+                                  "dimensions": "2D"},
+                   "FIAT_SD"   : {"units": "% (1/day)",
+                                  "long_name": "fast ice area-thermodynamic-tendency spatial distribution over time",
+                                  "description": "sum of ice area-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria",
+                                  "CICE_variable": "daidtt",
+                                  "dimensions": "2D"},
+                   "FIVD_SD"   : {"units": "% (m/day)",
+                                  "long_name": "fast ice volume-mechanical-tendency spatial distribution over time",
+                                  "description": "sum of ice volume-mechanical-tendency decrement per grid cell over time divided by max decrement and masked with fast ice criteria",
+                                  "CICE_variable": "dvidtd",
+                                  "dimensions": "2D"},
+                   "FIVT_SD"   : {"units": "% (m/day)",
+                                  "long_name": "fast ice volume-thermodynamic-tendency spatial distribution over time",
+                                  "description": "sum of ice volume-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria",
+                                  "CICE_variable": "dvidtt",
+                                  "dimensions": "2D"},
+                   "FISTR_SD"  : {"units": "% (N/m^2)",
+                                  "long_name": "fast ice internal stress spatial distribution over time",
+                                  "description": "sum of ice internal stress per grid cell over time divided by max stress and masked with fast ice criteria",
+                                  "CICE_variable": "strint",
+                                  "CICE_vec_vars": ["strintx","strinty"],
+                                  "dimensions": "2D"} },
+    "PI_var_dict": {"PIA"       : {"units": "1e6-km^2",
+                                   "long_name": "pack ice area",
+                                   "description": "pack ice area summed over spatial extent and masked for pack ice criteria",
+                                   "CICE_variable": "aice",
+                                   "dimensions": "1D"},
+                    "PIE"       : {"units": "1e6-km^2",
+                                   "long_name": "pack ice extent",
+                                   "description": "pack ice extent summed over spatial extent and masked for pack ice criteria",
+                                   "CICE_variable": "aice",
+                                   "dimensions": "1D"},
+                    "SIA"       : {"units": "1e6-km^2",
+                                   "long_name": "NSIDC sea ice area",
+                                   "description": "NSIDC sea ice area",
+                                   "dimensions": "1D"},
+                    "SIE"       : {"units": "1e6-km^2",
+                                   "long_name": "NSIDC sea ice extent",
+                                   "description": "NSIDC sea ice extent",
+                                   "dimensions": "1D"},
+                    "SIC"       : {"units": "%/grid-cell",
+                                   "long_name": "NSIDC sea ice concentration",
+                                   "description": "NSIDC sea ice concentration",
+                                   "dimensions": "3D"},
+                    "PIV"       : {"units": "1e6-km^3",
+                                   "long_name": "pack ice volume",
+                                   "description": "pack ice volume summed over spatial extent and masked for pack ice criteria",
+                                   "CICE_variable": "hi",
+                                   "dimensions": "1D"},
+                    "PI_STRONG" : {"units": "N",
+                                   "long_name": "pack ice strength",
+                                   "description": "sea ice strength times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "strength",
+                                   "dimensions": "1D"},
+                    "PI_SHEAR"  : {"units": "m^2/day",
+                                   "long_name": "pack ice shear rate",
+                                   "description": "sea ice shear times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "shear",
+                                   "dimensions": "1D"},
+                    "PI_DIV"    : {"units": "m^2/day",
+                                   "long_name": "pack ice divergence rate",
+                                   "description": "sea ice divergence times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "divu",
+                                   "dimensions": "1D"},
+                    "PI_AGING"  : {"units": "m^2/year",
+                                   "long_name": "pack ice ageing rate",
+                                   "description": "sea ice area divided by ice age summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "iage",
+                                   "dimensions": "1D"},
+                    "PI_AGROM"  : {"units": "m^2/day",
+                                   "long_name": "pack ice mechanical area growth rate",
+                                   "description": "sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "daidtd",
+                                   "dimensions": "1D"},
+                    "PI_AGROT"  : {"units": "m^2/day",
+                                   "long_name": "pack ice thermodynamic area growth rate",
+                                   "description": "sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "daidtt",
+                                   "dimensions": "1D"},
+                    "PI_VGROM"  : {"units": "m^3/day",
+                                   "long_name": "pack ice mechanical volume growth rate",
+                                   "description": "sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "dvidtd",
+                                   "dimensions": "1D"},
+                    "PI_VGROT"  : {"units": "m^3/day",
+                                   "long_name": "pack ice thermodynamic volume growth rate",
+                                   "description": "sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "dvidtt",
+                                   "dimensions": "1D"},
+                    "PI_STRESS" : {"units": "N",
+                                   "long_name": "pack ice internal stress",
+                                   "description": "sea ice internal stress times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "strint",
+                                   "CICE_vector_variables": ["strintx", "strinty"],
+                                   "dimensions": "1D"},
+                    "PI_SPEED"  : {"units": "m^3/second",
+                                   "long_name": "pack ice speed",
+                                   "description": "sea ice speed times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "speed",
+                                   "CICE_vector_variables": ["uvel", "vvel"],
+                                   "dimensions": "1D"},
+                    "PI_FRAZIL" : {"units": "m^3/day",
+                                   "long_name": "pack ice frazil volumetric growth",
+                                   "description": "sea ice frazil growth rate times grid cell area summed over spatial extent and masked with pack ice criteria",
+                                   "CICE_variable": "frazil",
+                                   "dimensions": "1D"}}
 }

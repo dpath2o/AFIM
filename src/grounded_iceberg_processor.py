@@ -100,7 +100,6 @@ class GroundedIcebergProcessor:
         self.GI_version_str = f"{self.GI_version:.2f}".replace('.', 'p')
         self.overwrite = overwrite
         self.ice_shelves_loaded = False
-
         if self.GI_thin_fact is not None:
             GI_thin_str = f"{self.GI_thin_fact:0.2f}".replace('.', 'p')
             self.GI_dataset_path = os.path.join(

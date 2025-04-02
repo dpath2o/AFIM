@@ -103,66 +103,45 @@ class FastIceProcessor:
     For more, see the full project repository:
     🔗 https://github.com/dpath2o/AFIM
     """
-
-    def __init__(self, sim_name, json_path=None, roll_win=None, P_log=None):
+    def __init__(self, sim_name, dt0_str=None, dtN_str=None, extra_cice_vars=None, hemisphere=None, P_log=None, json_path=None):
         """
-        Initialize the FastIceProcessor object.
-
-        Loads configuration, sets simulation paths, initializes logging,
-        and sets up grounded iceberg processor.
-
-        Parameters
-        ----------
-        sim_name  : str
-                    Name of the simulation to process.
-        json_path : str or Path, optional
-                    Path to the JSON configuration file.
-        roll_win  : int, optional
-                    Rolling window size in days.
-        P_log     : str or Path, optional
-                    Path to log file for output logging.
+        !!! GETTING STRAIGHT FROM BEGINNING IS SUPER IMPORTANT !!!
+        Intended use is for dt0_str and dtN_str to define a long period to run the analysis; then use process_window() method to
+        break this up into smaller self.roll_win periods
         """
         self.sim_name = sim_name
-        # Load config
         if json_path is None:
-            json_path = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
+            json_path = '/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json'
         with open(json_path, 'r') as f:
             self.config = json.load(f)
-        # Rolling window
-        self.roll_win = roll_win or self.config.get('roll_win', 15)
-        # Logging
+        self.cice_vars_reqd = self.config['CICE_dict']["FI_cice_vars_reqd"]
+        self.cice_cars_ext  = extra_cice_vars if extra_cice_vars is not None else self.config['CICE_dict']["FI_cice_vars_ext"]
+        self.dt0_str        = dt0_str if dt0_str is not None else self.config.get('dt0_str', '1993-01-01')
+        self.dtN_str        = dtN_str if dtN_str is not None else self.config.get('dtN_str', '1999-12-31')
+        self.dt_range       = pd.date_range(self.dt0_str, self.dtN_str)
+        self.dt0            = self.dt_range[0]
+        self.dtN            = self.dt_range[-1]
+        self.roll_win       = self.config.get('roll_win', 15) if self.compute_rolling_mean else 1
         if P_log is None:
-            P_log = Path(self.config['D_dict']['logs'], f"FastIceProcessor_{sim_name}.log")
+            P_log = Path(self.config['D_dict']['logs'], f'FastIceProcessor_{sim_name}.log')
         self.setup_logging(logfile=P_log)
-        # Core simulation config
-        self.sim_config      = self.config['sim_dict'][sim_name]
-        self.json_hemisphere = self.config.get('hemisphere', 'south')
-        self.var_list        = self.config['CICE_dict']['FI_vars']
-        self.chunk_dict      = self.config['CICE_dict']['FI_chunks']
-        self.FI_thresh       = self.config.get("FI_thresh", 5e-4)
-        self.FIC_scale       = self.config.get("FIC_scale", 1e9)
-        self.SIC_thresh      = self.config.get("SIC_thresh", 0.15)
-        self.SIC_scale       = self.config.get("SIC_scale", 1e12)
-        self.cm2m_fact       = self.config.get("cm2m_fact", 0.01)
-        # File system paths
-        self.sim_dir              = Path(self.config['D_dict']['AFIM_out'], sim_name, "history", "daily")
-        self.CICE_dict            = self.config['CICE_dict']
-        self.regrid_weights_path  = self.CICE_dict['P_reG_u2t_weights']
-        # Instantiate grounded iceberg/grid processor
+        self.sim_config = self.config['sim_dict'][sim_name]
+        self.sim_dir = Path(self.config['D_dict']['AFIM_out'], sim_name, 'history', 'daily')
         self.gi_processor = GroundedIcebergProcessor(self.config, sim_name)
-        self.use_gi       = self.gi_processor.use_gi
-        # For convenience, reference GI total area directly
+        self.gi_processor.load_grid_and_landmask()
+        self.use_gi = self.gi_processor.use_gi
         self.GI_total_area = self.gi_processor.total_area if self.use_gi else 0
+        hemisphere = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
+        self.define_hemisphere(hemisphere)
+        self.FI_thresh = self.config.get('FI_thresh', 0.0005)
+        self.FIC_scale = self.config.get('FIC_scale', 1e9)
+        self.SIC_thresh = self.config.get('SIC_thresh', 0.15)
+        self.SIC_scale = self.config.get('SIC_scale', 1e12)
+        self.cm2m_fact = self.config.get('cm2m_fact', 0.01)
+        self.CICE_dict = self.config['CICE_dict']
+        self.regrid_weights_path = self.CICE_dict['P_reG_u2t_weights']
 
     def setup_logging(self, logfile=None):
-        """
-        Setup logging to console and file.
-
-        Parameters
-        ----------
-        logfile : str or Path, optional
-                  Log file path. If None, defaults to stdout only.
-        """
         self.logger = logging.getLogger(self.sim_name)
         self.logger.setLevel(logging.INFO)
         if not self.logger.handlers:
@@ -178,8 +157,6 @@ class FastIceProcessor:
                 self.logger.addHandler(fh)
 
     def define_hemisphere(self, hemisphere):
-        if hemisphere is None:
-            hemisphere = self.json_hemisphere
         if hemisphere.lower() in ['north', 'northern', 'nh', 'n', 'no']:
             self.hemisphere_geographic_extent = [0, 360, 0, 90]
             self.hemisphere_map_extent        = [-180,180,55,90]
@@ -187,6 +164,7 @@ class FastIceProcessor:
             self.hemisphere_map_text_location = [-120,56]
             self.hemisphere_abbreviation      = 'NH'
             self.hemisphere_nj_slice          = slice(540,1080)
+            self.hemisphere                   = 'north'
         elif hemisphere.lower() in ['south', 'southern', 'sh', 's', 'so']:
             self.hemisphere_geographic_extent = [0, 360, -90, 0]
             self.hemisphere_map_extent        = [-180,180,-90,-55]
@@ -194,439 +172,352 @@ class FastIceProcessor:
             self.hemisphere_map_text_location = [0,-90]
             self.hemisphere_abbreviation      = 'SH'
             self.hemisphere_nj_slice          = slice(0,540)
+            self.hemisphere                   = 'north'
         else:
             raise ValueError(f"Invalid hemisphere '{hemisphere}'. Valid options are: "
                              "['north', 'south', 'northern', 'southern', 'sh', 'nh', 'SH', 'NH']")
 
-    def slice_hemisphere(self, ds):
-        """
-        Define which hemisphere slice to use.
+    def slice_hemisphere(self, var_dict):
+        return {k: v.isel(nj=self.hemisphere_nj_slice) for k, v in var_dict.items()}
 
-        Parameters
-        ----------
-        hemisphere : str
-                     Hemisphere keyword ('north' or 'south') to configure slicing.
-        """
-        return ds.isel(nj=self.hemisphere_nj_slice)
+    def _extract_cice_vars_from_PI_var_dict(self, FI_var_list):
+        fi_meta = self.config["FI_var_dict"]
+        FI_var_set_out = set()
+        for v in FI_var_list:
+            meta = fi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable")
+            vec_vars = meta.get("CICE_vector_variables", [])
+            # Skip derived output variables that aren't actually in the model dataset
+            if cice_var and cice_var not in ['speed', 'strint', 'strair', 'strocn', 'strtlt', 'strcor']:
+                FI_var_set_out.add(cice_var)
+            # Always add vector components
+            if isinstance(vec_vars, list):
+                FI_var_set_out.update(vec_vars)
+        # Always include aice (used in masking and core metrics)
+        FI_var_set_out.add("aice")
+        self.logger.debug(f"🧾 CICE variables required for computation: {sorted(FI_var_set_out)}")
+        return sorted(FI_var_set_out)
 
-    def load_data_window(self):
-        """
-        Slice dataset for the currently defined hemisphere.
+    def load_obs_climatology(self, doy_start):
+        csv_path = self.config['sea_ice_dict']['F_AF2020_cli_csv']
+        df = pd.read_csv(csv_path)
+        row = df[df['DOY_start'] == doy_start].copy()
+        row = row.rename(columns={'Circumpolar': 'circumpolar',
+                                  'IOsector': 'IOsector'
+                                  'WPOsector': 'WPOsector',
+                                  'RSsector': 'RSsector',
+                                  'BASsector': 'BASsector',
+                                  'WSsector': 'WSsector'})
+        sectors = ['circumpolar', 'IOsector', 'WPOsector', 'RSsector', 'BASsector', 'WSsector']
+        return row[sectors].reset_index(drop=True)
 
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Input dataset.
+    def _load_obs_gridded(self, P_orgs):
+        FI_obs = xr.open_mfdataset(
+            P_orgs,
+            combine='nested',
+            concat_dim='time',
+            parallel=True,
+            chunks='auto',
+            engine='netcdf4'
+        )
+        mask = xr.where(FI_obs['Fast_Ice_Time_series'] >= 4, 1, np.nan)
+        FI_obs_mask = FI_obs.where(mask)
+        FI_reG, lon_reG, lat_reG = self.AFdb_regrid_to_tgrid(FI_obs_mask)
+        # need to add a method here to get FI_obs time units which are in 'days since 2000-01-01 00:00:00'
+        # to 't_dim'
+        FI = (('t_FI_obs', 'nj', 'ni'),
+              FI_reG.data,
+              {'long_name': FI_obs_mask['Fast_Ice_Time_series'].attrs['long_name']})
+        t_alt    = (('t_FI_obs'),
+                    FI_obs_mask.date_alt.values,
+                    {'long_name'   : FI_obs_mask.date_alt.attrs['long_name'],
+                     'description' : FI_obs_mask.date_alt.attrs['description']})
+        t_coords = (('t_FI_obs'),
+                    FI_obs_mask.time.values,
+                    {'long_name'   : FI_obs_mask.time.attrs['long_name'],
+                     'description' : FI_obs_mask.time.attrs['description'],
+                     'units'       : FI_obs_mask.time.attrs['units']}) # "days since 2000-1-1 0:0:0" ;
+        x_coords = (('ni'),
+                    lon_reG.values,
+                    {'long_name': 'longitude',
+                     'units'    : 'degrees_north'})
+        y_coords = (('nj'),
+                    lat_reG.values,
+                    {'long_name': 'latitude',
+                     'units'    : 'degrees_east'})
+        return xr.Dataset({'FI'       : FI,
+                           'FI_t_alt' : t_alt },
+                          coords=dict(t_FI_obs=t_coords, lon=x_coords, lat=y_coords))
 
-        Returns
-        -------
-        xarray.Dataset
-            Dataset sliced along nj dimension.
-        """
-        dates = pd.date_range(self.dtC - pd.Timedelta(days=self.roll_win // 2),
-                              self.dtC + pd.Timedelta(days=self.roll_win // 2))
-        self.dt0_str = dates[0].strftime('%Y-%m-%d')
-        self.dtN_str = dates[-1].strftime('%Y-%m-%d')
-        files = [self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc" for d in dates if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()]
-        if not files:
-            raise FileNotFoundError(f"No files found for window around {self.dtC}")
-        preprocess = lambda ds: ds[self.var_list]
-        ds = xr.open_mfdataset(files, combine='by_coords', parallel=True,
-                               preprocess=preprocess, chunks=self.chunk_dict)
-        return ds
+    def AFdb_regrid_to_tgrid(self, FI_obs_native):
+        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid...")
+        self.logger.info("\t1st: converting 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordinates")
+        crs_nsidc   = CRS.from_epsg(3412)
+        crs_wgs84   = CRS.from_epsg(4326)
+        transformer = Transformer.from_crs(crs_nsidc, crs_wgs84, always_xy=True)
+        x, y        = FI_obs_native['x'].values, FI_obs_native['y'].values
+        X, Y        = np.meshgrid(x, y)
+        lon, lat    = transformer.transform(X, Y)
+        FI_OBS_GRD  = xr.Dataset({ 'lon' : (('y', 'x'), lon),
+                                   'lat' : (('y', 'x'), lat)})
+        self.logger.info("\t 2nd: regrid ...")
+        t1 = time.time()
+        with suppress_stderr():
+            regridder = xe.Regridder(FI_OBS_GRD, self.gi_processor.G_t, method="bilinear", periodic=True, weights=self.config["sea_ice_dict"]["AF_reG_weights"])
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        lon_reG = regridder(FI_OBS_GRD["lon"])
+        lat_reG = regridder(FI_OBS_GRD["lat"])
+        FI_reG  = regridder(FI_obs_native["Fast_Ice_Time_series"])
+        return FI_reG, lon_reG, lat_reG
 
-    def regrid_to_tgrid(self, ds):
-        """
-        Regrid vector components (uvel, vvel) from u-grid to t-grid.
+    def filter_obs_gridded_by_date(self, start_date, end_date):
+        D_obs = Path(self.config['sea_ice_dict']['D_AF2020_db_org'])
+        yrs_reqd = set([start_date.year, end_date.year])
+        P_orgs = [D_obs / f"FastIce_70_{yr}.nc" for yr in yrs_reqd]
+        ds = self._load_obs_gridded(P_orgs)
+        # Convert FI_t_alt (int like 20000101) to datetime
+        alt_dates = pd.to_datetime(ds['FI_t_alt'].values.astype(str), format='%Y%m%d')
+        # Use where logic to find which obs period includes start_date
+        valid_idx = (alt_dates >= pd.to_datetime(start_date)) & (alt_dates <= pd.to_datetime(end_date))
+        matched = ds.sel(t_FI_obs=valid_idx)
+        if matched.dims['t_FI_obs'] == 0:
+            self.logger.warning(f"No matching observational dates found between {start_date} and {end_date}")
+        return matched
 
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Dataset containing 'uvel' and 'vvel'.
+    def create_obs_gridded_climatology(self):
+        P_zarr = Path(self.config['sea_ice_dict']["P_AF_2020db_avg"])
+        if P_zarr.exists():
+            self.logger.info("Averaged observational gridded climatology already exists.")
+            return xr.open_zarr(P_zarr)
+        self.logger.info("Averaged observational gridded climatology does NOT exist ... creating now")
+        # Load all gridded obs, already regridded and with date_alt available
+        D_obs = Path(self.config['sea_ice_dict']['D_AF2020_db_org'])
+        P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
+        ds_all = self._load_obs_gridded(P_orgs)
+        # Convert alt date to datetime
+        alt_dates = pd.to_datetime(ds_all['FI_t_alt'].values.astype(str), format='%Y%m%d')
+        doy_vals = alt_dates.dayofyear
+        # Add DOY as coord for grouping
+        ds_all = ds_all.assign_coords(doy=("t_FI_obs", doy_vals))
+        # Group by DOY and average
+        grouped = ds_all.groupby("doy").mean(dim="t_FI_obs", skipna=True)
+        # Rename DOY dim to something more descriptive
+        grouped = grouped.rename_dims({"doy": "t_doy"})
+        grouped = grouped.rename_vars({"FI": "FI_OBS_GRD"})
+        # Save to Zarr
+        grouped.to_zarr(P_zarr)
+        self.logger.info(f"Saved climatology to {P_zarr}")
+        return grouped
 
-        Returns
-        -------
-        tuple of xarray.DataArray
-            Regridded u and v velocities.
-        """
-        self.logger.info("Regridding uvel and vvel to T-grid...")
+    def load_data_window(self, window_start):
+        """Load 15-day window of CICE data and attach observational climatology and gridded data."""
+        window_end = window_start + pd.Timedelta(days=self.roll_win - 1)
+        # Load observational climatology for the matching DOY window
+        doy_start = int(window_start.strftime('%j'))
+        cli_df = self.load_obs_climatology(doy_start)
+        sectors = cli_df.columns.tolist()
+        # Load or compute gridded obs if within range, else use climatology
+        if pd.Timestamp('2000-03-01') <= window_start <= pd.Timestamp('2018-03-31'):
+            obs_gridded = self.filter_obs_gridded_by_date(window_start, window_end)
+            obs_grd_data = obs_gridded['FI'].mean(dim='t_FI_obs', skipna=True).expand_dims({'t_obs_FI': [doy_start]})
+        else:
+            clim_all = self.create_obs_gridded_climatology()
+            obs_grd_data = clim_all['FI_OBS_GRD'].sel(t_doy=doy_start).expand_dims({'t_obs_FI': [doy_start]})
+        # Load CICE model files for window
+        P_CICE_orgs = [
+            self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc"
+            for d in self.dt_range
+            if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()
+        ]
+        if not P_CICE_orgs:
+            raise FileNotFoundError(f"No CICE files found for window around {window_start}")
+        self.logger.debug(f"Loading model files: {P_CICE_orgs}")
+        t1 = time.time()
+        preprocess = lambda ds: ds[list(self.cice_var_list)]
+        CICE = xr.open_mfdataset(P_CICE_orgs, combine='by_coords', parallel=True, preprocess=preprocess)
+        self.logger.info(f"✅ Model dataset loaded: shape {CICE.sizes}, time: {time.time() - t1:.2f} s")
+        # Attach observational climatology (1D) and gridded (2D) into dataset
+        CICE['FI_OBS_CLI'] = (['t_obs_FI', 'sector'], cli_df.to_numpy()[np.newaxis, :])
+        CICE['FI_OBS_GRD'] = obs_grd_data
+        return CICE
+
+    def CICE_regrid_to_tgrid(self, ds):
+        self.logger.info("Regridding CICE 'uvel' and 'vvel' (sea ice velocity components) to T-grid...")
+        t1 = time.time()
         with suppress_stderr():
             regridder = xe.Regridder(self.gi_processor.G_u, self.gi_processor.G_t, method="bilinear", extrap_method="inverse_dist", periodic=True, weights=self.regrid_weights_path)
-        U_tgrid = regridder(ds["uvel"])
-        V_tgrid = regridder(ds["vvel"])
-        U_tgrid = self.slice_hemisphere(U_tgrid)
-        V_tgrid = self.slice_hemisphere(V_tgrid)
-        return U_tgrid, V_tgrid
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        u_reG = regridder(ds["uvel"])
+        v_reG = regridder(ds["vvel"])
+        return u_reG, v_reG
 
-    def compute_rolling_averages(self, ds):
-        """
-        Compute rolling averages over time for each fast ice-related variable.
-
-        Parameters
-        ----------
-        ds : xarray.Dataset
-             Dataset of raw model fields.
-
-        Returns
-        -------
-        dict of xarray.DataArray
-            Dictionary with variable names as keys and rolling-averaged DataArrays as values.
-        """
-        U_tgrid, V_tgrid = self.regrid_to_tgrid(ds)
-        ds = self.slice_hemisphere(ds)
-        self.logger.info("Computing rolling averages...")
-        roll = lambda v: ds[v].rolling(time=self.roll_win, center=True, min_periods=1).mean()
-        return {
-            'aice': roll('aice'),
-            'hi': roll('hi'),
-            'strength': roll('strength'),
-            'shear': roll('shear'),
-            'divu': roll('divu'),
-            'iage': roll('iage'),
-            'daidtd': roll('daidtd'),
-            'daidtt': roll('daidtt'),
-            'dvidtd': roll('dvidtd'),
-            'dvidtt': roll('dvidtt'),
-            'strint': np.sqrt(ds['strintx']**2 + ds['strinty']**2).rolling(time=self.roll_win, center=True, min_periods=1).mean(),
-            'speed': np.sqrt(U_tgrid**2 + V_tgrid**2).rolling(time=self.roll_win, center=True, min_periods=1).mean()
-        }
+    def dataset_to_dictionary(self, ds):
+        fi_meta = self.config["FI_var_dict"]
+        CICE_dict_unrolled = {}
+        for v in self.cice_vars_reqd:
+            if v in ds:
+                CICE_dict_unrolled[v] = ds[v]
+        uice, vice = self.regrid_to_tgrid(ds)
+        CICE_dict_unrolled['speed'] = np.sqrt(uice ** 2 + vice ** 2)
+        for out_var in fi_meta:
+            meta = fi_meta.get(out_var, {})
+            cice_var = meta.get("CICE_variable")
+            vec_vars = meta.get("CICE_vec_vars", [])
+            if vec_vars and cice_var:
+                if all(vv in ds for vv in vec_vars):
+                    CICE_dict_unrolled[cice_var] = np.sqrt(sum([ds[vv] ** 2 for vv in vec_vars]))
+                else:
+                    missing = [vv for vv in vec_vars if vv not in ds]
+                    self.logger.debug(f"⚠️ Skipping vector-derived var {out_var} — missing components: {missing}")
+            elif cice_var and cice_var in ds:
+                CICE_dict_unrolled[cice_var] = ds[cice_var]
+        self.logger.info(f"compute rolling mean for {self.roll_win}-days on CICE variables:\n{list(CICE_dict_unrolled.keys())}")
+        roll = lambda da: da.rolling(time=self.roll_win, center=True, min_periods=1).mean()
+        CICE_dict_rolled = {k: roll(v) for k, v in CICE_dict_unrolled.items()}
+        coarse = lambda da: da.coarsen(time=roll_win, boundary="trim").mean()
+        CICE_dict_coarsened = {k: coarse(v) for k, v in CICE_dict_rolled.items()}
+        CICE_dict_coarsened['FI_OBS_CLI'] = ds['FI_OBS_CLI']
+        CICE_dict_coarsened['FI_OBS_GRD'] = ds['FI_OBS_GRD']
+        return CICE_dict_coarsened
 
     def apply_FI_mask(self, roll_dict):
-        """
-        Apply fast ice masking based on thresholds for concentration and velocity.
+        self.fi_mask = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
+        return {k: v.where(self.fi_mask) for k, v in roll_dict.items()}, mask
 
-        Parameters
-        ----------
-        roll_dict : dict
-                    Dictionary of rolling-averaged variables.
-
-        Returns
-        -------
-        tuple
-            Masked variables and binary fast ice mask.
-        """
-        mask = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
-        return {k: v.where(mask) for k, v in roll_dict.items()}, mask
-
-    def compute_fast_ice_outputs(self, roll_mask_vars):
-        """
-        Compute fast ice metrics: 1D, 2D, and 3D outputs for spatial and temporal aggregation.
-
-        This method is the backbone of the class and is intended to be called by `process_window()`.
-
-        Parameters
-        ----------
-        roll_mask_vars : dict of xarray.DataArray
-                         Masked variables used for final computations.
-
-        Returns
-        -------
-        xarray.Dataset
-            Final dataset with all fast ice metrics.
-        """
-        roll_mask_vars = {k: v.compute() for k, v in roll_mask_vars.items()}
+    def compute_fast_ice_outputs(self, cice_vars_dict):
+        self.logger.info("\n *** COMPUTING FAST ICE OUTPUTS ***")
+        self.logger.info("1: bring CICE variables into memory")
+        t1 = time.time()
+        cice_vars_dict = {k: v.compute() for k, v in cice_vars_dict.items()}
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        self.logger.info("2: SLICE HEMISPHERE")
+        t1 = time.time()
+        cice_vars_dict = self.slice_hemisphere(cice_vars_dict)
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        self.logger.info("3: define some useful variables for this method")
         grid_cell_area = self.gi_processor.G_t['area'].isel(nj=self.hemisphere_nj_slice)
-        spatial_dims   = self.CICE_dict['spatial_dims']
-        time_dim       = self.CICE_dict['time_dim']
-        time_coords    = roll_mask_vars['aice'].time.values
+        spatial_dims   = self.CICE_dict['spatial_dims']   # ["nj","ni"]
+        CICE_time_dim  = self.CICE_dict['time_dim']       # 'time'
+        time_dim       = self.CICE_dict['FI_time_dim']    # 't_dim' which is different from CICE time dimensions which is 'time'
+        three_dims     = [time_dim, spatial_dims[:] ]        # needs to be a list of strings 't_dim', 'nj', 'ni'
+        time_coords    = self.dtC_range # or maybe we should use ---> cice_vars_dict['aice'].time.values
         lon_coords     = self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values
         lat_coords     = self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values
         lon_coord_name = self.CICE_dict['FI_lon_coord']
         lat_coord_name = self.CICE_dict['FI_lat_coord']
-        FI_time_dim    = self.CICE_dict['FI_time_dim']
         cm2m           = self.cm2m_fact
         roll_win       = self.roll_win
-        self.logger.info("compute fast ice 1D variables:")
-        t0       = time.time()
-        fia_roll = ((roll_mask_vars['aice']        * grid_cell_area).sum(dim=spatial_dims, skipna=True) / self.FIC_scale)
-        fiv_roll = ((roll_mask_vars['hi']          * grid_cell_area).sum(dim=spatial_dims, skipna=True) / self.FIC_scale)
-        fisth_td = ((roll_mask_vars['strength']    * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fish_td  = ((roll_mask_vars['shear']       * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fidiv_td = ((roll_mask_vars['divu']        * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fiag_td  = ((grid_cell_area / roll_mask_vars['iage']).sum(dim=spatial_dims, skipna=True))
-        fiad_td  = ((roll_mask_vars['daidtd']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fiat_td  = ((roll_mask_vars['daidtt']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fivd_td  = ((roll_mask_vars['dvidtd']*cm2m * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fivt_td  = ((roll_mask_vars['dvidtt']*cm2m * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        fistr_td = ((roll_mask_vars['strint']      * grid_cell_area).sum(dim=spatial_dims, skipna=True))
-        if self.use_gi:
-            fia = fia_roll.values + self.GI_total_area
-            fiv = fiv_roll.values + self.GI_total_area
-        else:
-            fia = fia_roll.values
-            fiv = fiv_roll.values
-        FIA       = (time_dim,
-                    fia,
-                    {'units'      : '1000-km^2',
-                     'long_name'  : 'fast ice area',
-                     'description': 'sea ice area summed over spatial extent and masked with fast ice criteria'})
-        FIV       = (time_dim,
-                    fiv,
-                    {'units'      : '1000-km^3',
-                     'long_name'  : 'fast ice volume',
-                     'description': 'sea ice volume summed over spatial extent and masked with fast ice criteria'})
-        FI_STRONG = (time_dim,
-                    fisth_td.data,
-                    {'units'      : 'N',
-                     'long_name'  : 'fast ice strength',
-                     'description': 'sea ice strength times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_SHEAR  = (time_dim,
-                    fish_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'fast ice shear rate',
-                     'description': 'sea ice shear times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_DIV    = (time_dim,
-                     fidiv_td.data,
-                     {'units'      : 'm^2/day',
-                      'long_name'  : 'fast ice divergence rate',
-                      'description': 'sea ice divergence times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_AGING  = (time_dim,
-                    fiag_td.data,
-                    {'units'      : 'm^2/year',
-                     'long_name'  : 'fast ice ageing rate',
-                     'description': 'sea ice area divided by ice age summed over spatial extent and masked with fast ice criteria'})
-        FI_AGROM  = (time_dim,
-                    fiad_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'fast ice mechanical area growth rate',
-                     'description': 'sea ice area tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_AGROT  = (time_dim,
-                    fiat_td.data,
-                    {'units'      : 'm^2/day',
-                     'long_name'  : 'fast ice thermodynamic area growth rate',
-                     'description': 'sea ice area tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_VGROM  = (time_dim,
-                    fivd_td.data,
-                    {'units'      : 'm^3/day',
-                     'long_name'  : 'fast ice mechanical volume growth rate',
-                     'description': 'sea ice volume tendency dynamics (mechanical) times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_VGROT  = (time_dim,
-                    fivt_td.data,
-                    {'units'      : 'm^3/day',
-                     'long_name'  : 'fast ice thermodynamic volume growth rate',
-                     'description': 'sea ice volume tendency thermodynamics times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        FI_STRESS = (time_dim,
-                     fistr_td.data,
-                     {'units'      : 'N',
-                      'long_name'  : 'fast ice internal stress',
-                      'description': 'sea ice internal stress times grid cell area summed over spatial extent and masked with fast ice criteria'})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+        fi_meta        = self.config["FI_var_dict"]
+        one_d_list     = [v for v in fi_meta.get(v, {}).get("dimensions") == "1D"]
+        three_d_list   = [v for v in fi_meta.get(v, {}).get("dimensions") == "3D"]
+        two_d_list     = [v for v in fi_meta.get(v, {}).get("dimensions") == "2D"]
+        #################################
+        #######   1D VARIABLES   ########
+        #################################
+        self.logger.info("4: COMPUTE 1D OUTPUT VARIABLES")
+        t1 = time.time()
+        one_d_metrics = {}
+        for v in one_d_list:
+            if v.endswith("_SD") or (v in ['FIA_CLI']):
+                continue
+            meta     = fi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable", None)
+            self.logger.debug(f"\t📦 Available keys in cice_vars_dict: {list(cice_vars_dict.keys())}")
+            if not cice_var or cice_var not in cice_vars_dict.keys():
+                self.logger.warning(f"\t⚠️ Skipping 1D metric {v} — source variable '{cice_var}' missing.")
+                continue
+            else:
+                self.logger.debug(f"\t✅ Creating 1D metric {v} — source variable '{cice_var}'")
+            if v == "FIA":
+                one_d_metrics[v] = ((cice_vars_dict[cice_var] * grid_cell_area).sum(dim=spatial_dims)) / self.FIC_scale
+            elif v == "FIE" and hasattr(self, "fi_mask"):
+                one_d_metrics[v] = ((self.fi_mask * grid_cell_area).sum(dim=spatial_dims)) / self.FIC_scale
+            elif "AGING" in v:
+                one_d_metrics[v] = (grid_cell_area / cice_vars_dict[cice_var]).sum(dim=spatial_dims)
+            elif "VGRO" in v or "FRAZIL" in v:
+                one_d_metrics[v] = (cice_vars_dict[cice_var] * cm2m * grid_cell_area).sum(dim=spatial_dims)
+            else:
+                one_d_metrics[v] = (cice_vars_dict[cice_var] * grid_cell_area).sum(dim=spatial_dims)
+        one_d_vars = {k: xr.DataArray(data=v.data,
+                                      dims=(time_dim,),
+                                      coords={time_dim: time_coords},
+                                      attrs=fi_meta.get(k, {}))
+                      for k, v in one_d_metrics.items()}
+        one_d_vars['FIA_OBS'] = cice_vars_dict['FI_OBS_CLI']
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        self.logger.debug(f"\t1D vars computed: {list(one_d_vars.keys())}")
         #################################
         #######   3D VARIABLES   ########
-        ################################
-        self.logger.info(f"coarsen fast ice rolling averages to {roll_win}-days--i.e. 3D variables")
-        t0    = time.time()
-        fic   = roll_mask_vars['aice'].coarsen(time=roll_win, boundary="trim").mean()
-        fihi  = roll_mask_vars['hi'].coarsen(time=roll_win, boundary="trim").mean()
-        fisth = roll_mask_vars['strength'].coarsen(time=roll_win, boundary="trim").mean()
-        fish  = roll_mask_vars['shear'].coarsen(time=roll_win, boundary="trim").mean()
-        fidiv = roll_mask_vars['divu'].coarsen(time=roll_win, boundary="trim").mean()
-        fiag  = roll_mask_vars['iage'].coarsen(time=roll_win, boundary="trim").mean()
-        fiad  = roll_mask_vars['daidtd'].coarsen(time=roll_win, boundary="trim").mean()
-        fiat  = roll_mask_vars['daidtt'].coarsen(time=roll_win, boundary="trim").mean()
-        fivd  = roll_mask_vars['dvidtd'].coarsen(time=roll_win, boundary="trim").mean()
-        fivt  = roll_mask_vars['dvidtt'].coarsen(time=roll_win, boundary="trim").mean()
-        fistr = roll_mask_vars['strint'].coarsen(time=roll_win, boundary="trim").mean()
-        FI_time_coords = fic.time.values
-        FIC   = (self.CICE_dict['FI_three_dims'],
-                 fic.values,
-                 {'units'      : '%/grid-cell',
-                  'long_name'  : 'fast ice concentration',
-                  'description': 'sea ice concentration per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIHI  = (self.CICE_dict['FI_three_dims'],
-                 fihi.values,
-                 {'units'      : 'm',
-                  'long_name'  : 'fast ice thickness',
-                  'description': 'sea ice thickness per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FISTH = (self.CICE_dict['FI_three_dims'],
-                 fisth.values,
-                 {'units'      : 'N/m',
-                  'long_name'  : 'fast ice strength',
-                  'description': 'sea ice strength per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FISH  = (self.CICE_dict['FI_three_dims'],
-                 fish.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'fast ice shear',
-                  'description': 'sea ice shear per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIDIV = (self.CICE_dict['FI_three_dims'],
-                 fidiv.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'fast ice divergence',
-                  'description': 'sea ice divergence per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIAG  = (self.CICE_dict['FI_three_dims'],
-                 fiag.values,
-                 {'units'      : 'years',
-                  'long_name'  : 'fast ice age',
-                  'description': 'sea ice age per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIAD  = (self.CICE_dict['FI_three_dims'],
-                 fiad.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'fast ice area tendency dynamics (mechanical)',
-                  'description': 'sea ice area tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIAT  = (self.CICE_dict['FI_three_dims'],
-                 fiat.values,
-                 {'units'      : '%/day',
-                  'long_name'  : 'fast ice area tendency thermodynamics',
-                  'description': 'sea ice area tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIVD  = (self.CICE_dict['FI_three_dims'],
-                 fivd.values,
-                 {'units'      : 'cm/day',
-                  'long_name'  : 'fast ice volume tendency dynamics (mechanical)',
-                  'description': 'sea ice volume tendency dynamics (mechanical) per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FIVT  = (self.CICE_dict['FI_three_dims'],
-                 fivt.values,
-                 {'units'      : 'cm/day',
-                  'long_name'  : 'fast ice volume tendency thermodynamics',
-                  'description': 'sea ice volume tendency thermodynamics per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        FISTR = (self.CICE_dict['FI_three_dims'],
-                 fistr.values,
-                 {'units'      : 'N/m^2',
-                  'long_name'  : 'fast ice internal stress',
-                  'description': 'sea ice internal stress per grid cell masked with fast ice criteria and coarsened to fast ice mask temporal window'})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+        #################################
+        self.logger.info("5: COMPUTE 3D OUTPUT VARIABLES:")
+        self.logger.info("\t very little processing done and essentially CICE variables are only filtered/masked for fast ice criteria")
+        t1 = time.time()
+        three_d_vars = {}
+        for v in three_d_list:
+            if v.endswith("_SD") or (v in ['FI_GRD']):
+                continue
+            meta     = fi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable", None)
+            self.logger.debug(f"\t📦 Available keys in cice_vars_dict: {list(cice_vars_dict.keys())}")
+            if not cice_var or cice_var not in cice_vars_dict.keys():
+                self.logger.warning(f"\t⚠️ Skipping 3D metric {v} — source variable '{cice_var}' missing.")
+                continue
+            else:
+                self.logger.debug(f"\t✅ Creating 3D metric {v} — source variable '{cice_var}'")
+                data = cice_vars_dict[cice_var]
+                if "VGRO" in v or "FZL" in v:
+                    data = data * cm2m
+                three_d_vars[v] = xr.DataArray(data   = data.data,
+                                               dims   = three_dims,
+                                               coords = {time_dim      : ((time_dim)  , time_coords),
+                                                         lon_coord_name: (spatial_dims, lon_coords),
+                                                         lat_coord_name: (spatial_dims, lat_coords)},
+                                               attrs  = meta)
+        three_d_vars['FI_OBS'] = cice_vars_dict['FI_OBS_GRD']
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        self.logger.debug(f"\t3D vars computed: {list(three_d_vars.keys())}")
         #################################
         #######   2D VARIABLES   ########
-        ################################
-        self.logger.info("compute temporal sums to give spatial distributions over time--i.e. 2D variables")
-        self.logger.info(f"\ttemporal mean over the period {self.dt0_str} to {self.dtN_str}")
-        t0       = time.time()
-        fip      = fic.sum(dim=time_dim)   / len(fic.time)                                 #units: % grid cell covered in sea ice
-        fihi_sd  = fihi.sum(dim=time_dim)  / (len(fihi.time)  * roll_mask_vars['hi'].max().values)      #units: m
-        fisth_sd = fisth.sum(dim=time_dim) / (len(fisth.time) * roll_mask_vars['strength'].max().values)#units: N/m
-        fish_sd  = fish.sum(dim=time_dim)  / (len(fish.time)  * roll_mask_vars['shear'].max().values)   #units: 1/day
-        fidiv_sd = fidiv.sum(dim=time_dim) / (len(fidiv.time) * roll_mask_vars['divu'].max().values)    #units: 1/day
-        fiag_sd  = fiag.sum(dim=time_dim)  / (len(fiag.time)  * roll_mask_vars['iage'].max().values)    #units: years
-        fiad_sd  = fiad.sum(dim=time_dim)  / (len(fiad.time)  * roll_mask_vars['daidtd'].max().values)  #units: 1/day
-        fiat_sd  = fiat.sum(dim=time_dim)  / (len(fiat.time)  * roll_mask_vars['daidtt'].max().values)  #units: 1/day
-        fivd_sd  = fivd.sum(dim=time_dim)  / (len(fivd.time)  * roll_mask_vars['dvidtd'].max().values)  #units: cm/day
-        fivt_sd  = fivt.sum(dim=time_dim)  / (len(fivt.time)  * roll_mask_vars['dvidtt'].max().values)  #units: cm/day
-        fistr_sd = fistr.sum(dim=time_dim) / (len(fistr.time) * roll_mask_vars['strint'].max().values)  #units: N/m^2
-        FIP      = (spatial_dims,
-                    fip.values,
-                    {'units'       : '% (()/)',
-                     'long_name'   : 'fast ice persistence',
-                     'description' : 'sum of sea ice concentration per grid cell over time masked with fast ice criteria and divide by total temporal length',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIHI_SD  = (spatial_dims,
-                    fihi_sd.values,
-                    {'units'       : '% (m)',
-                     'long_name'   : 'fast ice thickness spatial distribution over time',
-                     'description' : 'sum of sea ice thickness per grid cell over time multiplied by maximum thickness and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FISTH_SD = (spatial_dims,
-                    fisth_sd.values,
-                    {'units'       : '% (N/m)',
-                     'long_name'   : 'fast ice strength spatial distribution over time',
-                     'description' : 'sum of sea ice strength per grid cell over time divided by max strength and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FISH_SD  = (spatial_dims,
-                    fish_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'fast ice shear spatial distribution over time',
-                     'description' : 'sum of sea ice shear per grid cell over time divided by max shear and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIDIV_SD = (spatial_dims,
-                    fidiv_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'fast ice divergence spatial distribution over time',
-                     'description' : 'sum of sea ice divergence per grid cell over time divided by max divergence and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIAG_SD  = (spatial_dims,
-                    fiag_sd.values,
-                    {'units'       : '% (years)',
-                     'long_name'   : 'fast ice age spatial distribution over time',
-                     'description' : 'sum of sea ice age per grid cell over time divided by max age and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIAD_SD  = (spatial_dims,
-                    fiad_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'fast ice area-mechanical-tendency spatial distribution over time',
-                     'description' : 'sum of ice area-mechanical-tendency per grid cell over time divided by max decrement and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIAT_SD  = (spatial_dims,
-                    fiat_sd.values,
-                    {'units'       : '% (1/day)',
-                     'long_name'   : 'fast ice area-thermodynamic-tendency spatial distribution over time',
-                     'description' : 'sum of ice area-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIVD_SD  = (spatial_dims,
-                    fivd_sd.values*cm2m,
-                    {'units'       : '% (m/day)',
-                     'long_name'   : 'fast ice volume-mechanical-tendency spatial distribution over time',
-                     'description' : 'sum of ice volume-mechanical-tendency decrement per grid cell over time divided by max decrement and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FIVT_SD  = (spatial_dims,
-                    fivt_sd.values*cm2m,
-                    {'units'       : '% (m/day)',
-                     'long_name'   : 'fast ice volume-thermodynamic-tendency spatial distribution over time',
-                     'description' : 'sum of ice volume-thermodynamic-tendency per grid cell over time divided by max increment and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        FISTR_SD = (spatial_dims,
-                    fistr_sd.values,
-                    {'units'       : '% (N/m^2)',
-                     'long_name'   : 'fast ice internal stress spatial distribution over time',
-                     'description' : 'sum of ice internal stress per grid cell over time divided by max stress and masked with fast ice criteria',
-                     'start_time'  : self.dt0_str,
-                     'stop_time'   : self.dtN_str})
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+        #################################
+        self.logger.info("6: COMPUTE 2D OUTPUT VARIABLES:")
+        self.logger.info("\t significant temporal averaging done to compute this portion of dataset ... can take a little bit of time")
+        t1 = time.time()
+        two_d_vars = {}
+        for v in two_d_list:
+            if v=='FIP_OBS':
+                continue
+            meta     = fi_meta.get(v, {})
+            cice_var = meta.get("CICE_variable", None)
+            self.logger.debug(f"\t📦 Available keys in cice_vars_dict: {list(cice_vars_dict.keys())}")
+            if not cice_var or cice_var not in cice_vars_dict.keys():
+                self.logger.warning(f"\t⚠️ Skipping 2D var {v} due to missing base variable '{cice_var}'")
+                continue
+            else:
+                self.logger.debug(f"\t✅ Creating 2D metric {v} — source variable '{cice_var}'")
+            da       = cice_vars_dict[cice_var]
+            norm     = da.sizes[time_dim]
+            data_sum = da.sum(dim=time_dim)
+            if v=='FIP':
+                data_mean = data_sum / norm
+            else:
+                max_val   = da.max().values
+                data_mean = data_sum / (norm * max_val)
+            two_d_vars[v] = xr.DataArray(data   = data_mean.data,
+                                         dims   = spatial_dims,
+                                         coords = {lon_coord_name: (spatial_dims, lon_coords),
+                                                   lat_coord_name: (spatial_dims, lat_coords)},
+                                             attrs={**meta,
+                                                    "start_time": self.dt0_str.isoformat() if isinstance(self.dt0_str, datetime) else self.dt0_str,
+                                                    "stop_time": self.dtN_str.isoformat() if isinstance(self.dtN_str, datetime) else self.dtN_str})
+        three_d_vars['FIP_OBS'] = cice_vars_dict['FI_OBS_GRD']
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
+        self.logger.debug(f"\t2D vars computed: {list(three_d_vars.keys())}")
         #######################################
         #######      OUTPUT DATASET     #######
         #######################################
-        self.logger.info("create output dataset:")
-        t0 = time.time()
-        FI = xr.Dataset(
-            {# 1D variables
-                'FIA'       : FIA,
-                'FIV'       : FIV,
-                'FI_STRONG' : FI_STRONG,
-                'FI_SHEAR'  : FI_SHEAR,
-                'FI_DIV'    : FI_DIV,
-                'FI_AGING'  : FI_AGING,
-                'FI_AGROM'  : FI_AGROM,
-                'FI_AGROT'  : FI_AGROT,
-                'FI_VGROM'  : FI_VGROM,
-                'FI_VGROT'  : FI_VGROT,
-                'FI_STRESS' : FI_STRESS,
-            # 2D variables
-                'FIP'      : FIP,
-                'FIHI_SD'  : FIHI_SD,
-                'FISTH_SD' : FISTH_SD,
-                'FISH_SD'  : FISH_SD,
-                'FIDIV_SD' : FIDIV_SD,
-                'FIAG_SD'  : FIAG_SD,
-                'FIAD_SD'  : FIAD_SD,
-                'FIAT_SD'  : FIAT_SD,
-                'FIVD_SD'  : FIVD_SD,
-                'FIVT_SD'  : FIVT_SD,
-                'FISTR_SD' : FISTR_SD,
-            # 3D variables
-                'FIC'   : FIC,
-                'FIHI'  : FIHI,
-                'FISTH' : FISTH,
-                'FISH'  : FISH,
-                'FIDIV' : FIDIV,
-                'FIAG'  : FIAG,
-                'FIAD'  : FIAD,
-                'FIAT'  : FIAT,
-                'FIVD'  : FIVD,
-                'FIVT'  : FIVT,
-                'FISTR' : FISTR
-            },
-            coords = {time_dim        : (time_dim     , time_coords),
-                      FI_time_dim     : (FI_time_dim  , FI_time_coords),
-                      lon_coord_name  : (spatial_dims , lon_coords),
-                      lat_coord_name  : (spatial_dims , lat_coords) }
-        )
+        self.logger.info("7: CREATE OUTPUT DATASET")
+        t1 = time.time()
+        FI = xr.Dataset({**one_d_vars, **three_d_vars, **two_d_vars})
         FI.attrs = {"title"              : "Landfast sea ice analysed from numerical sea ice model simulations",
                     "summary"            : "This dataset includes landfast sea ice variables and derived metrics "\
                                            "using a rolling window method then masking variables for threshold "\
@@ -649,52 +540,37 @@ class FastIceProcessor:
                     "geospatial_lat_max" : float(np.max(lat_coords)),
                     "geospatial_lon_min" : float(np.min(lon_coords)),
                     "geospatial_lon_max" : float(np.max(lon_coords))}
-        self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
         return FI
 
-    def process_window(self, dtC, hemisphere='south', ow_zarrs=False, save_zarrs=True):
-        """
-        Main entry point to process fast ice metrics for a single central date.
-
-        Parameters
-        ----------
-        dtC        : datetime
-                     Central date for the rolling window.
-        hemisphere : str
-                     Hemisphere to process ('north' or 'south').
-        ow_zarrs   : bool
-                     Overwrite existing Zarr file if True.
-        save_zarr  : bool
-                     Save result to disk as a Zarr dataset if True.
-
-        Returns
-        -------
-        xarray.Dataset
-            Fast ice dataset containing all computed metrics.
-        """
-        self.dtC = dtC
-        self.logger.info(f"\n\nProcessing window centered on {self.dtC} for {hemisphere}ern hemisphere")
-        ds = self.load_data_window()
-        self.define_hemisphere(hemisphere)
-        if self.use_gi:
-            self.gi_processor.load_AFIM_GI()
-        else:
-            self.gi_processor.load_grid_and_landmask()
-        roll_avg_dict = self.compute_rolling_averages(ds)
-        FI_masked_vars, _ = self.apply_FI_mask(roll_avg_dict)
-        FI = self.compute_fast_ice_outputs(FI_masked_vars)
-        if save_zarrs:
-            D_FI_zarr = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "FI")
-            F_FI_zarr = f"fast_ice_{self.dtC.strftime('%Y-%m-%d')}.zarr"
-            if not os.path.exists(D_FI_zarr):
+    def process_window(self, ow_zarrs=False):
+        import dask
+        dask.config.set(scheduler='single-threaded')
+        # we will always be computing a rolling mean for fast ice
+        dtC_list = pd.date_range( self.dt0 + pd.Timedelta(days=self.roll_win // 2),
+                                  self.dtN - pd.Timedelta(days=self.roll_win // 2),
+                                  freq=f'{self.roll_win}D')
+        ds_all = []
+        for dtC in dtC_list:
+            self.dt0_period = dtC - pd.Timedelta(days=self.roll_win // 2)
+            self.dtN_period = dtC + pd.Timedelta(days=self.roll_win // 2)
+            ds              = self.load_data_window(self.dt0_period)
+            ds_dict         = self.dataset_to_dictionary(ds)
+            masked_vars     = self.apply_FI_mask(ds_dict)
+            FI              = self.compute_fast_ice_outputs(masked_vars)
+            D_FI_zarr       = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "FI")
+            F_FI_zarr       = f"fast_ice_{dtC.strftime('%Y-%m-%d')}.zarr"
+            P_FI_zarr       = Path(D_FI_zarr,F_FI_zarr)
+            if not D_FI_zarr.exists():
                 os.makedirs(D_FI_zarr)
-            P_FI_zarr = Path(D_FI_zarr,F_FI_zarr)
-            if not os.path.exists(P_FI_zarr) or (os.path.exists(P_FI_zarr) and ow_zarrs):
-                self.logger.info(f"*** writing FI to disk: {P_FI_zarr}")
-                t0 = time.time()
+            if not P_FI_zarr.exists() or ow_zarrs:
+                self.logger.info(f"*** writing FI dataset to disk: {P_FI_zarr}")
+                t1 = time.time()
                 FI.to_zarr(P_FI_zarr, mode='w')
-                self.logger.info(f"\ttime taken: {time.time()-t0} seconds")
+                self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
             else:
-                self.logger.info("FI already exists or over-writting zarrs disabled ***")
-                self.logger.info(f"\tskipping: {P_FI_zarr}")
-        return FI
+                self.logger.info(f"*** FI dataset zarr file already exists and overwriting disabled:\n\t{P_FI_zarr}")
+            ds_all.append(FI)
+        FI_merged = xr.concat(ds_all, dim='time')
+        self.logger.info("✅ Pack ice processing complete.")
+        return FI_merged
