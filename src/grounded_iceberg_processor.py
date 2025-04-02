@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import pandas as pd
 from pathlib import Path
-import os
+import os, json
 import pygmt
 import geopandas as gpd
 
@@ -76,7 +76,7 @@ class GroundedIcebergProcessor:
     Shapefile source:     SCAR Antarctic Digital Database (ADD) or similar
     """
 
-    def __init__(self, config, sim_name, overwrite=False):
+    def __init__(self, P_json=None, sim_name=None, overwrite=False):
         """
         Initialize the GroundedIcebergProcessor with configuration data and simulation name.
 
@@ -89,12 +89,15 @@ class GroundedIcebergProcessor:
         overwrite : bool, optional
             If True, allows overwriting of existing NetCDF outputs. Defaults to False.
         """
-        self.config = config
+        if P_json is None:
+            P_json = '/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json'
+        with open(P_json, 'r') as f:
+            self.config = json.load(f)
         self.sim_name = sim_name
-        self.sim_config = config['sim_dict'][sim_name]
-        self.CICE_dict = config['CICE_dict']
-        self.GI_dict = config['GI_dict']
-        self.FIC_scale = config.get("FIC_scale", 1e9)
+        self.sim_config = self.config['sim_dict'][sim_name]
+        self.CICE_dict = self.config['CICE_dict']
+        self.GI_dict = self.config['GI_dict']
+        self.FIC_scale = self.config.get("FIC_scale", 1e9)
         self.GI_thin_fact = self.sim_config.get('GI_thin_fact')
         self.GI_version = self.sim_config.get('GI_version', 1.5)
         self.GI_version_str = f"{self.GI_version:.2f}".replace('.', 'p')

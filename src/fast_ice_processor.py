@@ -115,21 +115,24 @@ class FastIceProcessor:
         with open(json_path, 'r') as f:
             self.config = json.load(f)
         self.cice_vars_reqd = self.config['CICE_dict']["FI_cice_vars_reqd"]
-        self.cice_cars_ext  = extra_cice_vars if extra_cice_vars is not None else self.config['CICE_dict']["FI_cice_vars_ext"]
+        self.cice_vars_ext  = extra_cice_vars if extra_cice_vars is not None else self.config['CICE_dict']["FI_cice_vars_ext"]
+        self.cice_var_list  = self.cice_vars_reqd + self.cice_vars_ext
         self.dt0_str        = dt0_str if dt0_str is not None else self.config.get('dt0_str', '1993-01-01')
         self.dtN_str        = dtN_str if dtN_str is not None else self.config.get('dtN_str', '1999-12-31')
         self.dt_range       = pd.date_range(self.dt0_str, self.dtN_str)
         self.dt0            = self.dt_range[0]
         self.dtN            = self.dt_range[-1]
-        self.roll_win       = self.config.get('roll_win', 15) if self.compute_rolling_mean else 1
+        self.roll_win       = self.config.get('roll_win', 15)
         if P_log is None:
             P_log = Path(self.config['D_dict']['logs'], f'FastIceProcessor_{sim_name}.log')
         self.setup_logging(logfile=P_log)
         self.sim_config = self.config['sim_dict'][sim_name]
         self.sim_dir = Path(self.config['D_dict']['AFIM_out'], sim_name, 'history', 'daily')
-        self.gi_processor = GroundedIcebergProcessor(self.config, sim_name)
+        self.gi_processor = GroundedIcebergProcessor(P_json=json_path, sim_name=sim_name)
         self.gi_processor.load_grid_and_landmask()
         self.use_gi = self.gi_processor.use_gi
+        if self.use_gi:
+            self.gi_processor.load_AFIM_GI()
         self.GI_total_area = self.gi_processor.total_area if self.use_gi else 0
         hemisphere = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
         self.define_hemisphere(hemisphere)
@@ -199,11 +202,11 @@ class FastIceProcessor:
         return sorted(FI_var_set_out)
 
     def load_obs_climatology(self, doy_start):
-        csv_path = self.config['sea_ice_dict']['F_AF2020_cli_csv']
+        csv_path = self.config['sea_ice_dict']['P_AF2020_cli_csv']
         df = pd.read_csv(csv_path)
         row = df[df['DOY_start'] == doy_start].copy()
         row = row.rename(columns={'Circumpolar': 'circumpolar',
-                                  'IOsector': 'IOsector'
+                                  'IOsector': 'IOsector',
                                   'WPOsector': 'WPOsector',
                                   'RSsector': 'RSsector',
                                   'BASsector': 'BASsector',
@@ -212,36 +215,30 @@ class FastIceProcessor:
         return row[sectors].reset_index(drop=True)
 
     def _load_obs_gridded(self, P_orgs):
-        FI_obs = xr.open_mfdataset(
-            P_orgs,
-            combine='nested',
-            concat_dim='time',
-            parallel=True,
-            chunks='auto',
-            engine='netcdf4'
-        )
-        mask = xr.where(FI_obs['Fast_Ice_Time_series'] >= 4, 1, np.nan)
-        FI_obs_mask = FI_obs.where(mask)
-        FI_reG, lon_reG, lat_reG = self.AFdb_regrid_to_tgrid(FI_obs_mask)
-        # need to add a method here to get FI_obs time units which are in 'days since 2000-01-01 00:00:00'
-        # to 't_dim'
-        FI = (('t_FI_obs', 'nj', 'ni'),
-              FI_reG.data,
-              {'long_name': FI_obs_mask['Fast_Ice_Time_series'].attrs['long_name']})
+        FI_obs = xr.open_mfdataset(P_orgs,
+                                   combine='nested',
+                                   concat_dim='time',
+                                   parallel=True,
+                                   chunks='auto',
+                                   engine='netcdf4')
+        FI_reG, lon_reG, lat_reG = self.AFdb_regrid_to_tgrid(FI_obs)
+        mask     = xr.where(FI_reG >= 4, 1, np.nan)
+        FI       = (('t_FI_obs', 'nj', 'ni'),
+                    FI_reG.where(mask).data,
+                    {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
         t_alt    = (('t_FI_obs'),
-                    FI_obs_mask.date_alt.values,
-                    {'long_name'   : FI_obs_mask.date_alt.attrs['long_name'],
-                     'description' : FI_obs_mask.date_alt.attrs['description']})
+                    FI_obs.date_alt.values,
+                    {'long_name'   : FI_obs.date_alt.attrs['long_name'],
+                     'description' : FI_obs.date_alt.attrs['description']})
         t_coords = (('t_FI_obs'),
-                    FI_obs_mask.time.values,
-                    {'long_name'   : FI_obs_mask.time.attrs['long_name'],
-                     'description' : FI_obs_mask.time.attrs['description'],
-                     'units'       : FI_obs_mask.time.attrs['units']}) # "days since 2000-1-1 0:0:0" ;
-        x_coords = (('ni'),
+                    FI_obs.time.values,
+                    {'description' : "Start date of 15- or 20-day image mosaic window.",
+                     'units'       : "days since 2000-1-1 0:0:0"})
+        x_coords = (('nj','ni'),
                     lon_reG.values,
                     {'long_name': 'longitude',
                      'units'    : 'degrees_north'})
-        y_coords = (('nj'),
+        y_coords = (('nj','ni'),
                     lat_reG.values,
                     {'long_name': 'latitude',
                      'units'    : 'degrees_east'})
@@ -250,17 +247,17 @@ class FastIceProcessor:
                           coords=dict(t_FI_obs=t_coords, lon=x_coords, lat=y_coords))
 
     def AFdb_regrid_to_tgrid(self, FI_obs_native):
+        from pyproj import CRS, Transformer
         self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid...")
         self.logger.info("\t1st: converting 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordinates")
         crs_nsidc   = CRS.from_epsg(3412)
         crs_wgs84   = CRS.from_epsg(4326)
         transformer = Transformer.from_crs(crs_nsidc, crs_wgs84, always_xy=True)
-        x, y        = FI_obs_native['x'].values, FI_obs_native['y'].values
-        X, Y        = np.meshgrid(x, y)
-        lon, lat    = transformer.transform(X, Y)
+        X, Y        = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
+        lon, lat    = transformer.transform(X,Y)
+        self.logger.info("\t 2nd: regrid ...")
         FI_OBS_GRD  = xr.Dataset({ 'lon' : (('y', 'x'), lon),
                                    'lat' : (('y', 'x'), lat)})
-        self.logger.info("\t 2nd: regrid ...")
         t1 = time.time()
         with suppress_stderr():
             regridder = xe.Regridder(FI_OBS_GRD, self.gi_processor.G_t, method="bilinear", periodic=True, weights=self.config["sea_ice_dict"]["AF_reG_weights"])
@@ -271,10 +268,10 @@ class FastIceProcessor:
         return FI_reG, lon_reG, lat_reG
 
     def filter_obs_gridded_by_date(self, start_date, end_date):
-        D_obs = Path(self.config['sea_ice_dict']['D_AF2020_db_org'])
+        D_obs    = Path(self.config['sea_ice_dict']['D_AF2020_db_org'])
         yrs_reqd = set([start_date.year, end_date.year])
-        P_orgs = [D_obs / f"FastIce_70_{yr}.nc" for yr in yrs_reqd]
-        ds = self._load_obs_gridded(P_orgs)
+        P_orgs   = [D_obs / f"FastIce_70_{yr}.nc" for yr in yrs_reqd]
+        ds       = self._load_obs_gridded(P_orgs)
         # Convert FI_t_alt (int like 20000101) to datetime
         alt_dates = pd.to_datetime(ds['FI_t_alt'].values.astype(str), format='%Y%m%d')
         # Use where logic to find which obs period includes start_date
@@ -287,7 +284,7 @@ class FastIceProcessor:
     def create_obs_gridded_climatology(self):
         P_zarr = Path(self.config['sea_ice_dict']["P_AF_2020db_avg"])
         if P_zarr.exists():
-            self.logger.info("Averaged observational gridded climatology already exists.")
+            self.logger.info(f"Averaged observational gridded climatology already exists\n{P_zarr}")
             return xr.open_zarr(P_zarr)
         self.logger.info("Averaged observational gridded climatology does NOT exist ... creating now")
         # Load all gridded obs, already regridded and with date_alt available
@@ -304,41 +301,57 @@ class FastIceProcessor:
         # Rename DOY dim to something more descriptive
         grouped = grouped.rename_dims({"doy": "t_doy"})
         grouped = grouped.rename_vars({"FI": "FI_OBS_GRD"})
-        # Save to Zarr
+        self.logger.info(f"gridded climatology now looks like\n{grouped}")
+        self.logger.info(f"writing this to {P_zarr}")
+        t1 = time.time()
         grouped.to_zarr(P_zarr)
-        self.logger.info(f"Saved climatology to {P_zarr}")
+        self.logger.info(f"\tzarr written in {time.time()-t1:0.2f} seconds")
         return grouped
 
     def load_data_window(self, window_start):
         """Load 15-day window of CICE data and attach observational climatology and gridded data."""
         window_end = window_start + pd.Timedelta(days=self.roll_win - 1)
+        self.logger.info(f"loading data for date period: {window_start} to {window_end}")
         # Load observational climatology for the matching DOY window
         doy_start = int(window_start.strftime('%j'))
+        self.logger.info(f"loading CSV climatology")
         cli_df = self.load_obs_climatology(doy_start)
         sectors = cli_df.columns.tolist()
         # Load or compute gridded obs if within range, else use climatology
         if pd.Timestamp('2000-03-01') <= window_start <= pd.Timestamp('2018-03-31'):
+            self.logger.info("using gridded observations")
             obs_gridded = self.filter_obs_gridded_by_date(window_start, window_end)
-            obs_grd_data = obs_gridded['FI'].mean(dim='t_FI_obs', skipna=True).expand_dims({'t_obs_FI': [doy_start]})
+            obs_grd_data = obs_gridded['FI'].mean(dim='t_FI_obs', skipna=True)#.expand_dims({'t_obs_FI': [doy_start]})
         else:
+            self.logger.info("using gridded climatology")
             clim_all = self.create_obs_gridded_climatology()
-            obs_grd_data = clim_all['FI_OBS_GRD'].sel(t_doy=doy_start).expand_dims({'t_obs_FI': [doy_start]})
-        # Load CICE model files for window
-        P_CICE_orgs = [
-            self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc"
-            for d in self.dt_range
-            if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()
-        ]
+            self.logger.info(f"selecting {doy_start}-DOY from gridded climatology to associate with this model period")
+            obs_grd_data = clim_all['FI_OBS_GRD'].sel(t_doy=doy_start)#.expand_dims({'t_obs_FI': [doy_start]})
+        self.logger.info("constructing list of CICE files to load for this period")
+        P_CICE_orgs = [self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc"
+                       for d in self.dt_period_list
+                       if (self.sim_dir / f"iceh.{d.strftime('%Y-%m-%d')}.nc").exists()]
         if not P_CICE_orgs:
             raise FileNotFoundError(f"No CICE files found for window around {window_start}")
-        self.logger.debug(f"Loading model files: {P_CICE_orgs}")
+        self.logger.info("Loading CICE files ...")
+        self.logger.debug(f"{P_CICE_orgs}")
         t1 = time.time()
         preprocess = lambda ds: ds[list(self.cice_var_list)]
         CICE = xr.open_mfdataset(P_CICE_orgs, combine='by_coords', parallel=True, preprocess=preprocess)
-        self.logger.info(f"✅ Model dataset loaded: shape {CICE.sizes}, time: {time.time() - t1:.2f} s")
-        # Attach observational climatology (1D) and gridded (2D) into dataset
-        CICE['FI_OBS_CLI'] = (['t_obs_FI', 'sector'], cli_df.to_numpy()[np.newaxis, :])
+        self.logger.info(f"\t✅ Model dataset loaded: shape {CICE.sizes}, time: {time.time() - t1:.2f} s")
+        self.logger.debug(f"climatology dataframe from CSV looks like\n{cli_df}")
+        if cli_df.shape[0] == 1:
+            data = cli_df.to_numpy()
+        else:
+            raise ValueError("Expected a single row from climatology CSV.")
+        CICE['FI_OBS_CLI'] = xr.DataArray( data,
+                                           dims=['t_doy', 'sector'],
+                                           coords={'t_doy'  : [doy_start],
+                                                   'sector' : cli_df.columns.tolist()} )
         CICE['FI_OBS_GRD'] = obs_grd_data
+        if 'doy' in CICE.coords:
+            CICE = CICE.drop_vars('doy')
+        self.logger.debug(f"returning load_data_window() method with a dataset that looks like\n{CICE}")
         return CICE
 
     def CICE_regrid_to_tgrid(self, ds):
@@ -357,7 +370,7 @@ class FastIceProcessor:
         for v in self.cice_vars_reqd:
             if v in ds:
                 CICE_dict_unrolled[v] = ds[v]
-        uice, vice = self.regrid_to_tgrid(ds)
+        uice, vice = self.CICE_regrid_to_tgrid(ds)
         CICE_dict_unrolled['speed'] = np.sqrt(uice ** 2 + vice ** 2)
         for out_var in fi_meta:
             meta = fi_meta.get(out_var, {})
@@ -365,7 +378,13 @@ class FastIceProcessor:
             vec_vars = meta.get("CICE_vec_vars", [])
             if vec_vars and cice_var:
                 if all(vv in ds for vv in vec_vars):
-                    CICE_dict_unrolled[cice_var] = np.sqrt(sum([ds[vv] ** 2 for vv in vec_vars]))
+                    # Ensure the derived result is a DataArray
+                    base_da = ds[vec_vars[0]]
+                    derived = np.sqrt(np.sum([ds[vv] ** 2 for vv in vec_vars], axis=0))
+                    CICE_dict_unrolled[cice_var] = xr.DataArray(derived,
+                                                                dims=base_da.dims,
+                                                                coords=base_da.coords,
+                                                                attrs={"long_name": f"derived variable from {vec_vars}"} )
                 else:
                     missing = [vv for vv in vec_vars if vv not in ds]
                     self.logger.debug(f"⚠️ Skipping vector-derived var {out_var} — missing components: {missing}")
@@ -374,33 +393,32 @@ class FastIceProcessor:
         self.logger.info(f"compute rolling mean for {self.roll_win}-days on CICE variables:\n{list(CICE_dict_unrolled.keys())}")
         roll = lambda da: da.rolling(time=self.roll_win, center=True, min_periods=1).mean()
         CICE_dict_rolled = {k: roll(v) for k, v in CICE_dict_unrolled.items()}
-        coarse = lambda da: da.coarsen(time=roll_win, boundary="trim").mean()
+        coarse = lambda da: da.coarsen(time=self.roll_win, boundary="trim").mean()
         CICE_dict_coarsened = {k: coarse(v) for k, v in CICE_dict_rolled.items()}
         CICE_dict_coarsened['FI_OBS_CLI'] = ds['FI_OBS_CLI']
         CICE_dict_coarsened['FI_OBS_GRD'] = ds['FI_OBS_GRD']
         return CICE_dict_coarsened
 
     def apply_FI_mask(self, roll_dict):
-        self.fi_mask = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
-        return {k: v.where(self.fi_mask) for k, v in roll_dict.items()}, mask
+        fi_mask      = (roll_dict['aice'] > self.SIC_thresh) & (roll_dict['speed'] <= self.FI_thresh)
+        masked_dict  = {k: v.where(fi_mask) for k, v in roll_dict.items()}
+        self.fi_mask = fi_mask.isel(nj=self.hemisphere_nj_slice)
+        return masked_dict
 
     def compute_fast_ice_outputs(self, cice_vars_dict):
         self.logger.info("\n *** COMPUTING FAST ICE OUTPUTS ***")
-        self.logger.info("1: bring CICE variables into memory")
-        t1 = time.time()
-        cice_vars_dict = {k: v.compute() for k, v in cice_vars_dict.items()}
-        self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
-        self.logger.info("2: SLICE HEMISPHERE")
+        self.logger.info("STEP 1:\n\tSLICE HEMISPHERE")
         t1 = time.time()
         cice_vars_dict = self.slice_hemisphere(cice_vars_dict)
         self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
-        self.logger.info("3: define some useful variables for this method")
+        self.logger.info("STEP 2:\n\tMETHOD DEFINITIONS")
         grid_cell_area = self.gi_processor.G_t['area'].isel(nj=self.hemisphere_nj_slice)
         spatial_dims   = self.CICE_dict['spatial_dims']   # ["nj","ni"]
         CICE_time_dim  = self.CICE_dict['time_dim']       # 'time'
         time_dim       = self.CICE_dict['FI_time_dim']    # 't_dim' which is different from CICE time dimensions which is 'time'
-        three_dims     = [time_dim, spatial_dims[:] ]        # needs to be a list of strings 't_dim', 'nj', 'ni'
-        time_coords    = self.dtC_range # or maybe we should use ---> cice_vars_dict['aice'].time.values
+        three_dims     = [time_dim] + spatial_dims        # needs to be a list of strings 't_dim', 'nj', 'ni'
+        time_coords    = [self.dt0_period]                # this should be the start of the {self.roll_win}-day period
+                                                          # this ensures consistency with observational fast ice
         lon_coords     = self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values
         lat_coords     = self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values
         lon_coord_name = self.CICE_dict['FI_lon_coord']
@@ -408,13 +426,13 @@ class FastIceProcessor:
         cm2m           = self.cm2m_fact
         roll_win       = self.roll_win
         fi_meta        = self.config["FI_var_dict"]
-        one_d_list     = [v for v in fi_meta.get(v, {}).get("dimensions") == "1D"]
-        three_d_list   = [v for v in fi_meta.get(v, {}).get("dimensions") == "3D"]
-        two_d_list     = [v for v in fi_meta.get(v, {}).get("dimensions") == "2D"]
+        one_d_list     = [k for k, meta in fi_meta.items() if meta.get("dimensions") == "1D"]
+        two_d_list     = [k for k, meta in fi_meta.items() if meta.get("dimensions") == "2D"]
+        three_d_list   = [k for k, meta in fi_meta.items() if meta.get("dimensions") == "3D"]
         #################################
         #######   1D VARIABLES   ########
         #################################
-        self.logger.info("4: COMPUTE 1D OUTPUT VARIABLES")
+        self.logger.info("STEP 3:\n\tCOMPUTE 1D OUTPUT VARIABLES")
         t1 = time.time()
         one_d_metrics = {}
         for v in one_d_list:
@@ -449,7 +467,7 @@ class FastIceProcessor:
         #################################
         #######   3D VARIABLES   ########
         #################################
-        self.logger.info("5: COMPUTE 3D OUTPUT VARIABLES:")
+        self.logger.info("STEP 3:\n\tCOMPUTE 3D OUTPUT VARIABLES:")
         self.logger.info("\t very little processing done and essentially CICE variables are only filtered/masked for fast ice criteria")
         t1 = time.time()
         three_d_vars = {}
@@ -467,6 +485,9 @@ class FastIceProcessor:
                 data = cice_vars_dict[cice_var]
                 if "VGRO" in v or "FZL" in v:
                     data = data * cm2m
+                if data.ndim == 2:
+                    # Expand to (1, nj, ni) for consistency
+                    data = data[np.newaxis, :, :]
                 three_d_vars[v] = xr.DataArray(data   = data.data,
                                                dims   = three_dims,
                                                coords = {time_dim      : ((time_dim)  , time_coords),
@@ -479,7 +500,7 @@ class FastIceProcessor:
         #################################
         #######   2D VARIABLES   ########
         #################################
-        self.logger.info("6: COMPUTE 2D OUTPUT VARIABLES:")
+        self.logger.info("STEP 5:\n\tCOMPUTE 2D OUTPUT VARIABLES:")
         self.logger.info("\t significant temporal averaging done to compute this portion of dataset ... can take a little bit of time")
         t1 = time.time()
         two_d_vars = {}
@@ -495,8 +516,8 @@ class FastIceProcessor:
             else:
                 self.logger.debug(f"\t✅ Creating 2D metric {v} — source variable '{cice_var}'")
             da       = cice_vars_dict[cice_var]
-            norm     = da.sizes[time_dim]
-            data_sum = da.sum(dim=time_dim)
+            norm     = da.sizes[CICE_time_dim]
+            data_sum = da.sum(dim=CICE_time_dim)
             if v=='FIP':
                 data_mean = data_sum / norm
             else:
@@ -506,16 +527,19 @@ class FastIceProcessor:
                                          dims   = spatial_dims,
                                          coords = {lon_coord_name: (spatial_dims, lon_coords),
                                                    lat_coord_name: (spatial_dims, lat_coords)},
-                                             attrs={**meta,
-                                                    "start_time": self.dt0_str.isoformat() if isinstance(self.dt0_str, datetime) else self.dt0_str,
-                                                    "stop_time": self.dtN_str.isoformat() if isinstance(self.dtN_str, datetime) else self.dtN_str})
+                                         attrs  = {**meta,
+                                                   "start_time": self.dt0_period.isoformat() if isinstance(self.dt0_period, datetime) else self.dt0_period,
+                                                   "stop_time" : self.dtN_period.isoformat() if isinstance(self.dtN_period, datetime) else self.dtN_period})
         three_d_vars['FIP_OBS'] = cice_vars_dict['FI_OBS_GRD']
         self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
         self.logger.debug(f"\t2D vars computed: {list(three_d_vars.keys())}")
         #######################################
         #######      OUTPUT DATASET     #######
         #######################################
-        self.logger.info("7: CREATE OUTPUT DATASET")
+        self.logger.info("STEP 6:\n\tCREATE OUTPUT DATASET")
+        print(f"1D vars looks like: {one_d_vars}")
+        print(f"3D vars looks like: {three_d_vars}")
+        print(f"2D vars looks like: {two_d_vars}")
         t1 = time.time()
         FI = xr.Dataset({**one_d_vars, **three_d_vars, **two_d_vars})
         FI.attrs = {"title"              : "Landfast sea ice analysed from numerical sea ice model simulations",
@@ -552,15 +576,17 @@ class FastIceProcessor:
                                   freq=f'{self.roll_win}D')
         ds_all = []
         for dtC in dtC_list:
-            self.dt0_period = dtC - pd.Timedelta(days=self.roll_win // 2)
-            self.dtN_period = dtC + pd.Timedelta(days=self.roll_win // 2)
-            ds              = self.load_data_window(self.dt0_period)
-            ds_dict         = self.dataset_to_dictionary(ds)
-            masked_vars     = self.apply_FI_mask(ds_dict)
-            FI              = self.compute_fast_ice_outputs(masked_vars)
-            D_FI_zarr       = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "FI")
-            F_FI_zarr       = f"fast_ice_{dtC.strftime('%Y-%m-%d')}.zarr"
-            P_FI_zarr       = Path(D_FI_zarr,F_FI_zarr)
+            self.dtC            = dtC
+            self.dt0_period     = dtC - pd.Timedelta(days=self.roll_win // 2)
+            self.dtN_period     = dtC + pd.Timedelta(days=self.roll_win // 2)
+            self.dt_period_list = pd.date_range(self.dt0_period, self.dtN_period, freq='1D')
+            ds                  = self.load_data_window(self.dt0_period)
+            ds_dict             = self.dataset_to_dictionary(ds)
+            masked_vars         = self.apply_FI_mask(ds_dict)
+            FI                  = self.compute_fast_ice_outputs(masked_vars)
+            D_FI_zarr           = Path(self.config['D_dict']['AFIM_out'], self.sim_name, "FI")
+            F_FI_zarr           = f"fast_ice_{self.dt0_period.strftime('%Y-%m-%d')}.zarr"
+            P_FI_zarr           = Path(D_FI_zarr,F_FI_zarr)
             if not D_FI_zarr.exists():
                 os.makedirs(D_FI_zarr)
             if not P_FI_zarr.exists() or ow_zarrs:
