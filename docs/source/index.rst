@@ -20,8 +20,7 @@ AFIM (Antarctic Fast Ice and Pack Ice Metrics) is a Python library to analyse an
    :maxdepth: 1
    :caption: Scripts
 
-   scripts/compute_fast_ice.py
-   scripts/compute_pack_ice.py
+   scripts/compute_sea_ice.py
 
 Indices and Tables
 ==================

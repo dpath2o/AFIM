@@ -16,10 +16,9 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 ## Features
 
-- 📦 `FastIceProcessor`: Compute landfast sea ice area, concentration, and related statistics.
-- 📦 `PackIceProcessor`: Identify and quantify all non-fast sea ice based on concentration and speed thresholds.
+- 📦 `SeaIceProcessor`: Compute either landfast sea ice or pack ice or sea ice metrics area.
 - 📊 `SeaIcePlotter`: Plot spatial maps and time series of fast/pack ice, generate region-faceted maps and animations.
-- 🌍 Integration with grounded iceberg masking and landmask modification (via `GroundedIcebergProcessor`).
+- 🌍 `GroundedIcebergProcessor` grounded iceberg masking and landmask modification (via `GroundedIcebergProcessor`).
 - 🧊 Support for regridding, speed calculation, climatological masking, and multiple hemispheres.
 
 ---
@@ -48,21 +47,30 @@ conda activate afim
 ### Simple one-off use:
 
 ```python
-from datetime import datetime
-from pack_ice_processor import PackIceProcessor
-
-dt_test  = datetime(1994, 9, 8)
-sim_name = 'Rothrock'
-PI_proc  = PackIceProcessor(sim_name)
-PI       = PI_proc.process_window(dt_test, save_zarr=False)
+from sea_ice_processor import SeaIceProcessor
+dt0_str  = "1998-08-01"
+dtN_str  = "1999-03-31"
+sim_name = 'baseline'
+SI_proc  = SeaIceProcessor(sim_name            = sim_name, 
+                           ice_speed_threshold = 1e-4)
+FI_lo_spd = SI_proc.process_window(dt0_str    = dt0_str,
+                                    dtN_str    = dtN_str, 
+                                    write_zarr = False,
+                                    ow_zarrs   = True)
+SI_proc2  = SeaIceProcessor(sim_name            = sim_name, 
+                           ice_speed_threshold = 1e-3)
+FI_hi_spd = SI_proc2.process_window(dt0_str    = dt0_str,
+                                    dtN_str    = dtN_str, 
+                                    write_zarr = False,
+                                    ow_zarrs   = True)
 ```
 
 ### Batch Processing for Full Simulation:
 
-See [`compute_pack_ice.py`](./scripts/compute_pack_ice.py) for a CLI-driven loop script:
+See [`compute_sea_ice.py`](./scripts/compute_sea_ice.py) for a CLI-driven loop script:
 
 ```bash
-python compute_pack_ice.py Rothrock --start_date 1993-01-01 --end_date 1999-12-31
+python compute_sea_ice.py Rothrock --sea_ice
 ```
 
 ---
@@ -73,16 +81,14 @@ python compute_pack_ice.py Rothrock --start_date 1993-01-01 --end_date 1999-12-3
 AFIM/
 ├── src/
 │   ├── JSONs/                        # JSON config files for variable metadata and plotting
-│   ├── fast_ice_processor.py         # Computes landfast sea ice diagnostics
-│   ├── pack_ice_processor.py         # Computes pack ice diagnostics
+│   ├── sea_ice_processor.py          # sea ice processor 
 │   ├── sea_ice_plotter.py            # Visualisation for fast and pack ice data
 │   ├── grounded_iceberg_processor.py # Handles grounded iceberg landmask integration
 │   ├── __init__.py                   # Package initializer
 │   ├── requirements.txt              # Python dependencies
 │   └── environment.yml               # Conda environment file
 ├── scripts/
-│   ├── compute_fast_ice.py           # Looping script for computing fast ice
-│   └── compute_pack_ice.py           # Looping script for computing pack ice
+│   ├── compute_sea_ice.py           # Looping script for computing fast ice
 ├── notebooks/
 │   └── fi_anal.ipynb                 # Jupyter notebook example
 ├── README.md                         # Project overview and usage instructions
