@@ -547,12 +547,7 @@ class PackIceProcessor:
         #########################
         self.logger.info("create output dataset:")
         PI = xr.Dataset({**one_d_vars, **three_d_vars, **two_d_vars})
-        if self.process_NSIDC:
-            for var in ['SIA', 'SIE', 'SIC']:
-                da = getattr(self, f"_NSIDC_{var}", None)
-                if da is not None:
-                    meta = pi_meta.get(var, {})
-                    PI[var] = xr.DataArray(data=da.data, dims=da.dims, coords=da.coords, attrs=meta)
+        
         fi_criteria = (f"aice > {self.SIC_thresh} and speed <= {self.FI_thresh} m/s"
                        if self.mask_fi else "fast ice masking not employed on this dataset")
         PI.attrs = {"title": "Pack ice analysed from numerical sea ice model simulations",
