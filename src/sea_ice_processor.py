@@ -18,26 +18,37 @@ class SeaIceProcessor:
     """
     Class to compute sea ice metrics from sea ice model output.
 
-    This processor applies a rolling window to compute spatial and temporal
-    characteristics of sea ice (original intent was landfast sea ice) using
-    sea ice concentration and velocity thresholds.
-
-    Default is compute to fast ice as defined as sea ice concentration above a threshold and
-    sea ice velocity below a threshold (i.e., stationary sea ice).
+    Default mode of usage is for processing landfast sea ice from CICE model output using a rolling
+    window climatology aligned with Fraser et al. (2020).
 
     Optionally can compute 'pack ice' that is either inclusive/exclusive of fast ice.
 
-    Parameters
-    ----------
+    This class is tightly coupled with:
+    - A JSON configuration file providing paths, thresholds, and parameters:
+      https://github.com/dpath2o/AFIM/blob/main/src/AFIM/src/JSONs/afim_cice_analysis.json
+    - GroundedIcebergProcessor for land and iceberg masking
+    - Observational climatology from Fraser et al. 2020 (DOI: 10.5194/essd-12-2987-2020):
+      https://data.aad.gov.au/metadata/AAS_4116_Fraser_fastice_circumantarctic
+    - Optional NSIDC pack ice data: https://nsidc.org/data/g02202/versions/4
 
-    Attributes
-    ----------
+    Modes of operation include:
+    - Fast ice with climatology and gridded observations (default)
+    - Pack ice only (`pack_ice=True`)
+    - All sea ice (`sea_ice=True`)
+
+    Supports both interactive in-memory workflows and Zarr output for batch processing.
 
     Examples
     --------
+    Interactive (no Zarr write):
+        SI_proc = SeaIceProcessor(sim_name="baseline")
+        FI = SI_proc.process_window("1998-08-01", "1999-03-31")
 
-    The SeaIceProcessor is typically run in a loop using a driver script
-    such as [`compute_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/src/python/compute_fast_ice.py):
+    Experimental (custom thresholds and write Zarr):
+        SI_proc = SeaIceProcessor(sim_name="baseline", zarr_directory="/tmp/out", ice_speed_threshold=1e-4)
+        FI = SI_proc.process_window("1998-08-01", "1999-03-31", write_zarr=True)
+
+    The SeaIceProcessor is also run in a loop using a driver script such as [`compute_sea_ice.py`](https://github.com/dpath2o/AFIM/blob/main/src/python/compute_sea_ice.py):
 
     For more, see the full project repository:
     🔗 https://github.com/dpath2o/AFIM
@@ -108,6 +119,8 @@ class SeaIceProcessor:
         if self.use_gi:
             self.gi_processor.load_AFIM_GI()
         self.GI_total_area = self.gi_processor.total_area if self.use_gi else 0
+        self.GI_DS_thin_P  = self.gi_processor.GI_dataset_path if self.use_gi else 'GI not used in this simulation'
+        self.GI_KMT_P      = self.gi_processor.KMT_path        if self.use_gi else self.CICE_dict['P_KMT']
         hemisphere         = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
         self.define_hemisphere(hemisphere)
 
@@ -718,52 +731,48 @@ class SeaIceProcessor:
                      "conventions"                : "CF-1.8",
                      "ice_concentration_criteria" : ice_concentration_criteria,
                      "ice_speed_criteria"         : ice_speed_criteria,
-                    "grounded_iceberg_db"         : self.gi_processor.GI_dataset_path,
-                    "landmask_file"               : self.gi_processor.KMT_path,
-                    "total_area_GI"               : self.GI_total_area,
-                    "time_coverage_start"         : stringify_datetime(self.dt0_period),
-                    "time_coverage_end"           : stringify_datetime(self.dtN_period),
-                    "roll_window_days"            : self.roll_win,
-                    "geospatial_lat_min"          : float(np.min(self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values)),
-                    "geospatial_lat_max"          : float(np.max(self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values)),
-                    "geospatial_lon_min"          : float(np.min(self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values)),
-                    "geospatial_lon_max"          : float(np.max(self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values))}
+                     "grounded_iceberg_db"         : self.GI_DS_thin_P,
+                     "landmask_file"               : self.GI_KMT_P,
+                     "total_area_GI"               : self.GI_total_area,
+                     "time_coverage_start"         : stringify_datetime(self.dt0_period),
+                     "time_coverage_end"           : stringify_datetime(self.dtN_period),
+                     "roll_window_days"            : self.roll_win,
+                     "geospatial_lat_min"          : float(np.min(self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values)),
+                     "geospatial_lat_max"          : float(np.max(self.gi_processor.G_t['lat'].isel(nj=self.hemisphere_nj_slice).values)),
+                     "geospatial_lon_min"          : float(np.min(self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values)),
+                     "geospatial_lon_max"          : float(np.max(self.gi_processor.G_t['lon'].isel(nj=self.hemisphere_nj_slice).values))}
         self.logger.info(f"\ttime taken: {time.time()-t1:0.2f} seconds")
         return OUT
 
     def process_window(self, dt0_str=None, dtN_str=None, rolling_window=None, write_zarr=False, ow_zarrs=False):
         """
-        Default behaviour is to assume user is interactively creating output datasets
-        for a particular simulation and time period. Allows a user to test rolling
-        mean period and how this effects the dataset. However, this *TURNS OFF*
-        any and all loading of the fast ice observational climatology and observational gridded
-        datasets. This is because the fast ice observational datasets are somewhat 'set in stone',
-        so to speak. The observational datasets are based on 15-day periods starting on
-        1 January to the 346th year-day and then uses a 20-day period. At present
-        this rigidity in the observational temporal dimension puts constraints on
-        dynamically associating CICE model data with it.
+        Processes a time window of simulation data using rolling means centered on
+        Fraser et al. DOY periods (15-day windows plus final 20-day window).
 
-        The above averaging is used consistently across fast ice outputs, pack ice outputs and
-        sea ice outputs as the default. 
+        Parameters
+        ----------
+        dt0_str : str or None
+            Start date in format 'YYYY-MM-DD'. If None, defaults to config.
+        dtN_str : str or None
+            End date in format 'YYYY-MM-DD'. If None, defaults to config.
+        rolling_window : int or None
+            Optional override for rolling window length. If not 15, disables observational association.
+        write_zarr : bool
+            Whether to write each time period's dataset to a Zarr file.
+        ow_zarrs : bool
+            Whether to overwrite existing Zarr datasets.
 
-        However, for now if one uses process_window() in the following manner
-        dt0_str  = "1993-09-01"
-        dtN_str  = "1994-12-31"
-        sim_name = 'ktens-max'
-        SI_proc  = SeaIceProcessor(sim_name = sim_name)
-        FI       = SI_proc.process_window(dt0_str = dt0_str,
-                                          dtN_str = dtN_str)
-        Then one can expect to get FI output dataset with the default rolling window 15 days up to the last 20-day
-        period *and* expect to get the observational data associated with output. They may
-        choose to write it disk under this condition. 
+        Returns
+        -------
+        xarray.Dataset
+            Concatenated sea ice metrics dataset across all climatology-aligned periods.
 
-        One can provide optional rolling_window integers to test the effect on their dataset. However,
-        should rolling_window be set to anything other than 15 then loading associating with
-        observational fast ice datasets will be switched off, for reasons given above. A user can
-        write to zarr files under this condition if they so choose but the author advises against
-        this usage unless the user has gone through the effort of ensuring they are
-        using a non-default JSON file that clearly saves these FI output datasets in a non-default
-        location.
+        Notes
+        -----
+        This function aligns model output with fixed Fraser-style windows using a DOY template:
+        [1, 16, 31, ..., 346]. Outputs are either returned in-memory or optionally saved to Zarr.
+
+        If rolling_window != 15, all associations with observational datasets are skipped for consistency.
         """
         def is_leap(date_object):
             date_object.is_leap_year if hasattr(date_object, 'is_leap_year') else (date_object.year % 4 == 0 and
