@@ -65,6 +65,49 @@ class SeaIceProcessor:
                  overwrite_AF2020_zarr       = False,
                  zarr_directory              = None):
         """
+    Initialize the SeaIceProcessor for a given simulation.
+
+    This constructor loads simulation metadata from a JSON config, prepares required
+    variable lists, output paths, thresholds, and optionally observational datasets.
+    It also sets up the grounded iceberg masking framework via GroundedIcebergProcessor.
+
+    Parameters
+    ----------
+    sim_name : str
+        The simulation name, used to locate data under AFIM output paths.
+    sea_ice : bool, optional
+        Enable processing for all sea ice (disables observational fast ice).
+    pack_ice : bool, optional
+        Enable processing for pack ice only (excludes fast ice and observations).
+    ice_concentration_threshold : float or None
+        Threshold for sea ice concentration (e.g. 0.15). If None, uses config default.
+    ice_speed_threshold : float or None
+        Threshold for sea ice speed (e.g. 0.0005). If None, uses config default.
+    extra_cice_vars : list of str or None
+        Additional CICE variable names to load. If None, uses extended default list.
+    hemisphere : str, optional
+        Either "north" or "south" (default from config if not specified).
+    P_log : str or Path, optional
+        Optional path for logging output.
+    P_json : str or Path, optional
+        Path to the JSON configuration file. Defaults to bundled AFIM config.
+    overwrite_AF2020_zarr : bool, optional
+        If True, overwrites existing AF2020 observational zarr files (FI mode only).
+    zarr_directory : str or Path, optional
+        Override location to save output Zarr datasets. Otherwise determined by mode.
+
+    Notes
+    -----
+    - The JSON file contains essential configuration, file paths, and processing metadata.
+    - The default mode is 'fast ice' using the Antarctic observational climatology (Fraser et al. 2020).
+    - The class automatically handles switching between fast ice, sea ice, and pack ice output modes.
+    - Output file format and directory structure vary based on processing mode.
+    - Uses `GroundedIcebergProcessor` to apply land/iceberg masks and load grid info.
+
+    Examples
+    --------
+    >>> proc = SeaIceProcessor("baseline", sea_ice=True)
+    >>> ds = proc.process_window(dt0_str="1998-08-01", dtN_str="1999-03-31", write_zarr=False)
         """
         if P_json is None:
             P_json = '/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json'
