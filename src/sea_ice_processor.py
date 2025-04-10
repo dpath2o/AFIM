@@ -58,6 +58,8 @@ class SeaIceProcessor:
                  pack_ice                    = False,
                  ice_concentration_threshold = None,
                  ice_speed_threshold         = None,
+                 fast_ice_masks              = None,
+                 ice_divergence_threshold    = None,
                  extra_cice_vars             = None,
                  hemisphere                  = None,
                  P_log                       = None,
@@ -116,8 +118,10 @@ class SeaIceProcessor:
         self.sim_name       = sim_name
         self.sim_config     = self.config['sim_dict'][sim_name]
         self.sim_dir        = Path(self.config['D_dict']['AFIM_out'], sim_name, 'history', 'daily')
-        self.ispd_thresh    = ice_speed_threshold if ice_speed_threshold is not None else self.config.get('ice_speed_thresh', 0.0005)
+        self.ispd_thresh    = ice_speed_threshold         if ice_speed_threshold         is not None else self.config.get('ice_speed_thresh', 0.0005)
+        self.idiv_thresh    = ice_divergence_threshold    if ice_divergence_threshold    is not None else self.config.get('ice_div_thresh', 0.01)
         self.icon_thresh    = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
+        self.fast_ice_masks = fast_ice_masks              if fast_ice_masks              is not None else self.config.get('fast_ice_masks', ["aice", "speed"])
         self.doy_vals       = self.config.get("DOY_vals",[1,16,31,46,61,76,91,106,121,136,151,166,181,196,211,226,241,256,271,286,301,316,331,346])
         self.CICE_dict      = self.config['CICE_dict']
         self.cice_vars_reqd = self.CICE_dict["FI_cice_vars_reqd"]
@@ -161,9 +165,9 @@ class SeaIceProcessor:
         self.use_gi = self.gi_processor.use_gi
         if self.use_gi:
             self.gi_processor.load_AFIM_GI()
-        self.GI_total_area = self.gi_processor.total_area if self.use_gi else 0
-        self.GI_DS_thin_P  = self.gi_processor.GI_dataset_path if self.use_gi else 'GI not used in this simulation'
-        self.GI_KMT_P      = self.gi_processor.KMT_path        if self.use_gi else self.CICE_dict['P_KMT']
+        self.GI_total_area = self.gi_processor.total_area  if self.use_gi else 0
+        self.GI_P_counts   = self.gi_processor.GI_P_counts if self.use_gi else 'GI not used in this simulation'
+        self.P_KMT         = self.gi_processor.P_KMT_mod   if self.use_gi else self.CICE_dict['P_KMT']
         hemisphere         = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
         self.define_hemisphere(hemisphere)
 
@@ -537,8 +541,9 @@ class SeaIceProcessor:
     def apply_masks(self, roll_dict):
         self.logger.info("***     APPLYING MASKS     ***")
         t1 = time.time()
-        sic_mask = (roll_dict['aice'] > self.icon_thresh)
+        sic_mask = (roll_dict['aice']  >  self.icon_thresh)
         spd_mask = (roll_dict['speed'] <= self.ispd_thresh)
+        div_mask = (roll_dict['divu']  <= self.idiv_thresh)
         if self.sea_ice:
             masked_dict    = {k: v.where(sic_mask) for k, v in roll_dict.items()}
             self.spat_mask = sic_mask.isel(nj=self.hemisphere_nj_slice).compute()
@@ -547,9 +552,22 @@ class SeaIceProcessor:
             masked_dict    = {k: v.where(pi_mask) for k, v in roll_dict.items()}
             self.spat_mask = pi_mask.isel(nj=self.hemisphere_nj_slice).compute()
         else:
-            fi_mask        = sic_mask & spd_mask
-            masked_dict    = { k: v.where(fi_mask) if k not in {'FI_OBS_CLI', 'FI_OBS_GRD'} else v for k, v in roll_dict.items() }
+            valid_keys = {"aice", "speed", "divu"}
+            requested_keys = set(self.fast_ice_masks)
+            if not requested_keys.issubset(valid_keys) or "aice" not in requested_keys:
+                self.logger.warning(f"⚠️ Invalid fast_ice_masks: {self.fast_ice_masks} — using default ['aice', 'speed']")
+                requested_keys = {"aice", "speed"}
+            fi_mask = sic_mask
+            if 'speed' in requested_keys:
+                fi_mask &= spd_mask
+            if 'divu' in requested_keys:
+                fi_mask &= div_mask
+            masked_dict    = {k: v.where(fi_mask) if k not in {'FI_OBS_CLI', 'FI_OBS_GRD'} else v for k, v in roll_dict.items() }
             self.spat_mask = fi_mask.isel(nj=self.hemisphere_nj_slice).compute()
+            # if 'aice' in self.fast_ice_masks:
+            # fi_mask        = sic_mask & div_mask #spd_mask
+            # masked_dict    = { k: v.where(fi_mask) if k not in {'FI_OBS_CLI', 'FI_OBS_GRD'} else v for k, v in roll_dict.items() }
+            # self.spat_mask = fi_mask.isel(nj=self.hemisphere_nj_slice).compute()
         self.logger.info(f"time taken {time.time()-t1:0.2f} seconds")
         self.logger.info("persist the masked data in memory")
         masked_out = {}
@@ -580,14 +598,14 @@ class SeaIceProcessor:
         one_d_list     = [k for k, meta in json_varout_meta.items() if meta.get("dimensions") == "1D"]
         two_d_list     = [k for k, meta in json_varout_meta.items() if meta.get("dimensions") == "2D"]
         three_d_list   = [k for k, meta in json_varout_meta.items() if meta.get("dimensions") == "3D"]
-        CICE_time_dim  = 'time'
-        t_dim_str      = 't_dim'
-        x_dim_str      = 'ni'
-        y_dim_str      = 'nj'
-        sector_dim_str = 'sector'
+        CICE_time_dim  = self.CICE_dict["time_dim"]
+        t_dim_str      = self.CICE_dict["proc_time_dim"]
+        x_dim_str      = self.CICE_dict["x_dim"]
+        y_dim_str      = self.CICE_dict["y_dim"]
+        sector_dim_str = self.config['sea_ice_dict']["sector_dim_name"]
         t_coord_str    = t_dim_str
-        x_coord_str    = 'lon'
-        y_coord_str    = 'lat'
+        x_coord_str    = self.CICE_dict["proc_lon_coord"]
+        y_coord_str    = self.CICE_dict["proc_lat_coord"]
         one_dim_tup    = (t_dim_str,)
         two_dim_tup    = (y_dim_str, x_dim_str)
         three_dim_tup  = (t_dim_str, y_dim_str, x_dim_str)
@@ -615,7 +633,9 @@ class SeaIceProcessor:
             else:
                 self.logger.debug(f"\t✅ Creating 1D metric {v} — source variable '{cice_var}'")
             dat = cice_vars_dict[cice_var]
-            if v in ["FIA", "PIA", "SIA"] :
+            if v in ["FIA", "PIA", "SIA"]:
+                if v=="FIA":
+                    dat = dat+self.GI_total_area
                 one_d_metrics[v] = ((dat * grid_cell_area).sum(dim=two_dim_tup)) / area_scale
             elif v in ["FIE", "PIE", "SIE"]:
                 one_d_metrics[v] = ((self.spat_mask * grid_cell_area).sum(dim=two_dim_tup)) / area_scale
@@ -654,7 +674,7 @@ class SeaIceProcessor:
         t1 = time.time()
         three_d_vars = {}
         for v in three_d_list:
-            if v.endswith("_SD") or (v in ['FI_GRD','SIC']):
+            if v.endswith("_SD") or (v in ['FI_GRD']):
                 continue
             meta     = json_varout_meta.get(v, {})
             cice_var = meta.get("CICE_variable", None)
@@ -696,7 +716,7 @@ class SeaIceProcessor:
         t1 = time.time()
         two_d_vars = {}
         for v in two_d_list:
-            if v in ['FIP_OBS','SIP']:
+            if v in ['FIP_OBS']:
                 continue
             meta     = json_varout_meta.get(v, {})
             cice_var = meta.get("CICE_variable", None)
@@ -774,8 +794,8 @@ class SeaIceProcessor:
                      "conventions"                : "CF-1.8",
                      "ice_concentration_criteria" : ice_concentration_criteria,
                      "ice_speed_criteria"         : ice_speed_criteria,
-                     "grounded_iceberg_db"         : self.GI_DS_thin_P,
-                     "landmask_file"               : self.GI_KMT_P,
+                     "grounded_iceberg_db"         : self.GI_P_counts,
+                     "landmask_file"               : self.P_KMT,
                      "total_area_GI"               : self.GI_total_area,
                      "time_coverage_start"         : stringify_datetime(self.dt0_period),
                      "time_coverage_end"           : stringify_datetime(self.dtN_period),
@@ -821,21 +841,7 @@ class SeaIceProcessor:
             date_object.is_leap_year if hasattr(date_object, 'is_leap_year') else (date_object.year % 4 == 0 and
                                                                                    (date_object.year % 100 != 0 or
                                                                                     date_object.year % 400 == 0))
-        #dask.config.set(scheduler='single-threaded')
-        self.dt0_str      = dt0_str if dt0_str is not None else self.config.get("dt0_str", "1993-01-01")
-        self.dtN_str      = dtN_str if dtN_str is not None else self.config.get("dtN_str", "1993-12-31")
-        self.dt0          = pd.Timestamp(self.dt0_str)
-        self.dtN          = pd.Timestamp(self.dtN_str)
-        if (rolling_window and rolling_window != 15) or self.sea_ice or self.pack_ice:
-            self.assoc_AF2020 = False
-        dt0_list = []
-        for year in range(self.dt0.year, self.dtN.year + 1):
-            for doy in self.doy_vals:
-                dt = pd.Timestamp(datetime(year, 1, 1)) + pd.Timedelta(days=doy - 1)
-                if self.dt0 <= dt <= self.dtN:
-                    dt0_list.append(dt)
-        DS_CAT = []
-        for self.dt0_period in dt0_list:
+        def process_period(rolling_window=rolling_window):
             doy                 = self.dt0_period.timetuple().tm_yday
             last_doy            = 366 if is_leap(self.dt0_period) else 365
             roll_win            = 20 if doy >= self.doy_vals[-1] else 15
@@ -845,19 +851,40 @@ class SeaIceProcessor:
             ds                  = self.load_data_window(self.dt0_period)
             ds_dict             = self.dataset_to_dictionary(ds)
             masked_vars         = self.apply_masks(ds_dict)
-            DS                  = self.compute_sea_ice_outputs(masked_vars)
+            return self.compute_sea_ice_outputs(masked_vars)
+        #dask.config.set(scheduler='single-threaded')
+        self.dt0_str      = dt0_str if dt0_str is not None else self.config.get("dt0_str", "1993-01-01")
+        self.dtN_str      = dtN_str if dtN_str is not None else self.config.get("dtN_str", "1993-12-31")
+        self.dt0          = pd.Timestamp(self.dt0_str)
+        self.dtN          = pd.Timestamp(self.dtN_str)
+        if (rolling_window and rolling_window != 15) or getattr(self, "sea_ice", False) or getattr(self, "pack_ice", False):
+            self.assoc_AF2020 = False
+        dt0_list = []
+        for year in range(self.dt0.year, self.dtN.year + 1):
+            for doy in self.doy_vals:
+                dt = pd.Timestamp(datetime(year, 1, 1)) + pd.Timedelta(days=doy - 1)
+                if self.dt0 <= dt <= self.dtN:
+                    dt0_list.append(dt)
+        DS_CAT = []
+        for self.dt0_period in dt0_list:
             if write_zarr:
                 F_zarr_out = self.F_zarr_out_fmt.format(date_str=self.dt0_period.strftime('%Y-%m-%d'))
                 P_zarr_out = Path(self.D_zarr_out, F_zarr_out)
                 if not P_zarr_out.exists() or ow_zarrs:
                     self.logger.info(f"*** writing OUTPUT DATASET to disk: {P_zarr_out}")
+                    DS = process_period()
                     t1 = time.time()
                     DS.to_zarr(P_zarr_out, mode='w')
                     self.logger.info(f"time taken: {time.time()-t1:0.2f} seconds")
+                    DS_CAT.append(DS)
                 else:
                     self.logger.info(f"*** skipping write to {P_zarr_out}")
                     self.logger.info("OUTPUT zarr file already exists and overwriting disabled")
-            DS_CAT.append(DS)
+                    continue
+            else:
+                self.logger.info("*** running SeaIceProcessor INTERACTIVELY (*without* writing to zarrs)")
+                DS = process_period()
+                DS_CAT.append(DS)
         DS_RETURN = xr.concat(DS_CAT, dim='t_dim').compute()
         self.logger.info("✅ sea ice processing complete.")
         return DS_RETURN
