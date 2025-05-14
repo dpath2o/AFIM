@@ -97,9 +97,9 @@ class GroundedIcebergProcessor:
         self.ice_shelves_loaded = False
         self.CICE_dict          = self.config['CICE_dict']
         self.CICE_P_G           = self.CICE_dict['P_G']
-        self.P_KMT_org          = self.CICE_dict['P_KMT']
         self.spatial_dims       = self.CICE_dict.get('spatial_dims', ('nj', 'ni'))
         self.GI_dict            = self.config['GI_dict']
+        self.P_KMT_org          = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
         self.FIC_scale          = self.config.get("FIC_scale", 1e9)
         if sim_name is not None:
             self.sim_name       = sim_name
@@ -121,7 +121,7 @@ class GroundedIcebergProcessor:
             self.use_gi      = True
         else:
             self.GI_P_counts = ''
-            self.P_KMT_mod       = self.CICE_dict['P_KMT']
+            self.P_KMT_mod   = self.P_KMT_org 
             self.use_gi      = False
             self.total_area  = 0
 
@@ -158,9 +158,9 @@ class GroundedIcebergProcessor:
         GI_mask             = np.zeros((nj, ni), dtype=bool)
         GI_mask[nj_i, ni_i] = True
         GI_total_area       = np.sum(self.G_t["area"].values[GI_mask]) / self.FIC_scale
-        KMT_orig            = xr.open_dataset(self.CICE_dict['P_KMT'])
+        KMT_org             = xr.open_dataset(self.P_KMT_org)
         KMT_mod             = xr.open_dataset(self.P_KMT_mod)
-        kmt_orig_arr        = KMT_orig['kmt'].values
+        kmt_orig_arr        = KMT_org['kmt'].values
         kmt_mod_arr         = KMT_mod['kmt'].values
         lat_arr             = KMT_mod['lat'].values
         lon_arr             = KMT_mod['lon'].values
