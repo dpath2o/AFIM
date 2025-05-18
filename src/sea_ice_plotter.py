@@ -860,7 +860,14 @@ class SeaIcePlotter:
                 fig.show()
             # Optional: fig.savefig(f"sector_{i+1:02d}_grounded_icebergs.png", dpi=300)
 
-    def plot_ice_area(self, area_dict, ice_type="FI", roll_days=0, P_png=None, ylim=(0,1000), boolean_method=True):
+    def plot_ice_area(self, area_dict, 
+                      ice_type="FI",
+                      roll_days=0,
+                      tit_str=None,
+                      P_png=None,
+                      ylim=(0,1000),
+                      boolean_method=True,
+                      figsize=(20,12)):
         """
         Plot time series of ice area for one or more simulations.
         Parameters
@@ -884,7 +891,7 @@ class SeaIcePlotter:
             df[label] = rolled.compute()
         df["time"] = da["time"].values
         df.set_index("time", inplace=True)
-        plt.figure(figsize=(20, 12))
+        plt.figure(figsize=figsize, constrained_layout=True)
         for label in df.columns:
             color = self.plot_var_dict.get(label, {}).get("line_clr", None)
             plt.plot(df.index, df[label], label=label, color=color)
@@ -906,10 +913,6 @@ class SeaIcePlotter:
                     plt.plot(dt_min, val_min, marker='v', color='black')
                     plt.text(dt_min, val_min - 25, f'{val_min:.0f}', ha='center', fontsize=8)
         # --- Labels and output
-        if boolean_method:
-            tit_str = f"{ice_type} Area — Boolean criteria : {self.bool_min_days:d} out of {self.bool_window:d} days"
-        else:
-            tit_str = f"{ice_type} Area"
         plt.title(tit_str)
         if ice_type=="FI":
             plt.ylabel(f"{ice_type} Area (1000-km²)")
@@ -922,7 +925,7 @@ class SeaIcePlotter:
         plt.legend()
         plt.tight_layout()
         if self.save_fig:
-            plt.savefig(P_png)
+            plt.savefig(P_png, dpi=100)
             print(f"💾 Saved plot to {P_png}")
         if self.show_fig:
             plt.show()

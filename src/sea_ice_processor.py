@@ -551,7 +551,7 @@ class SeaIceProcessor:
     def compute_ice_area(self, SIC, GC_area, ice_area_scale=None):
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
         self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
-        IA = (((SIC * GC_area).sum(dim=("nj", "ni"))/ice_area_scale)+self.GI_total_area).persist()
+        IA = (((SIC * GC_area).sum(dim=("nj", "ni"))/ice_area_scale)+self.GI_total_area/1e4).persist()
         return IA
 
     def compute_variable_aggregate(self, da, time_coord_name='time'):
