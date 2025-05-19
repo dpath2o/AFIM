@@ -2,7 +2,7 @@ import json, os, shutil, sys, time, logging
 import xarray as xr
 import pandas as pd
 import numpy  as np
-import xesmf  as xe
+#import xesmf  as xe
 from pathlib      import Path
 from datetime     import datetime, timedelta
 from collections  import defaultdict
@@ -37,17 +37,15 @@ class SeaIceProcessor:
                  dt0_str                     = None,
                  dtN_str                     = None,
 	             ice_concentration_threshold = None,
-                 ice_speed_threshold_low     = None,
-	             ice_speed_threshold_high    = None,
+	             ice_speed_threshold         = None,
 	             mean_period                 = None,
-                 bool_window                 = None,
-                 bool_min_days               = None,
+                 boolean_window              = None,
+                 boolean_min_days            = None,
 	             extra_cice_vars             = None,
 	             hemisphere                  = None,
 	             P_log                       = None,
 	             P_json                      = None,
-	             overwrite_AF2020_zarr       = False,
-	             zarr_directory              = None):
+	             overwrite_AF2020_zarr       = False):
         """
 		"""
         self.sim_name = sim_name
@@ -62,10 +60,9 @@ class SeaIceProcessor:
         self.dt0_str        = dt0_str                     if dt0_str                     is not None else self.config.get('dt0_str', '1993-01-01')
         self.dtN_str        = dtN_str                     if dtN_str                     is not None else self.config.get('dtN_str', '1999-12-31')
         self.mean_period    = mean_period                 if mean_period                 is not None else self.config.get('mean_period', 15)
-        self.bool_window    = bool_window                 if bool_window                 is not None else self.config.get('bool_window', 7)
-        self.bool_min_days  = bool_min_days               if bool_min_days               is not None else self.config.get('bool_min_days', 6)
-        self.ispd_hi_thresh = ice_speed_threshold_high    if ice_speed_threshold_high    is not None else self.config.get('ice_speed_thresh_hi', 1e-3)
-        self.ispd_lo_thresh = ice_speed_threshold_low     if ice_speed_threshold_low     is not None else self.config.get('ice_speed_thresh_lo', 1e-3)
+        self.bool_window    = boolean_window              if boolean_window              is not None else self.config.get('bool_window', 7)
+        self.bool_min_days  = boolean_min_days            if boolean_min_days            is not None else self.config.get('bool_min_days', 6)
+        self.ispd_thresh    = ice_speed_threshold         if ice_speed_threshold         is not None else self.config.get('ice_speed_thresh_hi', 1e-3)
         self.icon_thresh    = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
         self.cice_vars_ext  = extra_cice_vars             if extra_cice_vars             is not None else self.CICE_dict["FI_cice_vars_ext"]
         self.cice_vars_reqd = self.CICE_dict["FI_cice_vars_reqd"]
@@ -91,27 +88,19 @@ class SeaIceProcessor:
         self.define_hemisphere(hemisphere)
         self.reG_weights_defined        = False
         self.reG_AF2020_weights_defined = False
-
-    def _init_dask_client(self, n_workers=None, threads_per_worker=1, mem="8GB"):
-        global _dask_client
-        if _dask_client is not None and _dask_client.status == "running":
-            self.client = _dask_client
-            self.logger.info(f"✅ Using existing Dask client with {len(self.client.nthreads())} workers")
-        else:
-            try:
-                n_workers = n_workers or os.cpu_count()
-                cluster = LocalCluster(
-                    n_workers=n_workers,
-                    threads_per_worker=threads_per_worker,
-                    memory_limit=mem,
-                    local_directory=f"/g/data/gv90/da1339/tmp/{os.environ['USER']}/dask-tmp",
-                )
-                _dask_client = Client(cluster)
-                self.client = _dask_client
-                self.logger.info(f"✅ New Dask client created with {n_workers} workers")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize Dask client: {e}")
-                self.client = None
+        self.datasets_by_group = {'FI_B'  : defaultdict(list),
+                                  'FI_Ta' : defaultdict(list),
+                                  'FI_Tx' : defaultdict(list),
+                                  'PI_B'  : defaultdict(list),
+                                  'PI_Ta' : defaultdict(list),
+                                  'PI_Tx' : defaultdict(list),
+                                  'SO'    : defaultdict(list)}
+        self.mask_type_map = {"FI_B"  : "fast ice mask based on thresholding sea ice speed *without* regridding (i.e. on the native B-grid)",
+                              "FI_Ta" : "fast ice mask based on thresholding sea ice speed that has been first spatial-averaged to the T-grid",
+                              "FI_Tx" : "fast ice mask based on thresholding sea ice speed that has been first re-gridded to the T-grid based on xESMF re-gridding weights",
+                              "PI_B"  : "pack ice mask as complement to FI_B",
+                              "PI_Ta" : "pack ice mask as complement to FI_Ta",
+                              "PI_Tx" : "pack ice mask as complement to FI_Tx"}        
 
     def setup_logging(self, logfile=None):
         self.logger = logging.getLogger(self.sim_name)
@@ -165,24 +154,24 @@ class SeaIceProcessor:
         lon_norm = (lon+360)%360
         return lon_norm
 
-    def compute_bounds_2D(self, lat, lon):
-        ny, nx = lat.shape
-        lat_b = np.zeros((ny + 1, nx + 1))
-        lon_b = np.zeros((ny + 1, nx + 1))
-        lat_b[1:-1, 1:-1] = 0.25 * (lat[:-1, :-1] + lat[:-1, 1:] + lat[1:, :-1] + lat[1:, 1:])
-        lon_b[1:-1, 1:-1] = 0.25 * (lon[:-1, :-1] + lon[:-1, 1:] + lon[1:, :-1] + lon[1:, 1:])
+    def build_grid_dict(self, lat, lon):
+        ny, nx               = lat.shape
+        lat_b                = np.zeros((ny + 1, nx + 1))
+        lon_b                = np.zeros((ny + 1, nx + 1))
+        lat_b[1:-1, 1:-1]    = 0.25 * (lat[:-1, :-1] + lat[:-1, 1:] + lat[1:, :-1] + lat[1:, 1:])
+        lon_b[1:-1, 1:-1]    = 0.25 * (lon[:-1, :-1] + lon[:-1, 1:] + lon[1:, :-1] + lon[1:, 1:])
         lat_b[[0, -1], 1:-1] = lat[[0, -1], :-1]
         lon_b[[0, -1], 1:-1] = lon[[0, -1], :-1]
         lat_b[1:-1, [0, -1]] = lat[:-1, [0, -1]]
         lon_b[1:-1, [0, -1]] = lon[:-1, [0, -1]]
-        lat_b[0, 0] = lat[0, 0]; lat_b[0, -1] = lat[0, -1]
-        lat_b[-1, 0] = lat[-1, 0]; lat_b[-1, -1] = lat[-1, -1]
-        lon_b[0, 0] = lon[0, 0]; lon_b[0, -1] = lon[0, -1]
-        lon_b[-1, 0] = lon[-1, 0]; lon_b[-1, -1] = lon[-1, -1]
-        return lat_b, lon_b
-
-    def build_grid_dict(self, lat, lon):
-        lat_b, lon_b = self.compute_bounds_2D(lat, lon)
+        lat_b[0, 0]          = lat[0, 0]
+        lat_b[0, -1]         = lat[0, -1]
+        lat_b[-1, 0]         = lat[-1, 0]
+        lat_b[-1, -1]        = lat[-1, -1]
+        lon_b[0, 0]          = lon[0, 0]
+        lon_b[0, -1]         = lon[0, -1]
+        lon_b[-1, 0]         = lon[-1, 0]
+        lon_b[-1, -1]        = lon[-1, -1]        
         return {"lat"  : lat,
                 "lon"  : self.normalise_longitudes(lon),
                 "lat_b": lat_b,
@@ -193,21 +182,19 @@ class SeaIceProcessor:
         Define xESMF regridding weights from B-grid (u) to T-grid.
         Generates and saves weights if not found on disk.
         """
-        G_u         = self.build_grid_dict(self.gi_processor.G_u['lat'], self.gi_processor.G_u['lon'])
-        G_t         = self.build_grid_dict(self.gi_processor.G_t['lat'], self.gi_processor.G_t['lon'])
-        G_u["mask"] = self.gi_processor.KMT_mod
+        G_u           = self.build_grid_dict(self.gi_processor.G_u['lat'], self.gi_processor.G_u['lon'])
+        G_t           = self.build_grid_dict(self.gi_processor.G_t['lat'], self.gi_processor.G_t['lon'])
+        G_u["mask"]   = self.gi_processor.KMT_mod
         F_weights     = self.CICE_dict["P_reG_u2t_weights"]
         weights_exist = os.path.exists(F_weights)
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
-        self.reG = xe.Regridder(
-            G_u, G_t,
-            method="bilinear",
-            periodic=True,
-            ignore_degenerate=True,
-            extrap_method="nearest_s2d",
-            reuse_weights=weights_exist,
-            filename=F_weights,
-        )
+        self.reG = xe.Regridder(G_u, G_t,
+                                method            = "bilinear",
+                                periodic          = True,
+                                ignore_degenerate = True,
+                                extrap_method     = "nearest_s2d",
+                                reuse_weights     = weights_exist,
+                                filename          = F_weights)
         self.reG_weights_defined = True
 
     def reG_bgrid_to_tgrid_xesmf(self, ds):
@@ -235,49 +222,55 @@ class SeaIceProcessor:
         ds_reG              = ds_reG.drop_vars(['tarea', 'TLAT', 'TLON', 'ULAT', 'ULON'])
         return ds_reG
 
-    def reG_bgrid_to_tgrid_spat_avg(self, da_b):
-        """
-        Spatially average 4 neighboring B-grid points to approximate T-grid values,
-        and pad result to maintain full (nj, ni) shape.
-        """
-        ispd_avg = 0.25 * (da_b[:-1, :-1] + da_b[:-1, 1:] + da_b[1:, :-1] + da_b[1:, 1:])
-        # Create empty full-sized array and insert averaged values
-        ispd_Ta_full = xr.full_like(da_b, fill_value=np.nan)
-        ispd_Ta_full[:-1, :-1] = ispd_avg
-        # Preserve original coordinates
-        return xr.DataArray(
-            ispd_Ta_full.data,
-            dims=da_b.dims,
-            coords=da_b.coords,
-            name="ispd_Ta",
-            attrs={"long_name": "spatial avg B-grid speed onto T-grid", "units": "m/s"},
-        )
+    def compute_ice_speed_types(self, DS, ispd_type):
+        if "ispd_B" in ispd_type:
+            self.logger.info("⚡ Computing B-grid ispd")
+            ispd_B       = xr.apply_ufunc(np.hypot, DS['uvel'], DS['vvel'],
+                                          dask          = "allowed", 
+                                          output_dtypes = [DS['uvel'].dtype])
+            DS['ispd_B'] = ispd_B
+        if "ispd_Ta" in ispd_type:
+            self.logger.info("🌀 Spatial average regrid to T-grid")
+            ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
+            ispd_stack             = xr.concat([ispd_B.isel(nj=slice(0, -1), ni=slice(0, -1)),
+                                                ispd_B.isel(nj=slice(0, -1), ni=slice(1, None)),
+                                                ispd_B.isel(nj=slice(1, None), ni=slice(0, -1)),
+                                                ispd_B.isel(nj=slice(1, None), ni=slice(1, None)) ], dim="offset")
+            ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)    
+            ispd_Ta[..., :-1, :-1] = ispd_avg.data  # or .values
+            DS['ispd_Ta']          = xr.DataArray(ispd_Ta,
+                                                dims   = ("time", "nj", "ni"),
+                                                coords = {"time" : (("time"),DS.time.values),
+                                                            "nj"   : np.arange(ispd_Ta.sizes["nj"]),
+                                                            "ni"   : np.arange(ispd_Ta.sizes["ni"]),
+                                                            "TLAT" : (("nj", "ni"), DS.TLAT.values),
+                                                            "TLON" : (("nj", "ni"), DS.TLON.values)},
+                                                attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
+                                                            "units"     : ispd_B.attrs.get("units", "m/s")})
+        if "ispd_Tx" in ispd_type:
+            self.logger.info("🌀 xESMF regrid to T-grid")
+            if not self.reG_weights_defined:
+                self.define_reG_weights()
+            DS_reG = self.reG_bgrid_to_tgrid_xesmf(DS)
+            self.logger.info("⚡ Computing xESMF-based ispd")
+            ispd_Tx         = xr.apply_ufunc(np.hypot, DS_reG['uvel'], CICE_reG['vvel'],
+                                            dask          = "allowed",
+                                            output_dtypes = [DS_reG['uvel'].dtype])
+            DS['ispd_Tx'] = ispd_Tx.copy()
+        return DS
 
     def process_daily_cice(self, sim_name=None, dt0_str=None, dtN_str=None, D_iceh=None, ispd_thresh=None, ispd_type=None):
         sim_name    = sim_name    or self.sim_name
         dt0_str     = dt0_str     or self.dt0_str
         dtN_str     = dtN_str     or self.dtN_str
         D_iceh      = D_iceh      or self.D_iceh
-        ispd_thresh = float(ispd_thresh) if ispd_thresh is not None else self.ispd_hi_thresh
+        ispd_thresh = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
         ispd_type   = ispd_type   or ["ispd_B", "ispd_Ta", "ispd_Tx"]
         if isinstance(ispd_type, str):
             ispd_type = [ispd_type]
         valid_types = {"ispd_B", "ispd_Ta", "ispd_Tx"}
         assert all(t in valid_types for t in ispd_type), f"Invalid ispd_type: {ispd_type}"
-        dts         = pd.date_range(dt0_str, dtN_str, freq="D")
-        datasets_by_group = {'FI_B'  : defaultdict(list),
-                             'FI_Ta' : defaultdict(list),
-                             'FI_Tx' : defaultdict(list),
-                             'PI_B'  : defaultdict(list),
-                             'PI_Ta' : defaultdict(list),
-                             'PI_Tx' : defaultdict(list),
-                             'SO'    : defaultdict(list)}
-        mask_type_map = {"FI_B"  : "fast ice mask based on thresholding sea ice speed *without* regridding (i.e. on the native B-grid)",
-                         "FI_Ta" : "fast ice mask based on thresholding sea ice speed that has been first spatial-averaged to the T-grid",
-                         "FI_Tx" : "fast ice mask based on thresholding sea ice speed that has been first re-gridded to the T-grid based on xESMF re-gridding weights",
-                         "PI_B"  : "pack ice mask as complement to FI_B",
-                         "PI_Ta" : "pack ice mask as complement to FI_Ta",
-                         "PI_Tx" : "pack ice mask as complement to FI_Tx"}                             
+        dts = pd.date_range(dt0_str, dtN_str, freq="D")                          
         for dt in dts:
             date_str = dt.strftime("%Y-%m-%d")
             m_str    = dt.strftime("%Y-%m")
@@ -286,43 +279,44 @@ class SeaIceProcessor:
                 self.logger.info(f"❌ Missing CICE file: {P_iceh}")
                 continue
             self.logger.info(f"📂 Loading: {P_iceh}")
-            CICE = xr.open_dataset(P_iceh, engine="netcdf4")[list(self.cice_var_list)]
-            if "ispd_B" in ispd_type:
-                self.logger.info("⚡ Computing B-grid ispd")
-                ispd_B         = xr.apply_ufunc(np.hypot, CICE['uvel'], CICE['vvel'],
-                                                dask          = "allowed", 
-                                                output_dtypes = [CICE['uvel'].dtype])
-                CICE['ispd_B'] = ispd_B
-            if "ispd_Ta" in ispd_type:
-                self.logger.info("🌀 Spatial average regrid to T-grid")
-                ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
-                ispd_stack             = xr.concat([ispd_B.isel(nj=slice(0, -1), ni=slice(0, -1)),
-                                                    ispd_B.isel(nj=slice(0, -1), ni=slice(1, None)),
-                                                    ispd_B.isel(nj=slice(1, None), ni=slice(0, -1)),
-                                                    ispd_B.isel(nj=slice(1, None), ni=slice(1, None)) ], dim="offset")
-                ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)    
-                ispd_Ta[..., :-1, :-1] = ispd_avg.data  # or .values
-                CICE['ispd_Ta']        = xr.DataArray(ispd_Ta,
-                                                      dims   = ("time", "nj", "ni"),
-                                                      coords = {"time" : (("time"),CICE.time.values),
-                                                                "nj"   : np.arange(ispd_Ta.sizes["nj"]),
-                                                                "ni"   : np.arange(ispd_Ta.sizes["ni"]),
-                                                                "TLAT" : (("nj", "ni"), CICE.TLAT.values),
-                                                                "TLON" : (("nj", "ni"), CICE.TLON.values)},
-                                                     attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
-                                                                "units"     : ispd_B.attrs.get("units", "m/s")})
-            if "ispd_Tx" in ispd_type:
-                self.logger.info("🌀 xESMF regrid to T-grid")
-                if not self.reG_weights_defined:
-                    self.define_reG_weights()
-                CICE_reG = self.reG_bgrid_to_tgrid_xesmf(CICE)
-                self.logger.info("⚡ Computing xESMF-based ispd")
-                ispd_Tx         = xr.apply_ufunc(np.hypot, CICE_reG['uvel'], CICE_reG['vvel'],
-                                                 dask          = "allowed",
-                                                 output_dtypes = [CICE_reG['uvel'].dtype])
-                CICE['ispd_Tx'] = ispd_Tx.copy()
+            CICE      = xr.open_dataset(P_iceh, engine="netcdf4")[list(self.cice_var_list)]
+            CICE_ispd = self.compute_ice_speed_types( CICE , ispd_type )
+            # if "ispd_B" in ispd_type:
+            #     self.logger.info("⚡ Computing B-grid ispd")
+            #     ispd_B         = xr.apply_ufunc(np.hypot, CICE['uvel'], CICE['vvel'],
+            #                                     dask          = "allowed", 
+            #                                     output_dtypes = [CICE['uvel'].dtype])
+            #     CICE['ispd_B'] = ispd_B
+            # if "ispd_Ta" in ispd_type:
+            #     self.logger.info("🌀 Spatial average regrid to T-grid")
+            #     ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
+            #     ispd_stack             = xr.concat([ispd_B.isel(nj=slice(0, -1), ni=slice(0, -1)),
+            #                                         ispd_B.isel(nj=slice(0, -1), ni=slice(1, None)),
+            #                                         ispd_B.isel(nj=slice(1, None), ni=slice(0, -1)),
+            #                                         ispd_B.isel(nj=slice(1, None), ni=slice(1, None)) ], dim="offset")
+            #     ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)    
+            #     ispd_Ta[..., :-1, :-1] = ispd_avg.data  # or .values
+            #     CICE['ispd_Ta']        = xr.DataArray(ispd_Ta,
+            #                                           dims   = ("time", "nj", "ni"),
+            #                                           coords = {"time" : (("time"),CICE.time.values),
+            #                                                     "nj"   : np.arange(ispd_Ta.sizes["nj"]),
+            #                                                     "ni"   : np.arange(ispd_Ta.sizes["ni"]),
+            #                                                     "TLAT" : (("nj", "ni"), CICE.TLAT.values),
+            #                                                     "TLON" : (("nj", "ni"), CICE.TLON.values)},
+            #                                          attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
+            #                                                     "units"     : ispd_B.attrs.get("units", "m/s")})
+            # if "ispd_Tx" in ispd_type:
+            #     self.logger.info("🌀 xESMF regrid to T-grid")
+            #     if not self.reG_weights_defined:
+            #         self.define_reG_weights()
+            #     CICE_reG = self.reG_bgrid_to_tgrid_xesmf(CICE)
+            #     self.logger.info("⚡ Computing xESMF-based ispd")
+            #     ispd_Tx         = xr.apply_ufunc(np.hypot, CICE_reG['uvel'], CICE_reG['vvel'],
+            #                                      dask          = "allowed",
+            #                                      output_dtypes = [CICE_reG['uvel'].dtype])
+            #     CICE['ispd_Tx'] = ispd_Tx.copy()
             self.logger.info("🌊 Subsetting Ocean into either southern or northern hemisphere (default: southern)")
-            CICE_SO = CICE.isel(nj=self.hemisphere_nj_slice)
+            CICE_SO = CICE_ispd.isel(nj=self.hemisphere_nj_slice)
             self.logger.info("❄️ create fast ice masks")
             sic_mask = CICE_SO['aice'] > self.icon_thresh
             masks    = {}
@@ -337,15 +331,15 @@ class SeaIceProcessor:
                 mask = masks[key]
                 ds_fi = CICE_SO.where(mask)
                 ds_fi['FI_mask'] = mask
-                datasets_by_group[key][m_str].append(ds_fi)
+                self.datasets_by_group[key][m_str].append(ds_fi)
                 ds_pi = CICE_SO.where(~mask)
                 ds_pi['PI_mask'] = ~mask
-                datasets_by_group[key.replace("FI", "PI")][m_str].append(ds_pi)
-            datasets_by_group['SO'][m_str].append(CICE_SO)
+                self.datasets_by_group[key.replace("FI", "PI")][m_str].append(ds_pi)
+            self.datasets_by_group['SO'][m_str].append(CICE_SO)
             if dt == dts[-1] or dt.month != (dt + pd.Timedelta(days=1)).month:
                 ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-") 
                 P_zarr_root     = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_daily_{m_str}.zarr")
-                for group, data_dict in datasets_by_group.items():
+                for group, data_dict in self.datasets_by_group.items():
                     datasets = data_dict[m_str]
                     if not datasets:
                         continue
@@ -353,7 +347,7 @@ class SeaIceProcessor:
                     ds_monthly = xr.concat(datasets, dim="time").sortby("time")
                     if group != "SO":
                         ds_monthly.attrs["ispd_thresh"] = ispd_thresh
-                        ds_monthly.attrs["mask_type"]   = mask_type_map.get(group, "unknown")
+                        ds_monthly.attrs["mask_type"]   = self.mask_type_map.get(group, "unknown")
                     ds_monthly.to_zarr(P_zarr_root, group=group, mode="w", consolidated=True)
                     data_dict[m_str].clear()
 
@@ -383,18 +377,12 @@ class SeaIceProcessor:
         dtN_str      = dtN_str or self.dtN_str
         D_iceh       = D_iceh or self.D_iceh
         mean_period  = mean_period or self.mean_period
-        ispd_thresh = float(ispd_thresh) if ispd_thresh is not None else self.ispd_hi_thresh
+        ispd_thresh  = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
         ispd_type    = ispd_type or ["ispd_B", "ispd_Ta", "ispd_Tx"]
         if isinstance(ispd_type, str):
             ispd_type = [ispd_type]
         valid_types = {"ispd_B", "ispd_Ta", "ispd_Tx"}
         assert all(t in valid_types for t in ispd_type), f"Invalid ispd_type: {ispd_type}"
-        mask_type_map = {"FI_B"  :  "fast ice mask based on thresholding sea ice speed *without* regridding (i.e. on the native B-grid)",
-                         "FI_Ta" : "fast ice mask based on thresholding sea ice speed that has been first spatial-averaged to the T-grid",
-                         "FI_Tx" : "fast ice mask based on thresholding sea ice speed that has been first re-gridded to the T-grid based on xESMF re-gridding weights",
-                         "PI_B"  :  "pack ice mask as complement to FI_B",
-                         "PI_Ta" : "pack ice mask as complement to FI_Ta",
-                         "PI_Tx" : "pack ice mask as complement to FI_Tx"}
         dts = pd.date_range(dt0_str, dtN_str, freq="D")
         month_groups = defaultdict(lambda: {k: [] for k in ['FI_B', 'FI_Ta', 'FI_Tx', 'PI_B', 'PI_Ta', 'PI_Tx', 'SO']})
         self.logger.info(f"📆 Rolling mean first, then fast ice masking between {dt0_str} and {dtN_str}")
@@ -421,41 +409,40 @@ class SeaIceProcessor:
                 continue
             self.logger.info(f"📆 {date_str}: computing speeds and masks")
             masks = {}
-            if "ispd_B" in ispd_type or "ispd_Ta" in ispd_type:
-                ispd_B = xr.apply_ufunc(np.hypot, CICE_day['uvel'], CICE_day['vvel'])
-                CICE_day['ispd_B'] = ispd_B
-            if "ispd_Ta" in ispd_type:
-                self.logger.info("🌀 Spatial average regrid to T-grid")
-                ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
-                ispd_stack             = xr.concat([ispd_B.isel(nj=slice(0, -1), ni=slice(0, -1)),
-                                                    ispd_B.isel(nj=slice(0, -1), ni=slice(1, None)),
-                                                    ispd_B.isel(nj=slice(1, None), ni=slice(0, -1)),
-                                                    ispd_B.isel(nj=slice(1, None), ni=slice(1, None)) ], dim="offset")
-                ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)    
-                ispd_Ta[..., :-1, :-1] = ispd_avg.data  # or .values
-                CICE_day['ispd_Ta']    = xr.DataArray(ispd_Ta,
-                                                      dims   = ("time", "nj", "ni"),
-                                                      coords = {"time" : (("time"),CICE_day.time.values),
-                                                                "nj"   : np.arange(ispd_Ta.sizes["nj"]),
-                                                                "ni"   : np.arange(ispd_Ta.sizes["ni"]),
-                                                                "TLAT" : (("nj", "ni"), CICE_day.TLAT.values),
-                                                                "TLON" : (("nj", "ni"), CICE_day.TLON.values)},
-                                                     attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
-                                                                "units"     : ispd_B.attrs.get("units", "m/s")})                
-                #ispd_Ta = self.reG_bgrid_to_tgrid_spat_avg(CICE_day['ispd_B'])
-                #CICE_day['ispd_Ta'] = ispd_Ta
-            if "ispd_Tx" in ispd_type:
-                if not self.reG_weights_defined:
-                    self.define_reG_weights()
-                try:
-                    CICE_reG = self.reG_bgrid_to_tgrid_xesmf(CICE_day)
-                    ispd_Tx = xr.apply_ufunc(np.hypot, CICE_reG['uvel'], CICE_reG['vvel'])
-                    CICE_day['ispd_Tx'] = ispd_Tx
-                except Exception as e:
-                    self.logger.error(f"❌ Regridding failed: {e}")
-                    continue
-            CICE_SO = CICE_day.isel(nj=self.hemisphere_nj_slice)
-            sic_mask = CICE_SO['aice'] > self.icon_thresh
+            # if "ispd_B" in ispd_type or "ispd_Ta" in ispd_type:
+            #     ispd_B = xr.apply_ufunc(np.hypot, CICE_day['uvel'], CICE_day['vvel'])
+            #     CICE_day['ispd_B'] = ispd_B
+            # if "ispd_Ta" in ispd_type:
+            #     self.logger.info("🌀 Spatial average regrid to T-grid")
+            #     ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
+            #     ispd_stack             = xr.concat([ispd_B.isel(nj=slice(0, -1), ni=slice(0, -1)),
+            #                                         ispd_B.isel(nj=slice(0, -1), ni=slice(1, None)),
+            #                                         ispd_B.isel(nj=slice(1, None), ni=slice(0, -1)),
+            #                                         ispd_B.isel(nj=slice(1, None), ni=slice(1, None)) ], dim="offset")
+            #     ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)    
+            #     ispd_Ta[..., :-1, :-1] = ispd_avg.data  # or .values
+            #     CICE_day['ispd_Ta']    = xr.DataArray(ispd_Ta,
+            #                                           dims   = ("time", "nj", "ni"),
+            #                                           coords = {"time" : (("time"),CICE_day.time.values),
+            #                                                     "nj"   : np.arange(ispd_Ta.sizes["nj"]),
+            #                                                     "ni"   : np.arange(ispd_Ta.sizes["ni"]),
+            #                                                     "TLAT" : (("nj", "ni"), CICE_day.TLAT.values),
+            #                                                     "TLON" : (("nj", "ni"), CICE_day.TLON.values)},
+            #                                          attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
+            #                                                     "units"     : ispd_B.attrs.get("units", "m/s")})                
+            # if "ispd_Tx" in ispd_type:
+            #     if not self.reG_weights_defined:
+            #         self.define_reG_weights()
+            #     try:
+            #         CICE_reG = self.reG_bgrid_to_tgrid_xesmf(CICE_day)
+            #         ispd_Tx = xr.apply_ufunc(np.hypot, CICE_reG['uvel'], CICE_reG['vvel'])
+            #         CICE_day['ispd_Tx'] = ispd_Tx
+            #     except Exception as e:
+            #         self.logger.error(f"❌ Regridding failed: {e}")
+            #         continue
+            CICE_ispd = self.compute_ice_speed_types( CICE_day , ispd_type )
+            CICE_SO   = CICE_ispd.isel(nj=self.hemisphere_nj_slice)
+            sic_mask  = CICE_SO['aice'] > self.icon_thresh
             if "ispd_B" in ispd_type:
                 masks['FI_B'] = sic_mask & (CICE_SO['ispd_B'] <= ispd_thresh)
             if "ispd_Ta" in ispd_type:
@@ -486,7 +473,7 @@ class SeaIceProcessor:
                         ds_monthly = xr.concat(datasets, dim="time").sortby("time")
                         if group != "SO":
                             ds_monthly.attrs["ispd_thresh"] = ispd_thresh
-                            ds_monthly.attrs["mask_type"] = mask_type_map.get(group, "unknown")
+                            ds_monthly.attrs["mask_type"] = self.mask_type_map.get(group, "unknown")
                         ds_monthly.to_zarr(P_zarr_root, group=group, mode="w", consolidated=True)
                     except Exception as e:
                         self.logger.error(f"Failed to write group {group}: {e}")
@@ -502,7 +489,7 @@ class SeaIceProcessor:
                             D_zarr      = None,
                             chunks      = None):
         sim_name        = sim_name    or self.sim_name
-        ispd_thresh     = ispd_thresh or self.ispd_hi_thresh
+        ispd_thresh     = ispd_thresh or self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         D_zarr          = D_zarr or Path(self.config['D_dict']['AFIM_out'],sim_name,"zarr")
         assert ice_type in ['FI_B', 'FI_Ta', 'FI_Tx', 'PI_B', 'PI_Ta', 'PI_Tx', 'SO'], f"Invalid ice_type: {ice_type}"

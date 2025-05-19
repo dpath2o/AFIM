@@ -2,7 +2,7 @@ import os, json, shutil
 import xarray      as xr
 import numpy       as np
 import pandas      as pd
-import geopandas   as gpd
+#import geopandas   as gpd
 from scipy.spatial import cKDTree
 from pathlib       import Path
 from datetime      import datetime

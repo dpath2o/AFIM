@@ -1,8 +1,8 @@
-import os, sys, time, json, pygmt, imageio, shutil
+import os, sys, time, json, imageio, shutil #pygmt, imageio, shutil
 import xarray as xr
 import pandas as pd
 import numpy as np
-import geopandas as gpd
+#import geopandas as gpd
 from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
