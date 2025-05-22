@@ -14,18 +14,62 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 ---
 
-## Features
+# Antarctic Fast Ice Modelling (AFIM)
 
-- 📦 `SeaIceProcessor`: Compute either landfast sea ice or pack ice or sea ice metrics area.
-- 📊 `SeaIcePlotter`: Plot spatial maps and time series of fast/pack ice, generate region-faceted maps and animations.
-- 🌍 `GroundedIcebergProcessor` grounded iceberg masking and landmask modification (via `GroundedIcebergProcessor`).
-- 🧊 Support for regridding, speed calculation, climatological masking, and multiple hemispheres.
+**AFIM** is a modular and powerful Python-based toolkit for analysing Antarctic landfast and pack ice from sea ice model output. It includes utilities for fast ice classification, plotting, grounded iceberg masking, and automated batch processing using PBS on HPC systems like Gadi.
 
 ---
 
-## Installation
+## 🚀 Highlights
 
-Clone the repository and install in editable mode:
+### 🧊 `SeaIceProcessor`
+
+* Core class to compute fast ice, pack ice, or general sea ice metrics from daily or rolling model output
+* Supports Boolean-based classification, spatial and temporal averaging, masking, and Zarr output
+
+### 🧭 `process_fast_ice` directory — HPC-Ready
+
+* 🔁 Powerful command-line batch processing using PBS:
+
+  * `process_fast_ice_pbs_wrapper.sh`: Shell script that loops over months and submits jobs
+  * `process_fast_ice.py`: Argument-driven Python script for daily or rolling classification
+* Supports options like:
+
+  ```bash
+  ./process_fast_ice_pbs_wrapper.sh \
+      -s gi-mid \
+      -t 1e-3 \
+      -i ispd_Ta \
+      -S 1993-01-01 \
+      -E 1999-12-31 \
+      -r -d
+  ```
+
+  * `-s` = simulation name, `-t` = threshold, `-i` = ice speed type(s), `-r` = rolling, `-d` = daily
+  * Also supports `--dry-run` for testing submissions
+
+### 📊 `SeaIcePlotter`
+
+* Generate spatial maps (daily, mean), region-faceted views, and time series
+* Integrates fast/pack/SO ice, observational overlays, and grounded iceberg masks
+
+### 🏔️ `GroundedIcebergProcessor`
+
+* Mask grounded iceberg regions and modify landmasks for better coastal fast ice simulation
+
+### 🔄 Regridding and Derived Fields
+
+* Supports B-grid, T-grid (average and xESMF) interpolation
+* Dynamically computes vector magnitudes for fields like `strintx/strinty`, `strocnx/strocny`, etc.
+
+### 📓 Interactive Analysis
+
+* Jupyter notebook [`fi_anal.ipynb`](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) demonstrates fast ice workflows
+* Includes visualisation, comparison to observations, and regional time series analysis
+
+---
+
+## 📦 Installation
 
 ```bash
 git clone https://github.com/dpath2o/AFIM.git
@@ -33,7 +77,7 @@ cd AFIM
 pip install -e ./src
 ```
 
-Or create a full environment:
+Or using Conda:
 
 ```bash
 conda env create -f src/environment.yml
@@ -42,71 +86,62 @@ conda activate afim
 
 ---
 
-## Usage
-
-### Simple one-off use:
+## 🧪 Example: Interactive Python Usage
 
 ```python
 from sea_ice_processor import SeaIceProcessor
-dt0_str  = "1998-08-01"
-dtN_str  = "1999-03-31"
-sim_name = 'baseline'
-SI_proc  = SeaIceProcessor(sim_name            = sim_name, 
-                           ice_speed_threshold = 1e-4)
-FI_lo_spd = SI_proc.process_window(dt0_str    = dt0_str,
-                                    dtN_str    = dtN_str, 
-                                    write_zarr = False,
-                                    ow_zarrs   = True)
-SI_proc2  = SeaIceProcessor(sim_name            = sim_name, 
-                           ice_speed_threshold = 1e-3)
-FI_hi_spd = SI_proc2.process_window(dt0_str    = dt0_str,
-                                    dtN_str    = dtN_str, 
-                                    write_zarr = False,
-                                    ow_zarrs   = True)
-```
 
-### Batch Processing for Full Simulation:
-
-See [`compute_sea_ice.py`](./scripts/compute_sea_ice.py) for a CLI-driven loop script:
-
-```bash
-python compute_sea_ice.py Rothrock --sea_ice
+SI_proc = SeaIceProcessor(sim_name='gi-mid', ice_speed_threshold=1e-3)
+FI = SI_proc.process_window(dt0_str="1998-07-01", dtN_str="1999-07-01", write_zarr=False)
 ```
 
 ---
 
-## Project Structure
+## 🗂️ Project Layout
 
 ```
-AFIM/
-├── src/
-│   ├── JSONs/                        # JSON config files for variable metadata and plotting
-│   ├── sea_ice_processor.py          # sea ice processor 
-│   ├── sea_ice_plotter.py            # Visualisation for fast and pack ice data
-│   ├── grounded_iceberg_processor.py # Handles grounded iceberg landmask integration
-│   ├── __init__.py                   # Package initializer
-│   ├── requirements.txt              # Python dependencies
-│   └── environment.yml               # Conda environment file
+├── notebooks/                  # Jupyter notebooks
+│   └── fi_anal.ipynb           # Main interactive analysis
 ├── scripts/
-│   ├── compute_sea_ice.py           # Looping script for computing fast ice
-├── notebooks/
-│   └── fi_anal.ipynb                 # Jupyter notebook example
-├── README.md                         # Project overview and usage instructions
-├── setup.py                          # Installable package configuration
-└── docs/                             # Sphinx documentation source (optional)
+│   └── process_fast_ice/
+│       ├── process_fast_ice.py           # Main CLI script
+│       ├── process_fast_ice.pbs          # PBS job script
+│       └── process_fast_ice_pbs_wrapper.sh # Wrapper to launch monthly jobs
+├── src/
+│   ├── sea_ice_processor.py    # Core processor class
+│   ├── sea_ice_plotter.py      # Plotting class
+│   └── grounded_iceberg_processor.py
+└── docs/                       # Documentation (Sphinx)
 ```
+
+---
+
+## 📚 Documentation
+
+* Full API docs and method descriptions under `docs/`
+* [fi\_anal.ipynb](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) is the best place to start interactively
+
+---
+
+## 📮 Contributions
+
+Contributions and feature requests welcome. Feel free to open an [Issue](https://github.com/dpath2o/AFIM/issues) or submit a pull request!
 
 ---
 
 ## Background
-In early 2020 I choose to embark on a PhD in oceanography. This decision was heavily influenced by my background and my interest in [ocean modelling](http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf), the [Southern Ocean](https://tos.org/oceanography/issue/volume-25-issue-03) and [Antarctica](https://www.scar.org). This was spurned largely from my
-[previous](https://www.cencoos.org) [professional life](http://imos.org.au) as a [coastal oceanographer](https://scripps.ucsd.edu/research/topics/coastal-oceanography). That previous pursuit centred mainly around a remote sensing technology called [high frequency radar](https://tos.org/oceanography/assets/docs/10-2_paduan1.pdf) which is, and continues to be, used in a broad number of ways to understand the dynamics (the motion of the of the upper ocean) through the digital application of signal processing of the physical representaiton of a Doppler shifted Bragg frequency. 
 
-After 10 years in that field I left to diversify my career skillset while ticking some service-related philosophies about being [contributing to a new nation](https://en.wikipedia.org/wiki/National_service). After four years of [learning how-to drive Navy ships](https://www.navy.gov.au/sites/default/files/documents/Warfare_Officers_Career_Handbook.pdf) I specialised as a [Meteorologic and Oceanographic Officer](https://www.defencejobs.gov.au/jobs/reserves/navy/meteorologist-and-oceanographer) in that [organisation](https://www.navy.gov.au) and [operational-ised](https://www.youtube.com/watch?v=_1roFUwV7ss) my [scientific skillset](https://oceansci.ucsc.edu/academics/graduate/ms.html). At about the same time I became fascinated with Antarctica and its criticality both [climatically](https://tos.org/oceanography/article/southern-ocean-warming) and [strategically](https://defence.gov.au/adc/Publications/AJDSS/documents/volume3-number2/Where-to-from-here-The-Australian-Defence-Forces-pursuit-of-national-security-and-the-2020-Defence-Strategic-update.pdf) (and [here](https://www.antarctica.gov.au/about-us/antarctic-strategy-and-action-plan/)). Hence I began searching for a PhD project that would fulfil my interest.
+In early 2020, I chose to embark on a PhD in oceanography. This decision was influenced by my background and interest in [ocean modelling](http://www.cmar.csiro.au/staff/oke/pubs/England_and_Oke_2001.pdf), the [Southern Ocean](https://tos.org/oceanography/issue/volume-25-issue-03), and [Antarctica](https://www.scar.org). This interest stemmed in large part from my [previous](https://www.cencoos.org) [professional life](http://imos.org.au) as a [coastal oceanographer](https://scripps.ucsd.edu/research/topics/coastal-oceanography). That work focused mainly on a remote sensing technology called [high frequency radar](https://tos.org/oceanography/assets/docs/10-2_paduan1.pdf), which continues to be widely used to understand upper ocean dynamics via the digital signal processing of Doppler-shifted Bragg frequencies.
 
-Fortunately, it did not take too long before I was introduced to [Alex Fraser](https://tasmanian.com.au/stories/alex-fraser/) and [a project](./ResearchPlan/project_proposal/PROJECT_PROPOSAL.pdf) that he had on his digital shelf that from the outset ticked all my interest boxes. I can\'t recall exactly where or when in I was introduced to the various forms of [sea ice](https://en.wikipedia.org/wiki/Sea_ice) and [its role in polar oceanography](https://tos.org/oceanography/issue/volume-24-issue-03) but I do remember it being very [Arctic-centric](http://nsidc.org/arcticseaicenews/) with this vague concept that [landfast sea ice (fast ice)](https://arctic.noaa.gov/Report-Card/Report-Card-2018/ArtMID/7878/ArticleID/788/Landfast-Sea-Ice-in-a-Changing-Arctic)played an important role in Arctic sea ice. So when Alex provided me with a rough outline of the project he wanted to pursue modelling fast ice and it being [largely neglected thus far](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwiWo5bfuPv2AhWTjeYKHSlPCycQFnoECCcQAQ&url=https%3A%2F%2Fdipot.ulb.ac.be%2Fdspace%2Fbitstream%2F2013%2F336850%2F1%2Fdoi_320494.pdf&usg=AOvVaw3fsCaFuWB9oz-dzVqWsQUW) in circumpolar modelling efforts, I knew the meat on this bone was likely well marbled.
+After a decade in that field, I stepped away to diversify my career skillset while also pursuing service-oriented goals. I spent four years [learning to drive Navy ships](https://www.navy.gov.au/sites/default/files/documents/Warfare_Officers_Career_Handbook.pdf), and then specialised as a [Meteorological and Oceanographic Officer](https://www.defencejobs.gov.au/jobs/reserves/navy/meteorologist-and-oceanographer) in the [Royal Australian Navy](https://www.navy.gov.au), applying my [scientific background](https://oceansci.ucsc.edu/academics/graduate/ms.html) to real-time operational contexts. During this time, I became fascinated by Antarctica, both for its [climatic importance](https://tos.org/oceanography/article/southern-ocean-warming) and its [strategic relevance](https://defence.gov.au/adc/Publications/AJDSS/documents/volume3-number2/Where-to-from-here-The-Australian-Defence-Forces-pursuit-of-national-security-and-the-2020-Defence-Strategic-update.pdf) ([see also](https://www.antarctica.gov.au/about-us/antarctic-strategy-and-action-plan/)). This led me to begin searching for a PhD project that would allow me to pursue these interests more deeply.
 
-In mid-2021 I was accepted and enrolled as a part-time PhD student at the [University of Tasmania](https://www.utas.edu.au) [Institute of Marine Science](https://www.imas.utas.edu.au) through the
-[Australian Antarctic Partnership Program](https://aappartnership.org.au). I spent the second-half of that year [reading](./references) and constructing an initial [Reasearch Plan](./ResearchPlan/doc/researchplan.pdf). However, as all good projects evolve, it became apparent that I should be aligning my project with a well-supported Australian sea ice modelling effort, not only for my own support, but also to aim for a more impactful goal of incorporating fast ice into a nationally recognised/supported model.
+It wasn’t long before I was introduced to [Alex Fraser](https://tasmanian.com.au/stories/alex-fraser/) and a [project](./ResearchPlan/project_proposal/PROJECT_PROPOSAL.pdf) he had been holding onto that aligned perfectly with my interests. I can't recall exactly when I first learned about the different types of [sea ice](https://en.wikipedia.org/wiki/Sea_ice) or their role in [polar oceanography](https://tos.org/oceanography/issue/volume-24-issue-03), but my early understanding was definitely [Arctic-centric](http://nsidc.org/arcticseaicenews/). I had only a vague awareness that [landfast sea ice (fast ice)](https://arctic.noaa.gov/Report-Card/Report-Card-2018/ArtMID/7878/ArticleID/788/Landfast-Sea-Ice-in-a-Changing-Arctic) played a crucial role in the Arctic system.
 
-After a brief interlude in the first quarter of 2022 I\'m now pursuing fast ice modelling with an eye towards incorporating it into [COSIMA](http://cosima.org.au).
+When Alex outlined his idea for a fast ice modelling project — and noted that fast ice had been [largely neglected](https://dipot.ulb.ac.be/dspace/bitstream/2013/336850/1/doi_320494.pdf) in circumpolar sea ice modelling efforts — I was immediately intrigued. It was clear that this was a problem with depth, and one that hadn’t yet received the attention it deserved.
+
+In mid-2021, I enrolled as a part-time PhD student at the [University of Tasmania](https://www.utas.edu.au), within the [Institute for Marine and Antarctic Studies (IMAS)](https://www.imas.utas.edu.au), through the [Australian Antarctic Program Partnership](https://aappartnership.org.au). I spent the second half of that year [reviewing the literature](./references) and drafting an initial [research plan](./ResearchPlan/doc/researchplan.pdf). As the project evolved, it became increasingly clear that I should align my work with a well-supported Australian sea ice modelling framework. This would not only benefit my development as a modeller but would also create a stronger pathway for integrating fast ice representation into a nationally supported climate model.
+
+Following a brief pause in early 2022, I resumed my PhD project with a sharpened focus: to explore and implement fast ice modelling in the context of the [COSIMA](http://cosima.org.au) model framework.
+
+In 2025, I was awarded the Australian Defence Force Chief of Defence Force Fellowship in recognition of my research into Antarctic fast ice and its relevance to climate and strategic studies.
+
