@@ -14,12 +14,6 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 ---
 
-# Antarctic Fast Ice Modelling (AFIM)
-
-**AFIM** is a modular and powerful Python-based toolkit for analysing Antarctic landfast and pack ice from sea ice model output. It includes utilities for fast ice classification, plotting, grounded iceberg masking, and automated batch processing using PBS on HPC systems like Gadi.
-
----
-
 ## 🚀 Highlights
 
 ### 🧊 `SeaIceProcessor`
