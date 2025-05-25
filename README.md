@@ -16,7 +16,7 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 You can view the current AFIM Archive processing status here:
 
-👉 [AFIM Archive Status Table](docs/AFIM_archive_status.html)
+👉 [AFIM Archive Status Table](https://dpath2o.github.io/AFIM/AFIM_archive_status.html)
 
 ---
 
