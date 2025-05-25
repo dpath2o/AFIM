@@ -27,7 +27,7 @@ class SeaIcePlotter:
     - Fully configurable through JSON to adapt to different simulations and data products
     """
     def __init__(self,
-                 P_JSON     = None,
+                 P_json     = None,
                  sim_name   = None,
                  ice_type   = None, #FI, SI, PI, GI                   -> controls dictionary and for GI controls sub-directory
                  plot_type  = None, #regional, hemisphere, timeseries -> controls PNG directory
@@ -79,9 +79,9 @@ class SeaIcePlotter:
             * AF_regions   → predefined regional extents
         - Initializes a GroundedIcebergProcessor to overlay grounded iceberg locations if enabled.
         """
-        if P_JSON is None:
-            P_JSON = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
-        with open(P_JSON, 'r') as f:
+        if P_json is None:
+            P_json = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
+        with open(P_json, 'r') as f:
             self.config = json.load(f)
         self.sim_name    = sim_name         if sim_name   is not None else 'baseline'
         self.ice_type    = ice_type.upper() if ice_type   is not None else 'FI'
@@ -109,12 +109,14 @@ class SeaIcePlotter:
         self.sim_dict                  = self.config.get("sim_dict", {})
         self.GI_dict                   = self.config.get("GI_dict", {})
         self.SIC_scale                 = self.config.get("SIC_scale", 1e12)
-        self.gi_processor              = GroundedIcebergProcessor(sim_name=sim_name)
-        self.gi_processor.load_AFIM_GI()
-        self.use_gi        = self.gi_processor.use_gi
-        self.GI_total_area = self.gi_processor.total_area
-        self.P_KMT_mod     = self.gi_processor.P_KMT_mod
-        self.P_KMT_org     = self.gi_processor.P_KMT_org
+        self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
+        self.GI_proc.load_bgrid()
+        self.use_gi = self.GI_proc.use_gi
+        if self.use_gi:
+            self.GI_proc.compute_grounded_iceberg_area()
+        self.GI_total_area = self.GI_proc.G_t['GI_total_area'] if self.use_gi else 0
+        self.P_KMT_mod     = self.GI_proc.P_KMT_mod
+        self.P_KMT_org     = self.GI_proc.P_KMT_org
 
     def define_hemisphere(self, hemisphere):
         """
@@ -425,7 +427,7 @@ class SeaIcePlotter:
                 self.load_ice_shelves()
             fig.plot(data=self.ice_shelves, pen="0.2p,gray", fill="lightgray")
         if self.use_gi and self.var_name is not None:
-            fig.plot(x=self.gi_processor.GI_lon_cells, y=self.gi_processor.GI_lat_cells, fill=self.fill_color, style=f"c{self.sq_size_GI}c")
+            fig.plot(x=self.GI_proc.GI_lon_cells, y=self.GI_proc.GI_lat_cells, fill=self.fill_color, style=f"c{self.sq_size_GI}c")
         fig.coast(shorelines=self.shoreline_str)
         if self.show_fig:
             fig.show()
@@ -866,7 +868,6 @@ class SeaIcePlotter:
                       tit_str=None,
                       P_png=None,
                       ylim=(0,1000),
-                      boolean_method=True,
                       figsize=(20,12)):
         """
         Plot time series of ice area for one or more simulations.
@@ -882,15 +883,22 @@ class SeaIcePlotter:
         If provided, save the figure to this path.
         """
         df = pd.DataFrame()
-        for sim_name, da in area_dict.items():
-            label = self.sim_dict.get(sim_name, {}).get("legend", sim_name)
-            if roll_days>=3:
-                rolled = da.rolling(time=roll_days, center=True, min_periods=1).mean()
+        time_array = None
+        for name, da in area_dict.items():
+            if isinstance(da, xr.Dataset):
+                da = da.to_array().squeeze()
+            if roll_days >= 3:
+                da_rolled = da.rolling(time=roll_days, center=True, min_periods=1).mean()
             else:
-                rolled = da
-            df[label] = rolled.compute()
-        df["time"] = da["time"].values
-        df.set_index("time", inplace=True)
+                da_rolled = da
+            if time_array is None:
+                time_array = da["time"].values
+            df[name] = da_rolled.compute().values if hasattr(da_rolled, "compute") else da_rolled.values
+        if time_array is not None:
+            df["time"] = time_array
+            df.set_index("time", inplace=True)
+        else:
+            raise ValueError("No valid time array found — 'area_dict' may be empty.")
         plt.figure(figsize=figsize, constrained_layout=True)
         for label in df.columns:
             color = self.plot_var_dict.get(label, {}).get("line_clr", None)

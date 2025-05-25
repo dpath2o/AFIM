@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -P jk72
+#PBS -q normalbw
+#PBS -l walltime=12:00:00
+#PBS -l ncpus=28
+#PBS -l mem=32GB
+#PBS -j oe
+#PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
+#PBS -v ENVFILE
+
+# --- Load environment ---
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+source activate
+
+# --- Source environment file ---
+if [[ -f "$ENVFILE" ]]; then
+    echo "📄 Sourcing environment from: $ENVFILE"
+    source "$ENVFILE"
+else
+    echo "❌ ENVFILE not found: $ENVFILE"
+    exit 1
+fi
+
+# --- Log inputs ---
+echo "Simulation        : $sim_name"
+echo "ISPD threshold    : $ispd_thresh"
+echo "Boolean Fast Ice  : $compute_boolean"
+echo "Overwrite zarr    : $overwrite_zarr"
+echo "Overwrite png     : $overwrite_png"
+echo "FIA Rolling Window: $smooth_FIA_days days"
+echo "Ice types loaded from ENVFILE:"
+for t in "${ice_type[@]}"; do echo "  - $t"; done
+
+
+# --- Launch computation ---
+python /home/581/da1339/AFIM/src/AFIM/scripts/sea_ice_metrics/compute_fast_ice_metrics.py \
+    --sim_name "$sim_name" \
+    --ispd_thresh "$ispd_thresh" \
+    --ice_type "$ice_type" \
+    $( [ "$load_rolling_mean" = true ] && echo "--load_rolling_mean" ) \
+    $( [ "$compute_boolean" = true ] && echo "--compute_boolean" ) \
+    $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
+    $( [ "$overwrite_png" = true ] && echo "--overwrite_png" ) \
+    --smooth_FIA_days "$smooth_FIA_days"

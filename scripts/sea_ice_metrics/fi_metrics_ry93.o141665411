@@ -1,0 +1,124 @@
+Loading conda/analysis3-25.05
+  Loading requirement: singularity
+/g/data/xp65/public/apps/med_conda_scripts/analysis3-25.05.d/bin/activate: line 30: /local/spool/pbs/mom_priv/jobs/launcher_conf.sh: No such file or directory
+FATAL:   configuration disallows users from running sandbox containers
+📄 Sourcing environment from: /scratch/jk72/da1339/tmp/envfile_Bz7S2n.sh
+Simulation        : ry93
+ISPD threshold    : 5e-4
+Boolean Fast Ice  : true
+Overwrite zarr    : true
+Overwrite png     : true
+FIA Rolling Window: 15 days
+Ice types loaded from ENVFILE:
+  - FI_BT FI_Ta
+2025-05-25 23:38:26,751 - INFO - log file intialised: /g/data/gv90/da1339/logs/SeaIceProcessor_FI_ry93.log
+2025-05-25 23:38:30,288 - INFO - hemisphere initialised: south
+INFO:ry93:hemisphere initialised: south
+2025-05-25 23:38:38,265 - INFO - ✅ Loaded SO: 2556 time steps from 84 files
+INFO:ry93:✅ Loaded SO: 2556 time steps from 84 files
+2025-05-25 23:38:45,810 - INFO - ✅ Loaded FI_BT: 2556 time steps from 84 files
+INFO:ry93:✅ Loaded FI_BT: 2556 time steps from 84 files
+2025-05-25 23:38:45,822 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+2025-05-25 23:39:05,605 - INFO - 🔁 Rolling boolean presence: window = 7, min_count = 6
+INFO:ry93:🔁 Rolling boolean presence: window = 7, min_count = 6
+2025-05-25 23:56:25,547 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+2025-05-25 23:57:55,250 - INFO - ✅ Loaded FI_BT: 2556 time steps from 84 files
+INFO:ry93:✅ Loaded FI_BT: 2556 time steps from 84 files
+2025-05-25 23:57:55,284 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+2025-05-25 23:58:23,748 - INFO - ✅ Loaded FI_Ta: 2556 time steps from 84 files
+INFO:ry93:✅ Loaded FI_Ta: 2556 time steps from 84 files
+2025-05-25 23:58:23,802 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+2025-05-25 23:58:42,805 - INFO - 🔁 Rolling boolean presence: window = 7, min_count = 6
+INFO:ry93:🔁 Rolling boolean presence: window = 7, min_count = 6
+2025-05-26 00:15:45,997 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+2025-05-26 00:17:19,216 - INFO - ✅ Loaded FI_Ta: 2556 time steps from 84 files
+INFO:ry93:✅ Loaded FI_Ta: 2556 time steps from 84 files
+2025-05-26 00:17:19,251 - INFO - 🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+INFO:ry93:🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas
+/home/581/da1339/AFIM/src/AFIM/src/sea_ice_plotter.py:934: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+ice_type passed is: ['FI_BT', 'FI_Ta']
+333 circumpolar grounded icebergs associated with ry93
+38098814849.39 m^2 total circumpolar grounded iceberg area for ry93
+333 circumpolar grounded icebergs associated with ry93
+38098814849.39 m^2 total circumpolar grounded iceberg area for ry93
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_BT.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_BT.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_BT/FIP_1993-1999.png
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_BT_bool.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_BT_bool.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_BT_bool/FIP_1993-1999.png
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_BT_roll.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_BT_roll.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_BT_roll/FIP_1993-1999.png
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_Ta.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_Ta.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_Ta/FIP_1993-1999.png
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_Ta_bool.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_Ta_bool.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_Ta_bool/FIP_1993-1999.png
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIA_FI_Ta_roll.zarr does NOT exists and/or overwriting--computing
+/g/data/gv90/da1339/afim_output/ry93/zarr/ispd_thresh_5.0e-4/ice_metrics/FIP_FI_Ta_roll.zarr does NOT exists and/or overwriting--computing
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/DML/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WIO/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/EIO/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/Aus/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/VOL/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/AS/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/BS/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+📸 Saving figure: /g/data/gv90/da1339/GRAPHICAL/AFIM/ry93/WS/FIP/ispd_thresh_5.0e-4/FI_Ta_roll/FIP_1993-1999.png
+/g/data/gv90/da1339/GRAPHICAL/AFIM/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png does NOT exists and/or overwriting--creating
+💾 Saved plot to /g/data/gv90/da1339/GRAPHICAL/AFIM/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png
+
+======================================================================================
+                  Resource Usage on 2025-05-26 00:17:54:
+   Job Id:             141665411.gadi-pbs
+   Project:            jk72
+   Exit Status:        0
+   Service Units:      23.08
+   NCPUs Requested:    28                     NCPUs Used: 28              
+                                           CPU Time Used: 00:49:26        
+   Memory Requested:   32.0GB                Memory Used: 14.26GB         
+   Walltime requested: 12:00:00            Walltime Used: 00:39:34        
+   JobFS requested:    100.0MB                JobFS used: 37.0B           
+======================================================================================
