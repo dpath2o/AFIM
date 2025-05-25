@@ -12,6 +12,12 @@ There are currently no other open-source tools dedicated to post-processing **CI
 [![Documentation Status](https://readthedocs.org/projects/afim/badge/?version=latest)](https://afim.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/afim.svg)](https://badge.fury.io/py/afim)
 
+## 🧭 Archive Status
+
+You can view the current AFIM Archive processing status here:
+
+👉 [AFIM Archive Status Table](docs/AFIM_archive_status.html)
+
 ---
 
 ## 🚀 Highlights
