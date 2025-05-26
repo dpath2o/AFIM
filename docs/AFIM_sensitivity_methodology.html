@@ -178,10 +178,45 @@
 <h1
 id="methodology-antarctic-landfast-sea-ice-modelling-and-metrics">Methodology:
 Antarctic (Land)Fast (Sea) Ice Modelling and Metrics</h1>
-<p>This document describes the core methodologies implemented in the
-AFIM (Antarctic Fast Ice Modelling) framework, corresponding to
-functions and constructs in the repository <a
+<p>This document describes the simulation setup and core methodologies
+implemented in the AFIM (Antarctic Fast Ice Modelling) framework,
+corresponding to functions and constructs in the repository <a
 href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
+<h2 id="model-configuration-setup">0. Model Configuration &amp;
+Setup</h2>
+<ul>
+<li>simulation period :: [1993-01-01 Fri] to [2019-12-31 Tue]. This is
+the maximum simulation period available using the present ocean forcing
+(see this list below for ‘ocean’).</li>
+<li>grid :: <span class="math inline">\(1/4^{\circ}\)</span> global,
+arakawa-B;
+<sub>/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc</sub></li>
+<li>landmask ::
+<sub>/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc</sub></li>
+<li>bathymetry ::
+<sub>/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/mom_025deg/topog.nc</sub>;
+NOTE: the bathymetry is not presently used by CICE6-SA because in
+Antarctica basal stress does not play a role at the grid resolution.
+However, a bathymetry file has been made compliant in this file which
+has to be renamed to meet CICE6 input convention, so renamed field in
+file and saved in
+<sub>/home/581/da1339/cice-dirs/input/AFIM/grid/0p25/</sub></li>
+<li><sub>dt</sub> :: 1800 seconds</li>
+<li><sub>kdyn</sub> :: revised-EVP</li>
+<li>initial conditions :: currently starts from <em>NO ICE</em> state;
+previous initial conditions
+<sub>/g/data/gv90/da1339/affim_input/initial_conditions/0p25.iced.1993-01-01.with_o2i.nc</sub>;
+see Section [[Initial Conditions]]</li>
+</ul>
+<h3 id="forcing">0.1 forcing:</h3>
+<h4 id="ocean">ocean</h4>
+<ul>
+<li>ECMWF Ocean Re-analysis version 5,
+https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html</li>
+<li>regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to
+[2023-12-31 Sun] #### atmosphere</li>
+<li><code>ERA5</code> regridded to the grid file above</li>
+</ul>
 <hr />
 <p>When classifying fast ice from numerical model sea ice simulation
 results, it is common practice to use sea ice concentration
@@ -243,8 +278,8 @@ u_\text{thresh}
 <p>where: * <strong>sea ice concentration threshold</strong>, <span
 class="math inline">\(a_\text{thresh} = 0.15\)</span> * <strong>sea ice
 speed threshold</strong>, <span class="math inline">\(u_\text{thresh}
-\in{\{10^{-3}, 5 \times 10^{-4}\, 2.5 \times
-10^{-4}}~\text{m/s}}\)</span></p>
+\in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times
+10^{-4}\}~\text{m/s}\)</span></p>
 <p>Fast ice is identified from sea ice concentration (<span
 class="math inline">\(a\)</span>) and speed (<span
 class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
@@ -334,8 +369,8 @@ class="math inline">\(a\)</span> and <span
 class="math inline">\(\vec{u}\)</span> (see 1.2.3 below)</p>
 <p>Lastly, I then apply additional mainly geo-spatial criteria (see
 section 1.2.4 below) to ensure that resulting gridded dataset is
-southern hemisphere and that landmask file is correctly applied.
-<strong>Then classify/mask for fast ice using</strong>*:</p>
+southern hemisphere and that landmask file is correctly applied. Then
+classify/<strong>mask for fast ice using</strong> :</p>
 <p><span class="math display">\[
 FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad
 \bar{u} \leq u_\text{thresh}
@@ -351,8 +386,9 @@ remaining consistent with the underlying sea ice speed categories: 1.
 class="math inline">\(a\)</span> and <span
 class="math inline">\(\vec{u}\)</span> 2. <code>B_roll</code>,
 <code>Ta_roll</code>, <code>Tx_roll</code>, <code>BT_roll</code> ::
-rolling-averaging of <span class="math inline">\(N\)</span>-days on {a}$
-and <span class="math inline">\(\bar{\vec{u}}\)</span></p>
+rolling-averaging of <span class="math inline">\(N\)</span>-days on
+<span class="math inline">\(\bar{a}\)</span> and <span
+class="math inline">\(\bar{\vec{u}}\)</span></p>
 <h4 id="daily-average-method">1.2.1 daily-average method:</h4>
 <p><a
 href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434">Full
@@ -381,7 +417,7 @@ classifying fast ice was proposed by <span class="citation"
 data-cites="adfraser">@adfraser</span>, and that is to use the
 daily-averaged <span class="math inline">\(a\)</span> and <span
 class="math inline">\(\vec{u}\)</span> to determine if fast ice is
-/present/ in a grid cell. After <span
+<em>present</em> in a grid cell. After <span
 class="math inline">\(N\)</span>-days count the precedding <span
 class="math inline">\(N\)</span>-days and if <span
 class="math inline">\(M\)</span> of those days were classified as fast

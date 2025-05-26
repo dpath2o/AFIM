@@ -1,6 +1,23 @@
 # Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics
 
-This document describes the core methodologies implemented in the AFIM (Antarctic Fast Ice Modelling) framework, corresponding to functions and constructs in the repository [`src/`](https://github.com/dpath2o/AFIM/tree/main/src).
+This document describes the simulation setup and core methodologies implemented in the AFIM (Antarctic Fast Ice Modelling) framework, corresponding to functions and constructs in the repository [`src/`](https://github.com/dpath2o/AFIM/tree/main/src).
+
+## 0. Model Configuration & Setup
+
++ simulation period :: [1993-01-01 Fri] to [2019-12-31 Tue]. This is the maximum simulation period available using the present ocean forcing (see this list below for 'ocean'). 
++ grid        :: $1/4^{\circ}$ global, arakawa-B; ~/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc~
++ landmask    :: ~/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc~
++ bathymetry  :: ~/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/mom_025deg/topog.nc~; NOTE: the bathymetry is not presently used by CICE6-SA because in Antarctica basal stress does not play a role at the grid resolution. However, a bathymetry file has been made compliant in this file which has to be renamed to meet CICE6 input convention, so renamed field in file and saved in ~/home/581/da1339/cice-dirs/input/AFIM/grid/0p25/~
++ ~dt~        :: 1800 seconds
++ ~kdyn~      :: revised-EVP
++ initial conditions :: currently starts from *NO ICE* state; previous initial conditions ~/g/data/gv90/da1339/affim_input/initial_conditions/0p25.iced.1993-01-01.with_o2i.nc~; see Section [[Initial Conditions]]
+
+### 0.1 forcing:
+#### ocean
+* ECMWF Ocean Re-analysis version 5, https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html
+* regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
+#### atmosphere
+* `ERA5` regridded to the grid file above
 
 ---
 
@@ -40,7 +57,7 @@ $$
 
 where:
 * **sea ice concentration threshold**, $a_\text{thresh} = 0.15$
-* **sea ice speed threshold**, $u_\text{thresh} \in{\{10^{-3}, 5 \times 10^{-4}\, 2.5 \times 10^{-4}}~\text{m/s}}$
+* **sea ice speed threshold**, $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times 10^{-4}\}~\text{m/s}$
 
 Fast ice is identified from sea ice concentration ($a$) and speed ($|\vec{u}|$) using multiple thresholding methods.
 
@@ -96,7 +113,7 @@ From the above four `ispd` categories there are then three ways in which to appl
 2. N-day-average $\bar{a}$ and $\bar{\vec{u}}$ (see 1.2.2 below)
 3. persistence method, which uses daily-averaged $a$ and $\vec{u}$ (see 1.2.3 below)
 
-Lastly, I then apply additional mainly geo-spatial criteria (see section 1.2.4 below) to ensure that resulting gridded dataset is southern hemisphere and that landmask file is correctly applied. **Then classify/mask for fast ice using***:
+Lastly, I then apply additional mainly geo-spatial criteria (see section 1.2.4 below) to ensure that resulting gridded dataset is southern hemisphere and that landmask file is correctly applied. Then classify/**mask for fast ice using** :
 
 $$
 FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad \bar{u} \leq u_\text{thresh}
@@ -105,7 +122,7 @@ where $u_{\text{thresh}}$ is one of the four sea ice speed categories: `ispd_B`,
 
 This results in eight different fast ice classifications (or conversely **pack ice** classifications). Hence my naming scheme I have chosen to use the following nomenclature for brevity and remaining consistent with the underlying sea ice speed categories:
 1. `B`, `Ta`, `Tx`, `BT`                     :: **no** temporal-averaging of $a$ and $\vec{u}$
-2. `B_roll`, `Ta_roll`, `Tx_roll`, `BT_roll` :: rolling-averaging of $N$-days on \bar{a}$ and $\bar{\vec{u}}$
+2. `B_roll`, `Ta_roll`, `Tx_roll`, `BT_roll` :: rolling-averaging of $N$-days on $\bar{a}$ and $\bar{\vec{u}}$
 
 #### 1.2.1 daily-average method:
 [Full method](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434)
@@ -119,7 +136,7 @@ $$
 
 #### 1.2.3 persistence method:
 
-To identify fast ice based not only on instantaneous conditions but also on temporal persistence, AFIM applies a rolling boolean mask (or binary-days mask) as an alternate to the rolling average method described above. The conceptual approach is given in  grid cell is flagged as fast ice if it satisfies the fast ice condition (e.g., $a \geq 0.15$, $|\vec{u}| \leq \varepsilon$) for at least $M$ days within a centred window of $N$ days. This additional method for classifying fast ice was proposed by @adfraser, and that is to use the daily-averaged $a$ and $\vec{u}$ to determine if fast ice is /present/ in a grid cell. After $N$-days count the precedding $N$-days and if $M$ of those days were classified as fast ice then mark that cell as fast ice for those $N$-days.
+To identify fast ice based not only on instantaneous conditions but also on temporal persistence, AFIM applies a rolling boolean mask (or binary-days mask) as an alternate to the rolling average method described above. The conceptual approach is given in  grid cell is flagged as fast ice if it satisfies the fast ice condition (e.g., $a \geq 0.15$, $|\vec{u}| \leq \varepsilon$) for at least $M$ days within a centred window of $N$ days. This additional method for classifying fast ice was proposed by @adfraser, and that is to use the daily-averaged $a$ and $\vec{u}$ to determine if fast ice is *present* in a grid cell. After $N$-days count the precedding $N$-days and if $M$ of those days were classified as fast ice then mark that cell as fast ice for those $N$-days.
 
 Mathematically, define the daily binary mask for fast ice presence as:
 
