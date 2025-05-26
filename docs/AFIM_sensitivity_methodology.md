@@ -6,10 +6,10 @@ This document describes the core methodologies implemented in the AFIM (Antarcti
 
 ## 1. Fast Ice Masking Criteria
 
-Fast ice is identified from sea ice concentration ($a$) and speed ($|\vec{u}|$) using multiple thresholding methods:
+Fast ice is identified from sea ice concentration ($a$) and speed ($|\vec{u}|$) using multiple thresholding methods.
 
-### 1.1 Boolean Masking  
-From [`compute_fast_ice_boolean`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224):
+### 1.1 Sea ice speed mask 
+From [`compute_fast_ice_speeds`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224):
 
 A grid cell is classified as fast ice if:
 
@@ -18,7 +18,7 @@ a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq u_\text{thresh}
 $$
 
 where:
-- $a_\text{thresh} = 0.85$ (sea ice concentration threshold)
+- $a_\text{thresh} = 0.15$ (sea ice concentration threshold)
 - $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}\}~\text{m/s}$
 
 ---

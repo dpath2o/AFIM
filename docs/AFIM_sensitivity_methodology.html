@@ -165,8 +165,11 @@
       margin: 0 0.8em 0.2em -1.6em;
       vertical-align: middle;
     }
-    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
+  <style>body { max-width: 100%; margin: 1rem 2rem; }</style>
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+  type="text/javascript"></script>
 </head>
 <body>
 <header id="title-block-header">
@@ -182,47 +185,51 @@ href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
 <hr />
 <h2 id="fast-ice-masking-criteria">1. Fast Ice Masking Criteria</h2>
 <p>Fast ice is identified from sea ice concentration (<span
-class="math inline"><em>a</em></span>) and speed (<span
-class="math inline">|<em>u⃗</em>|</span>) using multiple thresholding
-methods:</p>
-<h3 id="boolean-masking">1.1 Boolean Masking</h3>
+class="math inline">\(a\)</span>) and speed (<span
+class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
+methods.</p>
+<h3 id="sea-ice-speed-mask">1.1 Sea ice speed mask</h3>
 <p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224"><code>compute_fast_ice_boolean</code></a>:</p>
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224"><code>compute_fast_ice_speeds</code></a>:</p>
 <p>A grid cell is classified as fast ice if:</p>
-<p><span
-class="math display"><em>a</em> ≥ <em>a</em><sub>thresh</sub>  and  |<em>u⃗</em>| ≤ <em>u</em><sub>thresh</sub></span></p>
-<p>where: - <span
-class="math inline"><em>a</em><sub>thresh</sub> = 0.85</span> (sea ice
-concentration threshold) - <span
-class="math inline"><em>u</em><sub>thresh</sub> ∈ {10<sup>−3</sup>, 5 × 10<sup>−4</sup>} m/s</span></p>
+<p><span class="math display">\[
+a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq
+u_\text{thresh}
+\]</span></p>
+<p>where: - <span class="math inline">\(a_\text{thresh} = 0.15\)</span>
+(sea ice concentration threshold) - <span
+class="math inline">\(u_\text{thresh} \in \{10^{-3}, 5 \times
+10^{-4}\}~\text{m/s}\)</span></p>
 <hr />
 <h3 id="rolling-mean-then-masking">1.2 Rolling Mean Then Masking</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287"><code>compute_fast_ice_rolling</code></a>:</p>
-<p>Apply a rolling average over <span
-class="math inline"><em>N</em></span> days (default <span
-class="math inline"><em>N</em> = 15</span>):</p>
-<p><span class="math display">$$
+<p>Apply a rolling average over <span class="math inline">\(N\)</span>
+days (default <span class="math inline">\(N=15\)</span>):</p>
+<p><span class="math display">\[
 \bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
-$$</span></p>
+\]</span></p>
 <p>Then classify as fast ice using:</p>
-<p><span
-class="math display"><em>ā</em> ≥ <em>a</em><sub>thresh</sub>  and  <em>ū</em> ≤ <em>u</em><sub>thresh</sub></span></p>
+<p><span class="math display">\[
+\bar{a} \geq a_\text{thresh} \quad \text{and} \quad \bar{u} \leq
+u_\text{thresh}
+\]</span></p>
 <hr />
 <h2 id="ice-speed-calculation-methods">2. Ice Speed Calculation
 Methods</h2>
 <h3 id="native-b-grid-speed">2.1 Native B-grid Speed</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L305"><code>compute_speed_B</code></a>:</p>
-<p><span class="math display">$$
+<p><span class="math display">\[
 |\vec{u}|_B = \sqrt{u^2 + v^2}
-$$</span></p>
+\]</span></p>
 <h3 id="interpolated-to-t-grid-averaged">2.2 Interpolated to T-grid
 (Averaged)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L315"><code>compute_speed_Ta</code></a>:</p>
-<p><span class="math display">|<em>u⃗</em>|<sub><em>T</em></sub> = mean
-of 4 surrounding B-grid corners</span></p>
+<p><span class="math display">\[
+|\vec{u}|_T = \text{mean of 4 surrounding B-grid corners}
+\]</span></p>
 <hr />
 <h2 id="daily-vs.-rolling-averaged-workflow">3. Daily
 vs. Rolling-Averaged Workflow</h2>
@@ -243,31 +250,31 @@ with methods:</p>
 <h3 id="fast-ice-area-fia">4.1 Fast Ice Area (FIA)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code>compute_fast_ice_area</code></a>:</p>
-<p><span
-class="math display">FIA(<em>t</em>) = ∑<sub><em>i</em>, <em>j</em></sub><em>A</em><sub><em>i</em>, <em>j</em></sub><em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span>
-Where: - <span
-class="math inline"><em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span>
-is the boolean fast ice mask - <span
-class="math inline"><em>A</em><sub><em>i</em>, <em>j</em></sub></span>
+<p><span class="math display">\[
+\text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
+\]</span> Where: - <span class="math inline">\(M_{i,j}(t)\)</span> is
+the boolean fast ice mask - <span class="math inline">\(A_{i,j}\)</span>
 is the grid cell area</p>
 <h3 id="fast-ice-concentration-fic">4.2 Fast Ice Concentration
 (FIC)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L628"><code>compute_fast_ice_concentration</code></a>:</p>
-<p><span
-class="math display">FIC<sub><em>i</em>, <em>j</em></sub>(<em>t</em>) = <em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>) ⋅ <em>a</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span></p>
+<p><span class="math display">\[
+\text{FIC}_{i,j}(t) = M_{i,j}(t) \cdot a_{i,j}(t)
+\]</span></p>
 <h3 id="fast-ice-thickness-fih">4.3 Fast Ice Thickness (FIH)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L636"><code>compute_fast_ice_thickness</code></a>:</p>
-<p><span
-class="math display">FIH<sub><em>i</em>, <em>j</em></sub>(<em>t</em>) = <em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>) ⋅ <em>h</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span></p>
+<p><span class="math display">\[
+\text{FIH}_{i,j}(t) = M_{i,j}(t) \cdot h_{i,j}(t)
+\]</span></p>
 <hr />
 <h2 id="threshold-sensitivity">5. Threshold Sensitivity</h2>
 <p>AFIM supports experiments with multiple <span
-class="math inline"><em>u</em><sub>thresh</sub></span> values: - <span
-class="math inline">10<sup>−3</sup> m/s</span> (default) - <span
-class="math inline">5 × 10<sup>−4</sup> m/s</span> (for sensitivity
-testing)</p>
+class="math inline">\(u_\text{thresh}\)</span> values: - <span
+class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) - <span
+class="math inline">\(5 \times 10^{-4}~\text{m/s}\)</span> (for
+sensitivity testing)</p>
 <p>These are applied to both boolean and rolling classifications.</p>
 <hr />
 <h2 id="source-files">📁 Source Files</h2>
