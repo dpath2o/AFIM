@@ -4,26 +4,19 @@ This document describes the simulation setup and core methodologies implemented 
 
 ## 0. Model Configuration & Setup
 
-+ Simulation period
-: [1993-01-01 Fri] to [1999-12-31 Tue]
++ Simulation period : [1993-01-01 Fri] to [1999-12-31 Tue]
 
-+ Grid
-: $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
++ Grid : $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
 
-+ Landmask
-: `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
++ Landmask : `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
 
-+ `dt`
-: 1800 seconds
++ `dt` : 1800 seconds
 
-+ `kdyn`
-: revised-EVP
++ `kdyn` : revised-EVP
 
-+ `ndte`
-: 240
++ `ndte` : 240
 
-+ Initial conditions
-: None
++ Initial conditions : None
 
 ### 0.1 forcing:
 
