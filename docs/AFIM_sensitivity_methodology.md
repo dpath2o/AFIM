@@ -1,3 +1,10 @@
+<style>
+body {
+  background-color: black;
+  color: white;
+}
+</style>
+
 # Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics
 
 This document describes the simulation setup and core methodologies implemented in the AFIM (Antarctic Fast Ice Modelling) framework, corresponding to functions and constructs in the repository [`src/`](https://github.com/dpath2o/AFIM/tree/main/src).
