@@ -26,7 +26,7 @@ $$
 |\vec{u}| = \sqrt{u^2 + v^2}
 $$
 
-But near land, either $u = 0$, $v = 0$, or both are imposed, and so $|\vec{u}| = 0$ even though ice may not be landfast. Because of this, AFIM implements multiple strategies to mitigate false classifications near land by using interpolated speeds or spatially averaged approaches (see Sections 2.1 and 2.2**.
+But near land, either $u = 0$, $v = 0$, or both are imposed, and so $|\vec{u}| = 0$ even though ice may not be landfast. Because of this, AFIM implements multiple strategies to mitigate false classifications near land by using interpolated speeds or spatially averaged approaches (see Sections 2.1 and 2.2).
 
 ---
 
@@ -39,8 +39,8 @@ a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq u_\text{thresh}
 $$
 
 where:
-* $a_\text{thresh} = 0.15$ (**sea ice concentration threshold**)
-* $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}\, 2.5 \times 10^{-4}}~\text{m/s}$ (**sea ice speed threshold**)
+* **sea ice concentration threshold**, $a_\text{thresh} = 0.15$
+* **sea ice speed threshold**, $u_\text{thresh} \in{\{10^{-3}, 5 \times 10^{-4}\, 2.5 \times 10^{-4}}~\text{m/s}}$
 
 Fast ice is identified from sea ice concentration ($a$) and speed ($|\vec{u}|$) using multiple thresholding methods.
 

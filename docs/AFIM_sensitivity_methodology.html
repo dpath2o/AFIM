@@ -232,7 +232,7 @@ coefficient</p>
 <span class="math inline">\(|\vec{u}| = 0\)</span> even though ice may
 not be landfast. Because of this, AFIM implements multiple strategies to
 mitigate false classifications near land by using interpolated speeds or
-spatially averaged approaches (see Sections 2.1 and 2.2**.</p>
+spatially averaged approaches (see Sections 2.1 and 2.2).</p>
 <hr />
 <h2 id="primary-classification">1. Primary Classification</h2>
 <p>A grid cell is classified as fast ice if:</p>
@@ -240,11 +240,11 @@ spatially averaged approaches (see Sections 2.1 and 2.2**.</p>
 a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq
 u_\text{thresh}
 \]</span></p>
-<p>where: * <span class="math inline">\(a_\text{thresh} = 0.15\)</span>
-(<strong>sea ice concentration threshold</strong>) * <span
-class="math inline">\(u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}\,
-2.5 \times 10^{-4}}~\text{m/s}\)</span> (<strong>sea ice speed
-threshold</strong>)</p>
+<p>where: * <strong>sea ice concentration threshold</strong>, <span
+class="math inline">\(a_\text{thresh} = 0.15\)</span> * <strong>sea ice
+speed threshold</strong>, <span class="math inline">\(u_\text{thresh}
+\in{\{10^{-3}, 5 \times 10^{-4}\, 2.5 \times
+10^{-4}}~\text{m/s}}\)</span></p>
 <p>Fast ice is identified from sea ice concentration (<span
 class="math inline">\(a\)</span>) and speed (<span
 class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
