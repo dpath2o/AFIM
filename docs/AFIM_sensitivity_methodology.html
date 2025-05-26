@@ -185,28 +185,50 @@ href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
 <h2 id="model-configuration-setup">0. Model Configuration &amp;
 Setup</h2>
 <ul>
-<li>simulation period :: [1993-01-01 Fri] to [2019-12-31 Tue]. This is
-the maximum simulation period available using the present ocean forcing
-(see this list below for ‘ocean’).</li>
-<li>grid :: <span class="math inline">\(1/4^{\circ}\)</span> global,
-arakawa-B;
-<sub>/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc</sub></li>
-<li>landmask ::
-<sub>/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc</sub></li>
-<li>bathymetry ::
-<sub>/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/mom_025deg/topog.nc</sub>;
-NOTE: the bathymetry is not presently used by CICE6-SA because in
-Antarctica basal stress does not play a role at the grid resolution.
-However, a bathymetry file has been made compliant in this file which
-has to be renamed to meet CICE6 input convention, so renamed field in
-file and saved in
-<sub>/home/581/da1339/cice-dirs/input/AFIM/grid/0p25/</sub></li>
-<li><sub>dt</sub> :: 1800 seconds</li>
-<li><sub>kdyn</sub> :: revised-EVP</li>
-<li>initial conditions :: currently starts from <em>NO ICE</em> state;
-previous initial conditions
-<sub>/g/data/gv90/da1339/affim_input/initial_conditions/0p25.iced.1993-01-01.with_o2i.nc</sub>;
-see Section [[Initial Conditions]]</li>
+<li><dl>
+<dt>Simulation period</dt>
+<dd>
+[1993-01-01 Fri] to [1999-12-31 Tue]
+</dd>
+</dl></li>
+<li><dl>
+<dt>Grid</dt>
+<dd>
+<span class="math inline">\(1/4^{\circ}\)</span> global, tri-polar
+Arakawa-B;
+<code>/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc</code>;
+</dd>
+</dl></li>
+<li><dl>
+<dt>Landmask</dt>
+<dd>
+<code>/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc</code>;
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>dt</code></dt>
+<dd>
+1800 seconds
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>kdyn</code></dt>
+<dd>
+revised-EVP
+</dd>
+</dl></li>
+<li><dl>
+<dt><code>ndte</code></dt>
+<dd>
+240
+</dd>
+</dl></li>
+<li><dl>
+<dt>Initial conditions</dt>
+<dd>
+None
+</dd>
+</dl></li>
 </ul>
 <h3 id="forcing">0.1 forcing:</h3>
 <h4 id="ocean">ocean</h4>
@@ -214,10 +236,14 @@ see Section [[Initial Conditions]]</li>
 <li>ECMWF Ocean Re-analysis version 5,
 https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html</li>
 <li>regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to
-[2023-12-31 Sun] #### atmosphere</li>
+[2023-12-31 Sun]</li>
+</ul>
+<h4 id="atmosphere">atmosphere</h4>
+<ul>
 <li><code>ERA5</code> regridded to the grid file above</li>
 </ul>
 <hr />
+<h2 id="primary-classification">1. Primary Classification</h2>
 <p>When classifying fast ice from numerical model sea ice simulation
 results, it is common practice to use sea ice concentration
 (<code>aice</code>) and sea ice speed (<code>ispd</code>). The former is
@@ -249,14 +275,14 @@ class="math inline">\(v\)</span>) under various forces:</p>
 - mf\hat{z} \times \vec{u} - mg\nabla H + \nabla \cdot
 \boldsymbol{\sigma} - C_d \vec{u}
 \]</span></p>
-<p>Where: - <span class="math inline">\(\vec{u}\)</span> is ice velocity
-- <span class="math inline">\(\vec{\tau}_a\)</span>, <span
+<p>Where: + <span class="math inline">\(\vec{u}\)</span> is ice velocity
++ <span class="math inline">\(\vec{\tau}_a\)</span>, <span
 class="math inline">\(\vec{\tau}_o\)</span> are wind and ocean stresses
-- <span class="math inline">\(f\)</span> is the Coriolis parameter,
-<span class="math inline">\(g\)</span> is gravity - <span
-class="math inline">\(H\)</span> is surface height - <span
++ <span class="math inline">\(f\)</span> is the Coriolis parameter,
+<span class="math inline">\(g\)</span> is gravity + <span
+class="math inline">\(H\)</span> is surface height + <span
 class="math inline">\(\boldsymbol{\sigma}\)</span> is the internal ice
-stress tensor - <span class="math inline">\(C_d\)</span> is the drag
+stress tensor + <span class="math inline">\(C_d\)</span> is the drag
 coefficient</p>
 <p>In mathematical terms, the ice speed is computed as:</p>
 <p><span class="math display">\[
@@ -268,15 +294,14 @@ coefficient</p>
 not be landfast. Because of this, AFIM implements multiple strategies to
 mitigate false classifications near land by using interpolated speeds or
 spatially averaged approaches (see Sections 2.1 and 2.2).</p>
-<hr />
-<h2 id="primary-classification">1. Primary Classification</h2>
+<h3 id="fast-ice-definition">1.0 Fast ice definition</h3>
 <p>A grid cell is classified as fast ice if:</p>
 <p><span class="math display">\[
 a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq
 u_\text{thresh}
 \]</span></p>
-<p>where: * <strong>sea ice concentration threshold</strong>, <span
-class="math inline">\(a_\text{thresh} = 0.15\)</span> * <strong>sea ice
+<p>where: + <strong>sea ice concentration threshold</strong>, <span
+class="math inline">\(a_\text{thresh} = 0.15\)</span> + <strong>sea ice
 speed threshold</strong>, <span class="math inline">\(u_\text{thresh}
 \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times
 10^{-4}\}~\text{m/s}\)</span></p>
@@ -462,8 +487,8 @@ with methods:</p>
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code>compute_fast_ice_area</code></a>:</p>
 <p><span class="math display">\[
 \text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
-\]</span> Where: - <span class="math inline">\(M_{i,j}(t)\)</span> is
-the boolean fast ice mask - <span class="math inline">\(A_{i,j}\)</span>
+\]</span> Where: + <span class="math inline">\(M_{i,j}(t)\)</span> is
+the boolean fast ice mask + <span class="math inline">\(A_{i,j}\)</span>
 is the grid cell area</p>
 <h3 id="fast-ice-persistence-fip">2.2 Fast Ice Persistence
 (<code>FIP</code>)</h3>
@@ -484,18 +509,18 @@ single climatological estimate, such as the 1993–1999 mean FIA.</p>
 <hr />
 <h2 id="threshold-sensitivity">3. Threshold Sensitivity</h2>
 <p>AFIM supports experiments with multiple <span
-class="math inline">\(u_\text{thresh}\)</span> values: * <span
-class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) * <span
+class="math inline">\(u_\text{thresh}\)</span> values: + <span
+class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) + <span
 class="math inline">\(5 \times 10^{-4}~\text{m/s}\)</span> (for
 sensitivity testing)</p>
 <p>These are applied to both boolean and rolling classifications.</p>
 <hr />
 <h2 id="source-files">📁 Source Files</h2>
-<p>All methods above are implemented in: * <a
+<p>All methods above are implemented in: + <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code>src/sea_ice_processor.py</code></a>
-* <a
++ <a
 href="https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py"><code>scripts/process_fast_ice/process_fast_ice.py</code></a>
-* <a
++ <a
 href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>scripts/sea_ice_metrics/compute_fast_ice_metrics.py</code></a></p>
 <p>See also: <code>config.json</code> files for applied thresholds and
 flags.</p>

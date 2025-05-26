@@ -4,22 +4,41 @@ This document describes the simulation setup and core methodologies implemented 
 
 ## 0. Model Configuration & Setup
 
-+ simulation period :: [1993-01-01 Fri] to [2019-12-31 Tue]. This is the maximum simulation period available using the present ocean forcing (see this list below for 'ocean'). 
-+ grid        :: $1/4^{\circ}$ global, arakawa-B; ~/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc~
-+ landmask    :: ~/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc~
-+ bathymetry  :: ~/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/mom_025deg/topog.nc~; NOTE: the bathymetry is not presently used by CICE6-SA because in Antarctica basal stress does not play a role at the grid resolution. However, a bathymetry file has been made compliant in this file which has to be renamed to meet CICE6 input convention, so renamed field in file and saved in ~/home/581/da1339/cice-dirs/input/AFIM/grid/0p25/~
-+ ~dt~        :: 1800 seconds
-+ ~kdyn~      :: revised-EVP
-+ initial conditions :: currently starts from *NO ICE* state; previous initial conditions ~/g/data/gv90/da1339/affim_input/initial_conditions/0p25.iced.1993-01-01.with_o2i.nc~; see Section [[Initial Conditions]]
++ Simulation period
+: [1993-01-01 Fri] to [1999-12-31 Tue]
+
++ Grid
+: $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
+
++ Landmask
+: `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
+
++ `dt`
+: 1800 seconds
+
++ `kdyn`
+: revised-EVP
+
++ `ndte`
+: 240
+
++ Initial conditions
+: None
 
 ### 0.1 forcing:
+
 #### ocean
-* ECMWF Ocean Re-analysis version 5, https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html
-* regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
+
++ ECMWF Ocean Re-analysis version 5, https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html
++ regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
+
 #### atmosphere
-* `ERA5` regridded to the grid file above
+
++ `ERA5` regridded to the grid file above
 
 ---
+
+## 1. Primary Classification
 
 When classifying fast ice from numerical model sea ice simulation results, it is common practice to use sea ice concentration (`aice`) and sea ice speed (`ispd`). The former is a tracer variable derived on the spatial grid centre (commonly referred to as the /T-grid/). In contrast, `ispd` is derived from the momentum components (`u`, `v`), which are defined at displaced locations relative to the /T-grid/, forming what is referred to as the Arakawa /B-grid/. [This figure](https://raw.githubusercontent.com/dpath2o/AFIM/main/docs/figures/bgrid.png) shows a depiction of the computational [Arakawa B-grid](https://doi.org/10.1016/B978-0-12-460817-7.50009-4) in the vicinity of an island. Note that in this depiction, only one grid cell has been masked out as land. This is important, as it motivates the classification strategy: due to computational constraints, a no-slip boundary is imposed on any velocity cell adjacent to land (i.e., touching land). These velocity components are explicitly set to $0$ by the model. Velocity is defined on staggered /B-grid/ locations, this results in cells near the coast having artificially zero speed regardless of the physical ice state. This introduces ambiguity: a zero speed may result either from a valid physical condition (e.g., grounded ice) or from an imposed boundary condition.
 
@@ -30,12 +49,12 @@ $$
 $$
 
 Where:
-- $\vec{u}$ is ice velocity
-- $\vec{\tau}_a$, $\vec{\tau}_o$ are wind and ocean stresses
-- $f$ is the Coriolis parameter, $g$ is gravity
-- $H$ is surface height
-- $\boldsymbol{\sigma}$ is the internal ice stress tensor
-- $C_d$ is the drag coefficient
++ $\vec{u}$ is ice velocity
++ $\vec{\tau}_a$, $\vec{\tau}_o$ are wind and ocean stresses
++ $f$ is the Coriolis parameter, $g$ is gravity
++ $H$ is surface height
++ $\boldsymbol{\sigma}$ is the internal ice stress tensor
++ $C_d$ is the drag coefficient
 
 In mathematical terms, the ice speed is computed as:
 
@@ -45,9 +64,7 @@ $$
 
 But near land, either $u = 0$, $v = 0$, or both are imposed, and so $|\vec{u}| = 0$ even though ice may not be landfast. Because of this, AFIM implements multiple strategies to mitigate false classifications near land by using interpolated speeds or spatially averaged approaches (see Sections 2.1 and 2.2).
 
----
-
-## 1. Primary Classification
+### 1.0 Fast ice definition
 
 A grid cell is classified as fast ice if:
 
@@ -56,8 +73,8 @@ a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq u_\text{thresh}
 $$
 
 where:
-* **sea ice concentration threshold**, $a_\text{thresh} = 0.15$
-* **sea ice speed threshold**, $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times 10^{-4}\}~\text{m/s}$
++ **sea ice concentration threshold**, $a_\text{thresh} = 0.15$
++ **sea ice speed threshold**, $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times 10^{-4}\}~\text{m/s}$
 
 Fast ice is identified from sea ice concentration ($a$) and speed ($|\vec{u}|$) using multiple thresholding methods.
 
@@ -177,8 +194,8 @@ $$
 \text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
 $$
 Where:
-- $M_{i,j}(t)$ is the boolean fast ice mask
-- $A_{i,j}$ is the grid cell area
++ $M_{i,j}(t)$ is the boolean fast ice mask
++ $A_{i,j}$ is the grid cell area
 
 ### 2.2 Fast Ice Persistence (`FIP`)
 From [`compute_variable_aggregate`](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636)
@@ -191,13 +208,12 @@ $$
 
 This operation is used within AFIM to collapse a time series into a single climatological estimate, such as the 1993–1999 mean FIA.
 
-
 ---
 
 ## 3. Threshold Sensitivity
 AFIM supports experiments with multiple $u_\text{thresh}$ values:
-* $10^{-3}~\text{m/s}$ (default)
-* $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
++ $10^{-3}~\text{m/s}$ (default)
++ $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
 
 These are applied to both boolean and rolling classifications.
 
@@ -205,9 +221,9 @@ These are applied to both boolean and rolling classifications.
 
 ## 📁 Source Files
 All methods above are implemented in:
-* [`src/sea_ice_processor.py`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py)
-* [`scripts/process_fast_ice/process_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py)
-* [`scripts/sea_ice_metrics/compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py)
++ [`src/sea_ice_processor.py`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py)
++ [`scripts/process_fast_ice/process_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py)
++ [`scripts/sea_ice_metrics/compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py)
 
 See also: `config.json` files for applied thresholds and flags.
 
