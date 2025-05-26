@@ -9,6 +9,7 @@ __pycache__/
 *.o*
 *.e*
 *.png
+!docs/**/*.png
 *.pdf
 *.yml
 *~

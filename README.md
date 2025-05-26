@@ -12,6 +12,12 @@ There are currently no other open-source tools dedicated to post-processing **CI
 [![Documentation Status](https://readthedocs.org/projects/afim/badge/?version=latest)](https://afim.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/afim.svg)](https://badge.fury.io/py/afim)
 
+## 📊 Fast Ice Area Timeseries (1993–1999)
+
+👉 [AFIM Sensitivity Study: FIA Results across simulations](https://dpath2o.github.io/AFIM/timeseries_gallery.html)
+
+More plots available in [`docs/figures/timeseries/`](docs/figures/timeseries/)
+
 ## 🧭 Archive Status
 
 You can view the current AFIM Archive processing status here:
