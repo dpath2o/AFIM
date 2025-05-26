@@ -176,18 +176,96 @@
 <h1 class="title">AFIM Sensitivity Methodology</h1>
 </header>
 <h1
-id="methodology-antarctic-fast-ice-modelling-and-metrics">Methodology:
-Antarctic Fast Ice Modelling and Metrics</h1>
+id="methodology-antarctic-landfast-sea-ice-modelling-and-metrics">Methodology:
+Antarctic (Land)Fast (Sea) Ice Modelling and Metrics</h1>
 <p>This document describes the core methodologies implemented in the
 AFIM (Antarctic Fast Ice Modelling) framework, corresponding to
 functions and constructs in the repository <a
 href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
+<hr />
+<p>When classifying fast ice from numerical model sea ice simulation
+results, it is common practice to use sea ice concentration
+(<code>aice</code>) and sea ice speed (<code>ispd</code>). The former is
+a tracer variable derived on the spatial grid centre (commonly referred
+to as the T-grid). In contrast, <code>ispd</code> is derived from the
+momentum components (<code>u</code>, <code>v</code>), which are defined
+at displaced locations relative to the T-grid, forming what is referred
+to as the Arakawa B-grid.</p>
+<p>In <a href="https://github.com/CICE-Consortium/CICE">CICE v6</a>, the
+momentum equation evolves horizontal velocity components (<span
+class="math inline">\(u\)</span>, <span
+class="math inline">\(v\)</span>) under various forces:</p>
+<p><span class="math display">\[
+\rho h \frac{\partial \vec{u}}{\partial t} = \vec{\tau}_a + \vec{\tau}_o
+- mf\hat{z} \times \vec{u} - mg\nabla H + \nabla \cdot
+\boldsymbol{\sigma} - C_d \vec{u}
+\]</span></p>
+<p>Where: - <span class="math inline">\(\vec{u}\)</span> is ice velocity
+- <span class="math inline">\(\vec{\tau}_a\)</span>, <span
+class="math inline">\(\vec{\tau}_o\)</span> are wind and ocean stresses
+- <span class="math inline">\(f\)</span> is the Coriolis parameter,
+<span class="math inline">\(g\)</span> is gravity - <span
+class="math inline">\(H\)</span> is surface height - <span
+class="math inline">\(\boldsymbol{\sigma}\)</span> is the internal ice
+stress tensor - <span class="math inline">\(C_d\)</span> is the drag
+coefficient</p>
+<p>☝️ <a
+href="https://raw.githubusercontent.com/dpath2o/AFIM/main/docs/figures/bgrid.png">This
+figure</a> shows a depiction of the computational <a
+href="https://doi.org/10.1016/B978-0-12-460817-7.50009-4">Arakawa
+B-grid</a> in the vicinity of an island.</p>
+<p>Note that in this depiction, only one grid cell has been masked out
+as land. This is important, as it motivates the classification strategy:
+due to computational constraints, a no-slip boundary is imposed on any
+velocity cell adjacent to land (i.e., touching land). These velocity
+components are explicitly set to <span class="math inline">\(0\)</span>
+by the model.</p>
+<p>Because velocity is defined on staggered B-grid locations, this
+results in many cells near the coast having artificially zero speed
+regardless of the physical ice state. This introduces ambiguity: a zero
+speed may result either from a valid physical condition (e.g., grounded
+ice) or from an imposed boundary condition.</p>
+<p>In mathematical terms, the ice speed is computed as:</p>
+<p><span class="math display">\[
+|\vec{u}| = \sqrt{u^2 + v^2}
+\]</span></p>
+<p>But near land, either <span class="math inline">\(u = 0\)</span>,
+<span class="math inline">\(v = 0\)</span>, or both are imposed, and so
+<span class="math inline">\(|\vec{u}| = 0\)</span> even though ice may
+not be landfast.</p>
+<p>Because of this, AFIM implements multiple strategies to mitigate
+false classifications near land by using interpolated speeds or
+spatially averaged approaches (see Sections 2.1 and 2.2).</p>
 <hr />
 <h2 id="fast-ice-masking-criteria">1. Fast Ice Masking Criteria</h2>
 <p>Fast ice is identified from sea ice concentration (<span
 class="math inline">\(a\)</span>) and speed (<span
 class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
 methods.</p>
+<h3 id="sea-ice-speed-calculation-methods">1.1 Sea ice speed calculation
+methods</h3>
+<h3 id="native-b-grid-speed">1.1 Native B-grid speed</h3>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L228"><code>ispd_B</code></a>:</p>
+<p><span class="math display">\[
+|\vec{u}|_B = \sqrt{u^2 + v^2}
+\]</span></p>
+<h3 id="ta-spatially-averaged-b-grid-to-t-grid">1.2 <code>Ta</code>:
+spatially-averaged B-grid to T-grid</h3>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L238"><code>ispd_Ta</code></a>:</p>
+<p><span class="math display">\[
+|\vec{u}|_Ta = \text{mean of 4 surrounding B-grid corners}
+\]</span></p>
+<h3
+id="tx-esmf-spatially-weighted-average-using-a-bilinear-approach-to-map-b-grid-to-t-grid">1.3
+<code>Tx</code>: ESMF spatially weighted average using a /bilinear/
+approach to map B-grid to T-grid</h3>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L315"><code>ispd_Tx</code></a>:</p>
+<p><span class="math display">\[
+|\vec{u}|_Ta = \text{mean of 4 surrounding B-grid corners}
+\]</span></p>
 <h3 id="sea-ice-speed-mask">1.1 Sea ice speed mask</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224"><code>compute_fast_ice_speeds</code></a>:</p>
@@ -215,21 +293,6 @@ days (default <span class="math inline">\(N=15\)</span>):</p>
 u_\text{thresh}
 \]</span></p>
 <hr />
-<h2 id="ice-speed-calculation-methods">2. Ice Speed Calculation
-Methods</h2>
-<h3 id="native-b-grid-speed">2.1 Native B-grid Speed</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L305"><code>compute_speed_B</code></a>:</p>
-<p><span class="math display">\[
-|\vec{u}|_B = \sqrt{u^2 + v^2}
-\]</span></p>
-<h3 id="interpolated-to-t-grid-averaged">2.2 Interpolated to T-grid
-(Averaged)</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L315"><code>compute_speed_Ta</code></a>:</p>
-<p><span class="math display">\[
-|\vec{u}|_T = \text{mean of 4 surrounding B-grid corners}
-\]</span></p>
 <hr />
 <h2 id="daily-vs.-rolling-averaged-workflow">3. Daily
 vs. Rolling-Averaged Workflow</h2>
