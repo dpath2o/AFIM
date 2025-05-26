@@ -122,9 +122,11 @@ def generate_inter_model_html(fip_index):
 
         f.write("</body></html>")
 
-
 if __name__ == "__main__":
     fip_index = find_all_fip_images()
+    print(f"Found {len(fip_index)} simulations with FIP plots.")
+    for sim in fip_index:
+        print(f" - {sim}: regions={list(fip_index[sim].keys())}")
     copy_pngs_to_docs(fip_index)
     generate_intra_model_html(fip_index)
     generate_inter_model_html(fip_index)

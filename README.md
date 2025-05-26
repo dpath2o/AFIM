@@ -12,7 +12,10 @@ There are currently no other open-source tools dedicated to post-processing **CI
 [![Documentation Status](https://readthedocs.org/projects/afim/badge/?version=latest)](https://afim.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/afim.svg)](https://badge.fury.io/py/afim)
 
-### 📸 AFIM Visual Galleries
+### AFIM Sensitivity Study
+
+👉🏻[AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
+🧾 [AFIM Sensitivity Methodology (LaTeX-enhanced)](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
 
 Explore key outputs from AFIM simulations:
 
