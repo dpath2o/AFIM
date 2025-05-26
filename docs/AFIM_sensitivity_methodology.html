@@ -323,14 +323,19 @@ href="https://earthsystemmodeling.org/regrid/">ESMF Regridding
 Documentation</a> and <a
 href="https://xesmf.readthedocs.io/en/latest/notebooks/Compare_algorithms.html">xESMF</a>.</p>
 <h3 id="masking-methods">1.2 masking methods:</h3>
-<p>From the above four <code>ispd</code> categories there are then two
-temporal ways in which to apply the thresholding: 1. on daily-averaged
+<p>From the above four <code>ispd</code> categories there are then three
+ways in which to apply the masking/thresholding: 1. on daily-averaged
 <span class="math inline">\(a\)</span> and <span
-class="math inline">\(\vec{u}\)</span>, <strong>or</strong> 2.
-N-day-average <span class="math inline">\(\bar{a}\)</span> and <span
-class="math inline">\(\bar{\vec{u}}\)</span> 3. apply additional
-criteria (see section 1.3 below)</p>
-<p>Then classify/mask for fast ice using:</p>
+class="math inline">\(\vec{u}\)</span>, <strong>or</strong> (see 1.2.1
+below) 2. N-day-average <span class="math inline">\(\bar{a}\)</span> and
+<span class="math inline">\(\bar{\vec{u}}\)</span> (see 1.2.2 below) 3.
+persistence method, which uses daily-averaged <span
+class="math inline">\(a\)</span> and <span
+class="math inline">\(\vec{u}\)</span> (see 1.2.3 below)</p>
+<p>Lastly, I then apply additional mainly geo-spatial criteria (see
+section 1.2.4 below) to ensure that resulting gridded dataset is
+southern hemisphere and that landmask file is correctly applied.
+<strong>Then classify/mask for fast ice using</strong>*:</p>
 <p><span class="math display">\[
 FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad
 \bar{u} \leq u_\text{thresh}
@@ -348,19 +353,13 @@ class="math inline">\(\vec{u}\)</span> 2. <code>B_roll</code>,
 <code>Ta_roll</code>, <code>Tx_roll</code>, <code>BT_roll</code> ::
 rolling-averaging of <span class="math inline">\(N\)</span>-days on {a}$
 and <span class="math inline">\(\bar{\vec{u}}\)</span></p>
-<p>An additional method for classifying fast ice was then proposed by
-<span class="citation" data-cites="adfraser">@adfraser</span>, and that
-is to use the daily-averaged <span class="math inline">\(a\)</span> and
-<span class="math inline">\(\vec{u}\)</span> to create:
-<code>FI_mask_B</code>, <code>FI_mask_Ta</code>, <code>FI_mask_Tx</code>
-or <code>FI_mask_BT</code>). * Boolean (or binary-days) approach: 1.
-take</p>
 <h4 id="daily-average-method">1.2.1 daily-average method:</h4>
 <p><a
 href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434">Full
 method</a></p>
 <h4 id="rolling-average-method">1.2.2 rolling-average method:</h4>
-<p>More generally the N-day-average that <a
+<p>More generally the <span class="math inline">\(N\)</span>-day-average
+that <a
 href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540">I
 employed</a> can be expressed as a rolling average over <span
 class="math inline">\(N\)</span>-days (default <span
@@ -368,38 +367,61 @@ class="math inline">\(N=15\)</span>):</p>
 <p><span class="math display">\[
 \bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
 \]</span></p>
-<h3 id="additional-criteria-imposed">1.3 Additional criteria
-imposed:</h3>
-<h4 id="re-apply-landmask">1.3.1 re-apply landmask:</h4>
+<h4 id="persistence-method">1.2.3 persistence method:</h4>
+<p>To identify fast ice based not only on instantaneous conditions but
+also on temporal persistence, AFIM applies a rolling boolean mask (or
+binary-days mask) as an alternate to the rolling average method
+described above. The conceptual approach is given in grid cell is
+flagged as fast ice if it satisfies the fast ice condition (e.g., <span
+class="math inline">\(a \geq 0.15\)</span>, <span
+class="math inline">\(|\vec{u}| \leq \varepsilon\)</span>) for at least
+<span class="math inline">\(M\)</span> days within a centred window of
+<span class="math inline">\(N\)</span> days. This additional method for
+classifying fast ice was proposed by <span class="citation"
+data-cites="adfraser">@adfraser</span>, and that is to use the
+daily-averaged <span class="math inline">\(a\)</span> and <span
+class="math inline">\(\vec{u}\)</span> to determine if fast ice is
+/present/ in a grid cell. After <span
+class="math inline">\(N\)</span>-days count the precedding <span
+class="math inline">\(N\)</span>-days and if <span
+class="math inline">\(M\)</span> of those days were classified as fast
+ice then mark that cell as fast ice for those <span
+class="math inline">\(N\)</span>-days.</p>
+<p>Mathematically, define the daily binary mask for fast ice presence
+as:</p>
+<p><span class="math display">\[
+F(t, i, j) = \begin{cases} 1, &amp; \text{if fast ice condition is met
+at } (i,j) \text{ on day } t \\ 0, &amp; \text{otherwise} \end{cases}
+\]</span></p>
+<p>Then the boolean fast ice mask is:</p>
+<p><span class="math display">\[
+F_{\text{bool}}(t, i, j) = \begin{cases} 1, &amp; \displaystyle
+\sum_{\tau = t - N/2}^{t + N/2} F(\tau, i, j) \geq M \\ 0, &amp;
+\text{otherwise} \end{cases}
+\]</span></p>
+<p>Where: - <span class="math inline">\(N\)</span> is the rolling window
+length (e.g., 7 days) - <span class="math inline">\(M\)</span> is the
+minimum count threshold (e.g., 6 days)</p>
+<p>This persistence filter is applied using xarray’s
+<code>rolling(...).construct(...).sum(...)</code> approach, centred in
+time, <a
+href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L620C1-L626C23">here</a></p>
+<h4 id="additional-criteria-imposed">1.2.4 Additional criteria
+imposed:</h4>
+<h4 id="re-apply-landmask">1.3.4.1 re-apply landmask:</h4>
 <p>After either doing (or not doing the temporal averaging) the dataset
 is then sub-set for particular hemisphere: <code>north</code> or
 <code>south</code> (default <code>south</code>).</p>
-<h4 id="hemisphere-masking">1.3.2 hemisphere masking:</h4>
+<h4 id="hemisphere-masking">1.3.4.2 hemisphere masking:</h4>
 <p>After either doing (or not doing the temporal averaging) the dataset
 is then sub-set for particular hemisphere: <code>north</code> or
 <code>south</code> (default <code>south</code>).</p>
-<h3 id="rolling-mean-then-masking">1.2 Rolling Mean Then Masking</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287"><code>compute_fast_ice_rolling</code></a>:</p>
 <hr />
-<hr />
-<h2 id="daily-vs.-rolling-averaged-workflow">3. Daily
-vs. Rolling-Averaged Workflow</h2>
-<h3 id="daily-processing">3.1 Daily Processing</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L434"><code>process_daily_cice</code></a>:
-Masking is applied directly to daily fields.</p>
-<h3 id="rolling-averaged-processing">3.2 Rolling Averaged
-Processing</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L481"><code>process_rolling_cice</code></a>:
-A rolling average is applied before thresholding.</p>
-<hr />
-<h2 id="fast-ice-metrics">4. Fast Ice Metrics</h2>
+<h2 id="fast-ice-metrics">2. Fast Ice Metrics</h2>
 <p>Metrics are computed via <a
 href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>compute_fast_ice_metrics.py</code></a>,
 with methods:</p>
-<h3 id="fast-ice-area-fia">4.1 Fast Ice Area (FIA)</h3>
+<h3 id="fast-ice-area-fia">2.1 Fast Ice Area (<code>FIA</code>)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code>compute_fast_ice_area</code></a>:</p>
 <p><span class="math display">\[
@@ -407,32 +429,37 @@ href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><
 \]</span> Where: - <span class="math inline">\(M_{i,j}(t)\)</span> is
 the boolean fast ice mask - <span class="math inline">\(A_{i,j}\)</span>
 is the grid cell area</p>
-<h3 id="fast-ice-concentration-fic">4.2 Fast Ice Concentration
-(FIC)</h3>
+<h3 id="fast-ice-persistence-fip">2.2 Fast Ice Persistence
+(<code>FIP</code>)</h3>
 <p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L628"><code>compute_fast_ice_concentration</code></a>:</p>
+href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636"><code>compute_variable_aggregate</code></a></p>
+<p>AFIM computes the temporal mean of fast ice concentration or other
+variables across a defined time window using a simple arithmetic mean.
+Let <span class="math inline">\(a(t)_{ispd-cat}_\)</span> represent a
+variable (e.g., sea ice concentration masked for fast ice category) at
+time <span class="math inline">\(t\)</span> defined on a fixed spatial
+grid. Then the temporal mean over <span class="math inline">\(T\)</span>
+time steps is defined by:</p>
 <p><span class="math display">\[
-\text{FIC}_{i,j}(t) = M_{i,j}(t) \cdot a_{i,j}(t)
+\bar{a_{ispd-cat}} = \frac{1}{T} \sum_{t=1}^{T} a(t)_{ispd-cat}_
 \]</span></p>
-<h3 id="fast-ice-thickness-fih">4.3 Fast Ice Thickness (FIH)</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L636"><code>compute_fast_ice_thickness</code></a>:</p>
-<p><span class="math display">\[
-\text{FIH}_{i,j}(t) = M_{i,j}(t) \cdot h_{i,j}(t)
-\]</span></p>
+<p>This operation is used within AFIM to collapse a time series into a
+single climatological estimate, such as the 1993–1999 mean FIA.</p>
 <hr />
-<h2 id="threshold-sensitivity">5. Threshold Sensitivity</h2>
+<h2 id="threshold-sensitivity">3. Threshold Sensitivity</h2>
 <p>AFIM supports experiments with multiple <span
-class="math inline">\(u_\text{thresh}\)</span> values: - <span
-class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) - <span
+class="math inline">\(u_\text{thresh}\)</span> values: * <span
+class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) * <span
 class="math inline">\(5 \times 10^{-4}~\text{m/s}\)</span> (for
 sensitivity testing)</p>
 <p>These are applied to both boolean and rolling classifications.</p>
 <hr />
 <h2 id="source-files">📁 Source Files</h2>
-<p>All methods above are implemented in: - <a
+<p>All methods above are implemented in: * <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code>src/sea_ice_processor.py</code></a>
-- <a
+* <a
+href="https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py"><code>scripts/process_fast_ice/process_fast_ice.py</code></a>
+* <a
 href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>scripts/sea_ice_metrics/compute_fast_ice_metrics.py</code></a></p>
 <p>See also: <code>config.json</code> files for applied thresholds and
 flags.</p>

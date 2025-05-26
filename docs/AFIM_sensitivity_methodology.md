@@ -91,12 +91,12 @@ This expression performs linear interpolation in $x$ followed by $y$, and provid
 
 ### 1.2 masking methods:
 
-From the above four `ispd` categories there are then two temporal ways in which to apply the thresholding:
-1. on daily-averaged $a$ and $\vec{u}$, **or**
-2. N-day-average $\bar{a}$ and $\bar{\vec{u}}$
-3. apply additional criteria (see section 1.3 below)
+From the above four `ispd` categories there are then three ways in which to apply the masking/thresholding:
+1. on daily-averaged $a$ and $\vec{u}$, **or** (see 1.2.1 below)
+2. N-day-average $\bar{a}$ and $\bar{\vec{u}}$ (see 1.2.2 below)
+3. persistence method, which uses daily-averaged $a$ and $\vec{u}$ (see 1.2.3 below)
 
-Then classify/mask for fast ice using:
+Lastly, I then apply additional mainly geo-spatial criteria (see section 1.2.4 below) to ensure that resulting gridded dataset is southern hemisphere and that landmask file is correctly applied. **Then classify/mask for fast ice using***:
 
 $$
 FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad \bar{u} \leq u_\text{thresh}
@@ -107,58 +107,53 @@ This results in eight different fast ice classifications (or conversely **pack i
 1. `B`, `Ta`, `Tx`, `BT`                     :: **no** temporal-averaging of $a$ and $\vec{u}$
 2. `B_roll`, `Ta_roll`, `Tx_roll`, `BT_roll` :: rolling-averaging of $N$-days on \bar{a}$ and $\bar{\vec{u}}$
 
-An additional method for classifying fast ice was then proposed by @adfraser, and that is to use the daily-averaged $a$ and $\vec{u}$ to create: `FI_mask_B`, `FI_mask_Ta`, `FI_mask_Tx` or `FI_mask_BT`). 
-* Boolean (or binary-days) approach:
-1. take 
-
 #### 1.2.1 daily-average method:
 [Full method](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434)
 
 #### 1.2.2 rolling-average method:
-More generally the N-day-average that [I employed](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540) can be expressed as a rolling average over $N$-days (default $N=15$):
+More generally the $N$-day-average that [I employed](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540) can be expressed as a rolling average over $N$-days (default $N=15$):
 
 $$
 \bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
 $$
 
-### 1.3 Additional criteria imposed:
+#### 1.2.3 persistence method:
 
-#### 1.3.1 re-apply landmask:
+To identify fast ice based not only on instantaneous conditions but also on temporal persistence, AFIM applies a rolling boolean mask (or binary-days mask) as an alternate to the rolling average method described above. The conceptual approach is given in  grid cell is flagged as fast ice if it satisfies the fast ice condition (e.g., $a \geq 0.15$, $|\vec{u}| \leq \varepsilon$) for at least $M$ days within a centred window of $N$ days. This additional method for classifying fast ice was proposed by @adfraser, and that is to use the daily-averaged $a$ and $\vec{u}$ to determine if fast ice is /present/ in a grid cell. After $N$-days count the precedding $N$-days and if $M$ of those days were classified as fast ice then mark that cell as fast ice for those $N$-days.
+
+Mathematically, define the daily binary mask for fast ice presence as:
+
+$$
+F(t, i, j) = \begin{cases} 1, & \text{if fast ice condition is met at } (i,j) \text{ on day } t \\ 0, & \text{otherwise} \end{cases}
+$$
+
+Then the boolean fast ice mask is:
+
+$$
+F_{\text{bool}}(t, i, j) = \begin{cases} 1, & \displaystyle \sum_{\tau = t - N/2}^{t + N/2} F(\tau, i, j) \geq M \\ 0, & \text{otherwise} \end{cases}
+$$
+
+Where:
+- $N$ is the rolling window length (e.g., 7 days)
+- $M$ is the minimum count threshold (e.g., 6 days)
+
+This persistence filter is applied using xarray’s `rolling(...).construct(...).sum(...)` approach, centred in time, [here](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L620C1-L626C23)
+
+#### 1.2.4 Additional criteria imposed:
+
+#### 1.3.4.1 re-apply landmask:
 After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: `north` or `south` (default `south`).
 
-#### 1.3.2 hemisphere masking:
+#### 1.3.4.2 hemisphere masking:
 After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: `north` or `south` (default `south`).
 
-
-### 1.2 Rolling Mean Then Masking  
-From [`compute_fast_ice_rolling`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287):
-
-
-
-
 ---
 
-
-
----
-
-## 3. Daily vs. Rolling-Averaged Workflow
-
-### 3.1 Daily Processing  
-From [`process_daily_cice`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L434):
-Masking is applied directly to daily fields.
-
-### 3.2 Rolling Averaged Processing  
-From [`process_rolling_cice`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L481):
-A rolling average is applied before thresholding.
-
----
-
-## 4. Fast Ice Metrics
+## 2. Fast Ice Metrics
 
 Metrics are computed via [`compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py), with methods:
 
-### 4.1 Fast Ice Area (FIA)  
+### 2.1 Fast Ice Area (`FIA`)  
 From [`compute_fast_ice_area`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620):
 
 $$
@@ -168,27 +163,24 @@ Where:
 - $M_{i,j}(t)$ is the boolean fast ice mask
 - $A_{i,j}$ is the grid cell area
 
-### 4.2 Fast Ice Concentration (FIC)  
-From [`compute_fast_ice_concentration`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L628):
+### 2.2 Fast Ice Persistence (`FIP`)
+From [`compute_variable_aggregate`](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636)
+
+AFIM computes the temporal mean of fast ice concentration or other variables across a defined time window using a simple arithmetic mean. Let $a(t)_{ispd-cat}_$ represent a variable (e.g., sea ice concentration masked for fast ice category) at time $t$ defined on a fixed spatial grid. Then the temporal mean over $T$ time steps is defined by:
 
 $$
-\text{FIC}_{i,j}(t) = M_{i,j}(t) \cdot a_{i,j}(t)
+\bar{a_{ispd-cat}} = \frac{1}{T} \sum_{t=1}^{T} a(t)_{ispd-cat}_
 $$
 
-### 4.3 Fast Ice Thickness (FIH)  
-From [`compute_fast_ice_thickness`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L636):
+This operation is used within AFIM to collapse a time series into a single climatological estimate, such as the 1993–1999 mean FIA.
 
-$$
-\text{FIH}_{i,j}(t) = M_{i,j}(t) \cdot h_{i,j}(t)
-$$
 
 ---
 
-## 5. Threshold Sensitivity
-
+## 3. Threshold Sensitivity
 AFIM supports experiments with multiple $u_\text{thresh}$ values:
-- $10^{-3}~\text{m/s}$ (default)
-- $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
+* $10^{-3}~\text{m/s}$ (default)
+* $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
 
 These are applied to both boolean and rolling classifications.
 
@@ -196,8 +188,9 @@ These are applied to both boolean and rolling classifications.
 
 ## 📁 Source Files
 All methods above are implemented in:
-- [`src/sea_ice_processor.py`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py)
-- [`scripts/sea_ice_metrics/compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py)
+* [`src/sea_ice_processor.py`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py)
+* [`scripts/process_fast_ice/process_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py)
+* [`scripts/sea_ice_metrics/compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py)
 
 See also: `config.json` files for applied thresholds and flags.
 
