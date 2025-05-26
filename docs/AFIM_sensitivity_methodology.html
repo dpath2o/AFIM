@@ -166,7 +166,7 @@
       vertical-align: middle;
     }
   </style>
-  <style>body { max-width: 100%; margin: 1rem 2rem; }</style>
+  <style>body { max-width: 100%; margin: 1rem 2rem; background-color: black; color: white; }</style>
   <script
   src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
   type="text/javascript"></script>
@@ -241,15 +241,20 @@ class="math inline">\(v\)</span>) under various forces:</p>
 - mf\hat{z} \times \vec{u} - mg\nabla H + \nabla \cdot
 \boldsymbol{\sigma} - C_d \vec{u}
 \]</span></p>
-<p>Where: + <span class="math inline">\(\vec{u}\)</span> is ice velocity
-+ <span class="math inline">\(\vec{\tau}_a\)</span>, <span
-class="math inline">\(\vec{\tau}_o\)</span> are wind and ocean stresses
-+ <span class="math inline">\(f\)</span> is the Coriolis parameter,
-<span class="math inline">\(g\)</span> is gravity + <span
-class="math inline">\(H\)</span> is surface height + <span
-class="math inline">\(\boldsymbol{\sigma}\)</span> is the internal ice
-stress tensor + <span class="math inline">\(C_d\)</span> is the drag
-coefficient</p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(\vec{u}\)</span> is ice velocity</li>
+<li><span class="math inline">\(\vec{\tau}_a\)</span>, <span
+class="math inline">\(\vec{\tau}_o\)</span> are wind and ocean
+stresses</li>
+<li><span class="math inline">\(f\)</span> is the Coriolis parameter,
+<span class="math inline">\(g\)</span> is gravity</li>
+<li><span class="math inline">\(H\)</span> is surface height</li>
+<li><span class="math inline">\(\boldsymbol{\sigma}\)</span> is the
+internal ice stress tensor</li>
+<li><span class="math inline">\(C_d\)</span> is the drag
+coefficient</li>
+</ul>
 <p>In mathematical terms, the ice speed is computed as:</p>
 <p><span class="math display">\[
 |\vec{u}| = \sqrt{u^2 + v^2}
@@ -266,11 +271,14 @@ spatially averaged approaches (see Sections 2.1 and 2.2).</p>
 a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq
 u_\text{thresh}
 \]</span></p>
-<p>where: + <strong>sea ice concentration threshold</strong>, <span
-class="math inline">\(a_\text{thresh} = 0.15\)</span> + <strong>sea ice
-speed threshold</strong>, <span class="math inline">\(u_\text{thresh}
-\in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times
-10^{-4}\}~\text{m/s}\)</span></p>
+<p>where:</p>
+<ul>
+<li><strong>sea ice concentration threshold</strong>, <span
+class="math inline">\(a_\text{thresh} = 0.15\)</span></li>
+<li><strong>sea ice speed threshold</strong>, <span
+class="math inline">\(u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4},
+2.5 \times 10^{-4}\}~\text{m/s}\)</span></li>
+</ul>
 <p>Fast ice is identified from sea ice concentration (<span
 class="math inline">\(a\)</span>) and speed (<span
 class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
@@ -350,14 +358,17 @@ Documentation</a> and <a
 href="https://xesmf.readthedocs.io/en/latest/notebooks/Compare_algorithms.html">xESMF</a>.</p>
 <h3 id="masking-methods">1.2 masking methods:</h3>
 <p>From the above four <code>ispd</code> categories there are then three
-ways in which to apply the masking/thresholding: 1. on daily-averaged
-<span class="math inline">\(a\)</span> and <span
+ways in which to apply the masking/thresholding:</p>
+<ol type="1">
+<li>on daily-averaged <span class="math inline">\(a\)</span> and <span
 class="math inline">\(\vec{u}\)</span>, <strong>or</strong> (see 1.2.1
-below) 2. N-day-average <span class="math inline">\(\bar{a}\)</span> and
-<span class="math inline">\(\bar{\vec{u}}\)</span> (see 1.2.2 below) 3.
-persistence method, which uses daily-averaged <span
+below)</li>
+<li>N-day-average <span class="math inline">\(\bar{a}\)</span> and <span
+class="math inline">\(\bar{\vec{u}}\)</span> (see 1.2.2 below)</li>
+<li>persistence method, which uses daily-averaged <span
 class="math inline">\(a\)</span> and <span
-class="math inline">\(\vec{u}\)</span> (see 1.2.3 below)</p>
+class="math inline">\(\vec{u}\)</span> (see 1.2.3 below)</li>
+</ol>
 <p>Lastly, I then apply additional mainly geo-spatial criteria (see
 section 1.2.4 below) to ensure that resulting gridded dataset is
 southern hemisphere and that landmask file is correctly applied. Then
@@ -371,15 +382,18 @@ is one of the four sea ice speed categories: <code>ispd_B</code>,
 <p>This results in eight different fast ice classifications (or
 conversely <strong>pack ice</strong> classifications). Hence my naming
 scheme I have chosen to use the following nomenclature for brevity and
-remaining consistent with the underlying sea ice speed categories: 1.
-<code>B</code>, <code>Ta</code>, <code>Tx</code>, <code>BT</code> ::
+remaining consistent with the underlying sea ice speed categories:</p>
+<ol type="1">
+<li><code>B</code>, <code>Ta</code>, <code>Tx</code>, <code>BT</code> ::
 <strong>no</strong> temporal-averaging of <span
 class="math inline">\(a\)</span> and <span
-class="math inline">\(\vec{u}\)</span> 2. <code>B_roll</code>,
-<code>Ta_roll</code>, <code>Tx_roll</code>, <code>BT_roll</code> ::
-rolling-averaging of <span class="math inline">\(N\)</span>-days on
-<span class="math inline">\(\bar{a}\)</span> and <span
-class="math inline">\(\bar{\vec{u}}\)</span></p>
+class="math inline">\(\vec{u}\)</span></li>
+<li><code>B_roll</code>, <code>Ta_roll</code>, <code>Tx_roll</code>,
+<code>BT_roll</code> :: rolling-averaging of <span
+class="math inline">\(N\)</span>-days on <span
+class="math inline">\(\bar{a}\)</span> and <span
+class="math inline">\(\bar{\vec{u}}\)</span></li>
+</ol>
 <h4 id="daily-average-method">1.2.1 daily-average method:</h4>
 <p><a
 href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434">Full
@@ -426,9 +440,13 @@ F_{\text{bool}}(t, i, j) = \begin{cases} 1, &amp; \displaystyle
 \sum_{\tau = t - N/2}^{t + N/2} F(\tau, i, j) \geq M \\ 0, &amp;
 \text{otherwise} \end{cases}
 \]</span></p>
-<p>Where: - <span class="math inline">\(N\)</span> is the rolling window
-length (e.g., 7 days) - <span class="math inline">\(M\)</span> is the
-minimum count threshold (e.g., 6 days)</p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(N\)</span> is the rolling window length
+(e.g., 7 days)</li>
+<li><span class="math inline">\(M\)</span> is the minimum count
+threshold (e.g., 6 days)</li>
+</ul>
 <p>This persistence filter is applied using xarray’s
 <code>rolling(...).construct(...).sum(...)</code> approach, centred in
 time, <a
@@ -453,9 +471,14 @@ with methods:</p>
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code>compute_fast_ice_area</code></a>:</p>
 <p><span class="math display">\[
 \text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
-\]</span> Where: + <span class="math inline">\(M_{i,j}(t)\)</span> is
-the boolean fast ice mask + <span class="math inline">\(A_{i,j}\)</span>
-is the grid cell area</p>
+\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(M_{i,j}(t)\)</span> is the boolean fast
+ice mask</li>
+<li><span class="math inline">\(A_{i,j}\)</span> is the grid cell
+area</li>
+</ul>
 <h3 id="fast-ice-persistence-fip">2.2 Fast Ice Persistence
 (<code>FIP</code>)</h3>
 <p>From <a
@@ -475,19 +498,25 @@ single climatological estimate, such as the 1993–1999 mean FIA.</p>
 <hr />
 <h2 id="threshold-sensitivity">3. Threshold Sensitivity</h2>
 <p>AFIM supports experiments with multiple <span
-class="math inline">\(u_\text{thresh}\)</span> values: + <span
-class="math inline">\(10^{-3}~\text{m/s}\)</span> (default) + <span
-class="math inline">\(5 \times 10^{-4}~\text{m/s}\)</span> (for
-sensitivity testing)</p>
+class="math inline">\(u_\text{thresh}\)</span> values:</p>
+<ul>
+<li><span class="math inline">\(10^{-3}~\text{m/s}\)</span>
+(default)</li>
+<li><span class="math inline">\(5 \times 10^{-4}~\text{m/s}\)</span>
+(for sensitivity testing)</li>
+</ul>
 <p>These are applied to both boolean and rolling classifications.</p>
 <hr />
 <h2 id="source-files">📁 Source Files</h2>
-<p>All methods above are implemented in: + <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code>src/sea_ice_processor.py</code></a>
-+ <a
-href="https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py"><code>scripts/process_fast_ice/process_fast_ice.py</code></a>
-+ <a
-href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>scripts/sea_ice_metrics/compute_fast_ice_metrics.py</code></a></p>
+<p>All methods above are implemented in:</p>
+<ul>
+<li><a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code>src/sea_ice_processor.py</code></a></li>
+<li><a
+href="https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py"><code>scripts/process_fast_ice/process_fast_ice.py</code></a></li>
+<li><a
+href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>scripts/sea_ice_metrics/compute_fast_ice_metrics.py</code></a></li>
+</ul>
 <p>See also: <code>config.json</code> files for applied thresholds and
 flags.</p>
 </body>

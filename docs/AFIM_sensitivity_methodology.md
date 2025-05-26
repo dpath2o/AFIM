@@ -36,6 +36,7 @@ $$
 $$
 
 Where:
+
 + $\vec{u}$ is ice velocity
 + $\vec{\tau}_a$, $\vec{\tau}_o$ are wind and ocean stresses
 + $f$ is the Coriolis parameter, $g$ is gravity
@@ -60,6 +61,7 @@ a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq u_\text{thresh}
 $$
 
 where:
+
 + **sea ice concentration threshold**, $a_\text{thresh} = 0.15$
 + **sea ice speed threshold**, $u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times 10^{-4}\}~\text{m/s}$
 
@@ -113,6 +115,7 @@ This expression performs linear interpolation in $x$ followed by $y$, and provid
 ### 1.2 masking methods:
 
 From the above four `ispd` categories there are then three ways in which to apply the masking/thresholding:
+
 1. on daily-averaged $a$ and $\vec{u}$, **or** (see 1.2.1 below)
 2. N-day-average $\bar{a}$ and $\bar{\vec{u}}$ (see 1.2.2 below)
 3. persistence method, which uses daily-averaged $a$ and $\vec{u}$ (see 1.2.3 below)
@@ -125,13 +128,16 @@ $$
 where $u_{\text{thresh}}$ is one of the four sea ice speed categories: `ispd_B`, `ispd_Ta`, `ispd_Tx`, or `ispd_BT`.
 
 This results in eight different fast ice classifications (or conversely **pack ice** classifications). Hence my naming scheme I have chosen to use the following nomenclature for brevity and remaining consistent with the underlying sea ice speed categories:
+
 1. `B`, `Ta`, `Tx`, `BT`                     :: **no** temporal-averaging of $a$ and $\vec{u}$
 2. `B_roll`, `Ta_roll`, `Tx_roll`, `BT_roll` :: rolling-averaging of $N$-days on $\bar{a}$ and $\bar{\vec{u}}$
 
 #### 1.2.1 daily-average method:
+
 [Full method](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434)
 
 #### 1.2.2 rolling-average method:
+
 More generally the $N$-day-average that [I employed](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540) can be expressed as a rolling average over $N$-days (default $N=15$):
 
 $$
@@ -155,17 +161,20 @@ F_{\text{bool}}(t, i, j) = \begin{cases} 1, & \displaystyle \sum_{\tau = t - N/2
 $$
 
 Where:
-- $N$ is the rolling window length (e.g., 7 days)
-- $M$ is the minimum count threshold (e.g., 6 days)
+
++ $N$ is the rolling window length (e.g., 7 days)
++ $M$ is the minimum count threshold (e.g., 6 days)
 
 This persistence filter is applied using xarray’s `rolling(...).construct(...).sum(...)` approach, centred in time, [here](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L620C1-L626C23)
 
 #### 1.2.4 Additional criteria imposed:
 
 #### 1.3.4.1 re-apply landmask:
+
 After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: `north` or `south` (default `south`).
 
 #### 1.3.4.2 hemisphere masking:
+
 After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: `north` or `south` (default `south`).
 
 ---
@@ -175,16 +184,20 @@ After either doing (or not doing the temporal averaging) the dataset is then sub
 Metrics are computed via [`compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py), with methods:
 
 ### 2.1 Fast Ice Area (`FIA`)  
+
 From [`compute_fast_ice_area`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620):
 
 $$
 \text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
 $$
+
 Where:
+
 + $M_{i,j}(t)$ is the boolean fast ice mask
 + $A_{i,j}$ is the grid cell area
 
 ### 2.2 Fast Ice Persistence (`FIP`)
+
 From [`compute_variable_aggregate`](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636)
 
 AFIM computes the temporal mean of fast ice concentration or other variables across a defined time window using a simple arithmetic mean. Let $a(t)_{ispd-cat}_$ represent a variable (e.g., sea ice concentration masked for fast ice category) at time $t$ defined on a fixed spatial grid. Then the temporal mean over $T$ time steps is defined by:
@@ -198,7 +211,9 @@ This operation is used within AFIM to collapse a time series into a single clima
 ---
 
 ## 3. Threshold Sensitivity
+
 AFIM supports experiments with multiple $u_\text{thresh}$ values:
+
 + $10^{-3}~\text{m/s}$ (default)
 + $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
 
@@ -207,7 +222,9 @@ These are applied to both boolean and rolling classifications.
 ---
 
 ## 📁 Source Files
+
 All methods above are implemented in:
+
 + [`src/sea_ice_processor.py`](https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py)
 + [`scripts/process_fast_ice/process_fast_ice.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py)
 + [`scripts/sea_ice_metrics/compute_fast_ice_metrics.py`](https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py)
