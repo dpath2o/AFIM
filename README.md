@@ -15,6 +15,7 @@ There are currently no other open-source tools dedicated to post-processing **CI
 ### AFIM Sensitivity Study
 
 🧾 [AFIM Sensitivity Experiment Design and Methodology](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
+
 👉🏻[AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
 
 Explore key outputs from AFIM simulations:
