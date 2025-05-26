@@ -177,90 +177,105 @@ id="methodology-antarctic-fast-ice-modelling-and-metrics">Methodology:
 Antarctic Fast Ice Modelling and Metrics</h1>
 <p>This document describes the core methodologies implemented in the
 AFIM (Antarctic Fast Ice Modelling) framework, corresponding to
-functions and constructs in the repository <a href="../src">src
-directory</a>. Code references are linked directly to the GitHub
-repository.</p>
+functions and constructs in the repository <a
+href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
 <hr />
 <h2 id="fast-ice-masking-criteria">1. Fast Ice Masking Criteria</h2>
-<p>Fast ice is identified from sea ice concentration (<code>aice</code>)
-and speed (<code>|\vec{u}|</code>) using multiple thresholding
+<p>Fast ice is identified from sea ice concentration (<span
+class="math inline"><em>a</em></span>) and speed (<span
+class="math inline">|<em>u⃗</em>|</span>) using multiple thresholding
 methods:</p>
 <h3 id="boolean-masking">1.1 Boolean Masking</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224"><code>compute_fast_ice_boolean</code></a>:</p>
 <p>A grid cell is classified as fast ice if:</p>
-<p>[ a_{i,j} a_ |<em>{i,j}| u</em> ]</p>
-<p>where: - ( a_ = 0.85 ) (sea ice concentration threshold) - ( u_
-{10^{-3}, 5 ^{-4}} , )</p>
+<p><span
+class="math display"><em>a</em> ≥ <em>a</em><sub>thresh</sub>  and  |<em>u⃗</em>| ≤ <em>u</em><sub>thresh</sub></span></p>
+<p>where: - <span
+class="math inline"><em>a</em><sub>thresh</sub> = 0.85</span> (sea ice
+concentration threshold) - <span
+class="math inline"><em>u</em><sub>thresh</sub> ∈ {10<sup>−3</sup>, 5 × 10<sup>−4</sup>} m/s</span></p>
 <hr />
-<h3 id="rolling-mean-first-then-mask">1.2 Rolling Mean First, Then
-Mask</h3>
+<h3 id="rolling-mean-then-masking">1.2 Rolling Mean Then Masking</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287"><code>compute_fast_ice_rolling</code></a>:</p>
-<p>A rolling mean is applied over a time window (default ( N=15 )
-days):</p>
-<p>[ {a}<em>{i,j}(t) = </em>{= t-N/2}^{t+N/2} a_{i,j}() ]</p>
-<p>Masking is then applied to the smoothed fields using the same boolean
-rule:</p>
-<p>[ {a}<em>{i,j} a</em> {u}<em>{i,j} u</em> ]</p>
+<p>Apply a rolling average over <span
+class="math inline"><em>N</em></span> days (default <span
+class="math inline"><em>N</em> = 15</span>):</p>
+<p><span class="math display">$$
+\bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
+$$</span></p>
+<p>Then classify as fast ice using:</p>
+<p><span
+class="math display"><em>ā</em> ≥ <em>a</em><sub>thresh</sub>  and  <em>ū</em> ≤ <em>u</em><sub>thresh</sub></span></p>
 <hr />
 <h2 id="ice-speed-calculation-methods">2. Ice Speed Calculation
 Methods</h2>
-<p>Fast ice speed ( || ) is derived using various techniques:</p>
 <h3 id="native-b-grid-speed">2.1 Native B-grid Speed</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L305"><code>compute_speed_B</code></a>:</p>
-<p>[ ||_ = ]</p>
-<h3 id="interpolated-to-t-grid-average">2.2 Interpolated to T-grid
-(Average)</h3>
+<p><span class="math display">$$
+|\vec{u}|_B = \sqrt{u^2 + v^2}
+$$</span></p>
+<h3 id="interpolated-to-t-grid-averaged">2.2 Interpolated to T-grid
+(Averaged)</h3>
 <p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L315"><code>compute_speed_Ta</code></a>:</p>
-<p>[ ||<em> = (||</em> ) ]</p>
+<p><span class="math display">|<em>u⃗</em>|<sub><em>T</em></sub> = mean
+of 4 surrounding B-grid corners</span></p>
 <hr />
-<h2 id="daily-vs.-averaged-processing">3. Daily vs. Averaged
-Processing</h2>
-<h3 id="daily-classification">3.1 Daily Classification</h3>
-<p><a
+<h2 id="daily-vs.-rolling-averaged-workflow">3. Daily
+vs. Rolling-Averaged Workflow</h2>
+<h3 id="daily-processing">3.1 Daily Processing</h3>
+<p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L434"><code>process_daily_cice</code></a>:
-Masking is applied directly to each daily field without any temporal
-smoothing.</p>
-<h3 id="rolling-averaged-classification">3.2 Rolling-Averaged
-Classification</h3>
-<p><a
+Masking is applied directly to daily fields.</p>
+<h3 id="rolling-averaged-processing">3.2 Rolling Averaged
+Processing</h3>
+<p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L481"><code>process_rolling_cice</code></a>:
-A rolling average is applied before masking.</p>
+A rolling average is applied before thresholding.</p>
 <hr />
 <h2 id="fast-ice-metrics">4. Fast Ice Metrics</h2>
-<p>Post-processed masks are analyzed in: <a
-href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>compute_fast_ice_metrics.py</code></a></p>
-<p>Key metrics include:</p>
+<p>Metrics are computed via <a
+href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>compute_fast_ice_metrics.py</code></a>,
+with methods:</p>
 <h3 id="fast-ice-area-fia">4.1 Fast Ice Area (FIA)</h3>
-<p><a
+<p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code>compute_fast_ice_area</code></a>:</p>
-<p>[ (t) = <em>{i,j} A</em>{i,j} M_{i,j}(t) ] Where: - ( M_{i,j}(t) ) is
-the fast ice mask - ( A_{i,j} ) is grid cell area</p>
+<p><span
+class="math display">FIA(<em>t</em>) = ∑<sub><em>i</em>, <em>j</em></sub><em>A</em><sub><em>i</em>, <em>j</em></sub><em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span>
+Where: - <span
+class="math inline"><em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span>
+is the boolean fast ice mask - <span
+class="math inline"><em>A</em><sub><em>i</em>, <em>j</em></sub></span>
+is the grid cell area</p>
 <h3 id="fast-ice-concentration-fic">4.2 Fast Ice Concentration
 (FIC)</h3>
-<p><a
+<p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L628"><code>compute_fast_ice_concentration</code></a>:</p>
-<p>[ <em>{i,j}(t) = M</em>{i,j}(t) a_{i,j}(t) ]</p>
+<p><span
+class="math display">FIC<sub><em>i</em>, <em>j</em></sub>(<em>t</em>) = <em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>) ⋅ <em>a</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span></p>
 <h3 id="fast-ice-thickness-fih">4.3 Fast Ice Thickness (FIH)</h3>
-<p><a
+<p>From <a
 href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L636"><code>compute_fast_ice_thickness</code></a>:</p>
-<p>[ <em>{i,j}(t) = M</em>{i,j}(t) h_{i,j}(t) ]</p>
+<p><span
+class="math display">FIH<sub><em>i</em>, <em>j</em></sub>(<em>t</em>) = <em>M</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>) ⋅ <em>h</em><sub><em>i</em>, <em>j</em></sub>(<em>t</em>)</span></p>
 <hr />
 <h2 id="threshold-sensitivity">5. Threshold Sensitivity</h2>
-<p>Simulations were run with two primary thresholds for ice speed
-masking: - ( u_ = 10^{-3} , ) - ( u_ = 5 ^{-4} , )</p>
-<p>These were used in both boolean and rolling classifications.</p>
+<p>AFIM supports experiments with multiple <span
+class="math inline"><em>u</em><sub>thresh</sub></span> values: - <span
+class="math inline">10<sup>−3</sup> m/s</span> (default) - <span
+class="math inline">5 × 10<sup>−4</sup> m/s</span> (for sensitivity
+testing)</p>
+<p>These are applied to both boolean and rolling classifications.</p>
 <hr />
-<h2 id="source-reference">📁 Source Reference</h2>
-<p>All methodology is implemented under <a
-href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>
-and <a
-href="https://github.com/dpath2o/AFIM/tree/main/scripts"><code>scripts/</code></a>.</p>
-<p>For reproducibility, see <code>SeaIceProcessor</code>,
-<code>compute_fast_ice_metrics.py</code>, and <code>config.json</code>
-for input configuration.</p>
+<h2 id="source-files">📁 Source Files</h2>
+<p>All methods above are implemented in: - <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code>src/sea_ice_processor.py</code></a>
+- <a
+href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code>scripts/sea_ice_metrics/compute_fast_ice_metrics.py</code></a></p>
+<p>See also: <code>config.json</code> files for applied thresholds and
+flags.</p>
 </body>
 </html>
