@@ -187,10 +187,24 @@ href="https://github.com/dpath2o/AFIM/tree/main/src"><code>src/</code></a>.</p>
 results, it is common practice to use sea ice concentration
 (<code>aice</code>) and sea ice speed (<code>ispd</code>). The former is
 a tracer variable derived on the spatial grid centre (commonly referred
-to as the T-grid). In contrast, <code>ispd</code> is derived from the
+to as the /T-grid/). In contrast, <code>ispd</code> is derived from the
 momentum components (<code>u</code>, <code>v</code>), which are defined
-at displaced locations relative to the T-grid, forming what is referred
-to as the Arakawa B-grid.</p>
+at displaced locations relative to the /T-grid/, forming what is
+referred to as the Arakawa /B-grid/. <a
+href="https://raw.githubusercontent.com/dpath2o/AFIM/main/docs/figures/bgrid.png">This
+figure</a> shows a depiction of the computational <a
+href="https://doi.org/10.1016/B978-0-12-460817-7.50009-4">Arakawa
+B-grid</a> in the vicinity of an island. Note that in this depiction,
+only one grid cell has been masked out as land. This is important, as it
+motivates the classification strategy: due to computational constraints,
+a no-slip boundary is imposed on any velocity cell adjacent to land
+(i.e., touching land). These velocity components are explicitly set to
+<span class="math inline">\(0\)</span> by the model. Velocity is defined
+on staggered /B-grid/ locations, this results in cells near the coast
+having artificially zero speed regardless of the physical ice state.
+This introduces ambiguity: a zero speed may result either from a valid
+physical condition (e.g., grounded ice) or from an imposed boundary
+condition.</p>
 <p>In <a href="https://github.com/CICE-Consortium/CICE">CICE v6</a>, the
 momentum equation evolves horizontal velocity components (<span
 class="math inline">\(u\)</span>, <span
@@ -209,22 +223,6 @@ class="math inline">\(H\)</span> is surface height - <span
 class="math inline">\(\boldsymbol{\sigma}\)</span> is the internal ice
 stress tensor - <span class="math inline">\(C_d\)</span> is the drag
 coefficient</p>
-<p>☝️ <a
-href="https://raw.githubusercontent.com/dpath2o/AFIM/main/docs/figures/bgrid.png">This
-figure</a> shows a depiction of the computational <a
-href="https://doi.org/10.1016/B978-0-12-460817-7.50009-4">Arakawa
-B-grid</a> in the vicinity of an island.</p>
-<p>Note that in this depiction, only one grid cell has been masked out
-as land. This is important, as it motivates the classification strategy:
-due to computational constraints, a no-slip boundary is imposed on any
-velocity cell adjacent to land (i.e., touching land). These velocity
-components are explicitly set to <span class="math inline">\(0\)</span>
-by the model.</p>
-<p>Because velocity is defined on staggered B-grid locations, this
-results in many cells near the coast having artificially zero speed
-regardless of the physical ice state. This introduces ambiguity: a zero
-speed may result either from a valid physical condition (e.g., grounded
-ice) or from an imposed boundary condition.</p>
 <p>In mathematical terms, the ice speed is computed as:</p>
 <p><span class="math display">\[
 |\vec{u}| = \sqrt{u^2 + v^2}
@@ -232,66 +230,157 @@ ice) or from an imposed boundary condition.</p>
 <p>But near land, either <span class="math inline">\(u = 0\)</span>,
 <span class="math inline">\(v = 0\)</span>, or both are imposed, and so
 <span class="math inline">\(|\vec{u}| = 0\)</span> even though ice may
-not be landfast.</p>
-<p>Because of this, AFIM implements multiple strategies to mitigate
-false classifications near land by using interpolated speeds or
-spatially averaged approaches (see Sections 2.1 and 2.2).</p>
+not be landfast. Because of this, AFIM implements multiple strategies to
+mitigate false classifications near land by using interpolated speeds or
+spatially averaged approaches (see Sections 2.1 and 2.2**.</p>
 <hr />
-<h2 id="fast-ice-masking-criteria">1. Fast Ice Masking Criteria</h2>
-<p>Fast ice is identified from sea ice concentration (<span
-class="math inline">\(a\)</span>) and speed (<span
-class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
-methods.</p>
-<h3 id="sea-ice-speed-calculation-methods">1.1 Sea ice speed calculation
-methods</h3>
-<h3 id="native-b-grid-speed">1.1 Native B-grid speed</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L228"><code>ispd_B</code></a>:</p>
-<p><span class="math display">\[
-|\vec{u}|_B = \sqrt{u^2 + v^2}
-\]</span></p>
-<h3 id="ta-spatially-averaged-b-grid-to-t-grid">1.2 <code>Ta</code>:
-spatially-averaged B-grid to T-grid</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L238"><code>ispd_Ta</code></a>:</p>
-<p><span class="math display">\[
-|\vec{u}|_Ta = \text{mean of 4 surrounding B-grid corners}
-\]</span></p>
-<h3
-id="tx-esmf-spatially-weighted-average-using-a-bilinear-approach-to-map-b-grid-to-t-grid">1.3
-<code>Tx</code>: ESMF spatially weighted average using a /bilinear/
-approach to map B-grid to T-grid</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L315"><code>ispd_Tx</code></a>:</p>
-<p><span class="math display">\[
-|\vec{u}|_Ta = \text{mean of 4 surrounding B-grid corners}
-\]</span></p>
-<h3 id="sea-ice-speed-mask">1.1 Sea ice speed mask</h3>
-<p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L224"><code>compute_fast_ice_speeds</code></a>:</p>
+<h2 id="primary-classification">1. Primary Classification</h2>
 <p>A grid cell is classified as fast ice if:</p>
 <p><span class="math display">\[
 a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq
 u_\text{thresh}
 \]</span></p>
-<p>where: - <span class="math inline">\(a_\text{thresh} = 0.15\)</span>
-(sea ice concentration threshold) - <span
-class="math inline">\(u_\text{thresh} \in \{10^{-3}, 5 \times
-10^{-4}\}~\text{m/s}\)</span></p>
-<hr />
-<h3 id="rolling-mean-then-masking">1.2 Rolling Mean Then Masking</h3>
+<p>where: * <span class="math inline">\(a_\text{thresh} = 0.15\)</span>
+(<strong>sea ice concentration threshold</strong>) * <span
+class="math inline">\(u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}\,
+2.5 \times 10^{-4}}~\text{m/s}\)</span> (<strong>sea ice speed
+threshold</strong>)</p>
+<p>Fast ice is identified from sea ice concentration (<span
+class="math inline">\(a\)</span>) and speed (<span
+class="math inline">\(|\vec{u}|\)</span>) using multiple thresholding
+methods.</p>
+<p>Since we are masking (thresholding) values that are two grids (<span
+class="math inline">\(a\)</span> is on the /T-grid/ and <span
+class="math inline">\(\vec{u}\)</span> is on the /B-grid/) we need to
+decide on either re-gridding <span class="math inline">\(a\)</span> to
+the /B-grid/ or <span class="math inline">\(\vec{u}\)</span> to the
+/T-grid/. Since the underlying landmask file that I have been using for
+simulation is based on the /T-grid/ I choose to re-grid <span
+class="math inline">\(u\)</span> and <span
+class="math inline">\(v\)</span> sea ice velocity components to the
+/T-grid/. Other established results (<a
+href="https://doi.org/10.1002/2016JC012006">Lemieux et.al</a> and <a
+href="https://doi.org/10.1016/j.ocemod.2021.101920">VanAchter et.al</a>)
+have used this same approach. However, to be thorough in my reporting
+and analysis I have chosen to preserve the non-re-gridded ice speeds and
+hence have created the following four sea ice speed categories.</p>
+<h3 id="ispd-categories">1.1 <code>ispd</code> categories:</h3>
+<ol type="1">
+<li><code>ispd_B</code> :: no re-gridding</li>
+<li><code>ispd_Ta</code> :: spatially-averaged</li>
+<li><code>ispd_Tx</code> :: spatially-weighted-average</li>
+<li><code>ispd_BT</code> :: composite-mean of <code>ispd_B</code>,
+<code>ispd_Ta</code> and <code>ispd_Tx</code></li>
+</ol>
+<h4 id="ispd_b">1.1.1 <code>ispd_B</code></h4>
 <p>From <a
-href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287"><code>compute_fast_ice_rolling</code></a>:</p>
-<p>Apply a rolling average over <span class="math inline">\(N\)</span>
-days (default <span class="math inline">\(N=15\)</span>):</p>
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L228"><code>ispd_B</code></a></p>
+<p><span class="math display">\[
+|\vec{u}|_B = \sqrt{u^2 + v^2}
+\]</span></p>
+<h4 id="ispd_ta">1.1.2 <code>ispd_Ta</code></h4>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L238"><code>ispd_Ta</code></a></p>
+<p>To approximate the speed on the T-grid (<span
+class="math inline">\(|\vec{u}|_T\)</span>), AFIM applies a spatial
+average of the B-grid speed <span
+class="math inline">\(|\vec{u}|_B\)</span> from the four surrounding
+corners:</p>
+<p><span class="math display">\[
+|\vec{u}|_T(i,j) = \frac{1}{4} \Big[ |\vec{u}|_B(i,j) +
+|\vec{u}|_B(i+1,j) + |\vec{u}|_B(i,j+1) + |\vec{u}|_B(i+1,j+1) \Big]
+\]</span></p>
+<p>This is equivalent to averaging the velocity magnitudes from the four
+B-grid corners around a T-grid center, mitigating the impact of
+single-point no-slip anomalies.</p>
+<h4 id="ispd_tx">1.1.3 <code>ispd_Tx</code></h4>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L190"><code>ispd_Tx</code></a></p>
+<p>More generally, this type of spatial interpolation is an instance of
+<strong>bilinear interpolation</strong>, a common spatial re-gridding
+method in numerical modeling. The bilinear interpolation at a point
+<span class="math inline">\((x, y)\)</span> within a cell bounded by
+<span class="math inline">\((x_1, y_1)\)</span>, <span
+class="math inline">\((x_2, y_2)\)</span>, with values <span
+class="math inline">\(Q_{11}\)</span>, <span
+class="math inline">\(Q_{21}\)</span>, <span
+class="math inline">\(Q_{12}\)</span>, <span
+class="math inline">\(Q_{22}\)</span> at each corner, is given by:</p>
+<p><span class="math display">\[
+\begin{aligned}
+f(x, y) &amp;= \frac{1}{(x_2 - x_1)(y_2 - y_1)} \Big[ \\
+&amp;\quad Q_{11}(x_2 - x)(y_2 - y) + Q_{21}(x - x_1)(y_2 - y) \\
+&amp;\quad + Q_{12}(x_2 - x)(y - y_1) + Q_{22}(x - x_1)(y - y_1) \Big]
+\end{aligned}
+\]</span></p>
+<p>This expression performs linear interpolation in <span
+class="math inline">\(x\)</span> followed by <span
+class="math inline">\(y\)</span>, and provides smooth, continuous
+estimates across grid cells while not necessarily conserving quantities
+like mass or energy. More information on this specific method that I
+used can be obtained from <a
+href="https://earthsystemmodeling.org/regrid/">ESMF Regridding
+Documentation</a> and <a
+href="https://xesmf.readthedocs.io/en/latest/notebooks/Compare_algorithms.html">xESMF</a>.</p>
+<h3 id="masking-methods">1.2 masking methods:</h3>
+<p>From the above four <code>ispd</code> categories there are then two
+temporal ways in which to apply the thresholding: 1. on daily-averaged
+<span class="math inline">\(a\)</span> and <span
+class="math inline">\(\vec{u}\)</span>, <strong>or</strong> 2.
+N-day-average <span class="math inline">\(\bar{a}\)</span> and <span
+class="math inline">\(\bar{\vec{u}}\)</span> 3. apply additional
+criteria (see section 1.3 below)</p>
+<p>Then classify/mask for fast ice using:</p>
+<p><span class="math display">\[
+FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad
+\bar{u} \leq u_\text{thresh}
+\]</span> where <span class="math inline">\(u_{\text{thresh}}\)</span>
+is one of the four sea ice speed categories: <code>ispd_B</code>,
+<code>ispd_Ta</code>, <code>ispd_Tx</code>, or <code>ispd_BT</code>.</p>
+<p>This results in eight different fast ice classifications (or
+conversely <strong>pack ice</strong> classifications). Hence my naming
+scheme I have chosen to use the following nomenclature for brevity and
+remaining consistent with the underlying sea ice speed categories: 1.
+<code>B</code>, <code>Ta</code>, <code>Tx</code>, <code>BT</code> ::
+<strong>no</strong> temporal-averaging of <span
+class="math inline">\(a\)</span> and <span
+class="math inline">\(\vec{u}\)</span> 2. <code>B_roll</code>,
+<code>Ta_roll</code>, <code>Tx_roll</code>, <code>BT_roll</code> ::
+rolling-averaging of <span class="math inline">\(N\)</span>-days on {a}$
+and <span class="math inline">\(\bar{\vec{u}}\)</span></p>
+<p>An additional method for classifying fast ice was then proposed by
+<span class="citation" data-cites="adfraser">@adfraser</span>, and that
+is to use the daily-averaged <span class="math inline">\(a\)</span> and
+<span class="math inline">\(\vec{u}\)</span> to create:
+<code>FI_mask_B</code>, <code>FI_mask_Ta</code>, <code>FI_mask_Tx</code>
+or <code>FI_mask_BT</code>). * Boolean (or binary-days) approach: 1.
+take</p>
+<h4 id="daily-average-method">1.2.1 daily-average method:</h4>
+<p><a
+href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434">Full
+method</a></p>
+<h4 id="rolling-average-method">1.2.2 rolling-average method:</h4>
+<p>More generally the N-day-average that <a
+href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540">I
+employed</a> can be expressed as a rolling average over <span
+class="math inline">\(N\)</span>-days (default <span
+class="math inline">\(N=15\)</span>):</p>
 <p><span class="math display">\[
 \bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
 \]</span></p>
-<p>Then classify as fast ice using:</p>
-<p><span class="math display">\[
-\bar{a} \geq a_\text{thresh} \quad \text{and} \quad \bar{u} \leq
-u_\text{thresh}
-\]</span></p>
+<h3 id="additional-criteria-imposed">1.3 Additional criteria
+imposed:</h3>
+<h4 id="re-apply-landmask">1.3.1 re-apply landmask:</h4>
+<p>After either doing (or not doing the temporal averaging) the dataset
+is then sub-set for particular hemisphere: <code>north</code> or
+<code>south</code> (default <code>south</code>).</p>
+<h4 id="hemisphere-masking">1.3.2 hemisphere masking:</h4>
+<p>After either doing (or not doing the temporal averaging) the dataset
+is then sub-set for particular hemisphere: <code>north</code> or
+<code>south</code> (default <code>south</code>).</p>
+<h3 id="rolling-mean-then-masking">1.2 Rolling Mean Then Masking</h3>
+<p>From <a
+href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L287"><code>compute_fast_ice_rolling</code></a>:</p>
 <hr />
 <hr />
 <h2 id="daily-vs.-rolling-averaged-workflow">3. Daily
