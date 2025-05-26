@@ -4,9 +4,9 @@ This document describes the simulation setup and core methodologies implemented 
 
 ## 0. Model Configuration & Setup
 
-+ Simulation period : [1993-01-01 Fri] to [1999-12-31 Tue]
-+ Grid : $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
-+ Landmask : `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
++ **Simulation period** : [1993-01-01 Fri] to [1999-12-31 Tue]
++ **Grid** : $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
++ **Landmask** : `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
 + `dt` : 1800 seconds
 + `kdyn` : revised-EVP
 + `ndte` : 240
@@ -16,12 +16,13 @@ This document describes the simulation setup and core methodologies implemented 
 
 #### ocean
 
-+ ECMWF Ocean Re-analysis version 5, https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html
-+ regridded to CICE6-SA grid for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
++ [ECMWF Ocean Re-analysis version 5 (ORAS)](https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html)
++ regridded to the grid file above for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
 
 #### atmosphere
 
-+ `ERA5` regridded to the grid file above
++ `ERA5`
++ regridded to the grid file above for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]
 
 ---
 
@@ -200,24 +201,29 @@ Where:
 
 From [`compute_variable_aggregate`](https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636)
 
-AFIM computes the temporal mean of fast ice concentration or other variables across a defined time window using a simple arithmetic mean. Let $a(t)_{ispd-cat}_$ represent a variable (e.g., sea ice concentration masked for fast ice category) at time $t$ defined on a fixed spatial grid. Then the temporal mean over $T$ time steps is defined by:
+AFIM computes the temporal mean of fast ice concentration or other variables across a defined time window using a simple arithmetic mean. Let $a(t)_{ispd-cat}$ represent a variable (e.g., sea ice concentration masked for fast ice category) at time $t$ defined on a fixed spatial grid. Then the temporal mean over $T$ time steps is defined by:
 
 $$
-\bar{a_{ispd-cat}} = \frac{1}{T} \sum_{t=1}^{T} a(t)_{ispd-cat}_
+\bar{a_{ispd-cat}} = \frac{1}{T} \sum_{t=1}^{T} a(t)_{ispd-cat}
 $$
 
 This operation is used within AFIM to collapse a time series into a single climatological estimate, such as the 1993–1999 mean FIA.
 
 ---
 
-## 3. Threshold Sensitivity
+## 3. Thresholds
 
-AFIM supports experiments with multiple $u_\text{thresh}$ values:
+### 3.1 sea ice speed threshold ( $u_\text{thresh}$ )
 
-+ $10^{-3}~\text{m/s}$ (default)
-+ $5 \times 10^{-4}~\text{m/s}$ (for sensitivity testing)
+Choosing the appropriate $u_\text{thresh}$ has a significant effect on the classification of fast ice. These are values that have been used thus far, and their physical representation. 
 
-These are applied to both boolean and rolling classifications.
++ $10^{-3}~\text{m/s}$, which translates to roughly 86 meters of **distributed** ice movement with*in** an Antarctic coastal grid cell (see **Grid** under model configuration above)
++ $5 \times 10^{-4}~\text{m/s}$, which translates to roughly 43 meters of **distributed** ice movement with*in** an Antarctic coastal grid cell (see **Grid** under model configuration above)
++ $2.5 \times 10^{-4}~\text{m/s}$, which translates to roughly 22 meters of **distributed** ice movement with*in** an Antarctic coastal grid cell (see **Grid** under model configuration above)
+
+### 3.2 sea ice concentration threshold ( $a_\text{thresh}$  )
+
+The selection of $a$ (sea ice concentration) has been kept at 15% of a grid cell.
 
 ---
 

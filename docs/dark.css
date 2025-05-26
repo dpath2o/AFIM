@@ -1,0 +1,12 @@
+body {
+    background-color: black;
+    color: white;
+    max-width: 100%;
+    margin: 1rem 2rem;
+}
+
+a { color: lightblue; }
+pre, code {
+    background-color: #111;
+    color: #eee;
+}
