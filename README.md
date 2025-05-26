@@ -12,17 +12,17 @@ There are currently no other open-source tools dedicated to post-processing **CI
 [![Documentation Status](https://readthedocs.org/projects/afim/badge/?version=latest)](https://afim.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/afim.svg)](https://badge.fury.io/py/afim)
 
-## 📊 Fast Ice Area Timeseries (1993–1999)
+### 📸 AFIM Visual Galleries
 
-👉 [AFIM Sensitivity Study: FIA Results across simulations](https://dpath2o.github.io/AFIM/timeseries_gallery.html)
+Explore key outputs from AFIM simulations:
 
-More plots available in [`docs/figures/timeseries/`](docs/figures/timeseries/)
+| Gallery Type | Description | Link |
+|--------------|-------------|------|
+| 🔬 **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html) |
+| 🧪 **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html) |
+| 📈 **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html) |
+| 📦 **AFIM Archive Status** | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.) | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
 
-## 🧭 Archive Status
-
-You can view the current AFIM Archive processing status here:
-
-👉 [AFIM Archive Status Table](https://dpath2o.github.io/AFIM/AFIM_archive_status.html)
 
 ---
 
