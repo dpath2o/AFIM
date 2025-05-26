@@ -14,8 +14,8 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 ### AFIM Sensitivity Study
 
+🧾 [AFIM Sensitivity Experiment Design and Methodology](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
 👉🏻[AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
-🧾 [AFIM Sensitivity Methodology (LaTeX-enhanced)](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
 
 Explore key outputs from AFIM simulations:
 
@@ -25,7 +25,6 @@ Explore key outputs from AFIM simulations:
 | 🧪 **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html) |
 | 📈 **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html) |
 | 📦 **AFIM Archive Status** | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.) | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
-
 
 ---
 
