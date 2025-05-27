@@ -66,7 +66,7 @@ h2 { margin-top: 2rem; color: #333; }
                 for ispd, group_dict in ispd_dict.items():
                     f.write(f"<h2>{sim} — {region} — ispd_thresh {ispd}</h2>\n<div class='gallery'>\n")
                     for group, path in group_dict.items():
-                        rel_path = os.path.relpath(DOCS_DIR / sim / region / f"ispd_thresh_{ispd}" / group / FILENAME, HTML_OUT_DIR)
+                        rel_path = f"/AFIM/{os.path.relpath(DOCS_DIR / sim / region / f'ispd_thresh_{ispd}' / group / FILENAME, HTML_OUT_DIR)}"
                         f.write(f"<div><img src='{rel_path}' alt='{group}'><br>{group}</div>\n")
                     f.write("</div>\n")
 
@@ -95,7 +95,7 @@ h2 { margin-top: 2rem; color: #333; }
                     for sim in fip_index:
                         path = fip_index[sim].get(region, {}).get(ispd, {}).get(group)
                         if path:
-                            rel_path = os.path.relpath(DOCS_DIR / sim / region / f"ispd_thresh_{ispd}" / group / FILENAME, HTML_OUT_DIR)
+                            rel_path = f"/AFIM/{os.path.relpath(DOCS_DIR / sim / region / f'ispd_thresh_{ispd}' / group / FILENAME, HTML_OUT_DIR)}"
                             f.write(f"<div><img src='{rel_path}' alt='{sim}'><br>{sim}</div>\n")
                     f.write("</div>\n")
 
@@ -128,7 +128,7 @@ img { max-height: 300px; display: block; margin: 1rem 0; }
                     for group in FIP_GROUPS:
                         path = fip_index[sim].get(region, {}).get(ispd, {}).get(group)
                         if path:
-                            rel_path = os.path.relpath(DOCS_DIR / sim / region / f"ispd_thresh_{ispd}" / group / FILENAME, HTML_OUT_DIR)
+                            rel_path = f"/AFIM/{os.path.relpath(DOCS_DIR / sim / region / f'ispd_thresh_{ispd}' / group / FILENAME, HTML_OUT_DIR)}"
                             f.write(f"<div class='img-block'><img src='{rel_path}' alt='{group}'><br><b>{group}</b></div>\n")
                     f.write("</div></details>\n")
                 f.write("</details>\n")
