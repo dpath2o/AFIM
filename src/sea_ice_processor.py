@@ -339,35 +339,7 @@ class SeaIceProcessor:
             DS_grouped[m_str][pi_group].append(ds_pi)
         DS_grouped[m_str]['SO'].append(DS)
         return DS_grouped
-    # def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ispd_type, m_str):
-    #     mask_type_map = {"FI_B"  : "fast ice mask based on thresholding ispd_B (i.e. on the native U-grid; *without* regridding",
-    #                      "FI_Ta" : "fast ice mask based on thresholding ispd_Ta (i.e. spatially averaged ispd_B)",
-    #                      "FI_Tx" : "fast ice mask based on thresholding ispd_Tx (i.e. xESMF regridded weights applied to uvel/vvel)",
-    #                      "FI_BT" : "fast ice mask based on thresholding ispd_BT (i.e. a composite-mean of ispd_B, ispd_Ta and ispd_Tx)",
-    #                      "PI_B"  : "pack ice mask as complement to FI_B",
-    #                      "PI_Ta" : "pack ice mask as complement to FI_Ta",
-    #                      "PI_Tx" : "pack ice mask as complement to FI_Tx",
-    #                      "PI_BT" : "pack ice mask as complement to FI_BT"}
-    #     month_groups = defaultdict(lambda: {k: [] for k in self.valid_zarr_datasets})
-    #     for group, datasets in DS_grouped[m_str].items():
-    #         if group != "SO":
-    #             ispd_var = group.replace("FI_", "ispd_").replace("PI_", "ispd_")
-    #             self.logger.debug(f"Checking group: {group}, mapped ispd_var: {ispd_var}")
-    #             if ispd_var not in ispd_type:
-    #                 continue
-    #         if not datasets:
-    #             continue
-    #         self.logger.info(f"💾 Writing group {group} to {P_zarr_root}")
-    #         try:
-    #             ds_monthly = xr.concat(datasets, dim="time").sortby("time")
-    #             if group != "SO":
-    #                 ds_monthly.attrs["ispd_thresh"] = ispd_thresh
-    #                 ds_monthly.attrs["mask_type"]   = mask_type_map.get(group, "unknown")
-    #             ds_monthly = ds_monthly.chunk({"time": -1, 'nj':540, 'ni': 1440})
-    #             ds_monthly.to_zarr(P_zarr_root, group=group, mode="w", consolidated=True)
-    #         except Exception as e:
-    #             self.logger.error(f"Failed to write group {group}: {e}")
-    #     DS_grouped[m_str].clear()
+
     def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ispd_type, m_str):
         mask_type_map = {
             "FI_B"  : "fast ice mask based on thresholding ispd_B (native U-grid)",
@@ -651,35 +623,39 @@ class SeaIceProcessor:
         self.logger.info(f"loaded: {csv_path}")
         return row[sectors].reset_index(drop=True)
 
-    def define_AF2020_reG_weights(self):
+    def define_AF2020_reG_weights(self, FI_obs_native):
         from pyproj import CRS, Transformer
+        self.logger.info("define model grid")
+        G_t           = xr.Dataset()
+        G_t['lat']    = self.GI_proc.G_t['lat']
+        G_t['lon']    = self.GI_proc.G_t['lon']
+        G_t['lat_b']  = self.GI_proc.G_t['lat_b']
+        G_t['lon_b']  = self.GI_proc.G_t['lon_b']
+        G_t["mask"]   = self.GI_proc.G_t['kmt_mod']
         self.logger.info("defining AF2020 regridder weights")
-        F_weights        = self.sea_ice_dict["AF_reG_weights"]
-        self.G_u         = self.build_grid_dict(self.GI_proc.G_u['lat'], self.GI_proc.G_u['lon'])
-        self.G_u["mask"] = self.GI_proc.KMT_mod
+        F_weights     = self.sea_ice_dict["AF_reG_weights"]
+        weights_exist = os.path.exists(F_weights)
         self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
         crs_obs          = CRS.from_epsg(self.sea_ice_dict["projection_FI_obs"]) #unique to observations
         crs_spherical    = CRS.from_epsg(self.sea_ice_dict["projection_wgs84"])  #spherical coordinates
         transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
         X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
         lon_obs, lat_obs = transformer.transform(X,Y)
-        G_obs            = self.build_grid_dict(lat_obs, lon_obs)
-        self.logger.info("load/create regridder into memory")
-        if self.sea_ice_dict['overwrite_weights'] or os.path.exists(F_weights) is None:
-            self.reG_AF2020 = xe.Regridder(self.G_u, self.G_obs,
-                                          method            = "bilinear",
-                                          periodic          = True,
-                                          ignore_degenerate = True,
-                                          extrap_method     = "nearest_s2d",
-                                          reuse_weights     = True,
-                                          weights           = F_weights if os.path.exists(F_weights) else None,
-                                          filename          = None if os.path.exists(F_weights) else F_weights)
+        self.G_obs       = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
+        self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
+        self.reG_AF2020 = xe.Regridder(G_t, self.G_obs,
+                                       method            = "bilinear",
+                                       periodic          = True,
+                                       ignore_degenerate = True,
+                                       extrap_method     = "nearest_s2d",
+                                       reuse_weights     = weights_exist,
+                                       filename          = F_weights)
         self.reG_AF2020_weights_defined = True
 
     def regrid_AF2020_to_ugrid(self, FI_obs_native):
         if not self.reG_AF2020_weights_defined:
-            self.defin_AF2020_reG_weights()
-        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE U-grid *** ")
+            self.define_AF2020_reG_weights(FI_obs_native)
+        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
         self.FI_obs_reG_lon = self.reG_AF2020(self.G_obs["lon"]).compute()
         self.FI_obs_reG_lat = self.reG_AF2020(self.G_obs["lat"]).compute()
         self.FI_obs_reG_dat = self.reG_AF2020( FI_obs_native["Fast_Ice_Time_series"] ).compute()

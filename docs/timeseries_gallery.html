@@ -4,101 +4,295 @@
   <meta charset="UTF-8">
   <title>AFIM Fast Ice Area Timeseries (1993–1999)</title>
   <style>
-   body {
-       font-family: sans-serif;
-       background: #f9f9f9;
-       margin: 0 auto;
-       padding: 1rem 2rem;
-       max-width: 1400px;
-   }
-   h1 {
-       text-align: center;
-       color: #333;
-   }
-   .plot {
-       background: white;
-       padding: 10px;
-       margin: 1.5rem auto;
-       border: 1px solid #ddd;
-       box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
-       text-align: center;
-   }
-   .plot img {
-       max-width: 100%;
-       height: auto;
-   }
-   .plot p {
-       font-size: 14px;
-       color: #555;
-       margin-top: 0.5em;
-   }
-   footer {
-       text-align: center;
-       font-size: 13px;
-       margin-top: 2rem;
-       color: #888;
-   }
+    body {
+        font-family: sans-serif;
+        background: #f9f9f9;
+        margin: 0 auto;
+        padding: 1rem 2rem;
+        max-width: 1400px;
+    }
+    h1 {
+        text-align: center;
+        color: #333;
+    }
+    details {
+        margin: 1rem 0;
+        border: 1px solid #ccc;
+        padding: 0.5rem;
+        background: white;
+        box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+    }
+    summary {
+        font-weight: bold;
+        cursor: pointer;
+    }
+    .image-columns {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+    }
+    .column {
+        width: 48%;
+    }
+    .plot {
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .plot img {
+        max-width: 100%;
+        height: auto;
+    }
+    .plot p {
+        font-size: 14px;
+        color: #555;
+        margin-top: 0.3em;
+    }
+    footer {
+        text-align: center;
+        font-size: 13px;
+        margin-top: 2rem;
+        color: #888;
+    }
   </style>
 </head>
 <body>
 
-  <h1>AFIM Fast Ice Area Timeseries (1993–1999)</h1>
-  <p style="text-align:center; font-size: 1rem;">All simulations — 15-day smoothed FIA from CICE model output</p>
+<h1>AFIM Fast Ice Area Timeseries (1993–1999)</h1>
+<p style="text-align:center; font-size: 1rem;">All simulations — 15-day smoothed FIA from CICE model output</p>
+<details>
+<summary>Cstar-max-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="Cstar-max-025GI — 1.0e-3 — smoothed">
+  <p>Cstar-max-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="Cstar-max-025GI — 5.0e-4 — smoothed">
+  <p>Cstar-max-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>Cstar-min-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="Cstar-min-025GI — 1.0e-3 — smoothed">
+  <p>Cstar-min-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="Cstar-min-025GI — 5.0e-4 — smoothed">
+  <p>Cstar-min-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>Pstar-max-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="Pstar-max-025GI — 1.0e-3 — smoothed">
+  <p>Pstar-max-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="Pstar-max-025GI — 5.0e-4 — smoothed">
+  <p>Pstar-max-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>Pstar-min-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="Pstar-min-025GI — 1.0e-3 — smoothed">
+  <p>Pstar-min-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="Pstar-min-025GI — 5.0e-4 — smoothed">
+  <p>Pstar-min-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>elps-max-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="elps-max-025GI — 1.0e-3 — smoothed">
+  <p>elps-max-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-max-025GI — 5.0e-4 — smoothed">
+  <p>elps-max-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>elps-mid-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-mid-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-mid-025GI — 5.0e-4 — smoothed">
+  <p>elps-mid-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>elps-min-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="elps-min-025GI — 1.0e-3 — smoothed">
+  <p>elps-min-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-min-025GI — 5.0e-4 — smoothed">
+  <p>elps-min-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>gi-max</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_1.0e-3_smoothed_1993-1999.png" alt="gi-max — 1.0e-3 — smoothed">
+  <p>gi-max — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_5.0e-4_smoothed_1993-1999.png" alt="gi-max — 5.0e-4 — smoothed">
+  <p>gi-max — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>gi-mid</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-mid_1.0e-3_smoothed_1993-1999.png" alt="gi-mid — 1.0e-3 — smoothed">
+  <p>gi-mid — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-mid_5.0e-4_smoothed_1993-1999.png" alt="gi-mid — 5.0e-4 — smoothed">
+  <p>gi-mid — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>gi-min</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-min_1.0e-3_smoothed_1993-1999.png" alt="gi-min — 1.0e-3 — smoothed">
+  <p>gi-min — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-min_5.0e-4_smoothed_1993-1999.png" alt="gi-min — 5.0e-4 — smoothed">
+  <p>gi-min — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>ktens-max-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ktens-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="ktens-max-025GI — 1.0e-3 — smoothed">
+  <p>ktens-max-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ktens-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-max-025GI — 5.0e-4 — smoothed">
+  <p>ktens-max-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>ktens-min-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ktens-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-min-025GI — 5.0e-4 — smoothed">
+  <p>ktens-min-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>ktens-nil-025GI</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ktens-nil-025GI_1.0e-3_smoothed_1993-1999.png" alt="ktens-nil-025GI — 1.0e-3 — smoothed">
+  <p>ktens-nil-025GI — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ktens-nil-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-nil-025GI — 5.0e-4 — smoothed">
+  <p>ktens-nil-025GI — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
+<details>
+<summary>ry93</summary>
+<div class='image-columns'>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_1.0e-3_smoothed_1993-1999.png" alt="ry93 — 1.0e-3 — smoothed">
+  <p>ry93 — 1.0e-3 — smoothed</p>
+</div>
+</div>
+<div class='column'>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png" alt="ry93 — 5.0e-4 — smoothed">
+  <p>ry93 — 5.0e-4 — smoothed</p>
+</div>
+</div>
+</div>
+</details>
 
-  <div class="grid">
-    <!-- Repeat this block for each image -->
-    <div class="plot">
-      <img src="figures/timeseries/FIA_ry93_1.0e-3_smoothed_1993-1999.png" alt="FIA_ry93_1.0e-3">
-      <p>FIA_ry93_1.0e-3</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png" alt="FIA_ry93_5.0e-4">
-      <p>FIA_ry93_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_Cstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_Cstar-max-025GI_5.0e-4">
-      <p>FIA_Cstar-max-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-        <img src="figures/timeseries/FIA_Cstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_Cstar-min-025GI_5.0e-4">
-        <p>FIA_Cstar-min-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_Pstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_Pstar-max-025GI_5.0e-4">
-      <p>FIA_Pstar-max-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_Pstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_Pstar-min-025GI_5.0e-4">
-      <p>FIA_Pstar-min-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_elps-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_elps-max-025GI_5.0e-4">
-      <p>FIA_elps-max-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_elps-mid-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_elps-mid-025GI_5.0e-4">
-      <p>FIA_elps-mid-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-      <img src="figures/timeseries/FIA_elps-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_elps-min-025GI_5.0e-4">
-      <p>FIA_elps-min-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-        <img src="figures/timeseries/FIA_ktens-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_ktens-max-025GI_5.0e-4">
-        <p>FIA_ktens-max-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-        <img src="figures/timeseries/FIA_ktens-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_ktens-min-025GI_5.0e-4">
-        <p>FIA_ktens-min-025GI_5.0e-4</p>
-    </div>
-    <div class="plot">
-        <img src="figures/timeseries/FIA_ktens-nil-025GI_5.0e-4_smoothed_1993-1999.png" alt="FIA_ktens-nil-025GI_5.0e-4">
-        <p>FIA_ktens-nil-025GI_5.0e-4</p>
-    </div>
-  </div>
-
-  <footer>
-      Last updated: May 26, 2025 — AFIM archive visualisation by <a href="https://github.com/dpath2o/AFIM">AFIM</a>
-  </footer>
+<footer>
+  Last updated: May 27, 2025 — AFIM archive visualisation by <a href="https://github.com/dpath2o/AFIM">AFIM</a>
+</footer>
 </body>
 </html>
