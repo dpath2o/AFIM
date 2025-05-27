@@ -643,26 +643,21 @@ class SeaIceProcessor:
         lon_obs, lat_obs = transformer.transform(X,Y)
         self.G_obs       = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
-        self.reG_AF2020 = xe.Regridder(G_t, self.G_obs,
+        self.reG_AF2020 = xe.Regridder(self.G_obs, G_t,
                                        method            = "bilinear",
                                        periodic          = True,
                                        ignore_degenerate = True,
                                        extrap_method     = "nearest_s2d",
                                        reuse_weights     = weights_exist,
                                        filename          = F_weights)
-        self.reG_AF2020_weights_defined = True
-
-    def regrid_AF2020_to_ugrid(self, FI_obs_native):
-        if not self.reG_AF2020_weights_defined:
-            self.define_AF2020_reG_weights(FI_obs_native)
-        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
-        self.FI_obs_reG_lon = self.reG_AF2020(self.G_obs["lon"]).compute()
-        self.FI_obs_reG_lat = self.reG_AF2020(self.G_obs["lat"]).compute()
-        self.FI_obs_reG_dat = self.reG_AF2020( FI_obs_native["Fast_Ice_Time_series"] ).compute()
 
     def load_AF2020_FI_org_netcdf(self, P_orgs):
         FI_obs = xr.open_mfdataset(P_orgs, engine='netcdf4')
-        self.regrid_AF2020_to_ugrid(FI_obs)
+        self.define_AF2020_reG_weights(FI_obs)
+        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
+        self.FI_obs_reG_lon = self.reG_AF2020(self.G_obs["lon"]).compute()
+        self.FI_obs_reG_lat = self.reG_AF2020(self.G_obs["lat"]).compute()
+        self.FI_obs_reG_dat = self.reG_AF2020( FI_obs["Fast_Ice_Time_series"] ).compute()
         mask     = xr.where(self.FI_obs_reG_dat >= 4, 1, np.nan)
         FI       = (('t_FI_obs', 'nj', 'ni'),
                     self.FI_obs_reG_dat.where(mask).values,
