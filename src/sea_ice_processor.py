@@ -329,30 +329,21 @@ class SeaIceProcessor:
         DS_grouped = defaultdict(lambda: {k: [] for k in self.valid_zarr_datasets})        
         for group in masks:
             fi_mask          = masks[group]
-            pi_mask          = ~fi_mask
             ds_fi            = DS.where(fi_mask)
-            ds_pi            = DS.where(pi_mask)
             ds_fi['FI_mask'] = fi_mask
-            ds_pi['PI_mask'] = pi_mask
-            pi_group         = group.replace("FI_", "PI_")
+            ds_fi['PI_mask'] = ~fi_mask
             DS_grouped[m_str][group].append(ds_fi)
-            DS_grouped[m_str][pi_group].append(ds_pi)
-        DS_grouped[m_str]['SO'].append(DS)
         return DS_grouped
 
-    def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ispd_type, m_str):
-        mask_type_map = {
-            "FI_B"  : "fast ice mask based on thresholding ispd_B (native U-grid)",
-            "FI_Ta" : "fast ice mask based on thresholding ispd_Ta (spatially averaged ispd_B)",
-            "FI_Tx" : "fast ice mask based on thresholding ispd_Tx (xESMF regridded uvel/vvel)",
-            "FI_BT" : "fast ice mask based on thresholding ispd_BT (composite of B, Ta, Tx)",
-            "PI_B"  : "pack ice mask as complement to FI_B",
-            "PI_Ta" : "pack ice mask as complement to FI_Ta",
-            "PI_Tx" : "pack ice mask as complement to FI_Tx",
-            "PI_BT" : "pack ice mask as complement to FI_BT"
-        }
+    def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ispd_type, m_str, groups_to_write=None):
+        mask_type_map = { "FI_B"  : "fast ice mask based on thresholding ispd_B (native U-grid)",
+                          "FI_Ta" : "fast ice mask based on thresholding ispd_Ta (spatially averaged ispd_B)",
+                          "FI_Tx" : "fast ice mask based on thresholding ispd_Tx (xESMF regridded uvel/vvel)",
+                          "FI_BT" : "fast ice mask based on thresholding ispd_BT (composite of B, Ta, Tx)"}
         month_groups = defaultdict(lambda: {k: [] for k in self.valid_zarr_datasets})
         for group, datasets in DS_grouped[m_str].items():
+            if not datasets or (groups_to_write and group not in groups_to_write):
+                continue
             if not datasets:
                 continue  # Skip empty groups
             if group != "SO":
@@ -380,7 +371,6 @@ class SeaIceProcessor:
                 self.logger.error(f"❌ Failed to write group {group}: {e}")
         DS_grouped[m_str].clear()
 
-
     def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
         dt0 = pd.to_datetime(dt0_str)
         dtN = pd.to_datetime(dtN_str)
@@ -401,7 +391,6 @@ class SeaIceProcessor:
             self.logger.info(f"🧹 Dropping unused ice speed variables: {drop_vars}")
             return ds.drop_vars(drop_vars)
         return ds
-
 
     def process_daily_cice(self,
                            sim_name             = None,
@@ -447,7 +436,8 @@ class SeaIceProcessor:
             for key in CICE_grouped[m_str]:
                 m_DS[m_str][key].extend(CICE_grouped[m_str][key])
             if dt == dts[-1] or dt.month != (dt + pd.Timedelta(days=1)).month:
-                self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str)
+                fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
+                self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group)
                 m_DS[m_str].clear()
 
     def process_rolling_cice(self,
@@ -532,17 +522,30 @@ class SeaIceProcessor:
             self.logger.info(f"📆 Rolling monthly group: {m_str} with {CICE_SO.time.size} time steps")
             masks = self.create_fast_ice_mask(CICE_SO, ispd_type, ispd_thresh)
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
+            fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
+            self.write_to_zarr(CICE_grouped, P_zarr, ispd_thresh, ispd_type, m_str, groups_to_write=fast_group)
             self.write_to_zarr(CICE_grouped, P_zarr, ispd_thresh, ispd_type, m_str)
 
-    def load_processed_cice(self, 
-                            sim_name    = None,
-                            rolling     = False,
-                            ispd_thresh = None,
-                            ice_type    = "FI_B",
-                            dt0_str     = None,
-                            dtN_str     = None,
-                            D_zarr      = None,
-                            chunks      = None):
+    def extract_pack_ice(self, DS_FI, DS_HEM):
+        """
+        DS_FI is the fast ice dataset which should contain 'PI_mask'
+        DS_HEM is the original dataset associated with a simulation name
+        """
+        assert "PI_mask" in DS_FI, "PI_mask not found in dataset"
+        self.logger.info("masking for pack ice on dataset")
+        DS_PI = DS_HEM.where(DS_FI["PI_mask"])
+        return DS_PI
+
+    def load_processed_cice(self,
+                            sim_name           = None,
+                            rolling            = False,
+                            ispd_thresh        = None,
+                            ice_type           = "FI_B",
+                            dt0_str            = None,
+                            dtN_str            = None,
+                            D_zarr             = None,
+                            load_original_CICE = False,
+                            chunks             = None):
         sim_name        = sim_name    or self.sim_name
         ispd_thresh     = ispd_thresh or self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
@@ -569,21 +572,32 @@ class SeaIceProcessor:
         if not P_zarrs:
             self.logger.warning(f"⚠️ No Zarr datasets found in {D_zarr}")
             return None
-        datasets = []
+        DS_list = []
         for P_zarr in P_zarrs:
             self.logger.debug(f"attempting to load: {P_zarr}")
             try:
                 ds = xr.open_zarr(P_zarr, group=ice_type, consolidated=True)
-                datasets.append(ds)
+                DS_list.append(ds)
             except (OSError, KeyError) as e:
                 self.logger.warning(f"⚠️ Skipping {P_zarr} ({ice_type}): {e}")
         if not datasets:
             self.logger.warning(f"⚠️ No {ice_type} datasets found in any Zarr group")
             return None
-        ds_all = xr.concat(datasets, dim="time")
-        ds_all = ds_all.chunk(chunks)
-        self.logger.info(f"✅ Loaded {ice_type}: {len(ds_all.time)} time steps from {len(datasets)} files")
-        return ds_all
+        DS_out = xr.concat(DS_list, dim="time")
+        if load_original_CICE:
+            self.logger.info(f"📦 Load original CICE model files to merge with {ice_type}")
+            P_orgs   = self.get_cice_files_between_dates(self.D_iceh, dt0_str, dtN_str)
+            CICE_all = xr.open_mfdataset(P_orgs,
+                                         engine="scipy",
+                                         combine="by_coords",
+                                         preprocess=lambda ds: ds[self.cice_var_list],
+                                         chunks=chunks or {}).sel(time=ds_all.time)
+            CICE_SO = CICE_all.isel(nj=self.hemisphere_nj_slice)
+            DS_out  = xr.merge([DS_out, CICE_SO])
+            self.logger.info(f"✅ original CICE model data merged with fast ice dataset")
+        DS_out = DS_out.chunk(chunks)
+        self.logger.info(f"✅ Loaded {ice_type}: {len(DS_out.time)} time steps from {len(DS_list)} files")
+        return DS_out
 
     def compute_rolling_mean_on_dataset(self, ds, mean_period=None):
         mean_period = mean_period if mean_period is not None else self.mean_period
