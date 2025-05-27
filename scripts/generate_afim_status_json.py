@@ -9,7 +9,7 @@ import pandas as pd
 BASE_DIR      = Path("/g/data/gv90/da1339/afim_output")
 GRAPHICAL_DIR = Path("/g/data/gv90/da1339/GRAPHICAL/AFIM")
 OUTPUT_JSON   = BASE_DIR / "AFIM_archive_status.json"
-OUTPUT_HTML   = GRAPHICAL_DIR / "AFIM_archive_status.html"
+OUTPUT_HTML   = Path("docs/AFIM_archive_status.html")
 
 # === Globals to share between functions ===
 total_files_all = 0
