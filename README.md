@@ -20,12 +20,13 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 Explore key outputs from AFIM simulations:
 
-| Gallery Type | Description | Link |
-|--------------|-------------|------|
-| 🔬 **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html) |
-| 🧪 **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html) |
-| 📈 **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html) |
-| 📦 **AFIM Archive Status** | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.) | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
+| Gallery Type                      | Description                                                                                                             | Link                                                                           |
+|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| **FIP Simulation Tree Gallery**   | Simulation > Region > threshold > figures                                                                               | [View Gallery](https://dpath2o.github.io/AFIM/fip_tree_gallery.html)           |
+| 🔬 **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html)  |
+| 🧪 **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh`                                          | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html)  |
+| 📈 **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations                                                              | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html)    |
+| 📦 **AFIM Archive Status**        | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.)                                          | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
 
 ---
 
