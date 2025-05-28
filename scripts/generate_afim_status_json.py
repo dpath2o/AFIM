@@ -23,7 +23,7 @@ def get_model_date_range(sim_dir):
     date_pattern = re.compile(r"iceh\\.(\\d{4}-\\d{2}-\\d{2})\\.nc")
     dates = []
     for f in daily_dir.glob("iceh.*.nc"):
-        m = date_pattern.match(f.name)
+        m = re.match(r"iceh\.(\d{4}-\d{2}-\d{2})\.nc", f.name)
         if m:
             dates.append(m.group(1))
     return (min(dates), max(dates)) if dates else (None, None)
@@ -32,7 +32,7 @@ def get_monthly_zarr_range(zarr_dir):
     date_pattern = re.compile(r"iceh_(\\d{4}-\\d{2})\\.zarr")
     months = []
     for f in zarr_dir.glob("iceh_*.zarr"):
-        m = date_pattern.match(f.name)
+        m = re.match(r"iceh_(\d{4}-\d{2})\.zarr", f.name)
         if m:
             months.append(m.group(1) + "-01")
     if not months:
@@ -82,9 +82,11 @@ def scan_simulation(sim_dir):
             "dir_size_gb": size_gb,
             "daily": False,
             "rolling": False,
-            "FIA": False,
-            "FIP": False,
-            "FI_BOOL": {},
+            "metrics": {m: False for m in [
+                "FI_BT", "FI_BT_roll", "FI_BT_bool",
+                "FI_B", "FI_B_roll", "FI_B_bool",
+                "FI_Ta", "FI_Ta_roll", "FI_Ta_bool",
+                "FI_Tx", "FI_Tx_roll", "FI_Tx_bool"]},
             "metric_dates": {}
         })
         return all_rows
@@ -102,9 +104,11 @@ def scan_simulation(sim_dir):
             "dir_size_gb": size_gb,
             "daily": any(thresh_dir.glob("cice_daily_*.zarr")),
             "rolling": any(thresh_dir.glob("cice_rolling_*.zarr")),
-            "FIA": False,
-            "FIP": False,
-            "FI_BOOL": {g: False for g in ["FI_B", "FI_Ta", "FI_Tx", "FI_BT"]},
+            "metrics": {m: False for m in [
+                "FI_BT", "FI_BT_roll", "FI_BT_bool",
+                "FI_B", "FI_B_roll", "FI_B_bool",
+                "FI_Ta", "FI_Ta_roll", "FI_Ta_bool",
+                "FI_Tx", "FI_Tx_roll", "FI_Tx_bool"]},
             "metric_dates": {}
         }
 
@@ -112,13 +116,9 @@ def scan_simulation(sim_dir):
         if metric_dir.exists():
             for mfile in metric_dir.glob("*.zarr"):
                 name = mfile.name
-                if name.startswith("FIA"):
-                    result["FIA"] = True
-                if name.startswith("FIP"):
-                    result["FIP"] = True
-                for group in ["FI_B", "FI_Ta", "FI_Tx", "FI_BT"]:
-                    if group in name and "_bool" in name:
-                        result["FI_BOOL"][group] = True
+                for key in result["metrics"]:
+                    if name.startswith(key):
+                        result["metrics"][key] = True
             result["metric_dates"] = get_metric_creation_dates(metric_dir)
 
         all_rows.append(result)
@@ -165,11 +165,13 @@ def render_status_html(status):
             "Threshold": d.get("threshold", "—"),
             "daily": "🟢" if d.get("daily") else "🔴",
             "rolling": "🟢" if d.get("rolling") else "🔴",
-            "FIA": "🟢" if d.get("FIA") else "⚪",
-            "FIP": "🟢" if d.get("FIP") else "⚪"
         }
-        for fi in ["FI_B", "FI_Ta", "FI_Tx", "FI_BT"]:
-            base_row[fi + "_bool"] = "🟢" if d.get("FI_BOOL", {}).get(fi) else "⚪"
+        for key in [
+            "FI_BT", "FI_BT_roll", "FI_BT_bool",
+            "FI_B", "FI_B_roll", "FI_B_bool",
+            "FI_Ta", "FI_Ta_roll", "FI_Ta_bool",
+            "FI_Tx", "FI_Tx_roll", "FI_Tx_bool"]:
+            base_row[key] = "🟢" if d.get("metrics", {}).get(key) else "⚪"
         metric_info = "<br>".join([f"{k}: {v}" for k, v in d.get("metric_dates", {}).items()])
         base_row["Metric Dates"] = metric_info
         rows.append(base_row)
@@ -207,4 +209,3 @@ def render_status_html(status):
 if __name__ == "__main__":
     status = build_afim_archive_status(max_workers=8)
     render_status_html(status)
-

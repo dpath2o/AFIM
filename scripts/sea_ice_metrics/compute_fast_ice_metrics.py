@@ -51,38 +51,37 @@ def plot_persistence_map(DA, sim_name, itype, ispd_str, ktens, elps, GI_thin, SI
 
 def compute_and_save_metrics(SI_proc, DS_FI, P_METS, obs_clim=None):
     METS = {}
-    # basic spatial and temporal statistics: ice area , ice persistence
-    FIA                  = SI_proc.compute_ice_area(DS_FI['aice'], DS_FI['tarea']).compute()
-    FIP                  = SI_proc.compute_variable_aggregate(DS_FI['aice']).compute()
-    METS['FIA']          = FIA
-    METS['FIP']          = FIP
-    # Growth METS
-    METS["onset_doy"]    = SI_proc.compute_fia_onset_doy(FIA)
-    METS["growth_rate"]  = SI_proc.compute_fia_growth_rate(FIA)
-    METS["max_growth"]   = SI_proc.compute_fia_max_growth(FIA)
-    # Seasonality METS
-    METS["doy_max"]      = SI_proc.compute_doy_max(FIA)
-    METS["duration"]     = SI_proc.compute_fast_ice_duration(FIA)
-    # Stability METS
-    fip_mean, fip_std    = SI_proc.compute_fip_spatial_stats(FIP)
-    METS["FIP_mean"]     = fip_mean
-    METS["FIP_std"]      = fip_std
-    mean_dist, max_dist  = SI_proc.compute_fast_ice_distance_extent(DS_FI['FI_mask'])
-    METS["mean_FI_dist"] = mean_dist
-    METS["max_FI_dist"]  = max_dist
-    # RMSE to observed climatology (optional)
+    # 3D + 1D metrics
+    FIA = SI_proc.compute_ice_area(DS_FI['aice'], DS_FI['tarea']).compute()
+    FIP = SI_proc.compute_variable_aggregate(DS_FI['aice']).compute()
+    METS["FIA"] = FIA
+    METS["FIP"] = FIP
+    # Scalar / 1D metrics
+    summary = {}
+    summary["onset_doy"]    = SI_proc.compute_fia_onset_doy(FIA)
+    summary["growth_rate"]  = SI_proc.compute_fia_growth_rate(FIA)
+    summary["max_growth"]   = SI_proc.compute_fia_max_growth(FIA)
+    summary["doy_max"]      = SI_proc.compute_doy_max(FIA)
+    summary["duration"]     = SI_proc.compute_fast_ice_duration(FIA)
+    fip_mean, fip_std       = SI_proc.compute_fip_spatial_stats(FIP)
+    summary["FIP_mean"]     = fip_mean
+    summary["FIP_std"]      = fip_std
+    mean_dist, max_dist     = SI_proc.compute_fast_ice_distance_extent(DS_FI['FI_mask'])
+    summary["mean_FI_dist"] = mean_dist
+    summary["max_FI_dist"]  = max_dist
+
     if obs_clim is not None:
-        # Interpolate obs_clim to match model time
         model_doy = FIA["time"].dt.dayofyear.values
         obs_vals = np.interp(model_doy, obs_clim.coords["doy"].values, obs_clim.values)
-        METS["rmse_to_obs"] = SI_proc.compute_fia_rmse(FIA, xr.DataArray(obs_vals, coords=[("time", FIA["time"])], name="obs"))
-    # Convert to xarray Dataset
-    DS_METS = xr.Dataset({k: ((), v) if not isinstance(v, dict) else ("year", list(v.values())) 
-                              for k, v in METS.items()})
-    # Save to Zarr
+        summary["rmse_to_obs"] = SI_proc.compute_fia_rmse(FIA, xr.DataArray(obs_vals, coords=[("time", FIA["time"])]))
+    # Combine all into a dataset
+    DS_METS = xr.Dataset(summary)
+    DS_METS["FIA"] = FIA
+    DS_METS["FIP"] = FIP
     DS_METS.to_zarr(P_METS, mode="w", consolidated=True)
     print(f"📊 Metrics written to {P_METS}")
     return DS_METS
+
 
 def save_metrics_csv(metrics_dict, sim_name, i_type, ispd_str, D_out):
     from pandas import DataFrame
@@ -131,9 +130,8 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
                                                              dtN_str     = dtN_str,
                                                              ispd_thresh = ispd_thresh,
                                                              ice_type    = itype,
-                                                             load_original_CICE = True,
-                                                             rolling     = roll,
-                                                             chunks      = {"time": 10})
+                                                             zarr_CICE   = True,
+                                                             rolling     = roll)
                 if DS_FI is None: continue
                 METS = compute_and_save_metrics(SI_proc, DS_FI, P_METS, obs_clim=obs_clim)
                 save_metrics_csv(METS, sim_name=sim_name, i_type=i_type, ispd_str=ispd_str, D_out=D_out)

@@ -576,15 +576,15 @@ class SeaIceProcessor:
         return DS_PI
 
     def load_processed_cice(self,
-                            sim_name           = None,
-                            rolling            = False,
-                            ispd_thresh        = None,
-                            ice_type           = "FI_B",
-                            dt0_str            = None,
-                            dtN_str            = None,
-                            D_zarr             = None,
-                            load_original_CICE = False,
-                            chunks             = None):
+                            sim_name    = None,
+                            rolling     = False,
+                            ispd_thresh = None,
+                            ice_type    = "FI_B",
+                            dt0_str     = None,
+                            dtN_str     = None,
+                            D_zarr      = None,
+                            zarr_CICE   = False,
+                            chunks      = None):
         sim_name        = sim_name    or self.sim_name
         ispd_thresh     = ispd_thresh or self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
