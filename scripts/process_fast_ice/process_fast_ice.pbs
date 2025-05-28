@@ -12,23 +12,40 @@ module load conda/analysis3-24.07
 cd ~/AFIM/src/AFIM/scripts/process_fast_ice/
 echo "📆 Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, ispd_type=${ISPD_TYPE:-ALL}"
 F_log=/g/data/gv90/da1339/logs/process_daily_fast_ice/${SIM_NAME}_${START_DATE}_${END_DATE}.log
-CMD="python3 process_fast_ice.py ${SIM_NAME} \
-    --start_date ${START_DATE} \
-    --end_date ${END_DATE} \
-    --log_file ${F_log} \
-    --ispd_thresh ${ISPD_THRESH}"
-# Only add --ispd_type if ISPD_TYPE is not empty
-if [ -n "${ISPD_TYPE}" ]; then
-    CMD+=" --ispd_type ${ISPD_TYPE}"
-fi
-if [ "${ROLLING}" = true ]; then
-    CMD+=" --rolling"
-fi
-if [ "${DAILY}" = true ]; then
-    CMD+=" --daily"
-fi
-if [ "${OVERWRITE_ZARR}" = true ]; then
-    CMD+=" --overwrite_zarr"
-fi
-echo "📆 Running: $CMD"
-eval $CMD
+CMD=(python3 process_fast_ice.py "$SIM_NAME" \
+             --start_date "$START_DATE" \
+             --end_date "$END_DATE" \
+             --log_file "$F_log" \
+             --ispd_thresh "$ISPD_THRESH")
+
+[ -n "${ISPD_TYPE}" ] && CMD+=(--ispd_type ${ISPD_TYPE})
+[ "${ROLLING}" = true ] && CMD+=(--rolling)
+[ "${DAILY}" = true ] && CMD+=(--daily)
+[ "${OVERWRITE_ZARR}" = true ] && CMD+=(--overwrite_zarr)
+[ "${DELETE_ORIGINAL_ICEH}" = true ] && CMD+=(--delete_original_iceh)
+echo "📆 Running: ${CMD[*]}"
+"${CMD[@]}"
+
+# CMD="python3 process_fast_ice.py ${SIM_NAME} \
+#     --start_date ${START_DATE} \
+#     --end_date ${END_DATE} \
+#     --log_file ${F_log} \
+#     --ispd_thresh ${ISPD_THRESH}"
+# # Only add --ispd_type if ISPD_TYPE is not empty
+# if [ -n "${ISPD_TYPE}" ]; then
+#     CMD+=" --ispd_type ${ISPD_TYPE}"
+# fi
+# if [ "${ROLLING}" = true ]; then
+#     CMD+=" --rolling"
+# fi
+# if [ "${DAILY}" = true ]; then
+#     CMD+=" --daily"
+# fi
+# if [ "${OVERWRITE_ZARR}" = true ]; then
+#     CMD+=" --overwrite_zarr"
+# fi
+# if [ "${DELETE_ORIGINAL_ICEH}" = true ]; then
+#     CMD+=" --delete_original_iceh"
+# fi
+# echo "📆 Running: $CMD"
+# eval $CMD

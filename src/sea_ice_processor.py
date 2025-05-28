@@ -3,6 +3,7 @@ import xarray as xr
 import pandas as pd
 import numpy  as np
 import xesmf  as xe
+from collections  import defaultdict
 from pathlib      import Path
 from datetime     import datetime, timedelta
 from collections  import defaultdict
@@ -139,40 +140,19 @@ class SeaIceProcessor:
             self.logger.info("hemisphere sliced on 'preserved' dataset")
         return sliced
 
-    def normalise_longitudes(self,lon):
-        lon_norm = (lon+360)%360
-        return lon_norm
+    def get_dir_size(self, path):
+        size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
+        self.logger.info(f"📏 Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
 
-    def build_grid_dict(self, lat, lon):
-        ny, nx               = lat.shape
-        lat_b                = np.zeros((ny + 1, nx + 1))
-        lon_b                = np.zeros((ny + 1, nx + 1))
-        lat_b[1:-1, 1:-1]    = 0.25 * (lat[:-1, :-1] + lat[:-1, 1:] + lat[1:, :-1] + lat[1:, 1:])
-        lon_b[1:-1, 1:-1]    = 0.25 * (lon[:-1, :-1] + lon[:-1, 1:] + lon[1:, :-1] + lon[1:, 1:])
-        lat_b[[0, -1], 1:-1] = lat[[0, -1], :-1]
-        lon_b[[0, -1], 1:-1] = lon[[0, -1], :-1]
-        lat_b[1:-1, [0, -1]] = lat[:-1, [0, -1]]
-        lon_b[1:-1, [0, -1]] = lon[:-1, [0, -1]]
-        lat_b[0, 0]          = lat[0, 0]
-        lat_b[0, -1]         = lat[0, -1]
-        lat_b[-1, 0]         = lat[-1, 0]
-        lat_b[-1, -1]        = lat[-1, -1]
-        lon_b[0, 0]          = lon[0, 0]
-        lon_b[0, -1]         = lon[0, -1]
-        lon_b[-1, 0]         = lon[-1, 0]
-        lon_b[-1, -1]        = lon[-1, -1]
-        return {"lat"  : lat,
-                "lon"  : self.normalise_longitudes(lon),
-                "lat_b": lat_b,
-                "lon_b": self.normalise_longitudes(lon_b)}
+    def count_zarr_files(self, path):
+        total_files = sum(len(files) for _, _, files in os.walk(path))
+        self.logger.info(f"📦 {path} contains {total_files} files")
 
     def define_reG_weights(self):
         """
         Define xESMF regridding weights from B-grid (u) to T-grid.
         Generates and saves weights if not found on disk.
         """
-        #G_u           = self.build_grid_dict(self.GI_proc.G_u['lat'], self.GI_proc.G_u['lon'])
-        #G_t           = self.build_grid_dict(self.GI_proc.G_t['lat'], self.GI_proc.G_t['lon'])
         G_u           = xr.Dataset()
         G_u['lat']    = self.GI_proc.G_u['lat']
         G_u['lon']    = self.GI_proc.G_u['lon']
@@ -221,6 +201,74 @@ class SeaIceProcessor:
         ds_reG              = ds_reG.drop_vars(['tarea', 'TLAT', 'TLON', 'ULAT', 'ULON'])
         return ds_reG
 
+    #-------------------------------------------------------------------------------------------
+    #                            RE-ORGANISE MODEL OUTPUT DATA
+    #
+    # Why this dramatic size reduction makes sense:
+    # Zarr uses chunked, compressed storage
+    # * original NetCDF files (.nc) are not compressed. Each file is ~238 MB daily.
+    # * Zarr stores data in compressed .zip-like chunks per variable, dramatically reducing file size when the data is sparse, smooth, or redundant.
+    # * Many sea ice variables contain large areas of constant or near-zero values (e.g., aice, hi, frazil, taubx, etc.). These compress extremely well.
+    # * Zarr avoids redundant metadata storage
+    # * Each .nc file stores global attributes, dimensions, and coordinate variables repeatedly.
+    # * Zarr consolidates this across time within a single file structure.
+    # * intelligent chunking: by using chunk={'time': -1, 'nj': 540, 'ni': 1440} you're compressing
+    #   monthly time spans while maintaining spatial chunking appropriate for hemisphere-wide analysis.
+    #-------------------------------------------------------------------------------------------
+    def delete_original_cice(self, P_orgs, P_iceh_zarr, m_str):
+        if Path(P_iceh_zarr, ".zgroup").exists():
+            self.logger.info(f"🗑️ Deleting original NetCDF files for {m_str}")
+            for f in P_orgs:
+                try:
+                    os.remove(f)
+                    self.logger.debug(f"✅ Deleted: {f}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not delete {f}: {e}")
+        else:
+            self.logger.warning(f"⚠️ Zarr group {P_iceh_zarr} incomplete — skipping deletion of originals")
+
+    def daily_iceh_to_monthly_zarr(self,
+                                   sim_name=None,
+                                   dt0_str=None,
+                                   dtN_str=None,
+                                   D_iceh=None,
+                                   overwrite=False,
+                                   delete_original=False):
+        sim_name = sim_name or self.sim_name
+        dt0_str  = dt0_str  or self.dt0_str
+        dtN_str  = dtN_str  or self.dtN_str
+        D_iceh   = D_iceh   or self.D_iceh
+        m_grps = defaultdict(list)
+        P_orgs = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
+        for f in P_orgs:
+            dt = datetime.strptime(f.name, "iceh.%Y-%m-%d.nc")
+            m_str = dt.strftime("%Y-%m")
+            m_grps[m_str].append(f)
+        for m_str, P_ in m_grps.items():
+            P_iceh_zarr = Path(self.D_zarr, f"iceh_{m_str}.zarr")
+            if P_iceh_zarr.exists() and not overwrite:
+                self.logger.info(f"✅ Skipping existing {P_iceh_zarr}")
+                if delete_original:
+                    self.delete_original_cice(P_, P_iceh_zarr, m_str)
+                    continue
+            self.logger.info(f"📂 Loading NetCDF files for {m_str} via xarray mfdataset ...")
+            CICE_all = xr.open_mfdataset(P_,
+                                         engine="scipy",
+                                         parallel=True,
+                                         combine="by_coords",
+                                         cache=True,
+                                         chunks={})
+            CICE_all = CICE_all.chunk({'time': -1, 'nj': 540, 'ni': 1440})
+            self.logger.info(f"⏳ Writing {m_str} to {P_iceh_zarr}")
+            CICE_all.to_zarr(P_iceh_zarr, mode="w", consolidated=True)
+            self.get_dir_size(P_iceh_zarr)
+            self.count_zarr_files(P_iceh_zarr)
+            if delete_original:
+                self.delete_original_cice(P_, P_iceh_zarr, m_str)
+
+    #-------------------------------------------------------------------------------------------
+    #                             COMPUTE FAST ICE CLASSIFICATION
+    #-------------------------------------------------------------------------------------------
     def compute_ice_speed_types(self, DS, ispd_type, temporally_average=False, mean_period=None):
         mean_period = mean_period if mean_period is not None else self.mean_period
         if "ispd_B" in ispd_type or "ispd_Ta" in ispd_type or "ispd_BT" in ispd_type:
@@ -393,58 +441,54 @@ class SeaIceProcessor:
         return ds
 
     def process_daily_cice(self,
-                           sim_name             = None,
-                           dt0_str              = None,
-                           dtN_str              = None,
-                           D_iceh               = None,
-                           ispd_thresh          = None,
-                           ispd_type            = None,
-                           overwrite_zarr_group = False):
+                       sim_name             = None,
+                       dt0_str              = None,
+                       dtN_str              = None,
+                       ispd_thresh          = None,
+                       ispd_type            = None,
+                       overwrite_zarr_group = False):
         sim_name      = sim_name    or self.sim_name
         dt0_str       = dt0_str     or self.dt0_str
         dtN_str       = dtN_str     or self.dtN_str
-        D_iceh        = D_iceh      or self.D_iceh
         ispd_type_req = ispd_type   or self.valid_ispd_types
         ispd_thresh   = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         self.overwrite_zarr_group = overwrite_zarr_group
         if isinstance(ispd_type_req, str):
             ispd_type_req = [ispd_type_req]
-        assert all(t in set(self.valid_ispd_types) for t in ispd_type_req), f"❌ Invalid requested sea ice speed 'type': {ispd_type_req}.\n\tMust be one or more of these valid types: {self.valid_ispd_types}"
-        dts  = pd.date_range(dt0_str, dtN_str, freq="D")
+        assert all(t in set(self.valid_ispd_types) for t in ispd_type_req), f"❌ Invalid requested sea ice speed 'type': {ispd_type_req}. Must be one or more of these valid types: {self.valid_ispd_types}"
+        dts = pd.date_range(dt0_str, dtN_str, freq="D")
+        mo_strs = sorted(set(dt.strftime("%Y-%m") for dt in dts))
+        from collections import defaultdict
         m_DS = defaultdict(lambda: {k: [] for k in self.valid_zarr_datasets})
-        for dt in dts:
-            date_str = dt.strftime("%Y-%m-%d")
-            m_str    = dt.strftime("%Y-%m")
-            P_iceh   = Path(D_iceh, f"iceh.{date_str}.nc")
+        for m_str in mo_strs:
+            P_iceh   = Path(self.D_zarr, f"iceh_{m_str}.zarr")
             P_zarr   = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_daily_{m_str}.zarr")
             if not P_iceh.exists():
-                self.logger.info(f"❌ Missing CICE file: {P_iceh}")
+                self.logger.warning(f"❌ Missing monthly Zarr file: {P_iceh}")
                 continue
-            self.logger.info(f"📂 Loading: {P_iceh}")
-            CICE                = xr.open_dataset(P_iceh, engine="netcdf4")[list(self.cice_var_list)]
-            CICE_ispd           = self.compute_ice_speed_types( CICE , ispd_type_req )
-            CICE_reM            = self.reapply_landmask( CICE_ispd )
-            CICE_reM['ispd_BT'] = self.compute_composite_ice_speed( CICE_reM )
+            self.logger.info(f"📂 Loading monthly Zarr: {P_iceh}")
+            CICE = xr.open_zarr(P_iceh, consolidated=True)[list(self.cice_var_list)]
+            CICE_ispd           = self.compute_ice_speed_types(CICE, ispd_type_req)
+            CICE_reM            = self.reapply_landmask(CICE_ispd)
+            CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
             CICE_reM            = self.drop_unwanted_ispd_vars(CICE_reM, ispd_type_req)
             self.logger.info("🌊 Subsetting Ocean into either southern or northern hemisphere (default: southern)")
             CICE_SO = CICE_reM.isel(nj=self.hemisphere_nj_slice)
             self.logger.info("❄️ create fast ice masks")
-            masks = self.create_fast_ice_mask( CICE_SO , ispd_type_req , ispd_thresh )
+            masks = self.create_fast_ice_mask(CICE_SO, ispd_type_req, ispd_thresh)
             self.logger.info("❄️ apply fast ice masks to dataset")
-            CICE_grouped = self.groupby_fast_ice_masks( CICE_SO, masks, m_str)
+            CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             for key in CICE_grouped[m_str]:
                 m_DS[m_str][key].extend(CICE_grouped[m_str][key])
-            if dt == dts[-1] or dt.month != (dt + pd.Timedelta(days=1)).month:
-                fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
-                self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group)
-                m_DS[m_str].clear()
+            fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type_req]
+            self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group)
+            m_DS[m_str].clear()
 
     def process_rolling_cice(self,
                              sim_name             = None,
                              dt0_str              = None,
                              dtN_str              = None,
-                             D_iceh               = None,
                              mean_period          = None,
                              ispd_thresh          = None,
                              ispd_type            = None,
@@ -452,7 +496,6 @@ class SeaIceProcessor:
         sim_name     = sim_name    or self.sim_name
         dt0_str      = dt0_str     or self.dt0_str
         dtN_str      = dtN_str     or self.dtN_str
-        D_iceh       = D_iceh      or self.D_iceh
         mean_period  = mean_period or self.mean_period
         ispd_type    = ispd_type   or self.valid_ispd_types
         ispd_thresh  = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
@@ -463,57 +506,51 @@ class SeaIceProcessor:
         valid_types = set(self.valid_ispd_types)
         assert all(t in valid_types for t in ispd_type), f"❌ Invalid ispd_type: {ispd_type}. Must be one or more of {self.valid_ispd_types}"
         dts = pd.date_range(dt0_str, dtN_str, freq="D")
+        mo_strs = sorted(set(dt.strftime("%Y-%m") for dt in dts))
         self.logger.info(f"📆 Rolling mean first, then fast ice masking between {dt0_str} and {dtN_str}")
-        self.logger.info("📚 Loading entire daily dataset with variables: %s", self.cice_var_list)
-        try:
-            files = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
-            self.logger.info(f"📦 Loading {len(files)} CICE history files from {files[0].name} to {files[-1].name}")
-            def _preprocess_cice(ds):
-                return ds[list(self.cice_var_list)]
-            CICE_all = xr.open_mfdataset(files,
-                                         engine="scipy",#"netcdf4",
-                                         parallel=True, 
-                                         preprocess=_preprocess_cice, 
-                                         combine="by_coords", 
-                                         cache=True, 
-                                         chunks={})
-            CICE_all = CICE_all.chunk({'time': mean_period * 2})
-        except Exception as e:
-            self.logger.error(f"Failed to load datasets: {e}")
+        self.logger.info("📚 Loading monthly Zarr datasets")
+        datasets = []
+        for m_str in mo_strs:
+            P_iceh = Path(self.D_zarr, f"iceh_{m_str}.zarr")
+            if not P_iceh.exists():
+                self.logger.warning(f"⚠️ Missing monthly Zarr file: {P_iceh}")
+                continue
+            ds = xr.open_zarr(P_iceh, consolidated=True)[list(self.cice_var_list)]
+            datasets.append(ds)
+        if not datasets:
+            self.logger.error("❌ No Zarr datasets found to process")
             return
-        CICE_ispd = self.compute_ice_speed_types( CICE_all , ispd_type , temporally_average=True, mean_period=mean_period)
+        CICE_all = xr.concat(datasets, dim="time")
+        CICE_all = CICE_all.chunk({'time': mean_period * 2})
+        CICE_ispd = self.compute_ice_speed_types(CICE_all, ispd_type, temporally_average=True, mean_period=mean_period)
         self.logger.info("🌀 Computing selective rolling means")
         CICE_roll_vars = {}
         for var in CICE_ispd.data_vars:
             da = CICE_ispd[var]
-            # Skip ice speed fields
             if var.endswith(("_B", "_Ta", "_Tx")):
                 self.logger.debug(f"⏭️ Skipping rolling mean for {var} (already derived)")
                 CICE_roll_vars[var] = da
                 continue
-            # Skip vars with uarea-based cell measures
             cell_meas = da.attrs.get("cell_measures", "")
             if "area: uarea" in cell_meas:
                 self.logger.info(f"⏭️ Skipping temporal mean for {var} due to 'cell_measures = {cell_meas}'")
                 CICE_roll_vars[var] = da
                 continue
-            # Apply rolling mean
             self.logger.info(f"📉 Rolling mean on variable: {var}")
             CICE_roll_vars[var] = da.rolling(time=mean_period, center=True, min_periods=1).mean()
         CICE_roll = xr.Dataset(CICE_roll_vars, coords=CICE_ispd.coords)
-        # Adjust for CICE time convention: each time represents the day *after* the average
         CICE_roll['time'] = CICE_roll['time'] - np.timedelta64(1, 'D')
         CICE_roll = CICE_roll.where(~np.isnan(CICE_roll['aice']), drop=False).compute()
-        CICE_roll = CICE_roll.dropna(dim="time", how="all", subset=["aice"])  # drop only fully-NaN time steps
-        CICE_reM  = self.reapply_landmask( CICE_roll )
-        CICE_reM['ispd_BT'] = self.compute_composite_ice_speed( CICE_reM )
+        CICE_roll = CICE_roll.dropna(dim="time", how="all", subset=["aice"])
+        CICE_reM = self.reapply_landmask(CICE_roll)
+        CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
         self.logger.info(f"📊 Original time steps: {CICE_all.time.size}")
-        self.logger.info(f"📊 Rolled time steps: {CICE_reM.time.size}")        
+        self.logger.info(f"📊 Rolled time steps: {CICE_reM.time.size}")
         time_vals = pd.to_datetime(CICE_reM.time.values)
         mo_str_da = xr.DataArray(time_vals.strftime("%Y-%m"), coords={"time": CICE_reM.time}, dims="time")
-        mo_uni    = np.unique(mo_str_da.values)
+        mo_uni = np.unique(mo_str_da.values)
         for m_str in mo_uni:
-            P_zarr = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_rolling_{m_str}.zarr")
+            P_FI_zarr = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_rolling_{m_str}.zarr")
             CICE_month = CICE_reM.sel(time=mo_str_da == m_str)
             if CICE_month.time.size == 0:
                 self.logger.warning(f"⚠️ No data for month: {m_str}")
@@ -523,9 +560,11 @@ class SeaIceProcessor:
             masks = self.create_fast_ice_mask(CICE_SO, ispd_type, ispd_thresh)
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
-            self.write_to_zarr(CICE_grouped, P_zarr, ispd_thresh, ispd_type, m_str, groups_to_write=fast_group)
-            self.write_to_zarr(CICE_grouped, P_zarr, ispd_thresh, ispd_type, m_str)
+            self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ispd_type, m_str, groups_to_write=fast_group)
 
+    #-------------------------------------------------------------------------------------------
+    #                             SEA ICE METRIC PREPARATION
+    #-------------------------------------------------------------------------------------------
     def extract_pack_ice(self, DS_FI, DS_HEM):
         """
         DS_FI is the fast ice dataset which should contain 'PI_mask'
@@ -580,24 +619,36 @@ class SeaIceProcessor:
                 DS_list.append(ds)
             except (OSError, KeyError) as e:
                 self.logger.warning(f"⚠️ Skipping {P_zarr} ({ice_type}): {e}")
-        if not datasets:
+        if not DS_list:
             self.logger.warning(f"⚠️ No {ice_type} datasets found in any Zarr group")
             return None
-        DS_out = xr.concat(DS_list, dim="time")
+        DS_FI = xr.concat(DS_list, dim="time")
+        DS_FI = DS_FI.chunk(chunks)
+        self.logger.info(f"✅ Loaded {ice_type}: {len(DS_FI.time)} time steps from {len(DS_list)} files")
         if load_original_CICE:
-            self.logger.info(f"📦 Load original CICE model files to merge with {ice_type}")
-            P_orgs   = self.get_cice_files_between_dates(self.D_iceh, dt0_str, dtN_str)
-            CICE_all = xr.open_mfdataset(P_orgs,
-                                         engine="scipy",
-                                         combine="by_coords",
+            self.logger.info(f"📦 Load monthly iceh_*.zarr files between {dt0_str} and {dtN_str}")
+            P_monthly_zarrs = []
+            dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
+            dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
+            for m in pd.date_range(dt0, dtN, freq="MS"):
+                m_str = m.strftime("%Y-%m")
+                P_zarr = Path(self.D_zarr, f"iceh_{m_str}.zarr")
+                if P_zarr.exists():
+                    P_monthly_zarrs.append(P_zarr)
+            if not P_monthly_zarrs:
+                raise FileNotFoundError(f"No Zarr files found between {dt0_str} and {dtN_str}")
+            self.logger.info(f"📁 Found {len(P_monthly_zarrs)} zarr files: {[p.name for p in P_monthly_zarrs]}")
+            CICE_all = xr.open_mfdataset(P_monthly_zarrs,
+                                         engine="zarr",
+                                         concat_dim="time",
+                                         combine="nested",
+                                         parallel=True,
                                          preprocess=lambda ds: ds[self.cice_var_list],
-                                         chunks=chunks or {}).sel(time=ds_all.time)
+                                         chunks=chunks or {}).sel(time=DS_FI.time)
             CICE_SO = CICE_all.isel(nj=self.hemisphere_nj_slice)
-            DS_out  = xr.merge([DS_out, CICE_SO])
-            self.logger.info(f"✅ original CICE model data merged with fast ice dataset")
-        DS_out = DS_out.chunk(chunks)
-        self.logger.info(f"✅ Loaded {ice_type}: {len(DS_out.time)} time steps from {len(DS_list)} files")
-        return DS_out
+        else:
+            CICE_SO = None
+        return DS_FI, CICE_SO
 
     def compute_rolling_mean_on_dataset(self, ds, mean_period=None):
         mean_period = mean_period if mean_period is not None else self.mean_period
@@ -611,6 +662,9 @@ class SeaIceProcessor:
         FI_bool      = (FI_roll_mask >= min_count).persist()
         return FI_bool
 
+    #-------------------------------------------------------------------------------------------
+    #                                      SEA ICE METRICS
+    #-------------------------------------------------------------------------------------------
     def compute_ice_area(self, SIC, GC_area, ice_area_scale=None):
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
         self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
@@ -622,6 +676,138 @@ class SeaIceProcessor:
     def compute_variable_aggregate(self, da, time_coord_name='time'):
         return da.sum(dim=time_coord_name) / da[time_coord_name].sizes.get(time_coord_name, 1)
 
+    # GROWTH METRICS
+    def compute_fia_onset_doy(self, FIA, threshold_km2=50):
+        """Return the first DOY where FIA exceeds a threshold."""
+        t = FIA["time"].dt.dayofyear
+        onset = FIA.where(FIA > threshold_km2, drop=True)
+        return int(t.sel(time=onset.time[0]).item()) if onset.size > 0 else None
+
+    def compute_fia_growth_rate(self, FIA, start_doy=71, end_doy=273):
+        """
+        Compute linear growth rate of FIA between start_doy and end_doy.
+        Default start_doy and end_doy obtained from https://doi.org/10.5194/tc-15-5061-2021
+        """
+        t_doy = FIA["time"].dt.dayofyear
+        mask  = (t_doy >= start_doy) & (t_doy <= end_doy)
+        FIA_sub = FIA.where(mask, drop=True)
+        if FIA_sub.time.size < 2:
+            return np.nan
+        days = (FIA_sub.time - FIA_sub.time[0]) / np.timedelta64(1, 'D')
+        slope = np.polyfit(days, FIA_sub.values, 1)[0]
+        return slope
+
+    def compute_fia_max_growth(self, FIA):
+        """Return the maximum daily change in FIA."""
+        dFIA = FIA.diff("time")
+        return dFIA.max().item()
+
+    # STABILITY METRICS
+    def compute_fip_spatial_stats(self, FIP):
+        """Return mean and std of persistence (e.g., fraction of year) across all grid cells."""
+        valid = FIP.where(~np.isnan(FIP))
+        return float(valid.mean()), float(valid.std())
+
+    def compute_cellwise_stability(self, FI_mask):
+        """Return fraction of days each grid cell is classified as fast ice."""
+        total = FI_mask.sizes['time']
+        return FI_mask.sum(dim='time') / total
+
+    def compute_stability_index(self, persistent_FIA, total_FIA):
+        """Ratio of persistent fast ice area to total FIA."""
+        return persistent_FIA / total_FIA if total_FIA > 0 else np.nan
+
+    def compute_fast_ice_distance_extent(self, FI_mask, grid_dx_km=9.8):
+        """
+        Compute mean and maximum distance (in km) of fast ice from the coastline.
+
+        Parameters
+        ----------
+        FI_mask : xarray.DataArray
+        Boolean mask of fast ice presence over time (time, nj, ni)
+        grid_dx_km : float
+        Approximate horizontal grid spacing in kilometers (default 9.8 km; Antarctic coast)
+
+        Returns
+        -------
+        mean_dist : float
+        Mean distance from coast for fast ice presence
+        max_dist : float
+        Maximum distance from coast for fast ice presence
+        """
+        from scipy.ndimage import binary_dilation, distance_transform_edt
+        kmt_mod = self.GI_proc.G_t['kmt_mod'].values
+        land_mask = (kmt_mod == 0)
+        sea_mask = ~land_mask
+        coast_mask = sea_mask & binary_dilation(land_mask)
+        coast_distances = distance_transform_edt(~coast_mask) * grid_dx_km
+        coast_dist_da = xr.DataArray(coast_distances, coords=self.GI_proc.G_t['kmt_mod'].coords)
+        # Use time-mean fast ice mask for distance sampling
+        fi_mask_time_mean = FI_mask.mean(dim="time") > 0.5
+        fast_ice_dists = coast_dist_da.where(fi_mask_time_mean)
+        mean_dist = float(fast_ice_dists.mean().values)
+        max_dist  = float(fast_ice_dists.max().values)
+        return mean_dist, max_dist
+
+    # SEASONALITY METRICS
+    def compute_doy_max(self, FIA):
+        """Return the DOY at which FIA is maximal."""
+        idx = FIA.argmax("time")
+        return int(FIA["time"].dt.dayofyear[idx].item())
+
+    def compute_fast_ice_duration(self, FIA, threshold_km2=None):
+        """
+        Compute duration of the fast ice season.
+
+        If `threshold_km2` is given: duration is the number of days with FIA > threshold.
+        If `threshold_km2` is None: duration is defined as (DOY_max - DOY_min) per year.
+
+        Parameters
+        ----------
+        FIA : xarray.DataArray
+            Daily fast ice area with time coordinate.
+        threshold_km2 : float or None
+            Fixed threshold for defining start/end. If None, uses annual min/max to define season.
+
+        Returns
+        -------
+        dict[int, int] or int
+            Duration per year in days, or single int if only one year.
+        """
+        if "time" not in FIA.dims:
+            raise ValueError("FIA must have 'time' coordinate.")
+        if threshold_km2 is not None:
+            # Traditional method based on absolute threshold
+            mask = FIA > threshold_km2
+            if mask.sum() == 0:
+                return 0
+            times = FIA["time"].where(mask, drop=True)
+            return int((times[-1] - times[0]) / np.timedelta64(1, "D")) + 1
+        # Group by year and compute min/max-based duration
+        durations = {}
+        for yr, da in FIA.groupby("time.year"):
+            if da.time.size < 2:
+                durations[yr.item()] = 0
+                continue
+            t_doy = da["time"].dt.dayofyear
+            i_min = da.argmin("time").item()
+            i_max = da.argmax("time").item()
+            t0, t1 = int(t_doy[i_min].item()), int(t_doy[i_max].item())
+            durations[yr.item()] = abs(t1 - t0)
+        if len(durations) == 1:
+            return list(durations.values())[0]
+        return durations
+
+    def compute_fia_rmse(self, model_fia, obs_fia):
+        """Compare interpolated daily model FIA vs observed climatology (both 1D)."""
+        if model_fia.sizes["time"] != obs_fia.size:
+            raise ValueError("Time dimension mismatch between model and observations.")
+        error = model_fia.values - obs_fia.values
+        return float(np.sqrt(np.mean(error**2)))
+
+    #-------------------------------------------------------------------------------------------
+    #                                 OBSERVATIONAL DATA
+    #-------------------------------------------------------------------------------------------
     def load_AF2020_FI_area_CSV(self, doy_start):
         csv_path    = self.sea_ice_dict['P_AF2020_cli_csv']
         df          = pd.read_csv(csv_path)
@@ -636,6 +822,19 @@ class SeaIceProcessor:
         sectors     = ['circumpolar', 'IOsector', 'WPOsector', 'RSsector', 'BASsector', 'WSsector']
         self.logger.info(f"loaded: {csv_path}")
         return row[sectors].reset_index(drop=True)
+
+    def interpolate_obs_fia(self, csv_df, full_doy=np.arange(1, 366)):
+        from scipy.interpolate import interp1d
+        df = csv_df.copy()
+        df = df.rename(columns={"Circumpolar": "circumpolar"})  # Ensure lowercase
+        if 'circumpolar' not in df.columns or 'DOY_start' not in df.columns:
+            raise ValueError("Expected columns 'DOY_start' and 'circumpolar' in CSV.")
+        x = df['DOY_start'].values
+        y = df['circumpolar'].values/1e3
+        if len(x) != len(y):
+            raise ValueError("x and y arrays must be equal in length.")
+        interp_func = interp1d(x, y, kind='linear', fill_value="extrapolate")
+        return xr.DataArray(interp_func(full_doy), coords=[("doy", full_doy)])
 
     def define_AF2020_reG_weights(self, FI_obs_native):
         from pyproj import CRS, Transformer

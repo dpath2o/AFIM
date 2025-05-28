@@ -7,6 +7,8 @@ ISPD_TYPE_LIST=()
 START_DATE="1993-01-01"
 END_DATE="1993-01-31"
 DRY_RUN=false
+OVERWRITE_ZARR=false
+DELETE_ORIGINAL_ICEH=false
 
 # --- PBS Script ---
 PBS_SCRIPT=process_fast_ice.pbs
@@ -25,6 +27,7 @@ print_help() {
     echo "  -r               Enable rolling fast ice masking"
     echo "  -d               Enable daily fast ice masking"
     echo "  -z               overwrite zarrs"
+    echo "  -k               if enabled then when creating new iceh_*.zarr monthly files, this will then delete the original daily ice history files for a particular month"
     echo "  -n               Dry run: print PBS command without submitting"
     echo "  -h               Show this help message and exit"
     echo ""
@@ -36,7 +39,7 @@ print_help() {
 }
 
 # --- Parse options ---
-while getopts "s:t:i:rdzhS:E:n" opt; do
+while getopts "s:t:i:rdzkhS:E:n" opt; do
     case ${opt} in
         s) SIM_NAME="$OPTARG" ;;
         t) ISPD_THRESH="$OPTARG" ;;
@@ -44,6 +47,7 @@ while getopts "s:t:i:rdzhS:E:n" opt; do
         r) ROLLING=true ;;
         d) DAILY=true ;;
         z) OVERWRITE_ZARR=true ;;
+        k) DELETE_ORIGINAL_ICEH=true ;;
         S) START_DATE="$OPTARG" ;;
         E) END_DATE="$OPTARG" ;;
         n) DRY_RUN=true ;;  # <-- Dry run flag
@@ -91,14 +95,13 @@ while [[ "$current_month" < "$END_DATE" || "$current_month" == "$END_DATE" ]]; d
     [ "${ROLLING}" = true ] && VAR_PASS+=",ROLLING=true"
     [ "${DAILY}" = true ] && VAR_PASS+=",DAILY=true"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
+    [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
     JOB_NAME="fi_${SIM_NAME}_${YEAR}_${MONTH}"
     QSUB_CMD="qsub -N ${JOB_NAME} -v \"${VAR_PASS}\" ${PBS_SCRIPT}"
-    #QSUB_CMD="qsub -N ${JOB_NAME} -v ${VAR_PASS} ${PBS_SCRIPT}"
     if [ "$DRY_RUN" = true ]; then
         echo "🧪 [DRY RUN] Would submit: $QSUB_CMD"
     else
         eval $QSUB_CMD
     fi
-    #qsub -N fi_${SIM_NAME}_${YEAR}_${MONTH} -v ${VAR_PASS} ${PBS_SCRIPT}
     current_month=$(date -d "$current_month +1 month" +%Y-%m-01)
 done

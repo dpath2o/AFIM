@@ -14,7 +14,8 @@ def run_loop(sim_name,
              daily=False,
              rolling=False,
              roll_period=None,
-             overwrite_zarr=False):
+             overwrite_zarr=False,
+             delete_original_iceh=False):
     dt_start = datetime.strptime(start_date, "%Y-%m-%d")
     dt_end   = datetime.strptime(end_date, "%Y-%m-%d")
     SI_proc  = SeaIceProcessor(P_json   = json_path,
@@ -22,7 +23,7 @@ def run_loop(sim_name,
                                dt0_str  = dt_start,
                                dtN_str  = dt_end,
                                sim_name = sim_name)
-    print(ispd_type)
+    SI_proc.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
     if daily:
         SI_proc.process_daily_cice(ispd_thresh=ispd_thresh, ispd_type=ispd_type, overwrite_zarr_group=overwrite_zarr)
     if rolling:
@@ -38,6 +39,7 @@ if __name__ == "__main__":
                         help="Enable rolling temporal average (length [MEAN_PERIOD]) of sea ice concentration and sea ice speed prior to fast ice masking")
     parser.add_argument("--daily"       , action="store_true", help="Perform fast ice masking without ")
     parser.add_argument("--overwrite_zarr", action="store_true", help="overwrite zarrs")
+    parser.add_argument("--delete_original_iceh", action="store_true", help="when creating monthly zarr files of original CICE files, if enabled this will then delete the original model ice history files")
     parser.add_argument("--mean_period" , type=int , default=14 , help="averaging period in days over which to perform rolling calculation")
     parser.add_argument("--json_config" , help="Path to JSON config file (default: use hard-coded JSON file in fast_ice_processor)")
     parser.add_argument("--log_file"    , help="Path to log file (default: use hard-coded JSON file in fast_ice_processor)")
@@ -54,4 +56,5 @@ if __name__ == "__main__":
              daily       = args.daily,
              rolling     = args.rolling,
              roll_period = args.mean_period,
-             overwrite_zarr = args.overwrite_zarr)
+             overwrite_zarr = args.overwrite_zarr,
+             delete_original_iceh = args.delete_original_iceh)
