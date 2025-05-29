@@ -868,9 +868,12 @@ class SeaIcePlotter:
                       tit_str=None,
                       P_png=None,
                       ylim=(0,1000),
-                      figsize=(20,12)):
+                      figsize=(20,12),
+                      obs_clim=None,
+                      keys_to_plot=None):
         """
-        Plot time series of ice area for one or more simulations.
+        Plot time series of ice area for one or more simulations, optionally with observational climatology.
+
         Parameters
         ----------
         area_dict : dict
@@ -879,11 +882,25 @@ class SeaIcePlotter:
         One of ["FI", "PI", "SO"]. Used for titles and default y-label.
         roll_days : int
         Rolling mean window size in days.
-        save_path : str or Path, optional
-        If provided, save the figure to this path.
+        tit_str : str
+        Title string.
+        P_png : Path or str
+        Output path for PNG file.
+        ylim : tuple
+        Y-axis limits.
+        figsize : tuple
+        Figure size.
+        obs_clim : xarray.DataArray, optional
+        1D array of 365-day climatology (e.g., AF2020) to repeat and overlay for comparison.
         """
+        # Normalize to list if needed
+        if keys_to_plot is not None:
+            if isinstance(keys_to_plot, str):
+                keys_to_plot = [keys_to_plot]
+            area_dict = {k: v for k, v in area_dict.items() if k in keys_to_plot}
         df = pd.DataFrame()
         time_array = None
+        series_list = []
         for name, da in area_dict.items():
             if isinstance(da, xr.Dataset):
                 da = da.to_array().squeeze()
@@ -891,21 +908,37 @@ class SeaIcePlotter:
                 da_rolled = da.rolling(time=roll_days, center=True, min_periods=1).mean()
             else:
                 da_rolled = da
-            if time_array is None:
-                time_array = da["time"].values
-            df[name] = da_rolled.compute().values if hasattr(da_rolled, "compute") else da_rolled.values
-        if time_array is not None:
-            df["time"] = time_array
-            df.set_index("time", inplace=True)
-        else:
-            raise ValueError("No valid time array found — 'area_dict' may be empty.")
+            ser = pd.Series(data=da_rolled.compute().values,
+                            index=pd.to_datetime(da["time"].values),
+                            name=name)
+            series_list.append(ser)
+        df = pd.concat(series_list, axis=1)
+        df.index.name = "time"
         plt.figure(figsize=figsize, constrained_layout=True)
+        # Plot observational climatology as black background line
+        if obs_clim is not None:
+            doy = df.index.dayofyear
+            obs_vals = np.interp(doy, obs_clim["doy"].values, obs_clim.values)
+            plt.plot(df.index, obs_vals, label="AF2020 obs", color="black", linewidth=2.0, linestyle="--", alpha=0.7)
+        # Plot simulation curves
         for label in df.columns:
             color = self.plot_var_dict.get(label, {}).get("line_clr", None)
             plt.plot(df.index, df[label], label=label, color=color)
+        # Year separators
         sep30s = pd.date_range(start=df.index.min(), end=df.index.max(), freq='YE-SEP')
         for dt in sep30s:
             plt.axvline(dt, color='gray', linestyle='--', linewidth=0.8)
+        # Vertical dashed lines at year-day 61 (typically March 1st)
+        years = range(df.index.year.min(), df.index.year.max() + 1)
+        for year in years:
+            try:
+                day61 = pd.Timestamp(f"{year}-03-01")
+            except ValueError:
+                # In rare cases, fallback to next day if something goes wrong
+                day61 = pd.Timestamp(f"{year}-03-02")
+            if df.index.min() <= day61 <= df.index.max():
+                plt.axvline(day61, color='gray', linestyle='--', linewidth=0.8, alpha=0.6)
+        # Yearly min/max markers and annotations
         years = range(df.index.year.min(), df.index.year.max() + 1)
         for year in years:
             yr_mask = (df.index.year == year)
@@ -929,7 +962,7 @@ class SeaIcePlotter:
         plt.xlabel("Time")
         plt.grid(True)
         plt.ylim(ylim)
-        plt.xlim(pd.Timestamp(f"{years.start}-01-01"), pd.Timestamp(f"{years.stop - 1}-12-31"))
+        plt.xlim(pd.Timestamp(f"{years.start}-01-01"), pd.Timestamp(f"{years.stop - 1}-01-01"))
         plt.legend()
         plt.tight_layout()
         if self.save_fig:

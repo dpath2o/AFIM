@@ -66,6 +66,8 @@ class SeaIceProcessor:
         self.ispd_thresh    = ice_speed_threshold         if ice_speed_threshold         is not None else self.config.get('ice_speed_thresh_hi', 1e-3)
         self.icon_thresh    = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
         self.cice_vars_ext  = extra_cice_vars             if extra_cice_vars             is not None else self.CICE_dict["FI_cice_vars_ext"]
+        self.valid_ispd_types    = ["ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"]
+        self.valid_zarr_datasets = ['FI_B', 'FI_Ta', 'FI_Tx', 'FI_BT']
         self.cice_vars_reqd = self.CICE_dict["FI_cice_vars_reqd"]
         self.cice_var_list  = self.cice_vars_reqd + self.cice_vars_ext
         self.D_sim          = Path(self.config['D_dict']['AFIM_out'], sim_name)
@@ -87,10 +89,9 @@ class SeaIceProcessor:
         self.P_KMT         = self.GI_proc.P_KMT_mod   if self.use_gi else self.CICE_dict['P_KMT']
         hemisphere         = hemisphere if hemisphere is not None else self.config.get('hemisphere', 'south')
         self.define_hemisphere(hemisphere)
+        self.ispd_thresh_metrics        = self.interpret_ice_speed_threshold(lat_thresh=-60)
         self.reG_weights_defined        = False
         self.reG_AF2020_weights_defined = False
-        self.valid_ispd_types    = ["ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"]
-        self.valid_zarr_datasets = ['FI_B', 'FI_Ta', 'FI_Tx', 'FI_BT', 'PI_B', 'PI_Ta', 'PI_Tx', 'PI_BT', 'SO']
 
     def setup_logging(self, logfile=None):
         self.logger = logging.getLogger(self.sim_name)
@@ -139,6 +140,49 @@ class SeaIceProcessor:
             sliced["preserved_vars"] = sliced_preserved
             self.logger.info("hemisphere sliced on 'preserved' dataset")
         return sliced
+
+    def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
+        """
+        Interpret the ice speed threshold (in m/s) in terms of physical displacement per day,
+        relative to the effective length scale of actual model grid cells near Antarctica.
+
+        Parameters
+        ----------
+        ispd_thresh : float
+        Ice speed threshold in m/s (e.g., 2.5e-4).
+        lat_thresh : float
+        Only consider grid cells south of this latitude for estimating cell size.
+
+        Returns
+        -------
+        dict
+        Dictionary with displacement stats and interpretation in terms of grid cell coverage.
+        """
+        ispd_thresh = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
+        m_per_day = ispd_thresh * 86400  # meters/day
+        area_da   = self.GI_proc.G_t['area']  # [m^2]
+        lat_da    = self.GI_proc.G_t['lat']   # [degrees]
+        # Mask to grid cells south of latitude threshold (e.g., near Antarctic coastline)
+        mask         = lat_da < lat_thresh
+        area_vals    = area_da.where(mask).values
+        grid_lengths = np.sqrt(area_vals)
+        # Clean up NaNs/Infs
+        grid_lengths = grid_lengths[np.isfinite(grid_lengths)]
+        if len(grid_lengths) == 0:
+            raise ValueError("No valid grid cells found south of the specified latitude.")
+        # Use median length to represent typical coastal grid spacing
+        GC_len_median = np.median(grid_lengths)
+        pct_GC_disp   = m_per_day / GC_len_median
+        days_per_GC   = GC_len_median / m_per_day
+        self.logger.info(f"Ice speed threshold                        : {ispd_thresh:.1e} m/s → {m_per_day:.1f} m/day")
+        self.logger.info(f"Median grid cell length below {lat_thresh}°: {GC_len_median:.1f} m")
+        self.logger.info(f"→ Displacement                             = {pct_GC_disp*100:.2f}% of grid cell per day")
+        self.logger.info(f"→ Days to fully traverse one grid cell     : {days_per_GC:.2f} days")
+        return {"ice_speed_thresh_m_per_s"    : ispd_thresh,
+                "displacement_m_per_day"      : m_per_day,
+                "median_grid_cell_length_m"   : GC_len_median,
+                "percent_displacement_per_day": pct_GC_disp,
+                "days_per_grid_cell"          : days_per_GC}
 
     def get_dir_size(self, path):
         size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
@@ -215,6 +259,20 @@ class SeaIceProcessor:
     # * intelligent chunking: by using chunk={'time': -1, 'nj': 540, 'ni': 1440} you're compressing
     #   monthly time spans while maintaining spatial chunking appropriate for hemisphere-wide analysis.
     #-------------------------------------------------------------------------------------------
+    def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
+        dt0 = pd.to_datetime(dt0_str)
+        dtN = pd.to_datetime(dtN_str)
+        files = []
+        for dt in pd.date_range(dt0, dtN, freq="D"):
+            fname = f"iceh.{dt.strftime('%Y-%m-%d')}.nc"
+            fpath = Path(D_iceh) / fname
+            if fpath.exists():
+                files.append(fpath)
+        if not files:
+            self.logger.info(f"*NO* CICE iceh.YYYY-MM-DD.nc files between the dates of {dt0_str} and {dtN_str} ... None being returned")
+            return None
+        return sorted(files)
+
     def delete_original_cice(self, P_orgs, P_iceh_zarr, m_str):
         if Path(P_iceh_zarr, ".zgroup").exists():
             self.logger.info(f"🗑️ Deleting original NetCDF files for {m_str}")
@@ -240,6 +298,9 @@ class SeaIceProcessor:
         D_iceh   = D_iceh   or self.D_iceh
         m_grps = defaultdict(list)
         P_orgs = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
+        if not P_orgs:
+            self.logger.info("No CICE files found. Noting further to do here.")
+            return
         for f in P_orgs:
             dt = datetime.strptime(f.name, "iceh.%Y-%m-%d.nc")
             m_str = dt.strftime("%Y-%m")
@@ -419,19 +480,6 @@ class SeaIceProcessor:
                 self.logger.error(f"❌ Failed to write group {group}: {e}")
         DS_grouped[m_str].clear()
 
-    def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
-        dt0 = pd.to_datetime(dt0_str)
-        dtN = pd.to_datetime(dtN_str)
-        files = []
-        for dt in pd.date_range(dt0, dtN, freq="D"):
-            fname = f"iceh.{dt.strftime('%Y-%m-%d')}.nc"
-            fpath = Path(D_iceh) / fname
-            if fpath.exists():
-                files.append(fpath)
-        if not files:
-            raise FileNotFoundError(f"No iceh files found between {dt0_str} and {dtN_str} in {D_iceh}")
-        return sorted(files)
-
     def drop_unwanted_ispd_vars(self, ds, ispd_type_requested):
         keep_vars = set(ispd_type_requested) | set(ds.data_vars) - set(self.valid_ispd_types)
         drop_vars = [v for v in self.valid_ispd_types if v in ds and v not in keep_vars]
@@ -608,6 +656,7 @@ class SeaIceProcessor:
                 except Exception:
                     return False
             P_zarrs = [p for p in P_zarrs if file_in_range(p)]
+        self.logger.info(f"📁 Found {len(P_zarrs)} zarr files: {[p.name for p in P_zarrs]}")
         if not P_zarrs:
             self.logger.warning(f"⚠️ No Zarr datasets found in {D_zarr}")
             return None
@@ -625,7 +674,7 @@ class SeaIceProcessor:
         DS_FI = xr.concat(DS_list, dim="time")
         DS_FI = DS_FI.chunk(chunks)
         self.logger.info(f"✅ Loaded {ice_type}: {len(DS_FI.time)} time steps from {len(DS_list)} files")
-        if load_original_CICE:
+        if zarr_CICE:
             self.logger.info(f"📦 Load monthly iceh_*.zarr files between {dt0_str} and {dtN_str}")
             P_monthly_zarrs = []
             dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
@@ -639,12 +688,11 @@ class SeaIceProcessor:
                 raise FileNotFoundError(f"No Zarr files found between {dt0_str} and {dtN_str}")
             self.logger.info(f"📁 Found {len(P_monthly_zarrs)} zarr files: {[p.name for p in P_monthly_zarrs]}")
             CICE_all = xr.open_mfdataset(P_monthly_zarrs,
-                                         engine="zarr",
-                                         concat_dim="time",
-                                         combine="nested",
-                                         parallel=True,
-                                         preprocess=lambda ds: ds[self.cice_var_list],
-                                         chunks=chunks or {}).sel(time=DS_FI.time)
+                                         engine     = "zarr",
+                                         concat_dim = "time",
+                                         combine    = "nested",
+                                         parallel   = True,
+                                         chunks     = chunks or {})
             CICE_SO = CICE_all.isel(nj=self.hemisphere_nj_slice)
         else:
             CICE_SO = None

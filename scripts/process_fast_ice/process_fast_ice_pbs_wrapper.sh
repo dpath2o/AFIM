@@ -96,7 +96,7 @@ while [[ "$current_month" < "$END_DATE" || "$current_month" == "$END_DATE" ]]; d
     [ "${DAILY}" = true ] && VAR_PASS+=",DAILY=true"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
     [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
-    JOB_NAME="fi_${SIM_NAME}_${YEAR}_${MONTH}"
+    JOB_NAME="fi_${SIM_NAME}_${YEAR}_${MONTH}_${ISPD_THRESH}"
     QSUB_CMD="qsub -N ${JOB_NAME} -v \"${VAR_PASS}\" ${PBS_SCRIPT}"
     if [ "$DRY_RUN" = true ]; then
         echo "🧪 [DRY RUN] Would submit: $QSUB_CMD"

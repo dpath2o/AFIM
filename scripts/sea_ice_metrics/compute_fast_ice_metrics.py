@@ -5,6 +5,7 @@ from sea_ice_plotter   import SeaIcePlotter
 from pathlib           import Path
 import xarray          as xr
 import numpy           as np
+import pandas          as pd
 
 def plot_cice_field(x1, y1, z1, title, region, 
                     cmap="cmocean/haline", cmap_series=[0.9, 1],
@@ -69,11 +70,14 @@ def compute_and_save_metrics(SI_proc, DS_FI, P_METS, obs_clim=None):
     mean_dist, max_dist     = SI_proc.compute_fast_ice_distance_extent(DS_FI['FI_mask'])
     summary["mean_FI_dist"] = mean_dist
     summary["max_FI_dist"]  = max_dist
-
     if obs_clim is not None:
         model_doy = FIA["time"].dt.dayofyear.values
         obs_vals = np.interp(model_doy, obs_clim.coords["doy"].values, obs_clim.values)
         summary["rmse_to_obs"] = SI_proc.compute_fia_rmse(FIA, xr.DataArray(obs_vals, coords=[("time", FIA["time"])]))
+    # 🔁 Convert any dicts (e.g. duration) to xarray.DataArray
+    for key, val in summary.items():
+        if isinstance(val, dict):
+            summary[key] = xr.DataArray(pd.Series(val), dims="year")
     # Combine all into a dataset
     DS_METS = xr.Dataset(summary)
     DS_METS["FIA"] = FIA
@@ -82,15 +86,13 @@ def compute_and_save_metrics(SI_proc, DS_FI, P_METS, obs_clim=None):
     print(f"📊 Metrics written to {P_METS}")
     return DS_METS
 
-
 def save_metrics_csv(metrics_dict, sim_name, i_type, ispd_str, D_out):
     from pandas import DataFrame
     df = DataFrame([metrics_dict])
     df["sim_name"]     = sim_name
     df["ice_type"]     = i_type
     df["ispd_thresh"]  = ispd_str
-    df.to_csv(Path(D_out, f"metrics_summary_{i_type}.csv"), index=False)
-
+    df.to_csv(Path(D_out, f"{i_type}_summary.csv"), index=False)
 
 def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
@@ -108,7 +110,7 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
     cfg              = SI_proc.sim_config
     ktens, elps, GI_thin = cfg.get("Ktens", "?"), cfg.get("e_f", "?"), 1 - cfg.get("GI_thin_fact", 0)
     ice_types = [ice_type] if isinstance(ice_type, str) else list(ice_type)
-    D_out = Path(SI_proc.config['D_dict']['AFIM_out'], sim_name, "zarr", f"ispd_thresh_{ispd_str}", "ice_metrics")
+    D_out = Path(SI_proc.config['D_dict']['AFIM_out'], sim_name, "zarr", f"ispd_thresh_{ispd_str}", "metrics")
     D_out.mkdir(parents=True, exist_ok=True)
     FIA_comp, FIP_comp = {}, {}
     obs_clim = None
@@ -120,7 +122,7 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
     for itype in ice_type:
         for roll in [False,True]:
             i_type = f"{itype}_roll" if roll else itype
-            P_METS = Path(D_out, f"metrics_{i_type}.zarr")
+            P_METS = Path(D_out, f"{i_type}_mets.zarr")
             if P_METS.exists() and not overwrite_zarr:
                 print(f"{P_METS} exists and not overwriting--loading")
                 METS = xr.open_zarr(P_METS)
@@ -141,7 +143,7 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
             if compute_boolean and not roll:
                 P_METS, METS = None, None
                 i_type = f"{itype}_bool"
-                P_METS = Path(D_out,f"metrics_{i_type}.zarr")
+                P_METS = Path(D_out,f"{i_type}_mets.zarr")
                 if P_METS.exists() and not overwrite_zarr:
                     print(f"{P_METS} exists and not overwriting--loading")
                     METS = xr.open_zarr(P_METS)
@@ -149,14 +151,13 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
                     print(f"{P_METS} does NOT exists and/or overwriting--computing")
                     bool_mask = SI_proc.boolean_fast_ice(DS_FI['FI_mask'], dim="time", window=7, min_count=6)
                     DS_bool   = CICE_SO.where(bool_mask)
+                    DS_bool["FI_mask"] = DS_FI["FI_mask"]
                     METS      = compute_and_save_metrics(SI_proc, DS_bool, P_METS, obs_clim=obs_clim)
                     save_metrics_csv(METS, sim_name=sim_name, i_type=i_type, ispd_str=ispd_str, D_out=D_out)
                 FIA_comp[i_type] = METS['FIA']
                 FIP_comp[i_type] = METS['FIP']
                 plot_persistence_map(METS['FIP'], sim_name, i_type, ispd_str, ktens, elps, GI_thin, SI_plot, dt_range_str, overwrite_png)
     tit_str = f"{sim_name} ispd_thresh={ispd_str}: ktens={ktens}, elps={elps}, GI-thin={GI_thin:.2f}"
-    if "duration" in METS:
-        tit_str += f", dur={METS['duration']}"
     if smooth_FIA_days>0:
         P_png = Path(SI_plot.D_graph, "timeseries", f"FIA_{sim_name}_{ispd_str}_smoothed_{dt_range_str}.png")
     else:
@@ -165,7 +166,7 @@ def main(sim_name, ispd_thresh, ice_type, compute_boolean, smooth_FIA_days, over
         print(f"{P_png} exists and not overwriting")
     else:
         print(f"{P_png} does NOT exists and/or overwriting--creating")
-        SI_plot.plot_ice_area(FIA_comp, tit_str=tit_str, P_png=P_png, roll_days=smooth_FIA_days)
+        SI_plot.plot_ice_area(FIA_comp, tit_str=tit_str, P_png=P_png, roll_days=smooth_FIA_days, obs_clim=obs_clim, keys_to_plot=['FI_BT','FI_BT_roll','FI_BT_bool'])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute FIA and FIP metrics, apply boolean mask, and plot spatial + temporal outputs.")

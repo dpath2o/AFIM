@@ -32,7 +32,6 @@ echo "FIA Rolling Window: $smooth_FIA_days days"
 echo "Ice types loaded from ENVFILE:"
 for t in "${ice_type[@]}"; do echo "  - $t"; done
 
-
 # --- Launch computation ---
 python /home/581/da1339/AFIM/src/AFIM/scripts/sea_ice_metrics/compute_fast_ice_metrics.py \
     --sim_name "$sim_name" \

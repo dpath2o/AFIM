@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # --- Defaults ---
 SIM_NAME=""
 ISPD_THRESH="1e-3"
@@ -60,9 +59,7 @@ if [[ -z "$SIM_NAME" || -z "$ISPD_THRESH" ]]; then
 fi
 
 # --- Create temporary ENVFILE ---
-# --- Create temporary ENVFILE ---
-TMP_ENV=$(mktemp /scratch/jk72/da1339/tmp/envfile_XXXXXX.sh)
-
+TMP_ENV=$(mktemp /g/data/gv90/da1339/tmp/envfile_XXXXXX.sh)
 cat <<EOF > "$TMP_ENV"
 export sim_name="$SIM_NAME"
 export ispd_thresh="$ISPD_THRESH"
@@ -72,18 +69,10 @@ export overwrite_zarr=$OVERWRITE_ZARR
 export overwrite_png=$OVERWRITE_PNG
 export smooth_FIA_days=$SMOOTH_FIA_DAYS
 EOF
-# Append ICE_TYPE as a bash array
-# printf 'ice_type=(' >> "$TMP_ENV"
-# for t in "${ICE_TYPE_LIST[@]}"; do
-#     printf '"%s" ' "$t" >> "$TMP_ENV"
-# done
-# printf ')\n'
 >> "$TMP_ENV"
 
-# --- Build and optionally submit qsub command ---
-JOB_NAME="fi_metrics_${SIM_NAME}"
+JOB_NAME="fi_mets_${SIM_NAME}_${ISPD_THRESH}"
 QSUB_CMD="qsub -N ${JOB_NAME} -v ENVFILE=$TMP_ENV $PBS_SCRIPT"
-
 echo "🔧 $QSUB_CMD"
 if [[ "$DRY_RUN" = true ]]; then
     echo "🧪 [DRY RUN] Would submit PBS job with ENVFILE: $TMP_ENV"
