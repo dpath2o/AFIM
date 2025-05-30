@@ -26,15 +26,6 @@
         font-weight: bold;
         cursor: pointer;
     }
-    .image-columns {
-        display: flex;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        margin-top: 1rem;
-    }
-    .column {
-        width: 48%;
-    }
     .plot {
         text-align: center;
         margin-bottom: 1rem;
@@ -61,238 +52,685 @@
 <h1>AFIM Fast Ice Area Timeseries (1993–1999)</h1>
 <p style="text-align:center; font-size: 1rem;">All simulations — 15-day smoothed FIA from CICE model output</p>
 <details>
-<summary>Cstar-max-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<summary>Cstar-max</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_Cstar-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="Cstar-max-025GI — 1.0e-3 — smoothed">
-  <p>Cstar-max-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_Cstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="Cstar-max-025GI — 5.0e-4 — smoothed">
-  <p>Cstar-max-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_1.0e-4_smoothed_1993-1999.png" alt="Cstar-max — 1.0e-4">
+  <p>Cstar-max — 1.0e-4</p>
 </div>
 </details>
-<details>
-<summary>Cstar-min-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_Cstar-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="Cstar-min-025GI — 1.0e-3 — smoothed">
-  <p>Cstar-min-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_Cstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="Cstar-min-025GI — 5.0e-4 — smoothed">
-  <p>Cstar-min-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_2.0e-4_smoothed_1993-1999.png" alt="Cstar-max — 2.0e-4">
+  <p>Cstar-max — 2.0e-4</p>
 </div>
 </details>
-<details>
-<summary>Pstar-max-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_Pstar-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="Pstar-max-025GI — 1.0e-3 — smoothed">
-  <p>Pstar-max-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_Pstar-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="Pstar-max-025GI — 5.0e-4 — smoothed">
-  <p>Pstar-max-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_4.0e-4_smoothed_1993-1999.png" alt="Cstar-max — 4.0e-4">
+  <p>Cstar-max — 4.0e-4</p>
 </div>
 </details>
-<details>
-<summary>Pstar-min-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_Pstar-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="Pstar-min-025GI — 1.0e-3 — smoothed">
-  <p>Pstar-min-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_Pstar-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="Pstar-min-025GI — 5.0e-4 — smoothed">
-  <p>Pstar-min-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_8.0e-4_smoothed_1993-1999.png" alt="Cstar-max — 8.0e-4">
+  <p>Cstar-max — 8.0e-4</p>
 </div>
 </details>
-<details>
-<summary>elps-max-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_elps-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="elps-max-025GI — 1.0e-3 — smoothed">
-  <p>elps-max-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_elps-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-max-025GI — 5.0e-4 — smoothed">
-  <p>elps-max-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_1.0e-3_smoothed_1993-1999.png" alt="Cstar-max — 1.0e-3">
+  <p>Cstar-max — 1.0e-3</p>
 </div>
 </details>
-<details>
-<summary>elps-mid-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
-</div>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_elps-mid-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-mid-025GI — 5.0e-4 — smoothed">
-  <p>elps-mid-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_Cstar-max_1.2e-3_smoothed_1993-1999.png" alt="Cstar-max — 1.2e-3">
+  <p>Cstar-max — 1.2e-3</p>
 </div>
 </details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-max_2.2e-2_smoothed_1993-1999.png" alt="Cstar-max — 2.2e-2">
+  <p>Cstar-max — 2.2e-2</p>
+</div>
+</details>
+</details>
 <details>
-<summary>elps-min-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<summary>Cstar-min</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_elps-min-025GI_1.0e-3_smoothed_1993-1999.png" alt="elps-min-025GI — 1.0e-3 — smoothed">
-  <p>elps-min-025GI — 1.0e-3 — smoothed</p>
+  <img src="figures/timeseries/FIA_Cstar-min_1.0e-4_smoothed_1993-1999.png" alt="Cstar-min — 1.0e-4">
+  <p>Cstar-min — 1.0e-4</p>
 </div>
-</div>
-<div class='column'>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_elps-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="elps-min-025GI — 5.0e-4 — smoothed">
-  <p>elps-min-025GI — 5.0e-4 — smoothed</p>
+  <img src="figures/timeseries/FIA_Cstar-min_2.0e-4_smoothed_1993-1999.png" alt="Cstar-min — 2.0e-4">
+  <p>Cstar-min — 2.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_4.0e-4_smoothed_1993-1999.png" alt="Cstar-min — 4.0e-4">
+  <p>Cstar-min — 4.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_8.0e-4_smoothed_1993-1999.png" alt="Cstar-min — 8.0e-4">
+  <p>Cstar-min — 8.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_1.0e-3_smoothed_1993-1999.png" alt="Cstar-min — 1.0e-3">
+  <p>Cstar-min — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_1.2e-3_smoothed_1993-1999.png" alt="Cstar-min — 1.2e-3">
+  <p>Cstar-min — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_1.8e-3_smoothed_1993-1999.png" alt="Cstar-min — 1.8e-3">
+  <p>Cstar-min — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Cstar-min_2.2e-2_smoothed_1993-1999.png" alt="Cstar-min — 2.2e-2">
+  <p>Cstar-min — 2.2e-2</p>
+</div>
+</details>
+</details>
+<details>
+<summary>Pstar-max</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_1.0e-4_smoothed_1993-1999.png" alt="Pstar-max — 1.0e-4">
+  <p>Pstar-max — 1.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_2.0e-4_smoothed_1993-1999.png" alt="Pstar-max — 2.0e-4">
+  <p>Pstar-max — 2.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_4.0e-4_smoothed_1993-1999.png" alt="Pstar-max — 4.0e-4">
+  <p>Pstar-max — 4.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_8.0e-4_smoothed_1993-1999.png" alt="Pstar-max — 8.0e-4">
+  <p>Pstar-max — 8.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_1.0e-3_smoothed_1993-1999.png" alt="Pstar-max — 1.0e-3">
+  <p>Pstar-max — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_1.2e-3_smoothed_1993-1999.png" alt="Pstar-max — 1.2e-3">
+  <p>Pstar-max — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_1.8e-3_smoothed_1993-1999.png" alt="Pstar-max — 1.8e-3">
+  <p>Pstar-max — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_4.0e-3_smoothed_1993-1999.png" alt="Pstar-max — 4.0e-3">
+  <p>Pstar-max — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_8.0e-3_smoothed_1993-1999.png" alt="Pstar-max — 8.0e-3">
+  <p>Pstar-max — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-max_2.2e-2_smoothed_1993-1999.png" alt="Pstar-max — 2.2e-2">
+  <p>Pstar-max — 2.2e-2</p>
+</div>
+</details>
+</details>
+<details>
+<summary>Pstar-min</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_1.0e-4_smoothed_1993-1999.png" alt="Pstar-min — 1.0e-4">
+  <p>Pstar-min — 1.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_2.0e-4_smoothed_1993-1999.png" alt="Pstar-min — 2.0e-4">
+  <p>Pstar-min — 2.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_4.0e-4_smoothed_1993-1999.png" alt="Pstar-min — 4.0e-4">
+  <p>Pstar-min — 4.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_8.0e-4_smoothed_1993-1999.png" alt="Pstar-min — 8.0e-4">
+  <p>Pstar-min — 8.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_1.0e-3_smoothed_1993-1999.png" alt="Pstar-min — 1.0e-3">
+  <p>Pstar-min — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_1.2e-3_smoothed_1993-1999.png" alt="Pstar-min — 1.2e-3">
+  <p>Pstar-min — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_1.8e-3_smoothed_1993-1999.png" alt="Pstar-min — 1.8e-3">
+  <p>Pstar-min — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_4.0e-3_smoothed_1993-1999.png" alt="Pstar-min — 4.0e-3">
+  <p>Pstar-min — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_8.0e-3_smoothed_1993-1999.png" alt="Pstar-min — 8.0e-3">
+  <p>Pstar-min — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Pstar-min_2.2e-2_smoothed_1993-1999.png" alt="Pstar-min — 2.2e-2">
+  <p>Pstar-min — 2.2e-2</p>
+</div>
+</details>
+</details>
+<details>
+<summary>Rothrock</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_1.0e-4_smoothed_1993-1999.png" alt="Rothrock — 1.0e-4">
+  <p>Rothrock — 1.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_2.0e-4_smoothed_1993-1999.png" alt="Rothrock — 2.0e-4">
+  <p>Rothrock — 2.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_4.0e-4_smoothed_1993-1999.png" alt="Rothrock — 4.0e-4">
+  <p>Rothrock — 4.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_8.0e-4_smoothed_1993-1999.png" alt="Rothrock — 8.0e-4">
+  <p>Rothrock — 8.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_1.0e-3_smoothed_1993-1999.png" alt="Rothrock — 1.0e-3">
+  <p>Rothrock — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_1.2e-3_smoothed_1993-1999.png" alt="Rothrock — 1.2e-3">
+  <p>Rothrock — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_1.8e-3_smoothed_1993-1999.png" alt="Rothrock — 1.8e-3">
+  <p>Rothrock — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_4.0e-3_smoothed_1993-1999.png" alt="Rothrock — 4.0e-3">
+  <p>Rothrock — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_8.0e-3_smoothed_1993-1999.png" alt="Rothrock — 8.0e-3">
+  <p>Rothrock — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_Rothrock_2.2e-2_smoothed_1993-1999.png" alt="Rothrock — 2.2e-2">
+  <p>Rothrock — 2.2e-2</p>
+</div>
+</details>
+</details>
+<details>
+<summary>elps-max</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_1.0e-4_smoothed_1993-1999.png" alt="elps-max — 1.0e-4">
+  <p>elps-max — 1.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_2.0e-4_smoothed_1993-1999.png" alt="elps-max — 2.0e-4">
+  <p>elps-max — 2.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_4.0e-4_smoothed_1993-1999.png" alt="elps-max — 4.0e-4">
+  <p>elps-max — 4.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_8.0e-4_smoothed_1993-1999.png" alt="elps-max — 8.0e-4">
+  <p>elps-max — 8.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_1.0e-3_smoothed_1993-1999.png" alt="elps-max — 1.0e-3">
+  <p>elps-max — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_1.2e-3_smoothed_1993-1999.png" alt="elps-max — 1.2e-3">
+  <p>elps-max — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_1.8e-3_smoothed_1993-1999.png" alt="elps-max — 1.8e-3">
+  <p>elps-max — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_4.0e-3_smoothed_1993-1999.png" alt="elps-max — 4.0e-3">
+  <p>elps-max — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_8.0e-3_smoothed_1993-1999.png" alt="elps-max — 8.0e-3">
+  <p>elps-max — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-max_2.2e-2_smoothed_1993-1999.png" alt="elps-max — 2.2e-2">
+  <p>elps-max — 2.2e-2</p>
+</div>
+</details>
+</details>
+<details>
+<summary>elps-min</summary>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.3e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_1.3e-4_smoothed_1993-1999.png" alt="elps-min — 1.3e-4">
+  <p>elps-min — 1.3e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.5e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_2.5e-4_smoothed_1993-1999.png" alt="elps-min — 2.5e-4">
+  <p>elps-min — 2.5e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.8e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_4.8e-4_smoothed_1993-1999.png" alt="elps-min — 4.8e-4">
+  <p>elps-min — 4.8e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 5.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_5.0e-4_smoothed_1993-1999.png" alt="elps-min — 5.0e-4">
+  <p>elps-min — 5.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_1.0e-3_smoothed_1993-1999.png" alt="elps-min — 1.0e-3">
+  <p>elps-min — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_2.0e-3_smoothed_1993-1999.png" alt="elps-min — 2.0e-3">
+  <p>elps-min — 2.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_4.0e-3_smoothed_1993-1999.png" alt="elps-min — 4.0e-3">
+  <p>elps-min — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_1.2e-2_smoothed_1993-1999.png" alt="elps-min — 1.2e-2">
+  <p>elps-min — 1.2e-2</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.4e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_2.4e-2_smoothed_1993-1999.png" alt="elps-min — 2.4e-2">
+  <p>elps-min — 2.4e-2</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-1</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_elps-min_1.0e-1_smoothed_1993-1999.png" alt="elps-min — 1.0e-1">
+  <p>elps-min — 1.0e-1</p>
+</div>
+</details>
 </details>
 <details>
 <summary>gi-max</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_gi-max_1.0e-3_smoothed_1993-1999.png" alt="gi-max — 1.0e-3 — smoothed">
-  <p>gi-max — 1.0e-3 — smoothed</p>
+  <img src="figures/timeseries/FIA_gi-max_1.0e-4_smoothed_1993-1999.png" alt="gi-max — 1.0e-4">
+  <p>gi-max — 1.0e-4</p>
 </div>
-</div>
-<div class='column'>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_gi-max_5.0e-4_smoothed_1993-1999.png" alt="gi-max — 5.0e-4 — smoothed">
-  <p>gi-max — 5.0e-4 — smoothed</p>
+  <img src="figures/timeseries/FIA_gi-max_2.0e-4_smoothed_1993-1999.png" alt="gi-max — 2.0e-4">
+  <p>gi-max — 2.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_4.0e-4_smoothed_1993-1999.png" alt="gi-max — 4.0e-4">
+  <p>gi-max — 4.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 5.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_5.0e-4_smoothed_1993-1999.png" alt="gi-max — 5.0e-4">
+  <p>gi-max — 5.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_8.0e-4_smoothed_1993-1999.png" alt="gi-max — 8.0e-4">
+  <p>gi-max — 8.0e-4</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_1.0e-3_smoothed_1993-1999.png" alt="gi-max — 1.0e-3">
+  <p>gi-max — 1.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_1.2e-3_smoothed_1993-1999.png" alt="gi-max — 1.2e-3">
+  <p>gi-max — 1.2e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.8e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_1.8e-3_smoothed_1993-1999.png" alt="gi-max — 1.8e-3">
+  <p>gi-max — 1.8e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_4.0e-3_smoothed_1993-1999.png" alt="gi-max — 4.0e-3">
+  <p>gi-max — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_8.0e-3_smoothed_1993-1999.png" alt="gi-max — 8.0e-3">
+  <p>gi-max — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_gi-max_2.2e-2_smoothed_1993-1999.png" alt="gi-max — 2.2e-2">
+  <p>gi-max — 2.2e-2</p>
+</div>
+</details>
 </details>
 <details>
 <summary>gi-mid</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 5.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_gi-mid_1.0e-3_smoothed_1993-1999.png" alt="gi-mid — 1.0e-3 — smoothed">
-  <p>gi-mid — 1.0e-3 — smoothed</p>
+  <img src="figures/timeseries/FIA_gi-mid_5.0e-4_smoothed_1993-1999.png" alt="gi-mid — 5.0e-4">
+  <p>gi-mid — 5.0e-4</p>
 </div>
-</div>
-<div class='column'>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_gi-mid_5.0e-4_smoothed_1993-1999.png" alt="gi-mid — 5.0e-4 — smoothed">
-  <p>gi-mid — 5.0e-4 — smoothed</p>
+  <img src="figures/timeseries/FIA_gi-mid_1.0e-3_smoothed_1993-1999.png" alt="gi-mid — 1.0e-3">
+  <p>gi-mid — 1.0e-3</p>
 </div>
-</div>
-</div>
+</details>
 </details>
 <details>
 <summary>gi-min</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 5.0e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_gi-min_1.0e-3_smoothed_1993-1999.png" alt="gi-min — 1.0e-3 — smoothed">
-  <p>gi-min — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_gi-min_5.0e-4_smoothed_1993-1999.png" alt="gi-min — 5.0e-4 — smoothed">
-  <p>gi-min — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_gi-min_5.0e-4_smoothed_1993-1999.png" alt="gi-min — 5.0e-4">
+  <p>gi-min — 5.0e-4</p>
 </div>
 </details>
-<details>
-<summary>ktens-max-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_ktens-max-025GI_1.0e-3_smoothed_1993-1999.png" alt="ktens-max-025GI — 1.0e-3 — smoothed">
-  <p>ktens-max-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_ktens-max-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-max-025GI — 5.0e-4 — smoothed">
-  <p>ktens-max-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
+  <img src="figures/timeseries/FIA_gi-min_1.0e-3_smoothed_1993-1999.png" alt="gi-min — 1.0e-3">
+  <p>gi-min — 1.0e-3</p>
 </div>
 </details>
-<details>
-<summary>ktens-min-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_ktens-min-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-min-025GI — 5.0e-4 — smoothed">
-  <p>ktens-min-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
-</div>
-</details>
-<details>
-<summary>ktens-nil-025GI</summary>
-<div class='image-columns'>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_ktens-nil-025GI_1.0e-3_smoothed_1993-1999.png" alt="ktens-nil-025GI — 1.0e-3 — smoothed">
-  <p>ktens-nil-025GI — 1.0e-3 — smoothed</p>
-</div>
-</div>
-<div class='column'>
-<div class="plot">
-  <img src="figures/timeseries/FIA_ktens-nil-025GI_5.0e-4_smoothed_1993-1999.png" alt="ktens-nil-025GI — 5.0e-4 — smoothed">
-  <p>ktens-nil-025GI — 5.0e-4 — smoothed</p>
-</div>
-</div>
-</div>
 </details>
 <details>
 <summary>ry93</summary>
-<div class='image-columns'>
-<div class='column'>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.3e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_ry93_1.0e-3_smoothed_1993-1999.png" alt="ry93 — 1.0e-3 — smoothed">
-  <p>ry93 — 1.0e-3 — smoothed</p>
+  <img src="figures/timeseries/FIA_ry93_1.3e-4_smoothed_1993-1999.png" alt="ry93 — 1.3e-4">
+  <p>ry93 — 1.3e-4</p>
 </div>
-</div>
-<div class='column'>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.5e-4</summary>
 <div class="plot">
-  <img src="figures/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png" alt="ry93 — 5.0e-4 — smoothed">
-  <p>ry93 — 5.0e-4 — smoothed</p>
+  <img src="figures/timeseries/FIA_ry93_2.5e-4_smoothed_1993-1999.png" alt="ry93 — 2.5e-4">
+  <p>ry93 — 2.5e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 5.0e-4</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_5.0e-4_smoothed_1993-1999.png" alt="ry93 — 5.0e-4">
+  <p>ry93 — 5.0e-4</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_1.0e-3_smoothed_1993-1999.png" alt="ry93 — 1.0e-3">
+  <p>ry93 — 1.0e-3</p>
 </div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_2.0e-3_smoothed_1993-1999.png" alt="ry93 — 2.0e-3">
+  <p>ry93 — 2.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_4.0e-3_smoothed_1993-1999.png" alt="ry93 — 4.0e-3">
+  <p>ry93 — 4.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 6.3e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_6.3e-3_smoothed_1993-1999.png" alt="ry93 — 6.3e-3">
+  <p>ry93 — 6.3e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 8.0e-3</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_8.0e-3_smoothed_1993-1999.png" alt="ry93 — 8.0e-3">
+  <p>ry93 — 8.0e-3</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.2e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_1.2e-2_smoothed_1993-1999.png" alt="ry93 — 1.2e-2">
+  <p>ry93 — 1.2e-2</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 2.4e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_2.4e-2_smoothed_1993-1999.png" alt="ry93 — 2.4e-2">
+  <p>ry93 — 2.4e-2</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 4.8e-2</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_4.8e-2_smoothed_1993-1999.png" alt="ry93 — 4.8e-2">
+  <p>ry93 — 4.8e-2</p>
+</div>
+</details>
+<details style='margin-left: 1.5rem;'>
+<summary>Threshold: 1.0e-1</summary>
+<div class="plot">
+  <img src="figures/timeseries/FIA_ry93_1.0e-1_smoothed_1993-1999.png" alt="ry93 — 1.0e-1">
+  <p>ry93 — 1.0e-1</p>
+</div>
+</details>
 </details>
 
 <footer>
-  Last updated: May 27, 2025 — AFIM archive visualisation by <a href="https://github.com/dpath2o/AFIM">AFIM</a>
+  Last updated: May 30, 2025 — AFIM archive visualisation by <a href="https://github.com/dpath2o/AFIM">AFIM</a>
 </footer>
 </body>
 </html>

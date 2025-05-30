@@ -1,8 +1,7 @@
-import os
-import shutil
 from pathlib import Path
-from collections import defaultdict
+import shutil
 import re
+from collections import defaultdict
 from datetime import datetime
 
 # === CONFIGURATION ===
@@ -19,13 +18,14 @@ for file in source_dir.glob("FIA_*.png"):
 
 # === PARSE FILENAMES ===
 images_by_sim = defaultdict(lambda: defaultdict(list))
-pattern = re.compile(r"FIA_(.+)_(1\.0e-3|5\.0e-4)_(smoothed|raw)_1993-1999\.png")
+pattern = re.compile(r"FIA_([^-_]+)-?([^-_]+)?_([0-9.e+-]+)_smoothed_1993-1999\.png")
 
 for file in dest_dir.glob("FIA_*.png"):
     match = pattern.match(file.name)
     if match:
-        sim, thresh, smooth = match.groups()
-        images_by_sim[sim][thresh].append((smooth, file.name))
+        sim1, sim2, thresh = match.groups()
+        sim_name = sim1 if sim2 is None else f"{sim1}-{sim2}"
+        images_by_sim[sim_name][thresh].append(file.name)
 
 # === HTML HEADER ===
 html = f"""<!DOCTYPE html>
@@ -56,15 +56,6 @@ html = f"""<!DOCTYPE html>
         font-weight: bold;
         cursor: pointer;
     }}
-    .image-columns {{
-        display: flex;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        margin-top: 1rem;
-    }}
-    .column {{
-        width: 48%;
-    }}
     .plot {{
         text-align: center;
         margin-bottom: 1rem;
@@ -94,19 +85,17 @@ html = f"""<!DOCTYPE html>
 
 # === HTML BODY ===
 for sim_name in sorted(images_by_sim.keys()):
-    html += f"<details>\n<summary>{sim_name}</summary>\n<div class='image-columns'>\n"
-
-    for thresh in ["1.0e-3", "5.0e-4"]:
-        html += "<div class='column'>\n"
-        for smooth, filename in sorted(images_by_sim[sim_name].get(thresh, [])):
-            label = f"{sim_name} — {thresh} — {smooth}"
+    html += f"<details>\n<summary>{sim_name}</summary>\n"
+    for thresh in sorted(images_by_sim[sim_name].keys(), key=lambda x: float(x)):
+        html += f"<details style='margin-left: 1.5rem;'>\n<summary>Threshold: {thresh}</summary>\n"
+        for filename in sorted(images_by_sim[sim_name][thresh]):
+            label = f"{sim_name} — {thresh}"
             html += f"""<div class="plot">
   <img src="figures/timeseries/{filename}" alt="{label}">
   <p>{label}</p>
 </div>\n"""
-        html += "</div>\n"
-
-    html += "</div>\n</details>\n"
+        html += "</details>\n"
+    html += "</details>\n"
 
 # === HTML FOOTER ===
 html += f"""
