@@ -874,7 +874,7 @@ class SeaIceProcessor:
     def interpolate_obs_fia(self, csv_df, full_doy=np.arange(1, 366)):
         from scipy.interpolate import interp1d
         df = csv_df.copy()
-        df = df.rename(columns={"Circumpolar": "circumpolar"})  # Ensure lowercase
+        #df = df.rename(columns={"Circumpolar": "circumpolar"})  # Ensure lowercase
         if 'circumpolar' not in df.columns or 'DOY_start' not in df.columns:
             raise ValueError("Expected columns 'DOY_start' and 'circumpolar' in CSV.")
         x = df['DOY_start'].values
