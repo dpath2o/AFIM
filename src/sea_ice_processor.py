@@ -103,6 +103,7 @@ class SeaIceProcessor:
         self.icon_thresh    = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
         self.cice_vars_ext  = extra_cice_vars             if extra_cice_vars             is not None else self.CICE_dict["FI_cice_vars_ext"]
         hemisphere          = hemisphere                  if hemisphere                  is not None else self.config.get('hemisphere', 'south')
+        self.setup_logging(logfile=P_log)
         self.define_hemisphere(hemisphere)
         self.valid_ispd_types    = ["ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"]
         self.valid_zarr_datasets = ['FI_B', 'FI_Ta', 'FI_Tx', 'FI_BT']
@@ -116,7 +117,6 @@ class SeaIceProcessor:
         self.FIC_scale           = self.config.get('FIC_scale', 1e9)
         self.SIC_scale           = self.config.get('SIC_scale', 1e12)
         self.cm2m_fact           = self.config.get('cm2m_fact', 0.01)
-        self.setup_logging(logfile=P_log)
         self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
         self.GI_proc.load_bgrid()
         self.use_gi = self.GI_proc.use_gi
@@ -527,9 +527,9 @@ class SeaIceProcessor:
         for var in DS.data_vars:
             da = DS[var]
             if {"nj", "ni"}.issubset(da.dims):  # Only apply to spatial fields
-                self.logger.debug(f"🏝️ Masking land for variable: {var}")
+                self.logger.debug(f"Masking land for variable: {var}")
                 DS[var] = da.where(kmt_mask)
-        self.logger.info("✅ Applied landmask to rolled dataset")
+        self.logger.info("Applied landmask to rolled dataset")
         return DS
 
     def create_fast_ice_mask(self, DS, ispd_type, ispd_thresh):
@@ -637,7 +637,7 @@ class SeaIceProcessor:
             group_dir = P_zarr_root / group
             if group_dir.exists():
                 if self.overwrite_zarr_group:
-                    self.logger.warning(f"♻️ Deleting existing group '{group}' at: {group_dir}")
+                    self.logger.warning(f"Deleting existing group '{group}' at: {group_dir}")
                     try:
                         shutil.rmtree(group_dir)
                     except Exception as e:
@@ -646,7 +646,7 @@ class SeaIceProcessor:
                 else:
                     self.logger.info(f"⏩ Skipping group '{group}' (already exists and overwrite disabled)")
                     continue
-            self.logger.info(f"💾 Writing group '{group}' to Zarr store: {P_zarr_root}")
+            self.logger.info(f"Writing group '{group}' to Zarr store: {P_zarr_root}")
             try:
                 ds_monthly = xr.concat(datasets, dim="time").sortby("time")
                 if group != "SO":
@@ -662,7 +662,7 @@ class SeaIceProcessor:
         keep_vars = set(ispd_type_requested) | set(ds.data_vars) - set(self.valid_ispd_types)
         drop_vars = [v for v in self.valid_ispd_types if v in ds and v not in keep_vars]
         if drop_vars:
-            self.logger.info(f"🧹 Dropping unused ice speed variables: {drop_vars}")
+            self.logger.info(f"Dropping unused ice speed variables: {drop_vars}")
             return ds.drop_vars(drop_vars)
         return ds
 
@@ -717,7 +717,7 @@ class SeaIceProcessor:
             if not P_iceh.exists():
                 self.logger.warning(f"❌ Missing monthly Zarr file: {P_iceh}")
                 continue
-            self.logger.info(f"📂 Loading monthly Zarr: {P_iceh}")
+            self.logger.info(f"Loading monthly Zarr: {P_iceh}")
             try:
                 ds = xr.open_zarr(P_iceh, consolidated=True)
                 if var_list is not None:
@@ -788,11 +788,11 @@ class SeaIceProcessor:
             CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
             CICE_reM['ists_BT'] = self.compute_composite_internal_ice_stress(CICE_reM)
             CICE_reM            = self.drop_unwanted_ispd_vars(CICE_reM, ispd_type_req)
-            self.logger.info("🌊 Subsetting Ocean into either southern or northern hemisphere (default: southern)")
+            self.logger.info("Subsetting Ocean into either southern or northern hemisphere (default: southern)")
             CICE_SO = CICE_reM.isel(nj=self.hemisphere_nj_slice)
-            self.logger.info("❄️ create fast ice masks")
+            self.logger.info("Create fast ice masks")
             masks = self.create_fast_ice_mask(CICE_SO, ispd_type_req, ispd_thresh)
-            self.logger.info("❄️ apply fast ice masks to dataset")
+            self.logger.info("Apply fast ice masks to dataset")
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             for key in CICE_grouped[m_str]:
                 m_DS[m_str][key].extend(CICE_grouped[m_str][key])
@@ -851,8 +851,8 @@ class SeaIceProcessor:
             ispd_type = [ispd_type]
         valid_types = set(self.valid_ispd_types)
         assert all(t in valid_types for t in ispd_type), f"❌ Invalid ispd_type: {ispd_type}. Must be one or more of {self.valid_ispd_types}"
-        self.logger.info(f"📆 Rolling mean first, then fast ice masking between {dt0_str} and {dtN_str}")
-        self.logger.info("📚 Loading monthly Zarr datasets")
+        self.logger.info(f"Rolling mean first, then fast ice masking between {dt0_str} and {dtN_str}")
+        self.logger.info("Loading monthly Zarr datasets")
         CICE_all = self.load_iceh_zarr(sim_name=sim_name, dt0_str=dt0_str, dtN_str=dtN_str, var_list=self.cice_var_list)
         if CICE_all is None:
             self.logger.error("❌ No valid CICE Zarr data to process.")
@@ -860,7 +860,7 @@ class SeaIceProcessor:
         datasets_to_return = []
         CICE_all = CICE_all.chunk({'time': mean_period * 2})
         CICE_ispd = self.compute_ice_speed_types(CICE_all, ispd_type, temporally_average=True, mean_period=mean_period)
-        self.logger.info("🌀 Computing selective rolling means")
+        self.logger.info("Computing selective rolling means")
         CICE_roll_vars = {}
         for var in CICE_ispd.data_vars:
             da = CICE_ispd[var]
@@ -873,7 +873,7 @@ class SeaIceProcessor:
                 self.logger.info(f"⏭️ Skipping temporal mean for {var} due to 'cell_measures = {cell_meas}'")
                 CICE_roll_vars[var] = da
                 continue
-            self.logger.info(f"📉 Rolling mean on variable: {var}")
+            self.logger.info(f"Rolling mean on variable: {var}")
             CICE_roll_vars[var] = da.rolling(time=mean_period, center=True, min_periods=1).mean()
         CICE_roll = xr.Dataset(CICE_roll_vars, coords=CICE_ispd.coords)
         CICE_roll['time'] = CICE_roll['time'] - np.timedelta64(1, 'D')
@@ -882,8 +882,8 @@ class SeaIceProcessor:
         CICE_reM = self.reapply_landmask(CICE_roll)
         CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
         CICE_reM['ists_BT'] = self.compute_composite_internal_ice_stress(CICE_reM)
-        self.logger.info(f"📊 Original time steps: {CICE_all.time.size}")
-        self.logger.info(f"📊 Rolled time steps: {CICE_reM.time.size}")
+        self.logger.info(f"Original time steps: {CICE_all.time.size}")
+        self.logger.info(f"Rolled time steps: {CICE_reM.time.size}")
         time_vals = pd.to_datetime(CICE_reM.time.values)
         mo_str_da = xr.DataArray(time_vals.strftime("%Y-%m"), coords={"time": CICE_reM.time}, dims="time")
         mo_uni = np.unique(mo_str_da.values)
@@ -894,13 +894,13 @@ class SeaIceProcessor:
                 self.logger.warning(f"⚠️ No data for month: {m_str}")
                 continue
             CICE_SO = CICE_month.isel(nj=self.hemisphere_nj_slice)
-            self.logger.info(f"📆 Rolling monthly group: {m_str} with {CICE_SO.time.size} time steps")
+            self.logger.info(f"Rolling monthly group: {m_str} with {CICE_SO.time.size} time steps")
             masks = self.create_fast_ice_mask(CICE_SO, ispd_type, ispd_thresh)
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
             for group in fast_group:
                 if group in CICE_grouped[m_str]:
-                    self.logger.debug(f"📥 Adding group '{group}' from {m_str} to return list")
+                    self.logger.debug(f"Adding group '{group}' from {m_str} to return list")
                     datasets_to_return.extend(CICE_grouped[m_str][group])
             self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ispd_type, m_str, groups_to_write=fast_group)
         if datasets_to_return:
