@@ -1,7 +1,8 @@
-import os, sys, time, json, imageio, shutil #pygmt, imageio, shutil
+import os, sys, time, json, imageio, shutil, pygmt, imageio, shutil
 import xarray as xr
 import pandas as pd
 import numpy as np
+import geopandas as gpd
 #import geopandas as gpd
 from pathlib import Path
 from datetime import datetime
@@ -29,17 +30,11 @@ class SeaIcePlotter:
     def __init__(self,
                  P_json     = None,
                  sim_name   = None,
-                 ice_type   = None, #FI, SI, PI, GI                   -> controls dictionary and for GI controls sub-directory
-                 plot_type  = None, #regional, hemisphere, timeseries -> controls PNG directory
-                 var_name   = None,
                  dt0_str    = None,
                  dtN_str    = None,
-                 mean_period   = None,
-                 bool_window   = None,
-                 bool_min_days = None,
-                 overwrite  = None,
-                 save_fig   = None,
-                 show_fig   = None,
+                 overwrite  = False,
+                 save_fig   = False,
+                 show_fig   = False,
                  hemisphere = None):
         """
         Initialize a SeaIcePlotter instance using configuration provided in a JSON file.
@@ -83,40 +78,32 @@ class SeaIcePlotter:
             P_json = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
         with open(P_json, 'r') as f:
             self.config = json.load(f)
-        self.sim_name    = sim_name         if sim_name   is not None else 'baseline'
-        self.ice_type    = ice_type.upper() if ice_type   is not None else 'FI'
-        self.plot_type   = plot_type        if plot_type  is not None else 'regional'
-        self.var_name    = var_name         if var_name   is not None else 'FIC'
-        self.dt0_str     = dt0_str          if dt0_str    is not None else self.config.get('dt0_str', '1993-01-01')
-        self.dtN_str     = dtN_str          if dtN_str    is not None else self.config.get('dtN_str', '1999-12-31')
-        self.mean_period   = mean_period    if mean_period                 is not None else self.config.get('mean_period', 15)
-        self.bool_window   = bool_window    if bool_window                 is not None else self.config.get('bool_window', 7)
-        self.bool_min_days = bool_min_days  if bool_min_days               is not None else self.config.get('bool_min_days', 6)
-        self.ow_fig      = overwrite        if overwrite  is not None else False
-        self.save_fig    = save_fig         if save_fig   is not None else False
-        self.show_fig    = show_fig         if show_fig   is not None else True
-        self.hemisphere  = hemisphere       if hemisphere is not None else self.config.get('hemisphere', 'south')
+        self.sim_name      = sim_name
+        self.dt0_str       = dt0_str          if dt0_str    is not None else self.config.get('dt0_str', '1993-01-01')
+        self.dtN_str       = dtN_str          if dtN_str    is not None else self.config.get('dtN_str', '1999-12-31')
+        self.ow_fig        = overwrite        if overwrite  is not None else False
+        self.save_fig      = save_fig         if save_fig   is not None else False
+        self.show_fig      = show_fig         if show_fig   is not None else True
+        self.hemisphere    = hemisphere       if hemisphere is not None else self.config.get('hemisphere', 'south')
+        self.CICE_dict     = self.config.get("CICE_dict", {})
+        self.pygmt_dict    = self.config.get("pygmt_dict", {})
+        self.plot_var_dict = self.config.get("plot_var_dict", {})
+        self.reg_dict      = self.config.get('AF_regions', {})
+        self.sim_dict      = self.config.get("sim_dict", {})
+        self.GI_dict       = self.config.get("GI_dict", {})
+        self.SIC_scale     = self.config.get("SIC_scale", 1e12)
+        self.D_graph       = Path(self.config['D_dict']['graph'], 'AFIM')
         self.define_hemisphere(self.hemisphere)
-        self.ice_type_dict             = self.config[f"{self.ice_type}_var_dict"] if self.ice_type!='GI' else None
-        self.spatial_distribution_vars = [f"{self.ice_type}P"] + [f"{self.ice_type}{s}_SD" for s in ["HI", "STH", "SH", "DIV", "AG", "AD", "AT", "VD", "VT", "STR"]]
-        if self.ice_type!="GI":
-            self.D_zarr = Path(self.config['D_dict']['AFIM_out'], sim_name, self.ice_type)
-        self.D_graph                   = Path(self.config['D_dict']['graph'], 'AFIM')
-        self.CICE_dict                 = self.config.get("CICE_dict", {})
-        self.pygmt_dict                = self.config.get("pygmt_dict", {})
-        self.plot_var_dict             = self.config.get("plot_var_dict", {})
-        self.reg_dict                  = self.config.get('AF_regions', {})
-        self.sim_dict                  = self.config.get("sim_dict", {})
-        self.GI_dict                   = self.config.get("GI_dict", {})
-        self.SIC_scale                 = self.config.get("SIC_scale", 1e12)
-        self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
-        self.GI_proc.load_bgrid()
-        self.use_gi = self.GI_proc.use_gi
-        if self.use_gi:
-            self.GI_proc.compute_grounded_iceberg_area()
-        self.GI_total_area = self.GI_proc.G_t['GI_total_area'] if self.use_gi else 0
-        self.P_KMT_mod     = self.GI_proc.P_KMT_mod
-        self.P_KMT_org     = self.GI_proc.P_KMT_org
+        if sim_name is not None:
+            self.D_zarr  = Path(self.config['D_dict']['AFIM_out'], sim_name, "zarr")
+            self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
+            self.GI_proc.load_bgrid()
+            self.use_gi = self.GI_proc.use_gi
+            if self.use_gi:
+                self.GI_proc.compute_grounded_iceberg_area()
+            self.GI_total_area = self.GI_proc.G_t['GI_total_area'] if self.use_gi else 0
+            self.P_KMT_mod     = self.GI_proc.P_KMT_mod
+            self.P_KMT_org     = self.GI_proc.P_KMT_org
 
     def define_hemisphere(self, hemisphere):
         """
@@ -158,37 +145,6 @@ class SeaIcePlotter:
         self.ice_shelves        = shelves
         self.ice_shelves_loaded = True
 
-    def _find_nearest_zarr_file(self, start_date_str=None, end_date_str=None):
-        start_date_str = start_date_str if start_date_str is not None else self.dt0_str
-        end_date_str   = end_date_str if end_date_str is not None else self.dtN_str
-        if self.ice_type=='FI':
-            F_prefix = "fast_ice"
-        elif self.ice_type=='PI':
-            F_prefix = "pack_ice"
-        elif self.ice_type=='SI':
-            F_prefix = "sea_ice"
-        def extract_date(f):
-            return datetime.strptime(f.stem.replace(f"{F_prefix}_", ""), "%Y-%m-%d")
-        all_files = sorted(self.D_zarr.glob(f"{F_prefix}_*.zarr"))
-        if not all_files:
-            print(f"No Zarr files found in {self.D_zarr}")
-            print("returning empty list")
-            return
-        file_dates = [(f, extract_date(f)) for f in all_files]
-        if end_date_str is None:
-            target_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-            closest_file, matched_date = min(file_dates, key=lambda x: abs(x[1] - target_date))
-            return closest_file, matched_date.strftime("%Y-%m-%d")
-        start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_dt   = datetime.strptime(end_date_str, "%Y-%m-%d")
-        in_range = [(f, d.strftime("%Y-%m-%d")) for f, d in file_dates if start_dt <= d <= end_dt]
-        if not in_range:
-            print(f"No Zarr files found between {start_date_str} and {end_date_str} in {self.D_zarr}")
-            print("returning empty list")
-            return
-        else:
-            return in_range
-
     def create_cbar_frame(self, series, label, units=None, max_ann_steps=10):
         """
         Given a data range and label, create GMT-style cbar string.
@@ -214,33 +170,6 @@ class SeaIcePlotter:
             return [f"a{ann_str}f{tick_str}+l{label}",f"y+l {units}"]
         else:
             return f"a{ann_str}f{tick_str}+l{label}"
-
-    def define_png_plot_path(self, var_name=None, qualifiers=None):
-        """
-        """
-        var_name = var_name if var_name is not None else self.var_name
-        if self.plot_type=='regional':
-            D = Path(self.D_graph,self.sim_name,self.ice_type,self.plot_type,self.region_name,var_name)
-            if self.ice_type!='GI':
-                F = f"{self.plot_date_str}_{self.sim_name}_{self.region_name}_{var_name}"
-            else:
-                F = f"GI_{self.sim_name}_{self.region_name}"
-        elif self.plot_type=='timeseries':
-            D = Path(self.D_graph,"timeseries")
-            F = f"{self.ice_type}_{qualifiers}"
-        elif self.plot_type=='hemisphere':
-            D = Path(self.D_graph,self.sim_name,self.ice_type,self.hemisphere,var_name)
-            F = f"{self.plot_date_str}_{self.sim_name}_{self.hemisphere}_{var_name}"
-        elif self.plot_type=='aggregate':
-            D = Path(self.D_graph,'faceted',var_name)
-            F = f"{var_name}_faceted"
-        if qualifiers is not None:
-            for q in qualifiers:
-                F += f"{F}_{q}_"
-        F = f"{F}.png" #add suffix/filetype
-        D.mkdir(parents=True, exist_ok=True)
-        self.P_png = str(D/F)
-        print(f"plot path: {self.P_png}")
 
     def get_meridian_center_from_geographic_extent(self, geographic_extent):
         """
@@ -271,88 +200,6 @@ class SeaIcePlotter:
         #print(f"meridian center computed as {center:.2f}°")
         self.plot_meridian_center = center
         return center
-
-    def classify_strain(self,val,min_strain=-2,max_strain=2):
-        if val < min_strain:
-            return 0  # converging
-        elif val > max_strain:
-            return 2  # diverging
-        else:
-            return 1  # no strain rate
-
-    def dataset_extract_variable_and_coordinates(self, ds, var_name=None, aggregate=False, dt0_str=None, idx_time=None):
-        """
-        Extract a variable and corresponding lat/lon coordinates from an xarray dataset,
-        optionally aggregating over time or selecting a specific time.
-        """
-        lat = ds[self.lat_coord_name].values
-        lon = ds[self.lon_coord_name].values
-        ds_t = None
-        # Time selection or aggregation
-        if aggregate:
-            da = ds
-            self.plot_date_str = pd.to_datetime(da[self.time_coord_name].values[0]).strftime("%Y-%m-%d")
-            da = da.sum(dim=self.time_coord_name) / da[self.time_coord_name].sizes.get(self.time_coord_name, 1)
-        elif dt0_str is not None:
-            ds_t = ds.sel({self.time_coord_name: dt0_str}, method='nearest')
-        elif idx_time is not None:
-            ds_t = ds.isel({self.time_coord_name: idx_time})
-        if ds_t is not None:
-            if var_name == "ispd":
-                da = np.sqrt(ds_t["uvel"]**2 + ds_t["vvel"]**2)
-            else:
-                da = ds_t[var_name].squeeze()
-        elif not aggregate:
-            if var_name == "ispd":
-                da = np.sqrt(ds["uvel"]**2 + ds["vvel"]**2)
-            else:
-                da = ds[var_name].squeeze()
-        da      = da.values if hasattr(da, "values") else da
-        mask    = ~np.isnan(da)
-        lat_out = lat.ravel()[mask.ravel()]
-        lon_out = lon.ravel()[mask.ravel()]
-        da_out  = da.ravel()[mask.ravel()]
-        return da_out, lon_out, lat_out
-
-    def dataset_preparation_for_plotting(self, ds, aggregate=False, dt0_str=None, idx_time=None):
-        """
-        """
-        self.plot_df_background = None
-        da,lon,lat = self.dataset_extract_variable_and_coordinates(ds, var_name=self.var_name, aggregate=aggregate, dt0_str=dt0_str, idx_time=idx_time)
-        self.plot_df = pd.DataFrame({"lat": lat,
-                                     "lon": lon,
-                                     "dat": da})
-        if self.var_name_background is not None:
-            print("plotting a background")
-            da,lon,lat = self.dataset_extract_variable_and_coordinates(self.ds_back, var_name=self.var_name_background, aggregate=aggregate, dt0_str=dt0_str, idx_time=idx_time)
-            self.plot_df_background = pd.DataFrame({"lat": lat,
-                                                    "lon": lon,
-                                                    "dat": da})
-
-    def regional_or_hemisphere(self):
-        if self.plot_type=='hemisphere':
-            print("*** PLOTTING HEMISPHERE ***")
-            self.projection    = self.hemisphere_projection
-            self.region_extent = self.hemisphere_map_extent
-            self.text_loc      = self.hemisphere_map_text_location
-            self.create_figure()
-        elif self.plot_type=='regional':
-            print("*** REGIONAL PLOTTING ***")
-            if self.region_name is not None:
-                if self.region_name in self.region_dictionary.keys():
-                    self.region_extent = self.region_dictionary[self.region_name]['plt_ext']
-                    _ = self.get_meridian_center_from_geographic_extent(self.region_extent)
-                    self.projection = f"S{self.plot_meridian_center}/-90/17.5C"
-                    self.create_figure()
-                else:
-                    raise ValueError(f"❌ {self.region_name} is not in {self.region_dictionary.keys()}")
-            else:
-                for self.region_name, region_config in self.region_dictionary.items():
-                    self.region_extent = region_config['plt_ext']
-                    _ = self.get_meridian_center_from_geographic_extent(self.region_extent)
-                    self.projection = f"S{self.plot_meridian_center}/-90/17.5C"
-                    self.create_figure()
-                self.region_name = None
 
     def create_figure(self):
         if self.P_png is None:
@@ -389,16 +236,6 @@ class SeaIcePlotter:
             fig.plot(x=self.plot_df_background.lon, y=self.plot_df_background.lat, cmap=True, fill=self.plot_df_background.dat, style=f"s{self.sq_size_var_back}c")
             fig.colorbar(position=self.cbar_pos_back, frame=cbar_frame_back)
         if not self.plot_df.empty:
-            # if self.cmap=="categorical":
-            #     cat_labs = self.plot_var_dict[self.var_name]["cat_labs"]
-            #     #if self.var_name in ["FIDIV","SIDIV","PIDIV","FIDIV_SD","SIDIV_SD","PIDIV_SD","divu"]:
-            #         self.plot_df["cat_index"] = self.plot_df["dat"].apply(lambda x: self.classify_strain(x, min_strain=self.series[0], max_strain=self.series[1]))
-            #     pygmt.makecpt(cmap        = "gmt/categorical",
-            #                   series      = [0, len(cat_labs)-1, 1],
-            #                   color_model = "+c" + ",".join(cat_labs) )
-            #     fig.plot(x=self.plot_df.lon, y=self.plot_df.lat, fill=self.plot_df.cat_index, cmap=True, style=f"s{self.sq_size_var}c" )
-            #     fig.colorbar()
-            #else:
             if self.var_name == "ispd":
                 df      = self.plot_df.dropna(subset=["dat"])
                 df_slow = df[(df['dat'] > 0) & (df['dat'] <= self.ispd_thresh)]
@@ -438,224 +275,120 @@ class SeaIcePlotter:
         print(f"time taken {time.time()-t0:0.2f} seconds\n")
         pygmt.clib.Session.__exit__
 
-    def plot_map(self,
-                 ds            = None,
-                 P_zarr        = None,
-                 P_zarr_list   = None,
-                 var_name      = None,
-                 var_name_back = None,
-                 ispd_thresh   = None,
-                 ds_back       = None,
-                 dt0_str       = None,
-                 dtN_str       = None,
-                 plot_date_str = None,
-                 time_index    = None,
-                 single_figure = False,
-                 region_name   = None,
-                 plain_frame   = False,
-                 frame         = None,
-                 title_extras  = None,
-                 text_str      = None,
-                 P_png         = None,
-                 save_fig      = None,
-                 ow_fig        = None,
-                 show_fig      = None,
-                 show_GI       = None,
-                 aggregate     = False,
-                 plot_native_spatial_distributions = False,
-                 **kwargs):
-        """
-        This method plots 2D gridded data using PyGMT.
+    def plot_cice_field(self, x1, y1, z1,
+                        projection  = "S75/-90/30c",
+                        region      = None,
+                        title       = None,
+                        cmap        = "cmocean/haline",
+                        cmap_series = [0.9, 1],
+                        reverse_cmap = False,
+                        P_cmap       = None,
+                        GI_coords   = None,
+                        GI_color    = "red",
+                        GI_style    = "c0.3c",
+                        var_style   = "s0.5c",
+                        cbar_label  = "sea ice concentration",
+                        units       = "1/100",
+                        **kwargs):
+        pygmt_dict       = self.pygmt_dict
+        cbar_pos         = kwargs.get("cbar_pos"        , pygmt_dict.get("cbar_pos", "JBC+w10c/0.5c+mc+h"))
+        plot_ice_shelves = kwargs.get("plot_ice_shelves", pygmt_dict.get("ice_shelves", True))
+        water_color      = kwargs.get("water_color"     , pygmt_dict.get("water_color", "white"))
+        land_color       = kwargs.get("land_color"      , pygmt_dict.get("land_color", "seashell"))
+        shoreline_str    = kwargs.get("shoreline_str"   , pygmt_dict.get("shoreline_str", ".2p,white"))
+        fig = pygmt.Figure()
+        pygmt.config(FORMAT_GEO_MAP="ddd.x", FONT_TITLE="16p,Courier-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica")
+        pygmt.makecpt(cmap=cmap, reverse=reverse_cmap, series=cmap_series)
+        fig.basemap(projection=projection, region=region, frame=["af", f"+t{title}"])
+        fig.coast(land=land_color, water=water_color)
+        fig.plot(x=x1, y=y1, fill=z1, cmap=True, style=var_style)
+        if GI_coords:
+            fig.plot(x=GI_coords[0], y=GI_coords[1], fill=GI_color, style=GI_style)
+        if plot_ice_shelves:
+            if not hasattr(self, 'ice_shelves'):
+                self.load_ice_shelves()
+            fig.plot(data=self.ice_shelves, pen="0.2p,gray", fill="lightgray")
+        fig.coast(shorelines=shoreline_str)
+        fig.colorbar(position=cbar_pos, frame=[f"x+l{cbar_label}", f"y+l{units}"])
+        return fig
 
-        ---- INPUT OPTIONS ----
-        There are four ways data can be passed:
-        1. ds (xarray.Dataset)      → Directly pass a dataset (e.g., from SeaIceProcessor or raw CICE).
-        2. P_zarr (Path)            → A single Zarr file to plot a single timestep.
-        3. P_zarr_list (list[Path])→ Multiple Zarr files to loop over and plot multiple figures.
-        4. None                     → Method will auto-detect files using `dt0_str` and `dtN_str` date bounds.
-
-        For options (1) and (4), time-based loops can be triggered using `dt0_str` and `dtN_str`.
-
-        ---- COORDINATE METADATA ----
-        You can override coordinate names using:
-        - lon_coord_name (default from config["CICE_dict"]["proc_lon_coord"])
-        - lat_coord_name (default from config["CICE_dict"]["proc_lat_coord"])
-        - time_coord_name (default from config["CICE_dict"]["proc_time_dim"])
-
-        ---- REGION CONTROLS ----
-        `plot_type` determines whether to generate regional or hemisphere-wide plots.
-        For regional plotting:
-        - `region_dictionary` defines regions (defaults to config['AF_regions'])
-        - `region_name` allows selecting a specific one
-
-        ---- VARIABLE METADATA (from plot_var_dict) ----
-        These are automatically pulled unless overridden:
-        - cmap: colormap name
-        - series: [min, max] range for colorbar
-        - cmap_reverse: whether to reverse colormap
-        - units: units string for colorbar
-        - cbar_str: label for colorbar
-
-        ---- PyGMT DISPLAY SETTINGS (from pygmt_dict) ----
-        These can be overridden via kwargs, otherwise they fall back to config["pygmt_dict"]:
-        - cbar_pos, sq_size_var, ice_shelves, water_color, land_color, fill_color, shoreline_str
-        - text_font, text_justify, text_fill, text_pen
-
-        ---- OUTPUT CONTROL ----
-        - save_fig: if True, saves the PNG
-        - ow_fig: if True, overwrites existing file
-        - show_fig: if True, displays figure using `fig.show()`
-        - P_png: manually specify output path
-        - png_name_extras: list of strings appended to PNG name
-        """
-        # Set primary variable
-        var_name                 = var_name if var_name is not None else self.var_name
-        self.var_name            = var_name
-        if self.var_name not in self.plot_var_dict:
-            raise ValueError(f"❌ Unknown variable '{self.var_name}'. Must be defined in `plot_var_dict`:\n{self.plot_var_dict.keys()}")
-        var_dict = self.plot_var_dict[var_name]
-        if var_name_back is not None and ds_back is not None:
-            self.ds_back             = ds_back
-            self.var_name_background = var_name_back
-            var_dict_back            = self.plot_var_dict[var_name_back]
+    def plot_persistence_map(self, DA,
+                             lon_coord_name = "TLON",
+                             lat_coord_name = "TLAT",
+                             tit_str        = None,
+                             ispd_str       = None,
+                             ice_type       = None,
+                             sim_name       = None,
+                             regional       = False,
+                             plot_GI        = False,
+                             dt_range_str   = None,
+                             overwrite_png  = False,
+                             show_fig       = False):
+        if plot_GI:
+            GI_coords = (self.GI_proc.G_t['GI_lon'], self.GI_proc.G_t['GI_lat'])
         else:
-            self.ds_back             = None
-            self.var_name_background = None
-            var_dict_back            = None
-        pygmt_dict         = self.pygmt_dict
-        self.region_name   = region_name
-        self.single_figure = single_figure
-        self.plain_frame   = plain_frame
-        self.frame         = frame
-        self.title_extras  = title_extras
-        self.P_png         = P_png
-        self.plot_date_str = plot_date_str if plot_date_str is not None else None
-        self.text_str      = text_str
-        self.ispd_thresh   = ispd_thresh
-        # Non-kwarg fallback settings
-        self.time_index = time_index if time_index is not None else 0
-        self.use_gi     = show_GI    if show_GI    is not None else getattr(self, "use_gi")
-        self.dt0_str    = dt0_str    if dt0_str    is not None else getattr(self, "dt0_str")
-        self.dtN_str    = dtN_str    if dtN_str    is not None else getattr(self, "dtN_str")
-        self.ow_fig     = ow_fig     if ow_fig     is not None else getattr(self, "ow_fig")
-        self.save_fig   = save_fig   if save_fig   is not None else getattr(self, "save_fig")
-        self.show_fig   = show_fig   if show_fig   is not None else getattr(self, "show_fig")
-        # General kwargs
-        self.png_name_extras = kwargs.get("png_name_extras", None)
-        # Class-level fallback values
-        self.ice_type          = kwargs.get("ice_type"           , getattr(self, "ice_type"))
-        self.plot_type         = kwargs.get("plot_type"          , getattr(self, "plot_type"))
-        self.sim_name          = kwargs.get("sim_name"           , getattr(self, "sim_name"))
-        self.D_graph           = kwargs.get("graphical_directory", getattr(self, "D_graph" ))
-        self.hemisphere        = kwargs.get("hemisphere"         , getattr(self, "hemisphere"))
-        self.region_dictionary = kwargs.get("region_dictionary"  , getattr(self, "reg_dict"))
-        self.lon_coord_name    = kwargs.get("lon_coord_name"     , self.CICE_dict["proc_lon_coord"])
-        self.lat_coord_name    = kwargs.get("lat_coord_name"     , self.CICE_dict["proc_lat_coord"])
-        self.time_coord_name   = kwargs.get("time_coord_name"    , self.CICE_dict["proc_time_dim"])
-        # Variable-dependent (from plot_var_dict)
-        self.cmap         = kwargs.get("cmap"        , var_dict.get("cmap", "viridis"))
-        self.series       = kwargs.get("series"      , var_dict.get("series", [0, 1]))
-        self.cmap_reverse = kwargs.get("cmap_reverse", var_dict.get("reverse", False))
-        self.units        = kwargs.get("units"       , var_dict.get("units", ""))
-        self.cbar_str     = kwargs.get("cbar_str"    , var_dict.get("name", var_name))
-        if self.var_name_background is not None:
-            self.cmap_back         = kwargs.get("cmap_back"        , var_dict_back.get("cmap"))
-            self.series_back       = kwargs.get("series_back"      , var_dict_back.get("series"))
-            self.cmap_reverse_back = kwargs.get("cmap_reverse_back", var_dict_back.get("reverse"))
-            self.units_back        = kwargs.get("units_back"       , var_dict_back.get("units"))
-            self.cbar_str_back     = kwargs.get("cbar_str_back"    , var_dict_back.get("name", var_name_back))
-            self.cbar_pos_back     = kwargs.get("cbar_pos_back"    , "JMR+o0.5c/0c+w10c")
-            self.sq_size_var_back  = kwargs.get("sq_size_var_back" , 0.15)
+            GI_coords = None
+        cmap = "SCM/imola"
+        cbar_lab = "fast ice persistence"
+        cmap_ser = [0.01,1,.01]
+        P_cmap   = "/home/581/da1339/graphical/CPTs/persistence.cpt"
+        da   = DA.values.ravel()
+        lon  = DA[lon_coord_name].values.ravel()
+        lat  = DA[lat_coord_name].values.ravel()
+        mask = ~np.isnan(da)
+        lat_plt, lon_plt, da_plt = lat[mask], lon[mask], da[mask]
+        if regional:
+            for reg_name, reg_cfg in self.reg_dict.items():
+                if ispd_str is not None and ice_type is not None:
+                    D_plt = Path(self.D_graph, sim_name, reg_name, "FIP", f"ispd_thresh_{ispd_str}", ice_type)
+                else:
+                    D_plt = Path(self.D_graph, sim_name, reg_name, "FIP")
+                D_plt.mkdir(parents=True, exist_ok=True)
+                P_plt = Path(D_plt,f"FIP_{dt_range_str}.png")
+                if P_plt.exists() and not overwrite_png:
+                    print(f"figure {P_plt} exists and not overwriting")
+                    continue
+                else:
+                    MC  = self.get_meridian_center_from_geographic_extent(reg_cfg['plt_ext'])
+                    fig = self.plot_cice_field(lon_plt, lat_plt, da_plt, 
+                                               projection  = f"S{MC}/-90/30c",
+                                               region      = reg_cfg['plt_ext'],
+                                               title       = tit_str,
+                                               cmap        = cmap,
+                                               cmap_series = cmap_ser,
+                                               reverse_cmap = True,
+                                               P_cmap       = P_cmap,
+                                               var_style   = "s0.25c",
+                                               cbar_label  = cbar_lab)
+                    print(f"📸 Saving figure: {P_plt}")
+                    fig.savefig(P_plt)
+                    if show_fig:
+                        fig.show()
         else:
-            self.cmap_back         = None
-            self.series_back       = None
-            self.cmap_reverse_back = None
-            self.units_back        = None
-            self.cbar_str_back     = None
-            self.cbar_pos_back     = None
-            self.sq_size_var_back  = None
-        # PyGMT-style settings (from pygmt_dict)
-        self.cbar_pos         = kwargs.get("cbar_pos"        , pygmt_dict.get("cbar_pos", "JBC+w10c/0.5c+mc+h"))
-        self.sq_size_var      = kwargs.get("sq_size_var"     , pygmt_dict.get("sq_size_var", 0.15))
-        self.sq_size_GI       = kwargs.get("sq_size_GI"      , pygmt_dict.get("sq_size_GI", 0.2))
-        self.plot_ice_shelves = kwargs.get("plot_ice_shelves", pygmt_dict.get("ice_shelves", True))
-        self.water_color      = kwargs.get("water_color"     , pygmt_dict.get("water_color", "white"))
-        self.land_color       = kwargs.get("land_color"      , pygmt_dict.get("land_color", "seashell"))
-        self.fill_color       = kwargs.get("fill_color"      , pygmt_dict.get("fill_color", "red"))
-        self.shoreline_str    = kwargs.get("shoreline_str"   , pygmt_dict.get("shoreline_str", ".2p,white"))
-        self.text_font        = kwargs.get("text_font"       , pygmt_dict.get("text_font", "12p,Courier-Bold,black"))
-        self.text_justify     = kwargs.get("text_justify"    , pygmt_dict.get("text_justify", "LM"))
-        self.text_fill        = kwargs.get("text_fill"       , pygmt_dict.get("text_fill", "white"))
-        self.text_pen         = kwargs.get("text_pen"        , pygmt_dict.get("text_pen", "0.5p,black"))
-        # put date strings into objects
-        dt0_obj = pd.to_datetime(self.dt0_str)
-        dtN_obj = pd.to_datetime(self.dtN_str)
-        # OPTION 1:
-        if ds is not None:
-            print("using plot_map with option 1: dataset provided")
-            if aggregate: #self.var_name in self.spatial_distribution_vars and not plot_native_spatial_distributions:
-                print("plotting aggregate")
-                self.dataset_preparation_for_plotting( ds , aggregate=True )
-                self.regional_or_hemisphere()
-                return
-            if self.single_figure: # find the nearest date ... single figure
-                print(f"single figure switched on, plot_map will use dt0_str '{self.dt0_str}' to select from the time coordinate '{self.time_coord_name}' to create a single figure")
-                self.plot_date_str = self.plot_date_str if self.plot_date_str is not None else pd.to_datetime(ds[self.time_coord_name].values[0]).strftime("%Y-%m-%d")
-                self.dataset_preparation_for_plotting( ds, dt0_str=dt0_str )
-                self.regional_or_hemisphere()
-                return
-            else: # loop over dataaset time coordinate
-                print(f"looping over time coordinate '{self.time_coord_name}' and using dt0_str '{self.dt0_str}' and dtN_str '{self.dtN_str}' to determine which figures to create")
-                for i in range(len(ds[self.time_coord_name].values)):
-                    t = ds[self.time_coord_name].isel({self.time_coord_name: i}).values
-                    if dt0_obj <= pd.to_datetime(t) <= dtN_obj:
-                        self.plot_date_str = pd.to_datetime(t).strftime("%Y-%m-%d")
-                        print(f"plotting for date {self.plot_date_str}")
-                        self.dataset_preparation_for_plotting( ds, idx_time=i )
-                        self.regional_or_hemisphere()
-                    else:
-                        print(f"{t} not in period")
-                return
-        # OPTION 2:
-        elif P_zarr is not None:
-            print("using plot_map with option 2: single zarr file path given")
-            print(f"loading zarr file: {P_zarr}")
-            ds = xr.open_dataset(P_zarr, engine='zarr', consolidated=True)
-            self.plot_date_str = self.plot_date_str if self.plot_date_str is not None else pd.to_datetime(ds[self.time_coord_name].values[0]).strftime("%Y-%m-%d")
-            self.dataset_preparation_for_plotting( ds )
-            self.regional_or_hemisphere()
-            return
-        # OPTION 3:
-        elif P_zarr_list is not None:
-            print("using plot_map with option 3: list of zarr file paths given")
-            for P_zarr in P_zarr_list:
-                print(f"loading zarr file: {P_zarr}")
-                ds = xr.open_dataset(P_zarr, engine='zarr', consolidated=True)
-                self.plot_date_str = self.plot_date_str if self.plot_date_str is not None else pd.to_datetime(ds[self.time_coord_name].values[0]).strftime("%Y-%m-%d")
-                self.dataset_preparation_for_plotting( ds )
-                self.regional_or_hemisphere()
-            return
-        # OPTION 4:
-        else:
-            print("using plot_map with option 4: dt0_str and dtN_str to load list of zarr files")
-            zarr_pairs  = self._find_nearest_zarr_file(start_date_str=dt0_str, end_date_str=dtN_str)
-            P_zarr_list = [p for p, _ in zarr_pairs]
-            if self.var_name in self.spatial_distribution_vars and not plot_native_spatial_distributions:
-                if P_zarr_list is None:
-                    zarr_pairs = self._find_nearest_zarr_file(start_date_str=self.dt0_str, end_date_str=self.dtN_str)
-                    if zarr_pairs is not None:
-                        P_zarr_list = [p for p, _ in zarr_pairs]
-                        ds = xr.open_mfdataset(P_zarr_list, engine="zarr", consolidated=True)
-                        self.dataset_extract_variable_and_coordinates( ds , aggregate=True )
-                        self.regional_or_hemisphere()
+            print("*** PLOTTING HEMISPHERE ***")
+            if ispd_str is not None and ice_type is not None:
+                D_plt = Path(self.D_graph, sim_name, "SO", "FIP", f"ispd_thresh_{ispd_str}", ice_type)
             else:
-                for P_zarr in P_zarr_list:
-                    print(f"loading zarr file: {P_zarr}")
-                    ds = xr.open_dataset(P_zarr, engine='zarr', consolidated=True)
-                    self.plot_date_str = pd.to_datetime(ds[self.time_coord_name].values[0]).strftime("%Y-%m-%d")
-                    self.dataset_preparation_for_plotting( ds )
-                    self.regional_or_hemisphere()
-            return
+                D_plt = Path(self.D_graph, sim_name, "SO", "FIP")
+            D_plt.mkdir(parents=True, exist_ok=True)
+            P_plt = Path(D_plt,f"FIP_{dt_range_str}.png")
+            if P_plt.exists() and not overwrite_png:
+                print(f"figure {P_plt} exists and not overwriting")
+            else:
+                fig = self.plot_cice_field(lon_plt, lat_plt, da_plt,
+                                           projection  = self.hemisphere_projection,
+                                           region      = self.hemisphere_map_extent,
+                                           title       = tit_str,
+                                           cmap        = cmap,
+                                           cmap_series = cmap_ser,
+                                           reverse_cmap = True,
+                                           P_cmap       = P_cmap,
+                                           var_style   = "s0.1c",
+                                           cbar_label = cbar_lab)
+                print(f"📸 Saving figure: {P_plt}")
+                fig.savefig(P_plt)
+                if show_fig:
+                    fig.show()
 
     def animate_over_time(self, ds, var_name, D_mp4=None, region_name=None, fps=2, time_coordinate_name=None, clobber_temporaries=True, **kwargs):
         """
@@ -962,14 +695,14 @@ class SeaIcePlotter:
         plt.xlabel("Time")
         plt.grid(True)
         plt.ylim(ylim)
-        plt.xlim(pd.Timestamp(f"{years.start}-01-01"), pd.Timestamp(f"{years.stop - 1}-01-01"))
+        plt.xlim(pd.Timestamp(f"{years.start}-01-01"), pd.Timestamp(f"{years.stop}-01-01"))
         plt.legend()
         plt.tight_layout()
         if self.save_fig:
             plt.savefig(P_png, dpi=100)
             print(f"💾 Saved plot to {P_png}")
-        if self.show_fig:
-            plt.show()
+        #if self.show_fig:
+        #    plt.show()
 
     def plot_timeseries_groupby_month(self, ds, var_name, sim_name=None, dt0_str=None, dtN_str=None):
         self.sim_name = sim_name if sim_name is not None else getattr(self, "sim_name")

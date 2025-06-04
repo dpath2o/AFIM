@@ -11,13 +11,12 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3-24.07
 cd ~/AFIM/src/AFIM/scripts/process_fast_ice/
 echo "📆 Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, ispd_type=${ISPD_TYPE:-ALL}"
-F_log=/g/data/gv90/da1339/logs/process_fast_ice/${SIM_NAME}_${START_DATE}_${END_DATE}_${ISPD_THRESH}.log
+F_log=/g/data/gv90/da1339/logs/process_fast_ice/${SIM_NAME}/${START_DATE}_${END_DATE}_${ISPD_THRESH}.log
 CMD=(python3 process_fast_ice.py "$SIM_NAME" \
              --start_date "$START_DATE" \
              --end_date "$END_DATE" \
              --log_file "$F_log" \
              --ispd_thresh "$ISPD_THRESH")
-
 [ -n "${ISPD_TYPE}" ] && CMD+=(--ispd_type ${ISPD_TYPE})
 [ "${ROLLING}" = true ] && CMD+=(--rolling)
 [ "${DAILY}" = true ] && CMD+=(--daily)

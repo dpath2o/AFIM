@@ -150,11 +150,11 @@ class GroundedIcebergProcessor:
         lon_b[0, 0]          = lon[0, 0]
         lon_b[0, -1]         = lon[0, -1]
         lon_b[-1, 0]         = lon[-1, 0]
-        lon_b[-1, -1]        = lon[-1, -1]        
+        lon_b[-1, -1]        = lon[-1, -1]
         return {"lat"  : lat,
                 "lon"  : self.normalise_longitudes(lon),
                 "lat_b": lat_b,
-                "lon_b": self.normalise_longitudes(lon_b)}            
+                "lon_b": self.normalise_longitudes(lon_b)}
 
     def load_bgrid(self):
         """

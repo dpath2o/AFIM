@@ -3,7 +3,7 @@
 #PBS -q normalbw
 #PBS -l walltime=2:00:00
 #PBS -l ncpus=28
-#PBS -l mem=32GB
+#PBS -l mem=200GB
 #PBS -j oe
 #PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
 #PBS -v ENVFILE
@@ -25,7 +25,8 @@ fi
 # --- Log inputs ---
 echo "Simulation        : $sim_name"
 echo "ISPD threshold    : $ispd_thresh"
-echo "Boolean Fast Ice  : $compute_boolean"
+echo "start date        : $start_date"
+echo "end date          : $end_date"
 echo "Overwrite zarr    : $overwrite_zarr"
 echo "Overwrite png     : $overwrite_png"
 echo "FIA Rolling Window: $smooth_FIA_days days"
@@ -37,8 +38,8 @@ python /home/581/da1339/AFIM/src/AFIM/scripts/sea_ice_metrics/compute_fast_ice_m
     --sim_name "$sim_name" \
     --ispd_thresh "$ispd_thresh" \
     --ice_type "$ice_type" \
-    $( [ "$load_rolling_mean" = true ] && echo "--load_rolling_mean" ) \
-    $( [ "$compute_boolean" = true ] && echo "--compute_boolean" ) \
+    --start_date "$start_date" \
+    --end_date "$end_date" \
     $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
     $( [ "$overwrite_png" = true ] && echo "--overwrite_png" ) \
     --smooth_FIA_days "$smooth_FIA_days"

@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # --- Defaults ---
-# --- Defaults ---
 ROLLING=false
 DAILY=false
 ISPD_TYPE_LIST=()
@@ -62,11 +61,18 @@ while getopts "s:t:i:rdzkhS:E:ny" opt; do
 done
 
 # --- Check required arguments ---
-if [[ -z "$SIM_NAME" || -z "$ISPD_THRESH" ]]; then
-    echo "❌ Error: -s SIM_NAME and -t ISPD_THRESH are required." >&2
+if [[ -z "$SIM_NAME" ]]; then
+    echo "❌ Error: -s SIM_NAME is required." >&2
     print_help
     exit 1
 fi
+
+if { [[ "$ROLLING" == true ]] || [[ "$DAILY" == true ]]; } && [[ -z "$ISPD_THRESH" ]]; then
+    echo "❌ Error: -t ISPD_THRESH is required when using -r (rolling) or -d (daily) modes." >&2
+    print_help
+    exit 1
+fi
+
 
 # --- Default ISPD types if none specified ---
 if [ ${#ISPD_TYPE_LIST[@]} -eq 0 ]; then
@@ -119,25 +125,3 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
     fi
     current_period=$next_period
 done
-
-# current_month=$(date -d "$START_DATE" +%Y-%m-01)
-# while [[ "$current_month" < "$END_DATE" || "$current_month" == "$END_DATE" ]]; do
-#     DT0="$current_month"
-#     DTN=$(date -d "$DT0 +1 month -1 day" +%F)
-#     YEAR=$(date -d "$DT0" +%Y)
-#     MONTH=$(date -d "$DT0" +%m)
-#     VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH}"
-#     [ "${#ISPD_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",ISPD_TYPE=${ISPD_TYPE_LIST[*]}"
-#     [ "${ROLLING}" = true ] && VAR_PASS+=",ROLLING=true"
-#     [ "${DAILY}" = true ] && VAR_PASS+=",DAILY=true"
-#     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
-#     [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
-#     JOB_NAME="fi_${SIM_NAME}_${YEAR}_${MONTH}_${ISPD_THRESH}"
-#     QSUB_CMD="qsub -N ${JOB_NAME} -v \"${VAR_PASS}\" ${PBS_SCRIPT}"
-#     if [ "$DRY_RUN" = true ]; then
-#         echo "🧪 [DRY RUN] Would submit: $QSUB_CMD"
-#     else
-#         eval $QSUB_CMD
-#     fi
-#     current_month=$(date -d "$current_month +1 month" +%Y-%m-01)
-# done
