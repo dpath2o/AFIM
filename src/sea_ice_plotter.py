@@ -276,19 +276,19 @@ class SeaIcePlotter:
         pygmt.clib.Session.__exit__
 
     def plot_cice_field(self, x1, y1, z1,
-                        projection  = "S75/-90/30c",
-                        region      = None,
-                        title       = None,
-                        cmap        = "cmocean/haline",
-                        cmap_series = [0.9, 1],
+                        projection   = "S75/-90/30c",
+                        region       = None,
+                        title        = None,
+                        cmap         = "cmocean/haline",
+                        cmap_series  = [0.9, 1],
                         reverse_cmap = False,
-                        P_cmap       = None,
-                        GI_coords   = None,
-                        GI_color    = "red",
-                        GI_style    = "c0.3c",
-                        var_style   = "s0.5c",
-                        cbar_label  = "sea ice concentration",
-                        units       = "1/100",
+                        GI_coords    = None,
+                        GI_color     = "red",
+                        GI_style     = "c0.3c",
+                        var_style    = "s0.5c",
+                        cbar_label   = "sea ice concentration",
+                        units        = "1/100",
+                        plot_cbar    = True,
                         **kwargs):
         pygmt_dict       = self.pygmt_dict
         cbar_pos         = kwargs.get("cbar_pos"        , pygmt_dict.get("cbar_pos", "JBC+w10c/0.5c+mc+h"))
@@ -296,10 +296,14 @@ class SeaIcePlotter:
         water_color      = kwargs.get("water_color"     , pygmt_dict.get("water_color", "white"))
         land_color       = kwargs.get("land_color"      , pygmt_dict.get("land_color", "seashell"))
         shoreline_str    = kwargs.get("shoreline_str"   , pygmt_dict.get("shoreline_str", ".2p,white"))
+        if title is not None:
+            frame = ["af", f"+t{title}"]
+        else:
+            frame = ["af"]
         fig = pygmt.Figure()
         pygmt.config(FORMAT_GEO_MAP="ddd.x", FONT_TITLE="16p,Courier-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica")
         pygmt.makecpt(cmap=cmap, reverse=reverse_cmap, series=cmap_series)
-        fig.basemap(projection=projection, region=region, frame=["af", f"+t{title}"])
+        fig.basemap(projection=projection, region=region, frame=frame)
         fig.coast(land=land_color, water=water_color)
         fig.plot(x=x1, y=y1, fill=z1, cmap=True, style=var_style)
         if GI_coords:
@@ -309,7 +313,8 @@ class SeaIcePlotter:
                 self.load_ice_shelves()
             fig.plot(data=self.ice_shelves, pen="0.2p,gray", fill="lightgray")
         fig.coast(shorelines=shoreline_str)
-        fig.colorbar(position=cbar_pos, frame=[f"x+l{cbar_label}", f"y+l{units}"])
+        if plot_cbar:
+            fig.colorbar(position=cbar_pos, frame=[f"x+l{cbar_label}", f"y+l{units}"])
         return fig
 
     def plot_persistence_map(self, DA,
@@ -321,6 +326,7 @@ class SeaIcePlotter:
                              sim_name       = None,
                              regional       = False,
                              plot_GI        = False,
+                             plot_cbar      = True,
                              dt_range_str   = None,
                              overwrite_png  = False,
                              show_fig       = False):
@@ -328,10 +334,9 @@ class SeaIcePlotter:
             GI_coords = (self.GI_proc.G_t['GI_lon'], self.GI_proc.G_t['GI_lat'])
         else:
             GI_coords = None
-        cmap = "SCM/imola"
+        cmap = self.pygmt_dict.get("FIP_CPT")
         cbar_lab = "fast ice persistence"
         cmap_ser = [0.01,1,.01]
-        P_cmap   = "/home/581/da1339/graphical/CPTs/persistence.cpt"
         da   = DA.values.ravel()
         lon  = DA[lon_coord_name].values.ravel()
         lat  = DA[lat_coord_name].values.ravel()
@@ -356,8 +361,7 @@ class SeaIcePlotter:
                                                title       = tit_str,
                                                cmap        = cmap,
                                                cmap_series = cmap_ser,
-                                               reverse_cmap = True,
-                                               P_cmap       = P_cmap,
+                                               reverse_cmap = False,
                                                var_style   = "s0.25c",
                                                cbar_label  = cbar_lab)
                     print(f"📸 Saving figure: {P_plt}")
@@ -381,8 +385,7 @@ class SeaIcePlotter:
                                            title       = tit_str,
                                            cmap        = cmap,
                                            cmap_series = cmap_ser,
-                                           reverse_cmap = True,
-                                           P_cmap       = P_cmap,
+                                           reverse_cmap = False,
                                            var_style   = "s0.1c",
                                            cbar_label = cbar_lab)
                 print(f"📸 Saving figure: {P_plt}")

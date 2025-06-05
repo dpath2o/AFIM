@@ -1438,7 +1438,6 @@ class SeaIceProcessor:
         G_t['lon']    = self.GI_proc.G_t['lon']
         G_t['lat_b']  = self.GI_proc.G_t['lat_b']
         G_t['lon_b']  = self.GI_proc.G_t['lon_b']
-        #G_t["mask"]   = self.GI_proc.G_t['kmt_mod']
         self.logger.info("defining AF2020 regridder weights")
         F_weights     = self.sea_ice_dict["AF_reG_weights"]
         weights_exist = os.path.exists(F_weights)
@@ -1453,10 +1452,10 @@ class SeaIceProcessor:
         self.logger.info(f"Obs lon:   {self.G_obs['lon'].min()} to {self.G_obs['lon'].max()}")
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
         self.reG_AF2020 = xe.Regridder(self.G_obs, G_t,
-                                       method            = self.sea_ice_dict["AF_reG_weights_method"],#"bilinear",
+                                       method            = self.sea_ice_dict["AF_reG_weights_method"],
                                        periodic          = False,
                                        ignore_degenerate = True,
-                                       #extrap_method     = "nearest_s2d",
+                                       extrap_method     = "nearest_s2d",
                                        reuse_weights     = weights_exist,
                                        filename          = F_weights)
 
@@ -1464,30 +1463,26 @@ class SeaIceProcessor:
         FI_obs = xr.open_mfdataset(P_orgs, engine='netcdf4')
         self.define_AF2020_reG_weights(FI_obs)
         self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
-        FI_obs_reG_lon = self.reG_AF2020(self.G_obs["lon"])
-        FI_obs_reG_lat = self.reG_AF2020(self.G_obs["lat"])
-        FI_obs_reG_dat = self.reG_AF2020( FI_obs["Fast_Ice_Time_series"] )
-        #mask     = xr.where(FI_obs_reG_dat >= 4, 1, np.nan)
-        mask     = (FI_obs_reG_dat >= 4).compute()  # Boolean mask
-        FI_obs_reG_masked = FI_obs_reG_dat.where(mask,1,np.nan)
-        FI       = (('t_FI_obs', 'nj', 'ni'), FI_obs_reG_masked.values,
-                    {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
-        t_alt    = (('t_FI_obs'),
-                    FI_obs.date_alt.values,
-                    {'long_name'   : FI_obs.date_alt.attrs['long_name'],
-                     'description' : FI_obs.date_alt.attrs['description']})
-        t_coords = (('t_FI_obs'),
-                    FI_obs.time.values,
-                    {'description' : "Start date of 15- or 20-day image mosaic window.",
-                     'units'       : "days since 2000-1-1 0:0:0"})
-        x_coords = (('nj','ni'),
-                    FI_obs_reG_lon,
-                    {'long_name': 'longitude',
-                     'units'    : 'degrees_north'})
-        y_coords = (('nj','ni'),
-                    FI_obs_reG_lat,
-                    {'long_name': 'latitude',
-                     'units'    : 'degrees_east'})
+        FI_obs_reG_dat    = self.reG_AF2020(FI_obs["Fast_Ice_Time_series"])
+        mask              = (FI_obs_reG_dat >= 4).compute()
+        FI_obs_binary     = xr.where(FI_obs_reG_dat >= 4, 1.0, np.nan)
+        FI                = (('t_FI_obs', 'nj', 'ni'),
+                             FI_obs_binary.values,
+                             {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
+        t_alt             = (('t_FI_obs'),
+                             FI_obs.date_alt.values,
+                             {'long_name': FI_obs.date_alt.attrs['long_name'],
+                              'description': FI_obs.date_alt.attrs['description']})
+        t_coords          = (('t_FI_obs'),
+                             FI_obs.time.values,
+                             {'description': "Start date of 15- or 20-day image mosaic window.",
+                              'units': "days since 2000-1-1 0:0:0"})
+        x_coords          = (('nj','ni'),
+                             self.GI_proc.G_t['lon'].values,
+                             {'long_name': 'longitude', 'units': 'degrees_east'})
+        y_coords          = (('nj','ni'),
+                             self.GI_proc.G_t['lat'].values,
+                             {'long_name': 'latitude', 'units': 'degrees_north'})
         self.logger.info("converted AF2020 database for use with SeaIceProcessor")
         return xr.Dataset({'FI'       : FI,
                            'FI_t_alt' : t_alt },
@@ -1536,3 +1531,88 @@ class SeaIceProcessor:
         grouped.to_zarr(P_zarr)
         self.logger.info(f"\tzarr written in {time.time()-t1:0.2f} seconds")
         return grouped
+
+    def create_AF2020_daily_zarr(self, dt0_str="1993-01-01", dtN_str="2023-12-31"):
+        """
+        Generate a daily, regridded observational dataset of fast ice from AF2020:
+        - 14-day mosaics interpolated to daily (2000–2018)
+        - Climatological daily average used outside that range
+        - Output written to monthly Zarr files
+        """
+        dt0 = pd.to_datetime(dt0_str)
+        dtN = pd.to_datetime(dtN_str)
+        all_dates = pd.date_range(dt0, dtN, freq="D")
+        years_all = np.unique(all_dates.year)
+        years_obs = np.arange(2000, 2019)
+        years_clim = [y for y in years_all if y not in years_obs]
+        self.logger.info("Interpolating observational fast ice (2000–2018) to daily")
+        ds_obs_14d = self.filter_AF2020_FI_by_date("2000-01-01", "2018-12-31")
+        ds_obs_daily = ds_obs_14d["FI"].interp( t_FI_obs=pd.date_range("2000-01-01", "2018-12-31", freq="D") ).rename({"t_FI_obs": "time"})
+        self.logger.info("Interpolating climatological fast ice to daily DOY")
+        ds_clim = self.create_AF2020_FI_zarr()
+        ds_clim_daily = ds_clim["FI_OBS_GRD"].interp( t_doy=np.arange(1, 367) )
+        self.logger.info(f"Expanding climatology to years: {years_clim}")
+        ds_clim_list = []
+        for year in years_clim:
+            dates = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq="D")
+            doy_vals = dates.dayofyear
+            da = ds_clim_daily.sel(t_doy=xr.DataArray(doy_vals, dims="time"))
+            da = da.assign_coords(time=("time", dates))
+            ds_clim_list.append(da)
+        ds_clim_expanded = xr.concat(ds_clim_list, dim="time") if ds_clim_list else None
+        self.logger.info("Combining interpolated observations and climatology")
+        if ds_clim_expanded is not None:
+            ds_full = xr.concat([ds_obs_daily, ds_clim_expanded], dim="time").sortby("time")
+        else:
+            ds_full = ds_obs_daily
+        ds_full = ds_full.sel(time=slice(dt0, dtN))
+        ds_full = ds_full.expand_dims("time") if "time" not in ds_full.dims else ds_full
+        ds_full = ds_full.assign_coords(TLAT = (("nj", "ni"), self.GI_proc.G_t["lat"]),
+                                        TLON = (("nj", "ni"), self.GI_proc.G_t["lon"]))
+        out_dir = Path(self.sea_ice_dict["D_AF2020_daily_zarr"])
+        self.logger.info(f"Writing daily observational Zarrs to {out_dir}")
+        for year in np.unique(ds_full.time.dt.year.values):
+            for month in np.unique(ds_full.time.sel(time=ds_full.time.dt.year == year).dt.month):
+                ds_month = ds_full.sel(time=ds_full.time.dt.year == year).sel(time=ds_full.time.dt.month == month)
+                if ds_month.time.size == 0:
+                    continue
+                out_path = out_dir / f"{year}/{month:02d}.zarr"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                self.logger.info(f"Writing: {out_path}")
+                ds_month.to_dataset(name="FI_OBS_DAILY").to_zarr(out_path, mode="w")
+        self.logger.info("Completed writing observational daily Zarr dataset.")
+
+    def load_AF2020_daily(self, dt0_str: str, dtN_str: str) -> xr.Dataset:
+        """
+        Load regridded daily observational landfast sea ice from AF2020, written as monthly Zarr files (via create_AF2020_daily_zarr).
+
+        INPUTS:
+           dt0_str : str; start date (e.g., "1993-01-01")
+           dtN_str : str; end date (e.g., "2023-12-31")
+
+        OUTPUTS:
+           xr.Dataset : daily observational fast ice on model T-grid.
+                        Contains:
+                        + FI_OBS_DAILY (time, nj, ni)
+                        + TLAT, TLON (nj, ni)
+        """
+        dt0 = pd.to_datetime(dt0_str)
+        dtN = pd.to_datetime(dtN_str)
+        all_dates = pd.date_range(dt0, dtN, freq="D")
+        base_dir = Path(self.sea_ice_dict["D_AF2020_daily_zarr"])
+        zarr_paths = []
+        for date in all_dates:
+            path = base_dir / f"{date.year}/{date.month:02d}.zarr"
+            if path.exists():
+                zarr_paths.append(str(path))
+        if not zarr_paths:
+            self.logger.warning(f"No AF2020 daily Zarr files found between {dt0_str} and {dtN_str}")
+            return None
+        self.logger.info(f"Loading {len(zarr_paths)} monthly Zarrs for AF2020 observations")
+        ds = xr.open_mfdataset(zarr_paths, engine="zarr", combine="by_coords")
+        ds = ds.sel(time=slice(dt0, dtN))
+        if "FI_OBS_DAILY" not in ds.data_vars:
+            self.logger.error("Variable 'FI_OBS_DAILY' not found in loaded dataset.")
+            return None
+        return ds
+
