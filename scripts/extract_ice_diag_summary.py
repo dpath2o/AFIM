@@ -2,36 +2,45 @@
 
 import re
 import csv
+import datetime
 from pathlib import Path
 
-# Directory containing the simulations
+# --- Paths ---
 ARCHIVE_DIR = Path.home() / "AFIM_archive"
 OUT_FILE    = ARCHIVE_DIR / "ice_diag_summary.csv"
+HTML_PATH   = Path.home() / "AFIM/src/AFIM/docs/ice_diag_summary.html"
 
-# Parameters you want to extract
+# --- Parameters to extract ---
 PARAM_KEYS = [
     "kdyn", "revised_evp", "ndtd", "ndte", "e_yieldcurve", "e_plasticpot",
     "Ktens", "kstrength", "Pstar", "Cstar", "dt", "kmt_file"
 ]
 
-# Regex pattern to match key and value
-PATTERNS = {key: re.compile(rf"{key}\s*=\s*(.+?)\s*:") for key in PARAM_KEYS}
+# --- Regex patterns ---
+PATTERNS = {
+    key: re.compile(rf"{key}\s*=\s*(.+?)\s*:") if key != "kmt_file"
+    else re.compile(rf"{key}\s*=\s*(.+)$")
+    for key in PARAM_KEYS
+}
 
-# Helper to parse a single file
+# --- Parse a single diagnostics file ---
 def parse_diag_file(filepath):
     result = {key: "" for key in PARAM_KEYS}
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:    
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for i, line in enumerate(f):
-            if i > 500:  # Stop after first 500 lines
+            if i > 500:
                 break
             for key, pattern in PATTERNS.items():
-                if key in result and result[key] == "":
+                if result[key] == "":
                     match = pattern.search(line)
                     if match:
-                        result[key] = match.group(1).strip()
+                        value = match.group(1).strip()
+                        if key == "kmt_file":
+                            value = Path(value).name
+                        result[key] = value
     return result
 
-# Main loop over subdirectories
+# --- Main execution ---
 def main():
     output_lines = []
     headers = ["sim_name"] + PARAM_KEYS
@@ -43,23 +52,18 @@ def main():
         row = [sim_name] + [values[key] for key in PARAM_KEYS]
         output_lines.append(",".join(row))
 
-    # Write output CSV
+    # Write CSV summary
     OUT_FILE.write_text("\n".join(output_lines))
-    print(f"✅ Summary written to {OUT_FILE}")
+    print(f"✅ CSV summary written to: {OUT_FILE}")
 
-    # Paths
-    csv_path = Path.home() / "AFIM_archive/ice_diag_summary.csv"
-    html_path = Path.home() / "AFIM/src/AFIM/docs/ice_diag_summary.html"
-
-    # Load CSV
-    with open(csv_path, newline="") as f:
+    # --- Generate HTML table from CSV ---
+    with open(OUT_FILE, newline="") as f:
         reader = csv.reader(f)
         rows = list(reader)
 
     header = rows[0]
-    data = rows[1:]
+    data = sorted(rows[1:], key=lambda row: row[0].lower())
 
-    # Build HTML table
     html_lines = []
     html_lines.append("<!DOCTYPE html>")
     html_lines.append("<html><head><meta charset='UTF-8'>")
@@ -74,6 +78,10 @@ def main():
     html_lines.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
     html_lines.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
 
+    # Optional timestamp
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    html_lines.append(f"<p style='font-size: small;'>Last updated: {now_str}</p>")
+
     html_lines.append("<table>")
     html_lines.append("<thead><tr>" + "".join([f"<th>{h}</th>" for h in header]) + "</tr></thead>")
     html_lines.append("<tbody>")
@@ -82,9 +90,10 @@ def main():
     html_lines.append("</tbody></table>")
     html_lines.append("</body></html>")
 
-    # Write to file
-    html_path.write_text("\n".join(html_lines))
-    print(f"✅ HTML table written to: {html_path}")
+    # Ensure output directory exists
+    HTML_PATH.parent.mkdir(parents=True, exist_ok=True)
+    HTML_PATH.write_text("\n".join(html_lines))
+    print(f"✅ HTML table written to: {HTML_PATH}")
 
 if __name__ == "__main__":
     main()
