@@ -47,30 +47,44 @@ def main():
     OUT_FILE.write_text("\n".join(output_lines))
     print(f"✅ Summary written to {OUT_FILE}")
 
-    # === CONFIG ===
+    # Paths
     csv_path = Path.home() / "AFIM_archive/ice_diag_summary.csv"
-    md_path = Path.home() / "AFIM/src/AFIM/docs/ice_diag_summary.md"
-    # === LOAD CSV AND CONVERT TO MARKDOWN TABLE ===
+    html_path = Path.home() / "AFIM/src/AFIM/docs/ice_diag_summary.html"
+
+    # Load CSV
     with open(csv_path, newline="") as f:
         reader = csv.reader(f)
         rows = list(reader)
+
     header = rows[0]
     data = rows[1:]
 
-    # Construct markdown table
-    md_lines = []
-    md_lines.append("| " + " | ".join(header) + " |")
-    md_lines.append("|" + "|".join(["---"] * len(header)) + "|")
+    # Build HTML table
+    html_lines = []
+    html_lines.append("<!DOCTYPE html>")
+    html_lines.append("<html><head><meta charset='UTF-8'>")
+    html_lines.append("<title>CICE Diagnostic Parameters</title>")
+    html_lines.append("<style>")
+    html_lines.append("""
+      table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
+      th, td {border: 1px solid #ccc; padding: 6px 10px; text-align: center;}
+      th {background-color: #f2f2f2;}
+    """)
+    html_lines.append("</style></head><body>")
+    html_lines.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
+    html_lines.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
+
+    html_lines.append("<table>")
+    html_lines.append("<thead><tr>" + "".join([f"<th>{h}</th>" for h in header]) + "</tr></thead>")
+    html_lines.append("<tbody>")
     for row in data:
-        md_lines.append("| " + " | ".join(row) + " |")
-    # Add optional title and note
-    md_header = """# CICE Diagnostic Parameters per Simulation
-    This table summarizes key dynamics-related parameters from each simulation's `ice_diag.d` file (parsed from first 500 lines).
-    """
-    md_output = md_header + "\n".join(md_lines) + "\n"
-    # === WRITE TO MARKDOWN FILE ===
-    md_path.write_text(md_output)
-    print(f"✅ Markdown table written to {md_path}")
+        html_lines.append("<tr>" + "".join([f"<td>{cell}</td>" for cell in row]) + "</tr>")
+    html_lines.append("</tbody></table>")
+    html_lines.append("</body></html>")
+
+    # Write to file
+    html_path.write_text("\n".join(html_lines))
+    print(f"✅ HTML table written to: {html_path}")
 
 if __name__ == "__main__":
     main()
