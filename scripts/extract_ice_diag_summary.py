@@ -139,7 +139,7 @@ def main():
         border-collapse: collapse;
         font-family: sans-serif;
         font-size: 0.85em;
-        max-width: 95vw;
+        max-width: 80vw;
         table-layout: auto;
     }
     th {
@@ -178,24 +178,23 @@ def main():
             html.append("</tr>")
             row_number += 1
     html.append("</tbody></table></div></body></html>")
-#     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#     html = []
-#     html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>")
-#     html.append("<title>CICE Diagnostic Parameters</title><style>")
-#     html.append("""table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
-# th {border: 1px solid #ccc; padding: 6px 10px; text-align: center; background-color: #f2f2f2; font-size: 1em;}
-# td {border: 1px solid #ccc; padding: 6px 10px; text-align: center; font-size: 0.85em;}""")
-#     html.append("</style></head><body>")
-#     html.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
-#     html.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
-#     html.append(f"<p style='font-size: small;'>Last updated: {now_str}</p>")
-#     html.append("<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>")
-#     for row in html_rows:
-#         html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
-#     html.append("</tbody></table></body></html>")
-
-#     HTML_PATH.parent.mkdir(parents=True, exist_ok=True)
-#     HTML_PATH.write_text("\n".join(html))
+    #     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #     html = []
+    #     html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>")
+    #     html.append("<title>CICE Diagnostic Parameters</title><style>")
+    #     html.append("""table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
+    # th {border: 1px solid #ccc; padding: 6px 10px; text-align: center; background-color: #f2f2f2; font-size: 1em;}
+    # td {border: 1px solid #ccc; padding: 6px 10px; text-align: center; font-size: 0.85em;}""")
+    #     html.append("</style></head><body>")
+    #     html.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
+    #     html.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
+    #     html.append(f"<p style='font-size: small;'>Last updated: {now_str}</p>")
+    #     html.append("<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>")
+    #     for row in html_rows:
+    #         html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
+    #     html.append("</tbody></table></body></html>")
+    HTML_PATH.parent.mkdir(parents=True, exist_ok=True)
+    HTML_PATH.write_text("\n".join(html))
     print(f"✅ HTML table written to: {HTML_PATH}")
 
 if __name__ == "__main__":
