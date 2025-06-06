@@ -1438,8 +1438,9 @@ class SeaIceProcessor:
         G_t['lon']    = self.GI_proc.G_t['lon']
         G_t['lat_b']  = self.GI_proc.G_t['lat_b']
         G_t['lon_b']  = self.GI_proc.G_t['lon_b']
+        #G_t['mask']   = self.GI_proc.G_t['kmt_org']
         self.logger.info("defining AF2020 regridder weights")
-        F_weights     = self.sea_ice_dict["AF_reG_weights"]
+        F_weights     = "/g/data/gv90/da1339/grids/weights/AF_FI_2020db_to_AOM2-0p25_Tgrid_bil_meth2.nc" #self.sea_ice_dict["AF_reG_weights"]
         weights_exist = os.path.exists(F_weights)
         self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
         crs_obs          = CRS.from_epsg(self.sea_ice_dict["projection_FI_obs"]) #unique to observations
@@ -1447,15 +1448,15 @@ class SeaIceProcessor:
         transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
         X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
         lon_obs, lat_obs = transformer.transform(X,Y)
-        self.G_obs       = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
+        G_obs            = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
         self.logger.info(f"Model lon: {G_t['lon'].values.min()} to {G_t['lon'].values.max()}")
         self.logger.info(f"Obs lon:   {self.G_obs['lon'].min()} to {self.G_obs['lon'].max()}")
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
-        self.reG_AF2020 = xe.Regridder(self.G_obs, G_t,
-                                       method            = self.sea_ice_dict["AF_reG_weights_method"],
+        self.reG_AF2020 = xe.Regridder(G_obs, G_t,
+                                       method            = "bilinear", #self.sea_ice_dict["AF_reG_weights_method"],
                                        periodic          = False,
-                                       ignore_degenerate = True,
-                                       extrap_method     = "nearest_s2d",
+                                       #ignore_degenerate = True,
+                                       #extrap_method     = "nearest_s2d",
                                        reuse_weights     = weights_exist,
                                        filename          = F_weights)
 

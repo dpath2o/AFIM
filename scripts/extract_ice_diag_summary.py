@@ -12,8 +12,7 @@ HTML_PATH   = Path.home() / "AFIM/src/AFIM/docs/ice_diag_summary.html"
 
 # --- Parameters to extract ---
 PARAM_KEYS = [
-    "kdyn", "revised_evp", "ndtd", "ndte", "e_yieldcurve", "e_plasticpot",
-    "Ktens", "kstrength", "Pstar", "Cstar", "dt", "kmt_file"
+    "dt", "ndtd", "ndte", "kdyn", "revised_evp", "e_yieldcurve", "e_plasticpot", "Ktens", "kstrength", "Pstar", "Cstar", "Cf", "visc_method", "kmt_file"
 ]
 
 # --- Regex patterns ---
@@ -69,11 +68,18 @@ def main():
     html_lines.append("<html><head><meta charset='UTF-8'>")
     html_lines.append("<title>CICE Diagnostic Parameters</title>")
     html_lines.append("<style>")
-    html_lines.append("""
-      table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
-      th, td {border: 1px solid #ccc; padding: 6px 10px; text-align: center;}
-      th {background-color: #f2f2f2;}
-    """)
+    html_lines.append(""" table {border-collapse: collapse;
+                                 width: 100%;
+                                 font-family: sans-serif;}
+                             th {border: 1px solid #ccc;
+                                 padding: 6px 10px;
+                                 text-align: center;
+                                 background-color: #f2f2f2;
+                                 font-size: 1em;}
+                             td {border: 1px solid #ccc;
+                                 padding: 6px 10px;
+                                 text-align: center;
+                                 font-size: 0.85em;}""")
     html_lines.append("</style></head><body>")
     html_lines.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
     html_lines.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
