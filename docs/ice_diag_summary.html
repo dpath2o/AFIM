@@ -1,47 +1,39 @@
-<!DOCTYPE html>
-<html><head><meta charset='UTF-8'>
-<title>CICE Diagnostic Parameters</title>
-<style>
- table {border-collapse: collapse;
-                                 width: 100%;
-                                 font-family: sans-serif;}
-                             th {border: 1px solid #ccc;
-                                 padding: 6px 10px;
-                                 text-align: center;
-                                 background-color: #f2f2f2;
-                                 font-size: 1em;}
-                             td {border: 1px solid #ccc;
-                                 padding: 6px 10px;
-                                 text-align: center;
-                                 font-size: 0.85em;}
+<!DOCTYPE html><html><head><meta charset='UTF-8'>
+<title>CICE Diagnostic Parameters</title><style>
+table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
+th {border: 1px solid #ccc; padding: 6px 10px; text-align: center; background-color: #f2f2f2; font-size: 1em;}
+td {border: 1px solid #ccc; padding: 6px 10px; text-align: center; font-size: 0.85em;}
 </style></head><body>
 <h1>CICE Diagnostic Parameters per Simulation</h1>
 <p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>
-<p style='font-size: small;'>Last updated: 2025-06-06 10:35:39</p>
-<table>
-<thead><tr><th>sim_name</th><th>dt</th><th>ndtd</th><th>ndte</th><th>kdyn</th><th>revised_evp</th><th>e_yieldcurve</th><th>e_plasticpot</th><th>Ktens</th><th>kstrength</th><th>Pstar</th><th>Cstar</th><th>Cf</th><th>visc_method</th><th>kmt_file</th></tr></thead>
-<tbody>
-<tr><td>Cstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>30.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Cstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>10.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>elps-ext</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>0.80</td><td>0.80</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>elps-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.50</td><td>2.50</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>elps-mid</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>1.60</td><td>1.60</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>elps-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>FI-heavy</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>0</td><td>0.500000D+05</td><td>10.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>gi-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p65_v1p50.nc</td></tr>
-<tr><td>gi-mid</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>gi-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p85_v1p50.nc</td></tr>
-<tr><td>gi-nil</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>0</td><td>0.500000D+05</td><td>10.00</td><td></td><td></td><td>ACCESS-OM2-025_kmt.nc</td></tr>
-<tr><td>gi-nil-def</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>ACCESS-OM2-025_kmt.nc</td></tr>
-<tr><td>ktens-ext</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.60</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>ktens-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.30</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>ktens-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.10</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>ktens-nil</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.00</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Pstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.500000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Pstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.100000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Roth-cf-def</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>1</td><td></td><td></td><td>17.00</td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Roth-cf-max</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>1</td><td></td><td></td><td>24.00</td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>Roth-cf-min</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>1</td><td></td><td></td><td>10.00</td><td></td><td>kmt_mod_thinned-0p75_v1p50.nc</td></tr>
-<tr><td>ry93</td><td>1800.00</td><td>1</td><td>240</td><td>1</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>0</td><td>0.275000D+05</td><td>20.00</td><td></td><td></td><td>kmt_mod_thinned-0p85_v1p50.nc</td></tr>
-</tbody></table>
-</body></html>
+<p style='font-size: small;'>Last updated: 2025-06-06 12:25:18</p>
+<table><thead><tr><th>rheology</th><th>momentum term</th><th>sim_name</th><th>dt</th><th>ndtd</th><th>ndte</th><th>kdyn</th><th>revised_evp</th><th>e_yieldcurve</th><th>e_plasticpot</th><th>Ktens</th><th>kstrength</th><th>Pstar</th><th>Cstar</th><th>Cf</th><th>visc_method</th><th>kmt_file</th><th>relevant citations</th></tr></thead><tbody>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Cstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>30.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Cstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td></tr>
+<tr><td>isotropic</td><td></td><td>FI-heavy</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>Hibler</td><td>0.500000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Pstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.500000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Pstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.100000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Roth-cf-def</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>17.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Roth-cf-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>24.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td></tr>
+<tr><td>isotropic</td><td>internal ice strength</td><td>Roth-cf-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>10.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td></tr>
+<tr><td>anisotropic</td><td></td><td>eap-FI</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td></tr>
+<tr><td>anisotropic</td><td></td><td>eap-def</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>elps-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>0.80</td><td>0.80</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>elps-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.50</td><td>2.50</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>elps-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.60</td><td>1.60</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>elps-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td></tr>
+<tr><td>isotropic</td><td></td><td>gi-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p65_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>gi-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>gi-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p85_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>gi-nil</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>Hibler</td><td>0.500000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>ACCESS-OM2-025_kmt.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>gi-nil-def</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>ACCESS-OM2-025_kmt.nc</td><td></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>ktens-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.60</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>ktens-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>ktens-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.10</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>ktens-nil</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.00</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td></tr>
+<tr><td>isotropic</td><td></td><td>ndte-max</td><td>1800.00</td><td>1</td><td>720</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>ndte-min</td><td>1800.00</td><td>1</td><td>100</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td></td><td>re-evp-off</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>F</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2013.05.013'>Bouillon et al. (2013)</a></td></tr>
+<tr><td>isotropic</td><td></td><td>ry93</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p85_v1p50.nc</td><td></td></tr>
+<tr><td>isotropic</td><td>viscosities</td><td>visc-meth</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average strength</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2017.05.006'>Kimmritz et al. (2016)</a></td></tr>
+</tbody></table></body></html>

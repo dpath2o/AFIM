@@ -1450,7 +1450,7 @@ class SeaIceProcessor:
         lon_obs, lat_obs = transformer.transform(X,Y)
         G_obs            = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
         self.logger.info(f"Model lon: {G_t['lon'].values.min()} to {G_t['lon'].values.max()}")
-        self.logger.info(f"Obs lon:   {self.G_obs['lon'].min()} to {self.G_obs['lon'].max()}")
+        self.logger.info(f"Obs lon:   {G_obs['lon'].min()} to {G_obs['lon'].max()}")
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
         self.reG_AF2020 = xe.Regridder(G_obs, G_t,
                                        method            = "bilinear", #self.sea_ice_dict["AF_reG_weights_method"],
