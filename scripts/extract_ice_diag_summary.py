@@ -123,24 +123,79 @@ def main():
     print(f"✅ CSV summary written to: {OUT_FILE}")
 
     # --- HTML generation ---
+    # Group rows by rheology and momentum term
+    from collections import defaultdict
+    grouped_rows = defaultdict(list)
+    for row in html_rows:
+        key = (row[0], row[1])  # (rheology, momentum)
+        grouped_rows[key].append(row)
+    # HTML header and styling
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     html = []
     html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>")
     html.append("<title>CICE Diagnostic Parameters</title><style>")
-    html.append("""table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
-th {border: 1px solid #ccc; padding: 6px 10px; text-align: center; background-color: #f2f2f2; font-size: 1em;}
-td {border: 1px solid #ccc; padding: 6px 10px; text-align: center; font-size: 0.85em;}""")
-    html.append("</style></head><body>")
-    html.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
-    html.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
-    html.append(f"<p style='font-size: small;'>Last updated: {now_str}</p>")
-    html.append("<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>")
-    for row in html_rows:
-        html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
-    html.append("</tbody></table></body></html>")
+    html.append("""
+    table {
+        border-collapse: collapse;
+        font-family: sans-serif;
+        font-size: 0.85em;
+        max-width: 95vw;
+        table-layout: auto;
+    }
+    th {
+        border: 1px solid #ccc;
+        padding: 4px 6px;
+        text-align: center;
+        background-color: #f2f2f2;
+        font-size: 1em;
+    }
+    td {
+        border: 1px solid #ccc;
+        padding: 4px 6px;
+        text-align: center;
+    }
+    </style></head><body>
+    <h1>CICE Diagnostic Parameters per Simulation</h1>
+    <p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>
+    <p style='font-size: small;'>Last updated: """ + now_str + "</p>")
+    html.append("<div style='overflow-x:auto; max-width:95vw;'>")
+    html.append("<table>")
+    # Add header
+    html.append("<thead><tr>" + "".join(f"<th>{h}</th>" for h in ["#", *headers]) + "</tr></thead>")
+    html.append("<tbody>")
+    row_number = 1
+    for (rheology, momentum), rows in grouped_rows.items():
+        rheo_rowspan = len(rows)
+        momentum_rowspan = len(rows)
+        for i, row in enumerate(rows):
+            html.append("<tr>")
+            html.append(f"<td>{row_number}</td>")
+            if i == 0:
+                html.append(f"<td rowspan='{rheo_rowspan}'>{rheology}</td>")
+                html.append(f"<td rowspan='{momentum_rowspan}'>{momentum}</td>")
+            # Skip repeated cells
+            html.append("".join(f"<td>{cell}</td>" for cell in row[2:]))  # Skip rheology and momentum (already rendered)
+            html.append("</tr>")
+            row_number += 1
+    html.append("</tbody></table></div></body></html>")
+#     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#     html = []
+#     html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>")
+#     html.append("<title>CICE Diagnostic Parameters</title><style>")
+#     html.append("""table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
+# th {border: 1px solid #ccc; padding: 6px 10px; text-align: center; background-color: #f2f2f2; font-size: 1em;}
+# td {border: 1px solid #ccc; padding: 6px 10px; text-align: center; font-size: 0.85em;}""")
+#     html.append("</style></head><body>")
+#     html.append("<h1>CICE Diagnostic Parameters per Simulation</h1>")
+#     html.append("<p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>")
+#     html.append(f"<p style='font-size: small;'>Last updated: {now_str}</p>")
+#     html.append("<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>")
+#     for row in html_rows:
+#         html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
+#     html.append("</tbody></table></body></html>")
 
-    HTML_PATH.parent.mkdir(parents=True, exist_ok=True)
-    HTML_PATH.write_text("\n".join(html))
+#     HTML_PATH.parent.mkdir(parents=True, exist_ok=True)
+#     HTML_PATH.write_text("\n".join(html))
     print(f"✅ HTML table written to: {HTML_PATH}")
 
 if __name__ == "__main__":
