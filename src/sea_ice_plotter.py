@@ -9,125 +9,126 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
+from sea_ice_science import SeaIceScience
 from PIL import Image
 
-class SeaIcePlotter:
-    """
-    A plotting class for visualizing sea ice model output (e.g., from CICE or AFIM) in various formats
-    including regional maps, hemisphere-wide views, and time series plots.
+class SeaIcePlotter(SeaIceScience):
+    def __init__(self, sim_name, **kwargs):
+        super().__init__(sim_name, **kwargs)
+    # """
+    # A plotting class for visualizing sea ice model output (e.g., from CICE or AFIM) in various formats
+    # including regional maps, hemisphere-wide views, and time series plots.
 
-    The class supports output from different ice types (fast ice, pack ice, sea ice, grounded icebergs)
-    and integrates configuration from a JSON settings file to control plotting behavior, file paths,
-    and variable metadata.
+    # The class supports output from different ice types (fast ice, pack ice, sea ice, grounded icebergs)
+    # and integrates configuration from a JSON settings file to control plotting behavior, file paths,
+    # and variable metadata.
 
-    Key features:
-    - Supports plotting from in-memory xarray datasets or from Zarr files
-    - Integrates with grounded iceberg data if available
-    - Regional and hemisphere plotting via PyGMT
-    - Loads plotting styles from `pygmt_dict` and variable metadata from `plot_var_dict`
-    - Fully configurable through JSON to adapt to different simulations and data products
-    """
-    def __init__(self,
-                 P_json     = None,
-                 sim_name   = None,
-                 dt0_str    = None,
-                 dtN_str    = None,
-                 overwrite  = False,
-                 save_fig   = False,
-                 show_fig   = False,
-                 hemisphere = None):
-        """
-        Initialize a SeaIcePlotter instance using configuration provided in a JSON file.
+    # Key features:
+    # - Supports plotting from in-memory xarray datasets or from Zarr files
+    # - Integrates with grounded iceberg data if available
+    # - Regional and hemisphere plotting via PyGMT
+    # - Loads plotting styles from `pygmt_dict` and variable metadata from `plot_var_dict`
+    # - Fully configurable through JSON to adapt to different simulations and data products
+    # """
+    # def __init__(self,
+    #              P_json     = None,
+    #              sim_name   = None,
+    #              dt0_str    = None,
+    #              dtN_str    = None,
+    #              overwrite  = False,
+    #              save_fig   = False,
+    #              show_fig   = False,
+    #              hemisphere = None):
+    #     """
+    #     Initialize a SeaIcePlotter instance using configuration provided in a JSON file.
 
-        Parameters
-        ----------
-        P_JSON : str or Path, optional
-            Path to the configuration JSON file. If None, defaults to a pre-defined internal path.
-        sim_name : str, optional
-            Name of the simulation. Controls file paths and Zarr subdirectories.
-        ice_type : str, optional
-            Type of ice data ('FI', 'PI', 'SI', 'GI'). Controls dictionary and data sub-paths.
-        plot_type : str, optional
-            Type of plot to generate: 'regional', 'hemisphere', or 'timeseries'.
-        var_name : str, optional
-            Name of the variable to plot. Must exist in `plot_var_dict` in the config JSON.
-        dt0_str : str, optional
-            Start date (inclusive) for plots, in 'YYYY-MM-DD' format. Defaults to value in config.
-        dtN_str : str, optional
-            End date (inclusive) for plots, in 'YYYY-MM-DD' format. Defaults to value in config.
-        overwrite : bool, optional
-            If True, overwrite existing figures. Defaults to False.
-        save_fig : bool, optional
-            If True, save the generated figures to PNG. Defaults to False.
-        show_fig : bool, optional
-            If True, display figures after plotting. Defaults to True.
-        hemisphere : str, optional
-            Geographic hemisphere ('north' or 'south'). Determines projection and map extent.
+    #     Parameters
+    #     ----------
+    #     P_JSON : str or Path, optional
+    #         Path to the configuration JSON file. If None, defaults to a pre-defined internal path.
+    #     sim_name : str, optional
+    #         Name of the simulation. Controls file paths and Zarr subdirectories.
+    #     ice_type : str, optional
+    #         Type of ice data ('FI', 'PI', 'SI', 'GI'). Controls dictionary and data sub-paths.
+    #     plot_type : str, optional
+    #         Type of plot to generate: 'regional', 'hemisphere', or 'timeseries'.
+    #     var_name : str, optional
+    #         Name of the variable to plot. Must exist in `plot_var_dict` in the config JSON.
+    #     dt0_str : str, optional
+    #         Start date (inclusive) for plots, in 'YYYY-MM-DD' format. Defaults to value in config.
+    #     dtN_str : str, optional
+    #         End date (inclusive) for plots, in 'YYYY-MM-DD' format. Defaults to value in config.
+    #     overwrite : bool, optional
+    #         If True, overwrite existing figures. Defaults to False.
+    #     save_fig : bool, optional
+    #         If True, save the generated figures to PNG. Defaults to False.
+    #     show_fig : bool, optional
+    #         If True, display figures after plotting. Defaults to True.
+    #     hemisphere : str, optional
+    #         Geographic hemisphere ('north' or 'south'). Determines projection and map extent.
 
-        Notes
-        -----
-        - Loads multiple dictionaries from JSON, including:
-            * D_dict       → file paths
-            * CICE_dict    → coordinate names
-            * pygmt_dict   → default PyGMT styling
-            * plot_var_dict→ plotting metadata per variable
-            * AF_regions   → predefined regional extents
-        - Initializes a GroundedIcebergProcessor to overlay grounded iceberg locations if enabled.
-        """
-        if P_json is None:
-            P_json = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
-        with open(P_json, 'r') as f:
-            self.config = json.load(f)
-        self.sim_name      = sim_name
-        self.dt0_str       = dt0_str          if dt0_str    is not None else self.config.get('dt0_str', '1993-01-01')
-        self.dtN_str       = dtN_str          if dtN_str    is not None else self.config.get('dtN_str', '1999-12-31')
-        self.ow_fig        = overwrite        if overwrite  is not None else False
-        self.save_fig      = save_fig         if save_fig   is not None else False
-        self.show_fig      = show_fig         if show_fig   is not None else True
-        self.hemisphere    = hemisphere       if hemisphere is not None else self.config.get('hemisphere', 'south')
-        self.CICE_dict     = self.config.get("CICE_dict", {})
-        self.pygmt_dict    = self.config.get("pygmt_dict", {})
-        self.plot_var_dict = self.config.get("plot_var_dict", {})
-        self.reg_dict      = self.config.get('AF_regions', {})
-        self.sim_dict      = self.config.get("sim_dict", {})
-        self.GI_dict       = self.config.get("GI_dict", {})
-        self.SIC_scale     = self.config.get("SIC_scale", 1e12)
-        self.D_graph       = Path(self.config['D_dict']['graph'], 'AFIM')
-        self.define_hemisphere(self.hemisphere)
-        # if sim_name is not None:
-        #     self.D_zarr  = Path(self.config['D_dict']['AFIM_out'], sim_name, "zarr")
-        #     self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
-        #     self.GI_proc.load_bgrid()
-        #     self.use_gi = self.GI_proc.use_gi
-        #     if self.use_gi:
-        #         self.GI_proc.compute_grounded_iceberg_area()
-        #     self.GI_total_area = self.GI_proc.G_t['GI_total_area'] if self.use_gi else 0
-        #     self.P_KMT_mod     = self.GI_proc.P_KMT_mod
-        #     self.P_KMT_org     = self.GI_proc.P_KMT_org
+    #     Notes
+    #     -----
+    #     - Loads multiple dictionaries from JSON, including:
+    #         * D_dict       → file paths
+    #         * CICE_dict    → coordinate names
+    #         * pygmt_dict   → default PyGMT styling
+    #         * plot_var_dict→ plotting metadata per variable
+    #         * AF_regions   → predefined regional extents
+    #     - Initializes a GroundedIcebergProcessor to overlay grounded iceberg locations if enabled.
+    #     """
+    #     if P_json is None:
+    #         P_json = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json"
+    #     with open(P_json, 'r') as f:
+    #         self.config = json.load(f)
+    #     self.sim_name      = sim_name
+    #     self.dt0_str       = dt0_str          if dt0_str    is not None else self.config.get('dt0_str', '1993-01-01')
+    #     self.dtN_str       = dtN_str          if dtN_str    is not None else self.config.get('dtN_str', '1999-12-31')
+    #     self.ow_fig        = overwrite        if overwrite  is not None else False
+    #     self.save_fig      = save_fig         if save_fig   is not None else False
+    #     self.show_fig      = show_fig         if show_fig   is not None else True
+    #     self.hemisphere    = hemisphere       if hemisphere is not None else self.config.get('hemisphere', 'south')
+    #     self.CICE_dict     = self.config.get("CICE_dict", {})
+    #     self.pygmt_dict    = self.config.get("pygmt_dict", {})
+    #     self.plot_var_dict = self.config.get("plot_var_dict", {})
+    #     self.reg_dict      = self.config.get('AF_regions', {})
+    #     self.sim_dict      = self.config.get("sim_dict", {})
+    #     self.GI_dict       = self.config.get("GI_dict", {})
+    #     self.SIC_scale     = self.config.get("SIC_scale", 1e12)
+    #     self.D_graph       = Path(self.config['D_dict']['graph'], 'AFIM')
+    #     self.define_hemisphere(self.hemisphere)
+    #     self.P_KMT_org           = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
+    #     self.GI_version          = self.sim_config.get('GI_version')
+    #     self.GI_version_str      = f"{self.GI_version:.2f}".replace('.', 'p')
+    #     if self.GI_thin_fact>0:
+    #         self.use_gi    = True
+    #         self.P_KMT_mod = os.path.join(self.GI_dict['D_GI_thin'],
+    #                                       self.GI_dict['KMT_mod_fmt'].format(GI_thin_fact = self.GI_thin_str,
+    #                                                                          version      = self.GI_version_str))
 
-    def define_hemisphere(self, hemisphere):
-        """
-        THIS FUNCTION SHOULD BE *EXACTLY* THE SAME AS THE ONE IN SEAICEPROCESSOR CLASS
-        """
-        if hemisphere.lower() in ['north', 'northern', 'nh', 'n', 'no']:
-            self.hemisphere_geographic_extent = [0, 360, 0, 90]
-            self.hemisphere_map_extent        = [-180,180,55,90]
-            self.hemisphere_projection        = "S0.0/90.0/50/15C"
-            self.hemisphere_map_text_location = [-120,56]
-            self.hemisphere_abbreviation      = 'NH'
-            self.hemisphere_nj_slice          = slice(540,1080)
-            self.hemisphere                   = 'north'
-        elif hemisphere.lower() in ['south', 'southern', 'sh', 's', 'so']:
-            self.hemisphere_geographic_extent = [0, 360, -90, 0]
-            self.hemisphere_map_extent        = [-180,180,-90,-55]
-            self.hemisphere_projection        = "S0.0/-90.0/50/15C"
-            self.hemisphere_map_text_location = [0,-90]
-            self.hemisphere_abbreviation      = 'SH'
-            self.hemisphere_nj_slice          = slice(0,540)
-            self.hemisphere                   = 'south'
-        else:
-            raise ValueError(f"Invalid hemisphere '{hemisphere}'. Valid options are: "
-                             "['north', 'south', 'northern', 'southern', 'sh', 'nh', 'SH', 'NH']")
+    # def define_hemisphere(self, hemisphere):
+    #     """
+    #     THIS FUNCTION SHOULD BE *EXACTLY* THE SAME AS THE ONE IN SEAICEPROCESSOR CLASS
+    #     """
+    #     if hemisphere.lower() in ['north', 'northern', 'nh', 'n', 'no']:
+    #         self.hemisphere_geographic_extent = [0, 360, 0, 90]
+    #         self.hemisphere_map_extent        = [-180,180,55,90]
+    #         self.hemisphere_projection        = "S0.0/90.0/50/15C"
+    #         self.hemisphere_map_text_location = [-120,56]
+    #         self.hemisphere_abbreviation      = 'NH'
+    #         self.hemisphere_nj_slice          = slice(540,1080)
+    #         self.hemisphere                   = 'north'
+    #     elif hemisphere.lower() in ['south', 'southern', 'sh', 's', 'so']:
+    #         self.hemisphere_geographic_extent = [0, 360, -90, 0]
+    #         self.hemisphere_map_extent        = [-180,180,-90,-55]
+    #         self.hemisphere_projection        = "S0.0/-90.0/50/15C"
+    #         self.hemisphere_map_text_location = [0,-90]
+    #         self.hemisphere_abbreviation      = 'SH'
+    #         self.hemisphere_nj_slice          = slice(0,540)
+    #         self.hemisphere                   = 'south'
+    #     else:
+    #         raise ValueError(f"Invalid hemisphere '{hemisphere}'. Valid options are: "
+    #                          "['north', 'south', 'northern', 'southern', 'sh', 'nh', 'SH', 'NH']")
 
     def load_ice_shelves(self):
         """
@@ -519,7 +520,123 @@ class SeaIcePlotter:
                  fill    = "white",
                  pen     = "0.5p,black" )
         fig.savefig(save_path)
+
         print(f"Saved: {save_path}")
+
+    def _plot_fip_east_west(self, fig, DA, sim_name, plot_GI, lon_coord_name="TLON", lat_coord_name="TLAT"):
+        ANT_IS = gpd.read_file(self.pygmt_dict['P_coast_shape'])
+        ANT_IS = ANT_IS[(ANT_IS['POLY_TYPE'] == 'S') & ANT_IS.geometry.notnull()].to_crs("EPSG:4326")
+        ANT_IS.geometry = ANT_IS.geometry.buffer(0)
+
+        DA_mask = (DA.data > 0) & np.isfinite(DA.data)
+        dat2d = DA.data
+        lon2d = DA[lon_coord_name].data
+        lat2d = DA[lat_coord_name].data
+        plt_dat = dat2d[DA_mask].ravel()
+        plt_lon = lon2d[DA_mask].ravel()
+        plt_lat = lat2d[DA_mask].ravel()
+
+        if plot_GI:
+            G_t = self.define_cice_grid(grid_type='t').isel(nj=slice(0,540))
+            kmt_mod = xr.open_dataset(self.P_KMT_mod).isel(nj=slice(0,540)).kmt.data
+            kmt_org = xr.open_dataset(self.P_KMT_org).isel(nj=slice(0,540)).kmt.data
+            GI_mask = (kmt_org == 1) & (kmt_mod == 0)
+            plt_GI_lon = lon2d[GI_mask].ravel()
+            plt_GI_lat = lat2d[GI_mask].ravel()
+
+        pygmt.makecpt(cmap=self.pygmt_dict.get("FIP_CPT"), series=[0.01, 1.0, 0.01], continuous=True)
+
+        for region, proj in [([-20, 160, -73, -62], "M70/-70/30"),
+                             ([160, 340, -79, -61], "M70/-70/30")]:
+            fig.shift_origin(yshift="-10.5c")
+            fig.basemap(region=region, projection=proj, frame=["af"])
+            fig.plot(x=plt_lon, y=plt_lat, fill=plt_dat, style="s0.2c", cmap=True)
+            if plot_GI:
+                fig.plot(x=plt_GI_lon, y=plt_GI_lat, fill="red", style="c0.05c")
+            fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
+
+        fig.colorbar(position="JBC+w10c/0.5c+mc+h", frame=["x+lFast Ice Persistence", "y+l1/100"])
+
+    def plot_FIA_FIP_faceted(self, FIA_dict, FIP_DA,
+                              sim_name       = None,
+                              dt_range_str   = None,
+                              P_png          = None,
+                              plot_GI        = False,
+                              ylim           = (0, 1000),
+                              roll_days      = 0,
+                              lon_coord_name = None,
+                              lat_coord_name = None,
+                              overwrite_png  = False,
+                              show_fig       = False):
+        """
+        Composite plot showing monthly climatology of FIA and east/west persistence map.
+        """
+        sim_name = sim_name or self.sim_name
+
+        # ----- Create and save x-axis annotation file for months -----
+        xticks = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 360]
+        month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                        "Sep", "Oct", "Nov", "Dec", "Dec"]
+        xannot_path = Path("xannots.txt")
+        xannot_lines = [f"{tick}\tig\t{label}" for tick, label in zip(xticks, month_labels)]
+        xannot_path.write_text("\n".join(xannot_lines) + "\n")
+
+        # ----- Plot FIA climatology -----
+        fig = pygmt.Figure()
+        pygmt.config(FORMAT_GEO_MAP="ddd.x", MAP_GRID_PEN="0p,white")
+        fig.basemap(
+            region=[1, 360, 100, ylim[1]],
+            projection="X30c/15c",
+            **{"frame": [
+                f"sxc{xannot_path}",
+                f"ya100f+lFast Ice Area (1000 km\u00b2)",
+                "WSne"]}
+        )
+
+        plot_style = {"FI_BT":       {"label": "daily ice-speed mask", "color": "black"},
+                      "FI_BT_bool":  {"label": "Binary-days (6 of 7) ice-speed mask", "color": "orange"},
+                      "FI_BT_roll":  {"label": "15-day-avg ice-speed mask", "color": "darkgreen"},}
+
+        for i, (name, da) in enumerate(FIA_dict.items()):
+            if isinstance(da, xr.Dataset):
+                da = da.to_array().squeeze()
+
+            if name == "AF2020db_cli":
+                doy = da["doy"].values
+                values = da.values
+                fig.plot(x=doy, y=values, pen="1.5p,blue,--", label="AF2020 Climatology (2000–2018)")
+                continue
+
+            time = pd.to_datetime(da["time"].values)
+            area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days else da.values
+            df = pd.DataFrame({"area": area}, index=time)
+            df["doy"] = df.index.dayofyear
+            df["year"] = df.index.year
+            df = df[df["year"] > df["year"].min()]
+            grouped = df.groupby("doy")["area"]
+            area_min = grouped.min()
+            area_max = grouped.max()
+            area_mean = grouped.mean()
+
+            style = plot_style.get(name, {"label": name, "color": f"tab{i}"})
+            fig.plot(x=np.concatenate([area_min.index, area_max.index[::-1]]),
+                     y=np.concatenate([area_min.values, area_max.values[::-1]]),
+                     fill=f"{style['color']}@70", close=True, transparency=60)
+            fig.plot(x=area_mean.index, y=area_mean.values,
+                     pen=f"2p,{style['color']}", label=f"{style['label']} climatology")
+
+        fig.legend(position="JTL+jTL+o0.2c", box="+gwhite+p.5p")
+
+        # ----- Append east/west FIP maps -----
+        fig.shift_origin(yshift="-6c")
+        self._plot_fip_east_west(fig, FIP_DA, sim_name, plot_GI, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name)
+
+        if P_png:
+            P_png.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(P_png)
+            print(f"📏 Saved figure to {P_png}")
+        if show_fig:
+            fig.show()
 
     def plot_sectors_grounded_icebergs(self, 
                                        KMT1=None, 
