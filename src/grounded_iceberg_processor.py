@@ -93,14 +93,13 @@ class GroundedIcebergProcessor:
             P_json = '/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json'
         with open(P_json, 'r') as f:
             self.config = json.load(f)
-        self.overwrite          = overwrite
-        self.ice_shelves_loaded = False
-        self.CICE_dict          = self.config['CICE_dict']
-        self.CICE_P_G           = self.CICE_dict['P_G']
-        self.spatial_dims       = self.CICE_dict.get('spatial_dims', ('nj', 'ni'))
-        self.GI_dict            = self.config['GI_dict']
-        self.P_KMT_org          = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
-        self.FIC_scale          = self.config.get("FIC_scale", 1e9)
+        self.overwrite    = overwrite
+        self.CICE_dict    = self.config['CICE_dict']
+        self.CICE_P_G     = self.CICE_dict['P_G']
+        self.spatial_dims = self.CICE_dict.get('spatial_dims', ('nj', 'ni'))
+        self.GI_dict      = self.config['GI_dict']
+        self.P_KMT_org    = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
+        self.FIC_scale    = self.config.get("FIC_scale", 1e9)
         if sim_name is not None:
             self.sim_name       = sim_name
             self.sim_config     = self.config['sim_dict'][sim_name]
@@ -124,6 +123,7 @@ class GroundedIcebergProcessor:
             self.P_KMT_mod   = self.P_KMT_org 
             self.use_gi      = False
             self.total_area  = 0
+        self.ice_shelves_loaded        = False
         self.bgrid_loaded              = False
         self.modified_landmask_aligned = False
 
@@ -151,10 +151,14 @@ class GroundedIcebergProcessor:
         lon_b[0, -1]         = lon[0, -1]
         lon_b[-1, 0]         = lon[-1, 0]
         lon_b[-1, -1]        = lon[-1, -1]
-        return {"lat"  : lat,
-                "lon"  : self.normalise_longitudes(lon),
-                "lat_b": lat_b,
-                "lon_b": self.normalise_longitudes(lon_b)}
+        return xr.Dataset({"lat":   (("nj", "ni"), lat),
+                           "lon":   (("nj", "ni"), self.normalise_longitudes(lon)),
+                           "lat_b": (("nj_b", "ni_b"), lat_b),
+                           "lon_b": (("nj_b", "ni_b"), self.normalise_longitudes(lon_b)),
+                           "nj":    np.arange(ny),
+                           "ni":    np.arange(nx),
+                           "nj_b":  np.arange(ny + 1),
+                           "ni_b":  np.arange(nx + 1)})
 
     def load_bgrid(self):
         """
@@ -184,34 +188,34 @@ class GroundedIcebergProcessor:
         native_dims      = (nj, ni)
         extend_dim_names = ('nj_b','ni_b')
         extend_dims      = (nj_b, ni_b)
-        self.G_t = xr.Dataset(data_vars = { 'lat'     : (native_dim_names, TCOORDS['lat']   , {'units': 'degrees'}),
-                                            'lat_b'   : (extend_dim_names, TCOORDS['lat_b'] , {'units': 'degrees'}),
-                                            'lon'     : (native_dim_names, TCOORDS['lon']   , {'units': 'degrees'}),
-                                            'lon_b'   : (extend_dim_names, TCOORDS['lon_b'] , {'units': 'degrees'}),
-                                            'angle'   : (native_dim_names, T_ANGLE          , {'units': 'degrees'}),
-                                            'area'    : (native_dim_names, TAREA            , {'units': 'm^2'}),
-                                            'kmt_org' : (native_dim_names, KMT_org          , {'units'      : 'binary',
-                                                                                                'description': '1=land, 0=ocean',
-                                                                                                'long_name'  : 'original landmask on t-grid'}),
-                                            'kmt_mod' : (native_dim_names, KMT_mod          , {'units'      : 'binary',
-                                                                                                'description': '1=land, 0=ocean',
-                                                                                                'long_name'  : 'modified t-grid-landmask to simulate grounded icebergs'})},
+        self.G_t = xr.Dataset(data_vars = { 'lat'     : (native_dim_names, TCOORDS['lat'].data   , {'units': 'degrees'}),
+                                            'lat_b'   : (extend_dim_names, TCOORDS['lat_b'].data , {'units': 'degrees'}),
+                                            'lon'     : (native_dim_names, TCOORDS['lon'].data   , {'units': 'degrees'}),
+                                            'lon_b'   : (extend_dim_names, TCOORDS['lon_b'].data , {'units': 'degrees'}),
+                                            'angle'   : (native_dim_names, T_ANGLE               , {'units': 'degrees'}),
+                                            'area'    : (native_dim_names, TAREA                 , {'units': 'm^2'}),
+                                            'kmt_org' : (native_dim_names, KMT_org               , {'units'      : 'binary',
+                                                                                                    'description': '1=land, 0=ocean',
+                                                                                                    'long_name'  : 'original landmask on t-grid'}),
+                                            'kmt_mod' : (native_dim_names, KMT_mod               , {'units'      : 'binary',
+                                                                                                    'description': '1=land, 0=ocean',
+                                                                                                    'long_name'  : 'modified t-grid-landmask to simulate grounded icebergs'})},
                                coords   = { 'nj'   : np.arange(nj),
                                             'ni'   : np.arange(ni),
                                             'nj_b' : np.arange(nj_b),
                                             'ni_b' : np.arange(ni_b)})
-        self.G_u = xr.Dataset(data_vars = { 'lat'     : (native_dim_names, UCOORDS['lat']   , {'units': 'degrees'}),
-                                            'lat_b'   : (extend_dim_names, UCOORDS['lat_b'] , {'units': 'degrees'}),
-                                            'lon'     : (native_dim_names, UCOORDS['lon']   , {'units': 'degrees'}),
-                                            'lon_b'   : (extend_dim_names, UCOORDS['lon_b'] , {'units': 'degrees'}),
-                                            'angle'   : (native_dim_names, U_ANGLE          , {'units': 'degrees'}),
-                                            'area'    : (native_dim_names, UAREA            , {'units': 'm^2'}),
-                                            'kmt_org' : (native_dim_names, KMT_org          , {'units'      : 'binary',
-                                                                                                'description': '1=land, 0=ocean',
-                                                                                                'long_name'  : 'original landmask on t-grid'}),
-                                            'kmt_mod' : (native_dim_names, KMT_mod          , {'units'      : 'binary',
-                                                                                                'description': '1=land, 0=ocean',
-                                                                                                'long_name'  : 'modified t-grid-landmask to simulate grounded icebergs'})},
+        self.G_u = xr.Dataset(data_vars = { 'lat'     : (native_dim_names, UCOORDS['lat'].data   , {'units': 'degrees'}),
+                                            'lat_b'   : (extend_dim_names, UCOORDS['lat_b'].data , {'units': 'degrees'}),
+                                            'lon'     : (native_dim_names, UCOORDS['lon'].data   , {'units': 'degrees'}),
+                                            'lon_b'   : (extend_dim_names, UCOORDS['lon_b'].data , {'units': 'degrees'}),
+                                            'angle'   : (native_dim_names, U_ANGLE               , {'units': 'degrees'}),
+                                            'area'    : (native_dim_names, UAREA                 , {'units': 'm^2'}),
+                                            'kmt_org' : (native_dim_names, KMT_org               , {'units'      : 'binary',
+                                                                                                    'description': '1=land, 0=ocean',
+                                                                                                    'long_name'  : 'original landmask on t-grid'}),
+                                            'kmt_mod' : (native_dim_names, KMT_mod               , {'units'      : 'binary',
+                                                                                                    'description': '1=land, 0=ocean',
+                                                                                                    'long_name'  : 'modified t-grid-landmask to simulate grounded icebergs'})},
                               coords    = { 'nj'   : np.arange(nj),
                                             'ni'   : np.arange(ni),
                                             'nj_b' : np.arange(nj_b),
@@ -240,15 +244,16 @@ class GroundedIcebergProcessor:
         nj_idx         = nj_idx[valid]
         ni_idx         = ni_idx_shifted[valid]
         GI_lat         = lat[nj_idx, ni_idx]
-        GI_lon          = lon[nj_idx, ni_idx]
+        GI_lon         = lon[nj_idx, ni_idx]
         # Save 1D arrays with iceberg IDs
         iceberg_id         = np.arange(len(GI_lat))
         self.G_t['GI_lat'] = (('iceberg_id',), GI_lat)
         self.G_t['GI_lon'] = (('iceberg_id',), GI_lon)
         self.G_t['GI_lat'].attrs.update({'long_name': 'Grounded iceberg latitude'})
         self.G_t['GI_lon'].attrs.update({'long_name': 'Grounded iceberg longitude'})
-        print(f"{len(iceberg_id)} circumpolar grounded icebergs associated with {self.sim_name}")
+        #print(f"{len(iceberg_id)} circumpolar grounded icebergs associated with {self.sim_name}")
         self.modified_landmask_aligned = True
+        return self.G_t
 
     def compute_grounded_iceberg_area(self, region=None):
         '''
@@ -288,7 +293,6 @@ class GroundedIcebergProcessor:
         else:
             total_area                = np.sum(area[mask])
             self.G_t['GI_total_area'] = total_area
-            print(f"{total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
             return total_area
 
     def load_existing_thinned(self):

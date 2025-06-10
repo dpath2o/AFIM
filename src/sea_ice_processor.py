@@ -1,10 +1,10 @@
-import json, os, shutil, sys, time, logging, zarr
+import json, os, shutil, sys, time, logging, zarr, re
 import xarray as xr
 import pandas as pd
 import numpy  as np
 import xesmf  as xe
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
-from grounded_iceberg_processor import GroundedIcebergProcessor
+#from grounded_iceberg_processor import GroundedIcebergProcessor
 from dask.distributed           import Client, LocalCluster
 from collections                import defaultdict
 from pathlib                    import Path
@@ -90,9 +90,12 @@ class SeaIceProcessor:
             P_json = '/home/581/da1339/AFIM/src/AFIM/src/JSONs/afim_cice_analysis.json'
         with open(P_json, 'r') as f:
             self.config = json.load(f)
-        self.sim_config     = self.config['sim_dict'][sim_name]
-        self.CICE_dict      = self.config.get("CICE_dict", {})
-        D_log               = self.config['D_dict']['logs']
+        #self.sim_config     = self.config['sim_dict'][sim_name]
+        self.CICE_dict      = self.config.get("CICE_dict" , {})
+        self.GI_dict        = self.config.get('GI_dict'   , {})
+        self.D_dict         = self.config.get('D_dict'    , {})
+        self.NSIDC_dict     = self.config.get('NSIDC_dict', {})
+        D_log               = self.D_dict['logs']
         P_log               = P_log                       if P_log                       is not None else Path(D_log, f'SeaIceProcessor_FI_{self.sim_name}.log')
         self.dt0_str        = dt0_str                     if dt0_str                     is not None else self.config.get('dt0_str', '1993-01-01')
         self.dtN_str        = dtN_str                     if dtN_str                     is not None else self.config.get('dtN_str', '1999-12-31')
@@ -103,13 +106,15 @@ class SeaIceProcessor:
         self.icon_thresh    = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
         self.cice_vars_ext  = extra_cice_vars             if extra_cice_vars             is not None else self.CICE_dict["FI_cice_vars_ext"]
         hemisphere          = hemisphere                  if hemisphere                  is not None else self.config.get('hemisphere', 'south')
+        if not os.path.exists(P_log):
+            os.system(f"touch {P_log}")
         self.setup_logging(logfile=P_log)
         self.define_hemisphere(hemisphere)
         self.valid_ispd_types    = ["ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"]
         self.valid_zarr_datasets = ['FI_B', 'FI_Ta', 'FI_Tx', 'FI_BT']
         self.cice_vars_reqd      = self.CICE_dict["FI_cice_vars_reqd"]
         self.cice_var_list       = self.cice_vars_reqd + self.cice_vars_ext
-        self.D_sim               = Path(self.config['D_dict']['AFIM_out'], sim_name)
+        self.D_sim               = Path(self.D_dict['AFIM_out'], sim_name)
         self.D_iceh              = Path(self.D_sim , 'history', 'daily')
         self.D_zarr              = Path(self.D_sim , 'zarr')
         self.doy_vals            = self.config.get("DOY_vals", list(range(1, 366, 15)))
@@ -117,13 +122,19 @@ class SeaIceProcessor:
         self.FIC_scale           = self.config.get('FIC_scale', 1e9)
         self.SIC_scale           = self.config.get('SIC_scale', 1e12)
         self.cm2m_fact           = self.config.get('cm2m_fact', 0.01)
-        self.GI_proc = GroundedIcebergProcessor(P_json=P_json, sim_name=sim_name)
-        self.GI_proc.load_bgrid()
-        self.use_gi = self.GI_proc.use_gi
-        if self.use_gi:
-            self.GI_proc.compute_grounded_iceberg_area()
-        self.GI_total_area = self.GI_proc.G_t['GI_total_area']  if self.use_gi else 0
-        self.P_KMT         = self.GI_proc.P_KMT_mod   if self.use_gi else self.CICE_dict['P_KMT']
+        self.P_KMT_org           = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
+        self.sim_config          = self.parse_simulation_metadata()
+        self.GI_thin_fact        = self.sim_config.get('GI_thin_fact')
+        self.GI_thin_str         = f"{self.GI_thin_fact:0.2f}".replace('.', 'p')
+        self.GI_version          = self.sim_config.get('GI_version')
+        self.GI_version_str      = f"{self.GI_version:.2f}".replace('.', 'p')
+        if self.GI_thin_fact>0:
+            self.use_gi    = True
+            self.P_KMT_mod = os.path.join(self.GI_dict['D_GI_thin'],
+                                          self.GI_dict['KMT_mod_fmt'].format(GI_thin_fact = self.GI_thin_str,
+                                                                             version      = self.GI_version_str))
+        else:
+            self.use_gi = False
         self.ispd_thresh_metrics        = self.interpret_ice_speed_threshold(lat_thresh=-60)
         self.reG_weights_defined        = False
         self.reG_AF2020_weights_defined = False
@@ -143,6 +154,59 @@ class SeaIceProcessor:
                 fh.setFormatter(formatter)
                 self.logger.addHandler(fh)
                 self.logger.info(f"log file intialised: {logfile}")
+
+    def parse_simulation_metadata(self):
+        """
+        Parse CICE diagnostic text file to extract numerical modeling parameters.
+
+        Parameters
+        ----------
+        diag_path : str or Path
+            Path to the diagnostics text file (e.g., ice_diag.d).
+
+        Returns
+        -------
+        dict
+            Dictionary of extracted parameters.
+            Includes inferred GI thinning fraction if modified `kmt_file` is used.
+        """
+        P_diag     = Path(self.D_sim,"ice_diag.d")
+        PARAM_KEYS = [ "dt", "ndtd", "ndte", "kdyn", "revised_evp", "e_yieldcurve", "e_plasticpot",
+                       "Ktens", "kstrength", "Pstar", "Cstar", "Cf", "visc_method", "kmt_file" ]
+        PATTERNS   = {key: re.compile(rf"{key}\s*=\s*(.+?)\s*:") if key != "kmt_file"
+                      else re.compile(rf"{key}\s*=\s*(.+)$")
+                      for key in PARAM_KEYS }
+        result     = {key: "" for key in PARAM_KEYS}
+        with open(P_diag, "r", encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i > 500:
+                    break
+                for key, pattern in PATTERNS.items():
+                    if result[key] == "":
+                        match = pattern.search(line)
+                        if match:
+                            val = match.group(1).strip()
+                            if key == "kmt_file":
+                                val = Path(val).name
+                            result[key] = val
+        kmt_name = result["kmt_file"]
+        if "kmt_mod_thinned-" in kmt_name:
+            try:
+                thin_str  = kmt_name.split("thinned-")[1].split("_")[0]  # e.g., "0p85"
+                thin_frac = float(thin_str.replace("p", "."))
+                result["GI_thin_fact"] = thin_frac #round(1.0 - thin_frac, 2)
+            except Exception:
+                result["GI_thin_fact"] = "?"
+            try:
+                version_str = kmt_name.split("_v")[1].split(".")[0]  # e.g., "1p50"
+                version_float = float(version_str.replace("p", "."))
+                result["GI_version"] = version_float
+            except Exception:
+                result["GI_version"] = "?"
+        else:
+            result["GI_thin_fact"] = 0.0
+            result["GI_version"] = 0.0
+        return result
 
     def define_hemisphere(self, hemisphere):
         if hemisphere.lower() in ['north', 'northern', 'nh', 'n', 'no']:
@@ -179,8 +243,8 @@ class SeaIceProcessor:
     def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
         ispd_thresh  = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
         m_per_day    = ispd_thresh * 86400  # meters/day
-        area_da      = self.GI_proc.G_t['area']  # [m^2]
-        lat_da       = self.GI_proc.G_t['lat']   # [degrees]
+        area_da      = xr.open_dataset( self.CICE_dict["P_G"] )['tarea']                         # [m^2]
+        lat_da       = self.radians_to_degrees( xr.open_dataset(self.CICE_dict["P_G"])['tlat'] ) # [degrees]
         mask         = lat_da < lat_thresh
         area_vals    = area_da.where(mask).values
         grid_lengths = np.sqrt(area_vals)
@@ -202,27 +266,73 @@ class SeaIceProcessor:
 
     def get_dir_size(self, path):
         size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
-        self.logger.info(f"📏 Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
+        self.logger.info(f"Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
 
     def count_zarr_files(self, path):
         total_files = sum(len(files) for _, _, files in os.walk(path))
-        self.logger.info(f"📦 {path} contains {total_files} files")
+        self.logger.info(f"{path} contains {total_files} files")
+
+    def radians_to_degrees(self, da):
+        return (da * 180) / np.pi
+
+    def normalise_longitudes(self,lon):
+        return ((lon + 360) % 360) - 180
+
+    def build_grid_corners(self, lat_rads, lon_rads, grid_res=0.25):
+        lon                  = self.radians_to_degrees(lon_rads)
+        lat                  = self.radians_to_degrees(lat_rads)
+        ny, nx               = lat.shape
+        lat_b                = np.zeros((ny + 1, nx + 1))
+        lon_b                = np.zeros((ny + 1, nx + 1))
+        lat_b[1:-1, 1:-1]    = grid_res * (lat[:-1, :-1] + lat[:-1, 1:] + lat[1:, :-1] + lat[1:, 1:])
+        lon_b[1:-1, 1:-1]    = grid_res * (lon[:-1, :-1] + lon[:-1, 1:] + lon[1:, :-1] + lon[1:, 1:])
+        lat_b[[0, -1], 1:-1] = lat[[0, -1], :-1]
+        lon_b[[0, -1], 1:-1] = lon[[0, -1], :-1]
+        lat_b[1:-1, [0, -1]] = lat[:-1, [0, -1]]
+        lon_b[1:-1, [0, -1]] = lon[:-1, [0, -1]]
+        lat_b[0, 0]          = lat[0, 0]
+        lat_b[0, -1]         = lat[0, -1]
+        lat_b[-1, 0]         = lat[-1, 0]
+        lat_b[-1, -1]        = lat[-1, -1]
+        lon_b[0, 0]          = lon[0, 0]
+        lon_b[0, -1]         = lon[0, -1]
+        lon_b[-1, 0]         = lon[-1, 0]
+        lon_b[-1, -1]        = lon[-1, -1]
+        lon_b                = self.normalise_longitudes(lon_b)
+        return lon_b, lat_b
+
+    def define_cice_grid(self, grid_type='t', mask=False, build_grid_corners=False):
+        std_dim_names = ("nj", "ni")
+        G             = xr.open_dataset(self.CICE_dict["P_G"])
+        lon_rads      = G[f"{grid_type}lon"].values
+        lat_rads      = G[f"{grid_type}lat"].values
+        ny, nx        = lon_rads.shape
+        lon           = self.normalise_longitudes(self.radians_to_degrees(lon_rads))
+        lat           = self.radians_to_degrees(lat_rads)
+        area          = G[f'{grid_type}area'].values
+        data_vars     = {"area": (std_dim_names, area),
+                         "lon":  (std_dim_names, lon),
+                         "lat":  (std_dim_names, lat)}
+        coords        = {"nj": np.arange(ny),
+                         "ni": np.arange(nx)}
+        if build_grid_corners:
+            crn_dim_names      = ("nj_b", "ni_b")
+            lon_b, lat_b       = self.build_grid_corners(lon_rads, lat_rads)
+            data_vars["lon_b"] = (crn_dim_names, lon_b)
+            data_vars["lat_b"] = (crn_dim_names, lat_b)
+            coords["nj_b"]     = np.arange(ny + 1)
+            coords["ni_b"]     = np.arange(nx + 1)
+        if mask:
+            mask_data = xr.open_dataset(self.P_KMT_mod if self.use_gi else self.P_KMT_org).kmt.values
+            data_vars["mask"] = (std_dim_names, mask_data)
+        return xr.Dataset(data_vars=data_vars, coords=coords)
 
     def define_reG_weights(self):
-        G_u           = xr.Dataset()
-        G_u['lat']    = self.GI_proc.G_u['lat']
-        G_u['lon']    = self.GI_proc.G_u['lon']
-        G_u['lat_b']  = self.GI_proc.G_u['lat_b']
-        G_u['lon_b']  = self.GI_proc.G_u['lon_b']
-        G_t           = xr.Dataset()
-        G_t['lat']    = self.GI_proc.G_t['lat']
-        G_t['lon']    = self.GI_proc.G_t['lon']
-        G_t['lat_b']  = self.GI_proc.G_t['lat_b']
-        G_t['lon_b']  = self.GI_proc.G_t['lon_b']
-        G_t["mask"]   = self.GI_proc.G_t['kmt_mod']
+        G_u           = self.define_cice_grid( grid_type='u'             , build_grid_corners=True )
+        G_t           = self.define_cice_grid( grid_type='t' , mask=True , build_grid_corners=True )
         F_weights     = self.CICE_dict["P_reG_u2t_weights"]
         weights_exist = os.path.exists(F_weights)
-        self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
+        self.logger.info(f"{'Reusing' if weights_exist else 'Creating'} regrid weights: {F_weights}")
         self.reG = xe.Regridder(G_u, G_t,
                                 method            = "bilinear",
                                 periodic          = True,
@@ -253,6 +363,132 @@ class SeaIceProcessor:
         ds_reG['lon'].attrs = ds['ULON'].attrs
         ds_reG              = ds_reG.drop_vars(['tarea', 'TLAT', 'TLON', 'ULAT', 'ULON'])
         return ds_reG
+
+    ############################################################################################
+    #                                   NSIDC GO2202_V4
+    #-------------------------------------------------------------------------------------------
+    def load_local_NSIDC(self, dt0_str=None, dtN_str=None, local_directory=None, monthly_files=False):
+        """
+        Load NSIDC sea ice concentration data from local NetCDF files over a date range.
+
+        INPUTS:
+           dt0_str         : str, optional; start date in 'YYYY-MM-DD' format. Defaults to self.dt0_str.
+           dtN_str         : str, optional; end date in 'YYYY-MM-DD' format. Defaults to self.dtN_str.
+           local_directory : str or Path, optional; directory containing the NSIDC NetCDF files.
+                             If None, uses self.NSIDC_dict["D_original"].
+           monthly_files   : bool, optional; iff True, loads monthly files; otherwise loads daily files.
+
+        OUTPUTS
+           xarray.Dataset; combined dataset loaded with xarray.open_mfdataset.
+        """
+        def promote_time(ds):
+            ds = ds[["cdr_seaice_conc"]] if "cdr_seaice_conc" in ds else ds
+            if "time" in ds.variables and "tdim" in ds.dims:
+                ds = ds.swap_dims({"tdim": "time"})
+                ds = ds.set_coords("time")
+            return ds
+        f_fmt    = self.NSIDC_dict["G02202_v4_file_format"]
+        dt0_str  = dt0_str if dt0_str is not None else self.dt0_str
+        dtN_str  = dtN_str if dtN_str is not None else self.dtN_str
+        freq_str = 'monthly'             if monthly_files  else 'daily'
+        D_local  = Path(local_directory) if local_directory else Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)
+        dt0      = datetime.strptime(dt0_str, '%Y-%m-%d')
+        dtN      = datetime.strptime(dtN_str, '%Y-%m-%d')
+        f_vers_parsed = [ (ver, datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.min)
+                          for ver, date_str in self.NSIDC_dict["file_versions"].items() ]
+        f_vers_parsed.sort(key=lambda x: x[1])  # Sort by date
+        date_range = pd.date_range(start=dt0, end=dtN, freq='MS' if monthly_files else 'D')
+        P_NSIDCs   = []
+        for dt_ in date_range:
+            f_version = next( (ver for ver, d in reversed(f_vers_parsed) if dt_ >= d), f_vers_parsed[0][0] )
+            F_        = f_fmt.format(freq = freq_str,
+                                     hem  = self.hemisphere_abbreviation.lower(),
+                                     date = dt_.strftime('%Y%m%d'),
+                                     ver  = f_version)
+            P_        = Path(D_local,F_)
+            if P_.exists():
+                P_NSIDCs.append(P_)
+            else:
+                self.logger.warning(f"Missing file: {P_}")
+        if not P_NSIDCs:
+            raise FileNotFoundError(f"No NSIDC files found in {D_local} between {dt0_str} and {dtN_str}")
+        self.logger.info(f"Using xarray to load {len(P_NSIDCs)} files in {D_local}. Last file: {P_NSIDCs[-1].name}")
+        return xr.open_mfdataset(P_NSIDCs,
+                                 combine    = "by_coords",
+                                 parallel   = True,
+                                 preprocess = promote_time)
+
+    def NSIDC_coordinate_transformation(self, ds):
+        from pyproj import CRS, Transformer
+        """
+        Convert NSIDC dataset Cartesian coordinates (xgrid, ygrid) into geographic coordinates (longitude, latitude).
+
+        This method transforms the Cartesian coordinates used in NSIDC datasets into
+        standard geographic coordinates (longitude, latitude) based on the Polar
+        Stereographic projection.
+
+        INPUTS
+            ds (xarray.Dataset): The NSIDC dataset containing Cartesian coordinates.
+
+        OUTPUTS
+            xarray.Dataset: The dataset with added `lon` and `lat` variables representing
+                            geographic coordinates.
+
+        NOTES:
+            - The conversion is done using the Proj4 string specified in `self.NSIDC_dict["projection_string"]`.
+            - The transformed geographic coordinates are added to the dataset as new variables
+              named `lon` and `lat`.
+            - The method assumes the dataset contains `xgrid` and `ygrid` variables, which
+              represent the Cartesian coordinates in meters.
+        """
+        x = ds['xgrid'].values
+        y = ds['ygrid'].values
+        assert x.shape == y.shape, "xgrid and ygrid must have the same shape"
+        crs_nsidc = CRS.from_proj4(self.NSIDC_dict["projection_string"])
+        crs_wgs84 = CRS.from_epsg(self.sea_ice_dic["projection_wgs84"])
+        trans     = Transformer.from_crs(crs_proj, crs_wgs84, always_xy=True)
+        lon, lat  = transformer.transform(x, y)
+        ds['lat'] = (('y', 'x'), lat)
+        ds['lon'] = (('y', 'x'), lon)
+        return ds
+
+    def compute_NSIDC_metrics(self,
+                              dt0_str         = None,
+                              dtN_str         = None,
+                              local_load_dir  = None,
+                              monthly_files   = False,
+                              P_zarr          = None,
+                              overwrite       = False):
+        flags    = self.NSIDC_dict["cdr_seaice_conc_flags"]
+        SIC_name = self.NSIDC_dict["SIC_name"]
+        dt0_str  = dt0_str if dt0_str is not None else self.dt0_str
+        dtN_str  = dtN_str if dtN_str is not None else self.dtN_str
+        if monthly_files:
+            freq_str = 'monthly'
+        else:
+            freq_str = 'daily'
+        D_local = local_load_dir if local_load_dir is not None else Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)
+        P_zarr  = P_zarr         if P_zarr         is not None else Path(D_local, "zarr" )
+        if not os.path.exists(P_zarr) or overwrite:
+            NSIDC = self.load_local_NSIDC(dt0_str         = dt0_str,
+                                          dtN_str         = dtN_str,
+                                          local_directory = D_local)
+            aice  = NSIDC[SIC_name]
+            for flag in flags:
+                aice = xr.where(aice==flag/100, np.nan, aice)
+            area     = xr.open_dataset(self.NSIDC_dict["P_cell_area"]).cell_area / self.SIC_scale
+            mask     = aice > self.icon_thresh
+            SIA      = (aice * area).where(mask.notnull()).sum(dim=['y', 'x'], skipna=True)
+            SIE      = (mask * area).sum(dim=['y', 'x'], skipna=True)
+            NSIDC_ts = xr.Dataset({'SIA' : (('time'),SIA.values),
+                                   'SIE' : (('time'),SIE.values)},
+                                  coords = {'time' : (('time'), SIA.time.values)})
+            self.logger.info(f"**writing** NSIDC time series zarr file {P_zarr}")
+            NSIDC_ts.to_zarr(P_zarr)
+            return NSIDC_ts
+        else:
+            self.logger.info(f"**loading** previously created NSIDC time series zarr file {P_zarr}")
+            return xr.open_zarr(P_zarr, consolidated=True)
 
     #-------------------------------------------------------------------------------------------
     #                            RE-ORGANISE MODEL OUTPUT DATA
@@ -295,23 +531,23 @@ class SeaIceProcessor:
             self.logger.warning(f"Zarr group {P_iceh_zarr} incomplete — skipping deletion of originals")
 
     def daily_iceh_to_monthly_zarr(self,
-                                   sim_name=None,
-                                   dt0_str=None,
-                                   dtN_str=None,
-                                   D_iceh=None,
-                                   overwrite=False,
-                                   delete_original=False):
+                                   sim_name        = None,
+                                   dt0_str         = None,
+                                   dtN_str         = None,
+                                   D_iceh          = None,
+                                   overwrite       = False,
+                                   delete_original = False):
         sim_name = sim_name or self.sim_name
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
         D_iceh   = D_iceh   or self.D_iceh
-        m_grps = defaultdict(list)
-        P_orgs = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
+        m_grps   = defaultdict(list)
+        P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
         if not P_orgs:
             self.logger.info("No CICE files found. Noting further to do here.")
             return
         for f in P_orgs:
-            dt = datetime.strptime(f.name, "iceh.%Y-%m-%d.nc")
+            dt    = datetime.strptime(f.name, "iceh.%Y-%m-%d.nc")
             m_str = dt.strftime("%Y-%m")
             m_grps[m_str].append(f)
         for m_str, P_ in m_grps.items():
@@ -321,21 +557,106 @@ class SeaIceProcessor:
                 if delete_original:
                     self.delete_original_cice(P_, P_iceh_zarr, m_str)
                     continue
-            self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
-            CICE_all = xr.open_mfdataset(P_,
-                                         engine="scipy",
-                                         parallel=True,
-                                         combine="by_coords",
-                                         cache=True,
-                                         chunks={})
-            CICE_all = CICE_all.chunk({'time': -1, 'nj': 540, 'ni': 1440})
-            self.logger.info(f"⏳ Writing {m_str} to {P_iceh_zarr}")
-            CICE_all.to_zarr(P_iceh_zarr, mode="w", consolidated=True)
-            self.get_dir_size(P_iceh_zarr)
-            self.count_zarr_files(P_iceh_zarr)
-            if delete_original:
-                self.delete_original_cice(P_, P_iceh_zarr, m_str)
+            else:
+                self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
+                CICE_all = xr.open_mfdataset(P_,
+                                             engine   = "scipy",
+                                             parallel = True,
+                                             combine  = "by_coords",
+                                             cache    = True,
+                                             chunks   = {})
+                CICE_all = CICE_all.chunk({'time': -1, 'nj': 540, 'ni': 1440})
+                self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
+                CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
+                self.logger.info(f"Writing {m_str} to {P_iceh_zarr}")
+                CICE_all.to_zarr(P_iceh_zarr, mode="w", consolidated=True)
+                self.get_dir_size(P_iceh_zarr)
+                self.count_zarr_files(P_iceh_zarr)
+                if delete_original:
+                    self.delete_original_cice(P_, P_iceh_zarr, m_str)
 
+    def monthly_zarr_iceh_time_correction(self, P_mnthly_zarr, dry_run=True):
+        """
+        Fix the time coordinate in a monthly iceh zarr file by shifting all time entries back by 1 day.
+        This corrects for CICE's 00:00:00 datestamp which represents daily averages for the *previous* day.
+        This method was done after a correction to daily_iceh_to_monthly_zarr() accounts for this timestamp
+        discrepancy and hence this method may quickly become outdated/unnecessary. 
+
+        INPUTS:
+           P_mnthly_zarr : str or Path; path to the Zarr directory to correct (e.g., iceh_2011-05.zarr).
+           dry_run   : bool, optional; if True, do not write any files — only print what would be changed.
+        """
+        from calendar import monthrange
+        P_mnthly_zarr = Path(P_mnthly_zarr)
+        if not P_mnthly_zarr.exists():
+            self.logger.warning(f"{P_mnthly_zarr} does not exist.")
+            return
+        try:
+            ds = xr.open_zarr(P_mnthly_zarr, consolidated=True)
+        except Exception as e:
+            self.logger.error(f"Failed to open {P_mnthly_zarr}: {e}")
+            return
+        if "time" not in ds:
+            self.logger.warning(f"No 'time' coordinate found in {P_mnthly_zarr.name}")
+            return
+        old_time = ds["time"].values
+        if len(old_time) == 0:
+            self.logger.warning(f"{P_mnthly_zarr.name} has no time entries.")
+            return
+        # Determine expected month from filename
+        try:
+            m_str = P_mnthly_zarr.stem.split("_")[1]
+            y, m = map(int, m_str.split("-"))
+            month_start = np.datetime64(f"{y:04d}-{m:02d}-01")
+            month_end = np.datetime64(f"{y:04d}-{m:02d}-{monthrange(y, m)[1]}")
+        except Exception as e:
+            self.logger.error(f"Could not parse month from {P_mnthly_zarr.name}: {e}")
+            return
+        # Check if all timestamps fall within the expected month
+        time_ok = (old_time[0] >= month_start) and (old_time[-1] <= month_end)
+        if time_ok and np.all((old_time >= month_start) & (old_time <= month_end)):
+            self.logger.info(f"[GOOD] {P_mnthly_zarr.name} time coordinates already valid — skipping")
+            return
+        # Otherwise apply correction
+        new_time = old_time - np.timedelta64(1, "D")
+        self.logger.info(f"Fixing {P_mnthly_zarr.name}: {old_time[0]} → {new_time[0]}")
+        ds["time"] = new_time
+        if dry_run:
+            self.logger.info(f"[dry-run] Would rewrite {P_mnthly_zarr.name} with corrected time index")
+            return
+        tmp_path = P_mnthly_zarr.with_suffix(".tmp.zarr")
+        self.logger.info(f"Writing fixed dataset to temporary path {tmp_path}")
+        ds.to_zarr(tmp_path, mode="w", consolidated=True)
+        self.logger.info(f"Replacing original {P_mnthly_zarr.name}")
+        shutil.rmtree(P_mnthly_zarr)
+        tmp_path.rename(P_mnthly_zarr)
+        self.logger.info(f"Time fix applied to {P_mnthly_zarr.name}")
+
+    def correct_timestamp_for_all_monthly_zarr_iceh(self, sim_names=None, dry_run=True):
+        """
+        Loop through all monthly Zarr files in one or more simulation archives and correct the time index.
+        See monthly_zarr_iceh_time_correction()
+
+        INPUTS
+           sim_name_list : list of str, optional; list of simulation names (e.g., ["FI-heavy", "PI-control"]).
+                           If None, defaults to [self.sim_name].
+           dry_run       : bool, optional; if True, no files will be changed — actions will be logged only.
+        """
+        sims = sim_names if sim_names is not None else [self.sim_name]
+        for sim in sims:
+            D_zarr = Path(self.D_dict['AFIM_out'],sim,'zarr')
+            if not D_zarr.exists():
+                self.logger.warning(f"Zarr directory not found for {sim}")
+                continue
+            self.logger.info(f"Scanning Zarr files in {D_zarr} ...")
+            zarr_months = sorted(D_zarr.glob("iceh_????-??.zarr"))
+            for P_zarr in zarr_months:
+                self.monthly_zarr_iceh_time_correction(P_zarr, dry_run=dry_run)
+
+    def get_static_grid(self, var):
+        if "time" in var.dims:
+            return var.isel(time=0)
+        return var
     #-------------------------------------------------------------------------------------------
     #                             COMPUTE FAST ICE CLASSIFICATION
     #-------------------------------------------------------------------------------------------
@@ -406,12 +727,12 @@ class SeaIceProcessor:
                 DS['ispd_Ta']          = xr.DataArray(ispd_Ta,
                                                     dims   = ("time", "nj", "ni"),
                                                     coords = {"time" : (("time"),DS.time.values),
-                                                                "nj"   : np.arange(ispd_Ta.sizes["nj"]),
-                                                                "ni"   : np.arange(ispd_Ta.sizes["ni"]),
-                                                                "TLAT" : (("nj", "ni"), DS.TLAT.values),
-                                                                "TLON" : (("nj", "ni"), DS.TLON.values)},
+                                                              "nj"   : np.arange(ispd_Ta.sizes["nj"]),
+                                                              "ni"   : np.arange(ispd_Ta.sizes["ni"]),
+                                                              "TLAT" : (("nj", "ni"), self.get_static_grid(DS.TLAT).values),
+                                                              "TLON" : (("nj", "ni"), self.get_static_grid(DS.TLON).values)},
                                                     attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
-                                                                "units"     : ispd_B.attrs.get("units", "m/s")})
+                                                              "units"     : ispd_B.attrs.get("units", "m/s")})
                 ists_Ta                = xr.full_like(ists_B, fill_value=np.nan)
                 ists_stack             = xr.concat([ists_B.isel(nj=slice(None, -1), ni=slice(None, -1)),
                                                     ists_B.isel(nj=slice(None, -1), ni=slice(1, None)),
@@ -423,26 +744,26 @@ class SeaIceProcessor:
                 DS['ists_Ta']          = xr.DataArray(ists_Ta,
                                                     dims   = ("time", "nj", "ni"),
                                                     coords = {"time" : (("time"),DS.time.values),
-                                                                "nj"   : np.arange(ists_Ta.sizes["nj"]),
-                                                                "ni"   : np.arange(ists_Ta.sizes["ni"]),
-                                                                "TLAT" : (("nj", "ni"), DS.TLAT.values),
-                                                                "TLON" : (("nj", "ni"), DS.TLON.values)},
+                                                              "nj"   : np.arange(ists_Ta.sizes["nj"]),
+                                                              "ni"   : np.arange(ists_Ta.sizes["ni"]),
+                                                              "TLAT" : (("nj", "ni"), self.get_static_grid(DS.TLAT).values),
+                                                              "TLON" : (("nj", "ni"), self.get_static_grid(DS.TLON).values)},
                                                     attrs  = {"long_name" : "T-grid interpolated B-grid internal ice stress",
                                                                 "units"     : ists_B.attrs.get("units", "N/m^2")})
-        if "ispd_Tx" in ispd_type or "ispd_BT" in ispd_type:
-            self.logger.info("xESMF regrid to T-grid")
-            if not self.reG_weights_defined:
-                self.define_reG_weights()
-            DS_reG = self.reG_bgrid_to_tgrid_xesmf(DS)
-            self.logger.info("Computing xESMF-based ice speed ('ispd_Tx') and internal ice stress from strintx and strinty ('ists_Tx')")
-            ispd_Tx = xr.apply_ufunc(np.hypot, DS_reG['uvel']   , DS_reG['vvel']   , dask="allowed", output_dtypes=[DS_reG['uvel'].dtype])
-            ists_Tx = xr.apply_ufunc(np.hypot, DS_reG['strintx'], DS_reG['strinty'], dask="allowed", output_dtypes=[DS_reG['strintx'].dtype])
-            if temporally_average:
-                self.logger.info("Temporally-Averaging ispd_Tx and ists_Tx")
-                ispd_Tx = ispd_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
-                ists_Tx = ispd_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
-            DS['ispd_Tx'] = ispd_Tx.copy()
-            DS['ists_Tx'] = ists_Tx.copy()
+            if "ispd_Tx" in ispd_type or "ispd_BT" in ispd_type:
+                self.logger.info("xESMF regrid to T-grid")
+                if not self.reG_weights_defined:
+                    self.define_reG_weights()
+                DS_reG = self.reG_bgrid_to_tgrid_xesmf(DS)
+                self.logger.info("Computing xESMF-based ice speed ('ispd_Tx') and internal ice stress from strintx and strinty ('ists_Tx')")
+                ispd_Tx = xr.apply_ufunc(np.hypot, DS_reG['uvel']   , DS_reG['vvel']   , dask="allowed", output_dtypes=[DS_reG['uvel'].dtype])
+                ists_Tx = xr.apply_ufunc(np.hypot, DS_reG['strintx'], DS_reG['strinty'], dask="allowed", output_dtypes=[DS_reG['strintx'].dtype])
+                if temporally_average:
+                    self.logger.info("Temporally-Averaging ispd_Tx and ists_Tx")
+                    ispd_Tx = ispd_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
+                    ists_Tx = ists_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
+                DS['ispd_Tx'] = ispd_Tx.copy()
+                DS['ists_Tx'] = ists_Tx.copy()
         return DS
 
     def compute_composite_ice_speed(self, DS):
@@ -507,7 +828,7 @@ class SeaIceProcessor:
                               "units"      : DS["ists_B"].attrs.get("units", "N/m^2")})
         return ists_BT
 
-    def reapply_landmask(self, DS):
+    def reapply_landmask(self, DS, apply_unmodified=False):
         """
 
         Apply landmask to all spatial variables in the dataset.
@@ -523,7 +844,11 @@ class SeaIceProcessor:
            xarray.Dataset; Same dataset with land cells set to NaN for spatial variables.
 
         """
-        kmt_mask = self.GI_proc.G_t['kmt_mod'] == 1  # True for ocean, False for land
+        if self.use_gi and not apply_unmodified:
+            kmt_mask = xr.open_dataset(self.P_KMT_mod)['kmt'] == 1
+        else:
+            kmt_mask = xr.open_dataset(self.P_KMT_org)['kmt'] == 1
+            #kmt_mask = self.GI_proc.G_t['kmt_mod'] == 1  # True for ocean, False for land
         for var in DS.data_vars:
             da = DS[var]
             if {"nj", "ni"}.issubset(da.dims):  # Only apply to spatial fields
@@ -634,17 +959,17 @@ class SeaIceProcessor:
                 ispd_var = group.replace("FI_", "ispd_")
                 if ispd_var not in ispd_type:
                     continue
-            group_dir = P_zarr_root / group
+            group_dir = Path(P_zarr_root,group)
             if group_dir.exists():
                 if self.overwrite_zarr_group:
                     self.logger.warning(f"Deleting existing group '{group}' at: {group_dir}")
                     try:
                         shutil.rmtree(group_dir)
                     except Exception as e:
-                        self.logger.error(f"❌ Failed to delete group '{group}': {e}")
+                        self.logger.error(f"Failed to delete group '{group}': {e}")
                         continue
                 else:
-                    self.logger.info(f"⏩ Skipping group '{group}' (already exists and overwrite disabled)")
+                    self.logger.info(f"Skipping group '{group}' (already exists and overwrite disabled)")
                     continue
             self.logger.info(f"Writing group '{group}' to Zarr store: {P_zarr_root}")
             try:
@@ -655,7 +980,7 @@ class SeaIceProcessor:
                 ds_monthly = ds_monthly.chunk({"time": -1, "nj": 540, "ni": 1440})
                 ds_monthly.to_zarr(P_zarr_root, group=group, mode="a", consolidated=True)
             except Exception as e:
-                self.logger.error(f"❌ Failed to write group '{group}': {e}")
+                self.logger.error(f"Failed to write group '{group}': {e}")
         DS_grouped[m_str].clear()
 
     def drop_unwanted_ispd_vars(self, ds, ispd_type_requested):
@@ -715,7 +1040,7 @@ class SeaIceProcessor:
         for m_str in mo_strs:
             P_iceh = Path(self.D_zarr, f"iceh_{m_str}.zarr")
             if not P_iceh.exists():
-                self.logger.warning(f"❌ Missing monthly Zarr file: {P_iceh}")
+                self.logger.warning(f"Missing monthly Zarr file: {P_iceh}")
                 continue
             self.logger.info(f"Loading monthly Zarr: {P_iceh}")
             try:
@@ -724,9 +1049,9 @@ class SeaIceProcessor:
                     ds = ds[var_list]
                 datasets.append(ds)
             except Exception as e:
-                self.logger.error(f"❌ Failed to load {P_iceh}: {e}")
+                self.logger.error(f"Failed to load {P_iceh}: {e}")
         if not datasets:
-            self.logger.error("❌ No valid Zarr datasets found.")
+            self.logger.error("No valid Zarr datasets found.")
             return None
         ds_all = xr.concat(datasets, dim="time").sortby("time")
         return ds_all
@@ -773,16 +1098,16 @@ class SeaIceProcessor:
         self.overwrite_zarr_group = overwrite_zarr_group
         if isinstance(ispd_type_req, str):
             ispd_type_req = [ispd_type_req]
-        assertion_err = f"❌ Invalid requested sea ice speed 'type': {ispd_type_req}. Must be one or more of these valid types: {self.valid_ispd_types}"
+        assertion_err = f"Invalid requested sea ice speed 'type': {ispd_type_req}. Must be one or more of these valid types: {self.valid_ispd_types}"
         assert all(t in set(self.valid_ispd_types) for t in ispd_type_req), assertion_err
         m_DS     = self.create_empty_valid_DS_dictionary()
         CICE_all = self.load_iceh_zarr(sim_name=sim_name, dt0_str=dt0_str, dtN_str=dtN_str, var_list=self.cice_var_list)
         if CICE_all is None:
-            self.logger.error("❌ No valid CICE Zarr data to process.")
+            self.logger.error("No valid CICE Zarr data to process.")
             return
         for m_str in sorted(set(pd.to_datetime(CICE_all.time.values).strftime("%Y-%m"))):
-            CICE_month          = CICE_all.sel(time=CICE_all.time.dt.strftime("%Y-%m") == m_str)
             P_zarr              = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_daily_{m_str}.zarr")
+            CICE_month          = CICE_all.sel(time=CICE_all.time.dt.strftime("%Y-%m") == m_str)
             CICE_ispd           = self.compute_ice_speed_types(CICE_month, ispd_type_req)
             CICE_reM            = self.reapply_landmask(CICE_ispd)
             CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
@@ -791,7 +1116,7 @@ class SeaIceProcessor:
             self.logger.info("Subsetting Ocean into either southern or northern hemisphere (default: southern)")
             CICE_SO = CICE_reM.isel(nj=self.hemisphere_nj_slice)
             self.logger.info("Create fast ice masks")
-            masks = self.create_fast_ice_mask(CICE_SO, ispd_type_req, ispd_thresh)
+            masks = self.create_fast_ice_mask(CICE_SO, ispd_type_req, ispd_thresh) #
             self.logger.info("Apply fast ice masks to dataset")
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             for key in CICE_grouped[m_str]:
@@ -800,7 +1125,7 @@ class SeaIceProcessor:
             for group in fast_group:
                 if group in CICE_grouped[m_str]:
                     datasets_to_return.extend(CICE_grouped[m_str][group])
-            self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group)
+            self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group) #
             m_DS[m_str].clear()
         if datasets_to_return:
             return xr.concat(datasets_to_return, dim="time").sortby("time")
@@ -1140,20 +1465,21 @@ class SeaIceProcessor:
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         D_out           = D_out if D_out is not None else Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", "metrics")
         D_out.mkdir(parents=True, exist_ok=True)
-        SI_plot  = SeaIcePlotter(sim_name  = sim_name)
-        cfg = self.sim_config
-        ktens, elps, GI_thin = cfg.get("Ktens", "?"), cfg.get("e_f", "?"), 1 - cfg.get("GI_thin_fact", 0)
+        SI_plot      = SeaIcePlotter(sim_name  = sim_name)
+        ktens        = self.sim_config.get("Ktens", "?")
+        elps         = self.sim_config.get("e_f", "?")
+        GI_thin      = 1 - float(self.sim_config.get("GI_thin_fact", 0.0))
         dt_range_str = f"{self.dt0_str[:4]}-{self.dtN_str[:4]}"
-        af2020_df = pd.read_csv(self.sea_ice_dict['P_AF2020_cli_csv'])
-        obs_clim  = self.interpolate_obs_fia(af2020_df)
-        FIA_comp = {}
-        ice_types = [ice_type, f"{ice_type}_roll", f"{ice_type}_bool"]
+        af2020_df    = pd.read_csv(self.sea_ice_dict['P_AF2020_cli_csv'])
+        obs_clim     = self.interpolate_obs_fia(af2020_df)
+        FIA_comp     = {}
+        ice_types    = [ice_type, f"{ice_type}_roll", f"{ice_type}_bool"]
         for i_type in ice_types:
             P_METS = Path(D_out, f"{i_type}_mets.zarr")
             P_sum  = Path(D_out, f"{i_type}_summary.csv")
             if P_METS.exists() and not overwrite_zarr:
                 self.logger.info(f"{P_METS} exists and not overwriting--loading")
-                METS = xr.open_zarr(P_METS)
+                METS             = xr.open_zarr(P_METS)
                 FIA_comp[i_type] = METS['FIA']
             else:
                 self.logger.info(f"{P_METS} does NOT exists and/or overwriting--computing")
@@ -1163,8 +1489,8 @@ class SeaIceProcessor:
                                                        rolling     = True if i_type==f"{ice_type}_roll" else False,
                                                        slice_hem   = True)
                 if i_type==f"{ice_type}_bool":
-                    bool_mask = self.boolean_fast_ice(DS['FI_mask'], dim="time", window=7, min_count=6)
-                    DS_bool   = CICE_SO.where(bool_mask)
+                    bool_mask          = self.boolean_fast_ice(DS['FI_mask'], dim="time", window=7, min_count=6)
+                    DS_bool            = CICE_SO.where(bool_mask)
                     DS_bool["FI_mask"] = DS["FI_mask"]
                     DS                 = DS_bool
                 METS = self.compute_sea_ice_metrics(DS, sim_name, i_type, ispd_thresh_str, P_METS, P_sum, obs_clim)
@@ -1176,7 +1502,7 @@ class SeaIceProcessor:
                                          ice_type = i_type,
                                          sim_name = sim_name,
                                          regional = True,
-                                         plot_GI  = True,
+                                         plot_GI  = self.use_gi,
                                          dt_range_str  = f"{self.dt0_str[:4]}-{self.dtN_str[:4]}",
                                          overwrite_png = overwrite_png)
             SI_plot.plot_persistence_map(METS['FIP'],
@@ -1185,11 +1511,11 @@ class SeaIceProcessor:
                                          ice_type = i_type,
                                          sim_name = sim_name,
                                          regional = False,
-                                         plot_GI  = False,
+                                         plot_GI  = self.use_gi,
                                          dt_range_str  = f"{self.dt0_str[:4]}-{self.dtN_str[:4]}",
                                          overwrite_png = overwrite_png)
         tit_str = f"{sim_name} ispd_thresh={ispd_thresh_str}: ktens={ktens}, elps={elps}, GI-thin={GI_thin:.2f}"
-        P_png = Path(SI_plot.D_graph, "timeseries", f"FIA_{sim_name}_{ispd_thresh_str}_smoothed_{dt_range_str}.png")
+        P_png   = Path(SI_plot.D_graph, "timeseries", f"FIA_{sim_name}_{ispd_thresh_str}_smoothed_{dt_range_str}.png")
         SI_plot.plot_ice_area(FIA_comp, tit_str=tit_str, P_png=P_png, roll_days=smooth_FIA_days, obs_clim=obs_clim, keys_to_plot=ice_types)
 
     def compute_sea_ice_metrics(self, DS, sim_name, i_type, ispd_thresh_str, P_METS, P_sum, obs_clim):
@@ -1271,10 +1597,17 @@ class SeaIceProcessor:
         return DS_METS
 
     def compute_ice_area(self, SIC, GC_area, ice_area_scale=None):
+        if self.use_gi:
+            from grounded_iceberg_processor import GroundedIcebergProcessor
+            GI_proc       = GroundedIcebergProcessor(sim_name=self.sim_name)
+            GI_total_area = GI_proc.compute_grounded_iceberg_area()
+        else:
+            GI_total_area = 0
+        self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
         self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
         IA = ((SIC * GC_area).sum(dim=("nj", "ni"))).persist()
-        IA = IA+self.GI_total_area
+        IA = IA + GI_total_area
         IA = IA/ice_area_scale
         return IA
 
@@ -1336,12 +1669,28 @@ class SeaIceProcessor:
         Maximum distance from coast for fast ice presence
         """
         from scipy.ndimage import binary_dilation, distance_transform_edt
-        kmt_mod           = self.GI_proc.G_t['kmt_mod'].values
-        land_mask         = (kmt_mod == 0)
-        sea_mask          = ~land_mask
-        coast_mask        = sea_mask & binary_dilation(land_mask)
-        coast_distances   = distance_transform_edt(~coast_mask) * grid_dx_km
-        coast_dist_da     = xr.DataArray(coast_distances, coords=self.GI_proc.G_t['kmt_mod'].coords)
+        if self.use_gi:
+            P_kmt = self.P_KMT_mod
+        else:
+            P_kmt = self.P_KMT_org
+        kmt             = xr.open_dataset(P_kmt)['kmt']
+        kmt             = kmt.isel(nj=self.hemisphere_nj_slice).values
+        land_mask       = (kmt == 0)
+        sea_mask        = ~land_mask
+        coast_mask      = sea_mask & binary_dilation(land_mask)
+        coast_distances = distance_transform_edt(~coast_mask) * grid_dx_km
+        TLAT = FI_mask.TLAT
+        TLON = FI_mask.TLON
+        if TLAT.ndim == 3:
+            TLAT = TLAT.isel(time=0)
+        if TLON.ndim == 3:
+            TLON = TLON.isel(time=0)
+        coast_dist_da   = xr.DataArray(data   = coast_distances,
+                                       dims   = ('nj', 'ni'),
+                                       coords = {'nj'   : FI_mask.nj,
+                                                 'ni'   : FI_mask.ni,
+                                                 'TLAT' : (('nj','ni'), TLAT.values),
+                                                 'TLON' : (('nj','ni'), TLON.values)})
         fi_mask_time_mean = FI_mask.mean(dim="time") > 0.5
         fast_ice_dists    = coast_dist_da.where(fi_mask_time_mean)
         mean_dist         = float(fast_ice_dists.mean().values)
@@ -1430,15 +1779,11 @@ class SeaIceProcessor:
         interp_func = interp1d(x, y, kind='linear', fill_value="extrapolate")
         return xr.DataArray(interp_func(full_doy), coords=[("doy", full_doy)])
 
-    def define_AF2020_reG_weights(self, FI_obs_native):
+    def define_AF2020_reG_weights(self, FI_obs_da):
         from pyproj import CRS, Transformer
         self.logger.info("define model grid")
-        G_t           = xr.Dataset()
-        G_t['lat']    = self.GI_proc.G_t['lat']
-        G_t['lon']    = self.GI_proc.G_t['lon']
-        G_t['lat_b']  = self.GI_proc.G_t['lat_b']
-        G_t['lon_b']  = self.GI_proc.G_t['lon_b']
-        #G_t['mask']   = self.GI_proc.G_t['kmt_org']
+        G_t = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
+        G_t.to_netcdf("/g/data/gv90/da1339/grids/CICE_Tgrid_for_AF2020db_regrid.nc")
         self.logger.info("defining AF2020 regridder weights")
         F_weights     = "/g/data/gv90/da1339/grids/weights/AF_FI_2020db_to_AOM2-0p25_Tgrid_bil_meth2.nc" #self.sea_ice_dict["AF_reG_weights"]
         weights_exist = os.path.exists(F_weights)
@@ -1448,27 +1793,59 @@ class SeaIceProcessor:
         transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
         X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
         lon_obs, lat_obs = transformer.transform(X,Y)
-        G_obs            = self.GI_proc.build_grid_dict(lat_obs, lon_obs)
+        da_obs           = xr.DataArray(data   = FI_obs_da,
+                                        dims   = ["nj", "ni"],
+                                        coords = dict(lon = (["nj", "ni"], lon_obs),
+                                                      lat = (["nj", "ni"], lat_obs)))
         self.logger.info(f"Model lon: {G_t['lon'].values.min()} to {G_t['lon'].values.max()}")
         self.logger.info(f"Obs lon:   {G_obs['lon'].min()} to {G_obs['lon'].max()}")
         self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
         self.reG_AF2020 = xe.Regridder(G_obs, G_t,
                                        method            = "bilinear", #self.sea_ice_dict["AF_reG_weights_method"],
                                        periodic          = False,
-                                       #ignore_degenerate = True,
+                                       ignore_degenerate = True,
                                        #extrap_method     = "nearest_s2d",
                                        reuse_weights     = weights_exist,
                                        filename          = F_weights)
 
     def load_AF2020_FI_org_netcdf(self, P_orgs):
-        FI_obs = xr.open_mfdataset(P_orgs, engine='netcdf4')
-        self.define_AF2020_reG_weights(FI_obs)
+        from pyproj import CRS, Transformer
+        F_weights        = self.sea_ice_dict["AF_reG_weights"]
+        reuse_weights    = os.path.exists(F_weights)
+        self.logger.info("loading FI observations with xarray mfdataset")
+        self.logger.info(f"loading these files:\n{P_orgs}")
+        FI_obs           = xr.open_mfdataset(P_orgs, engine='netcdf4')
+        self.logger.info("masking FI observations for values greater than 4")
+        mask             = (FI_obs['Fast_Ice_Time_series'] >= 4).compute()
+        #FI_OBS           = FI_obs['Fast_Ice_Time_series'].where(mask)
+        FI_OBS           = xr.where( FI_obs['Fast_Ice_Time_series'] >= 4, 1.0, np.nan)
+        self.logger.info("define model grid")
+        G_t              = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
+        self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
+        crs_obs          = CRS.from_epsg(self.sea_ice_dict["projection_FI_obs"]) #unique to observations
+        crs_spherical    = CRS.from_epsg(self.sea_ice_dict["projection_wgs84"])  #spherical coordinates
+        transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
+        X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
+        lon_obs, lat_obs = transformer.transform(X,Y)
+        da_obs           = xr.DataArray(data   = FI_OBS.isel(time=0),
+                                        dims   = ["nj", "ni"],
+                                        coords = dict(lon = (["nj", "ni"], lon_obs),
+                                                      lat = (["nj", "ni"], lat_obs)))
         self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
-        FI_obs_reG_dat    = self.reG_AF2020(FI_obs["Fast_Ice_Time_series"])
-        mask              = (FI_obs_reG_dat >= 4).compute()
-        FI_obs_binary     = xr.where(FI_obs_reG_dat >= 4, 1.0, np.nan)
+        self.logger.info(f"\tDefine regridder; reusing weights : {reuse_weights}")
+        reG_obs          = xe.Regridder( da_obs, G_t,
+                                         method            = "bilinear",
+                                         periodic          = False,
+                                         ignore_degenerate = True,
+                                         reuse_weights     = reuse_weights,
+                                         filename          = P_weights)
+        self.logger.info(f"\tRegridding masked observational dataset")
+        FI_OBS_reG        = reG_obs( FI_OBS )
+        #FI_obs_reG_dat    = self.reG_AF2020(FI_obs["Fast_Ice_Time_series"])
+        #mask              = (FI_obs_reG_dat >= 4).compute()
+        #FI_obs_binary     =         xr.where(FI_obs_reG_dat )
         FI                = (('t_FI_obs', 'nj', 'ni'),
-                             FI_obs_binary.values,
+                             FI_OBS_reG.values,
                              {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
         t_alt             = (('t_FI_obs'),
                              FI_obs.date_alt.values,
@@ -1479,15 +1856,17 @@ class SeaIceProcessor:
                              {'description': "Start date of 15- or 20-day image mosaic window.",
                               'units': "days since 2000-1-1 0:0:0"})
         x_coords          = (('nj','ni'),
-                             self.GI_proc.G_t['lon'].values,
+                             G_t['lon'].values,
                              {'long_name': 'longitude', 'units': 'degrees_east'})
         y_coords          = (('nj','ni'),
-                             self.GI_proc.G_t['lat'].values,
+                             G_t['lat'].values,
                              {'long_name': 'latitude', 'units': 'degrees_north'})
         self.logger.info("converted AF2020 database for use with SeaIceProcessor")
         return xr.Dataset({'FI'       : FI,
                            'FI_t_alt' : t_alt },
-                          coords=dict(t_FI_obs=t_coords, obs_lon=x_coords, obs_lat=y_coords))
+                          coords = {'t_FI_obs' : t_coords,
+                                    'lon'      : x_coords,
+                                    'lat'      : y_coords})
 
     def filter_AF2020_FI_by_date(self, dt0_str, dtN_str):
         dt0       = datetime.strptime(dt0_str, "%Y-%m-%d")
@@ -1540,6 +1919,7 @@ class SeaIceProcessor:
         - Climatological daily average used outside that range
         - Output written to monthly Zarr files
         """
+        G_t = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
         dt0 = pd.to_datetime(dt0_str)
         dtN = pd.to_datetime(dtN_str)
         all_dates = pd.date_range(dt0, dtN, freq="D")
@@ -1568,8 +1948,8 @@ class SeaIceProcessor:
             ds_full = ds_obs_daily
         ds_full = ds_full.sel(time=slice(dt0, dtN))
         ds_full = ds_full.expand_dims("time") if "time" not in ds_full.dims else ds_full
-        ds_full = ds_full.assign_coords(TLAT = (("nj", "ni"), self.GI_proc.G_t["lat"]),
-                                        TLON = (("nj", "ni"), self.GI_proc.G_t["lon"]))
+        ds_full = ds_full.assign_coords(TLAT = (("nj", "ni"), G_t["lat"]),
+                                        TLON = (("nj", "ni"), G_t["lon"]))
         out_dir = Path(self.sea_ice_dict["D_AF2020_daily_zarr"])
         self.logger.info(f"Writing daily observational Zarrs to {out_dir}")
         for year in np.unique(ds_full.time.dt.year.values):
