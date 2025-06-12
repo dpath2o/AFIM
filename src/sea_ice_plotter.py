@@ -1,4 +1,14 @@
-import os, sys, time, json, imageio, shutil, pygmt, imageio, shutil
+# import os, sys, time, json, imageio, shutil, pygmt, imageio, shutil
+# import xarray            as xr
+# import pandas            as pd
+# import geopandas         as gpd
+# import numpy             as np
+# import matplotlib.pyplot as plt
+# import matplotlib.dates  as mdates
+# from PIL                 import Image
+# from pathlib             import Path
+# from datetime            import datetime
+import os, time, imageio, pygmt
 import xarray            as xr
 import pandas            as pd
 import geopandas         as gpd
@@ -11,7 +21,6 @@ from datetime            import datetime
 
 class SeaIcePlotter:
     def __init__(self,**kwargs):
-        #super().__init__(**kwargs
         return
 
     def load_ice_shelves(self):

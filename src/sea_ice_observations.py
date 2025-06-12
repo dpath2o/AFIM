@@ -1,15 +1,21 @@
-import json, os, shutil, sys, time, logging, zarr, re
+# import json, os, shutil, sys, time, logging, zarr, re
+# import xarray as xr
+# import pandas as pd
+# import numpy  as np
+# import xesmf     as xe
+# from collections import defaultdict
+# from pathlib     import Path
+# from datetime    import datetime, timedelta
+import json, os, shutil, time, logging
 import xarray as xr
 import pandas as pd
 import numpy  as np
-import xesmf     as xe
-from collections import defaultdict
-from pathlib     import Path
-from datetime    import datetime, timedelta
+import xesmf  as xe
+from pathlib import Path
+from datetime import datetime, timedelta
 
 class SeaIceObservations:
     def __init__(self, **kwargs):
-        #super().__init__(**kwargs)
         return
     
     ####################################################################################################

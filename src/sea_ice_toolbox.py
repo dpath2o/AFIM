@@ -1,22 +1,17 @@
-import os, sys, time, json, imageio, shutil, pygmt, imageio, shutil, re, zarr, logging, time
+import os, sys, time, json, logging
 import xarray             as xr
 import xesmf              as xe
 import pandas             as pd
 import numpy              as np
-import geopandas          as gpd
 import matplotlib.pyplot  as plt
-import matplotlib.dates   as mdates
 from pathlib              import Path
 from datetime             import datetime, timedelta
-from dask.distributed     import Client, LocalCluster
-from collections          import defaultdict
 from pathlib              import Path
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
 from sea_ice_models       import SeaIceModels
 from sea_ice_plotter      import SeaIcePlotter
 from sea_ice_icebergs     import SeaIceIcebergs
 from sea_ice_observations import SeaIceObservations
-_dask_client = None
 
 #class SeaIceToolbox:
 class SeaIceToolbox(SeaIceModels, SeaIcePlotter, SeaIceIcebergs, SeaIceObservations):

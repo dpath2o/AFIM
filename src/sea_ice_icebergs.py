@@ -1,4 +1,12 @@
-import os, sys, json, shutil
+# import os, sys, json, shutil
+# import xarray      as xr
+# import numpy       as np
+# import pandas      as pd
+# import geopandas   as gpd
+# from scipy.spatial import cKDTree
+# from pathlib       import Path
+# from datetime      import datetime
+import os, shutil
 import xarray      as xr
 import numpy       as np
 import pandas      as pd
@@ -9,7 +17,6 @@ from datetime      import datetime
 
 class SeaIceIcebergs:
     def __init__(self, **kwargs):
-        #super().__init__(**kwargs)
         return
 
     def compute_grounded_iceberg_area(self, region=None):
