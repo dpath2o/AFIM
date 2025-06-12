@@ -32,50 +32,39 @@ Explore key outputs from AFIM simulations:
 
 ## 🚀 Highlights
 
-### 🧊 `SeaIceProcessor`
+### 🧊 `SeaIceToolbox` — Unified API
 
-* Core class to compute fast ice, pack ice, or general sea ice metrics from daily or rolling model output
-* Supports Boolean-based classification, spatial and temporal averaging, masking, and Zarr output
+- **All-in-one class** for Antarctic sea ice analysis:
+  - Model I/O, fast/pack ice masking, Zarr output
+  - Flexible plotting (maps, time series, faceted views)
+  - Grounded iceberg masking and landmask modification
+  - Observational data integration (Fraser et al. 2020, NSIDC)
+- Boolean and rolling fast ice classification, spatial/temporal averaging, and regional metrics
+- Regridding, derived fields, and observational overlays built-in
+- Highly configurable via JSON
 
-### 🧭 `process_fast_ice` directory — HPC-Ready
+### 🧭 Batch Processing & HPC-Ready
 
-* 🔁 Powerful command-line batch processing using PBS:
+- Command-line and scriptable workflows for large-scale or HPC batch processing
+- PBS job scripts and wrappers for automated monthly/seasonal runs
 
-  * `process_fast_ice_pbs_wrapper.sh`: Shell script that loops over months and submits jobs
-  * `process_fast_ice.py`: Argument-driven Python script for daily or rolling classification
-* Supports options like:
+### 📊 Advanced Plotting
 
-  ```bash
-  ./process_fast_ice_pbs_wrapper.sh \
-      -s gi-mid \
-      -t 1e-3 \
-      -i ispd_Ta \
-      -S 1993-01-01 \
-      -E 1999-12-31 \
-      -r -d
-  ```
+- Generate spatial maps, regional/faceted views, and time series
+- Overlay observational and grounded iceberg data
 
-  * `-s` = simulation name, `-t` = threshold, `-i` = ice speed type(s), `-r` = rolling, `-d` = daily
-  * Also supports `--dry-run` for testing submissions
+### 🏔️ Grounded Iceberg Handling
 
-### 📊 `SeaIcePlotter`
-
-* Generate spatial maps (daily, mean), region-faceted views, and time series
-* Integrates fast/pack/SO ice, observational overlays, and grounded iceberg masks
-
-### 🏔️ `GroundedIcebergProcessor`
-
-* Mask grounded iceberg regions and modify landmasks for better coastal fast ice simulation
+- Mask grounded iceberg regions and modify landmasks for improved coastal fast ice simulation
 
 ### 🔄 Regridding and Derived Fields
 
-* Supports B-grid, T-grid (average and xESMF) interpolation
-* Dynamically computes vector magnitudes for fields like `strintx/strinty`, `strocnx/strocny`, etc.
+- Supports B-grid, T-grid (average and xESMF) interpolation
+- Computes vector magnitudes for stress and velocity fields
 
 ### 📓 Interactive Analysis
 
-* Jupyter notebook [`fi_anal.ipynb`](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) demonstrates fast ice workflows
-* Includes visualisation, comparison to observations, and regional time series analysis
+- Jupyter notebook [`fi_anal.ipynb`](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) demonstrates full workflows
 
 ---
 
@@ -99,10 +88,16 @@ conda activate afim
 ## 🧪 Example: Interactive Python Usage
 
 ```python
-from sea_ice_processor import SeaIceProcessor
+from sea_ice_toolbox import SeaIceToolbox
 
-SI_proc = SeaIceProcessor(sim_name='gi-mid', ice_speed_threshold=1e-3)
-FI = SI_proc.process_window(dt0_str="1998-07-01", dtN_str="1999-07-01", write_zarr=False)
+SI_tools = SeaIceToolbox(
+    sim_name='gi-mid',
+    dt0_str='1998-07-01',
+    dtN_str='1999-07-01',
+    ice_speed_threshold=1e-3
+)
+FI = SI_tools.process_daily_cice()
+SI_tools.plot_ice_area(FI)
 ```
 
 ---
@@ -114,12 +109,15 @@ FI = SI_proc.process_window(dt0_str="1998-07-01", dtN_str="1999-07-01", write_za
 │   └── fi_anal.ipynb           # Main interactive analysis
 ├── scripts/
 │   └── process_fast_ice/
-│       ├── process_fast_ice.py           # Main CLI script
+│       ├── process_fast_ice.py           # Legacy CLI script (use SeaIceToolbox for new workflows)
 │       ├── process_fast_ice.pbs          # PBS job script
 │       └── process_fast_ice_pbs_wrapper.sh # Wrapper to launch monthly jobs
 ├── src/
-│   ├── sea_ice_processor.py    # Core processor class
-│   ├── sea_ice_plotter.py      # Plotting class
+│   ├── sea_ice_toolbox.py      # Unified toolbox class (SeaIceToolbox)
+│   ├── sea_ice_models.py       # Model I/O and fast/pack ice logic (subclassed)
+│   ├── sea_ice_plotter.py      # Plotting (subclassed)
+│   ├── sea_ice_icebergs.py     # Grounded iceberg logic (subclassed)
+│   ├── sea_ice_observations.py # Observational data integration (subclassed)
 │   └── grounded_iceberg_processor.py
 └── docs/                       # Documentation (Sphinx)
 ```
@@ -128,8 +126,8 @@ FI = SI_proc.process_window(dt0_str="1998-07-01", dtN_str="1999-07-01", write_za
 
 ## 📚 Documentation
 
-* Full API docs and method descriptions under `docs/`
-* [fi\_anal.ipynb](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) is the best place to start interactively
+- Full API docs and method descriptions under `docs/`
+- [fi_anal.ipynb](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) is the best place to start interactively
 
 ---
 
