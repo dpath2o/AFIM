@@ -1,14 +1,4 @@
-# import json, os, shutil, sys, time, logging, zarr, re
-# import xarray as xr
-# import pandas as pd
-# import numpy  as np
-# import xesmf  as xe
-# from dask.distributed           import Client, LocalCluster
-# from collections                import defaultdict
-# from pathlib                    import Path
-# from datetime                   import datetime, timedelta
-# _dask_client = None
-import json, os, shutil, logging
+import json, os, shutil, logging, re
 import xarray    as xr
 import pandas    as pd
 import numpy     as np
@@ -16,8 +6,11 @@ import xesmf     as xe
 from collections import defaultdict
 from pathlib     import Path
 from datetime    import datetime, timedelta
+import concurrent.futures
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-class SeaIceModels:
+class SeaIceClassification:
     def __init__(self, sim_name=None, **kwargs):
         return
     #-------------------------------------------------------------------------------------------
@@ -34,6 +27,108 @@ class SeaIceModels:
     # * intelligent chunking: by using chunk={'time': -1, 'nj': 540, 'ni': 1440} you're compressing
     #   monthly time spans while maintaining spatial chunking appropriate for hemisphere-wide analysis.
     #-------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_month_range(year_month):
+        dt0 = datetime.strptime(year_month + "-01", "%Y-%m-%d")
+        dtN = (dt0.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        return [dt0 + timedelta(days=i) for i in range((dtN - dt0).days + 1)]
+
+    @staticmethod
+    def verify_month(args_tuple):
+        zarr_path, nc_dir, done_marker, dry_run = args_tuple
+        year_month = zarr_path.stem.split("_")[1]
+        if done_marker.exists():
+            return f"[SKIP] {year_month}: already verified (.done exists)"
+        dt_list = SeaIceModels.get_month_range(year_month)
+        nc_files = [nc_dir / f"iceh.{dt.strftime('%Y-%m-%d')}.nc" for dt in dt_list]
+        existing_nc_files = [f for f in nc_files if f.exists()]
+        if not existing_nc_files:
+            return f"[SKIP] {year_month}: no NetCDFs remain"
+        try:
+            zarr = xr.open_zarr(zarr_path)
+        except Exception as e:
+            return f"[FAIL] {year_month}: cannot open Zarr: {e}"
+        zarr_dates = pd.to_datetime(zarr["time"].values).normalize()
+        expected_dates = pd.to_datetime([dt.date() for dt in dt_list])
+        all_dates_present = set(expected_dates).issubset(set(zarr_dates))
+        variables_expected = set()
+        for f in existing_nc_files:
+            try:
+                ds = xr.open_dataset(f)
+                variables_expected.update(ds.data_vars)
+            except Exception as e:
+                return f"[FAIL] {year_month}: cannot open NetCDF {f.name}: {e}"
+        variables_missing = [v for v in variables_expected if v not in zarr.data_vars]
+        if not all_dates_present:
+            return f"[FAIL] {year_month}: missing time steps in Zarr"
+        if variables_missing:
+            return f"[FAIL] {year_month}: Zarr missing variables: {variables_missing}"
+        if not dry_run:
+            done_marker.touch()
+        return f"[OK]   {year_month}: verified ({len(existing_nc_files)} files)"
+
+    def verify_zarr_and_cleanup_netcdf(self,
+                                       dry_run     = True,
+                                       delete      = False,
+                                       max_workers = 4):
+        """
+        Verify that each monthly Zarr directory under a given simulation archive
+        matches all expected daily NetCDF files in date coverage and variable presence.
+        Optionally delete NetCDF files after verification.
+        """
+        self.D_iceh_nc = Path(self.D_sim,"history","daily")
+        P_clean_log    = Path(self.D_sim,"cleanup.log")
+        zarr_months    = sorted([p for p in self.D_zarr.glob("iceh_????-??.zarr") if p.is_dir()])
+        tasks = []
+        for zarr_path in zarr_months:
+            ym          = zarr_path.stem.split("_")[1]
+            done_marker = self.D_zarr / f".done_{ym}"
+            tasks.append((zarr_path, self.D_iceh_nc, done_marker, dry_run))
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(SeaIceModels.verify_month, tasks))
+        for res in results:
+            print(res)
+        with open(P_clean_log, "a") as logf:
+            logf.write("\n# Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+            for res in results:
+                logf.write(res + "\n")
+        if delete:
+            print("\nDeletion mode active.")
+            verified_months = []
+            total_files = []
+            log_entries = []
+            for zarr_path in zarr_months:
+                ym = zarr_path.stem.split("_")[1]
+                done_marker = self.D_zarr / f".done_{ym}"
+                if not done_marker.exists():
+                    continue  # skip unverified
+                nc_files = list(self.D_iceh_nc.glob(f"iceh.{ym}-??.nc"))
+                if nc_files:
+                    verified_months.append((ym, nc_files))
+                    total_files.extend(nc_files)
+            if not total_files:
+                print("No deletable NetCDF files found.")
+            else:
+                print(f"\n🔍 {len(total_files)} NetCDF files across {len(verified_months)} verified months are eligible for deletion.")
+                confirm = input("Confirm delete all these files? [y/N] ").strip().lower()
+                if confirm == "y":
+                    for ym, files in verified_months:
+                        for f in files:
+                            try:
+                                f.unlink()
+                                print(f"[DELETED] {f.name}")
+                                log_entries.append(f"[DELETED] {f}")
+                            except Exception as e:
+                                print(f"[ERROR] Could not delete {f.name}: {e}")
+                                log_entries.append(f"[ERROR] Failed to delete {f}: {e}")
+                    log_entries.append(f"# Deletion complete: {len(total_files)} files removed")
+                else:
+                    print("Deletion cancelled.")
+                    log_entries.append("# Deletion prompt declined — no files deleted")
+            with open(P_clean_log, "a") as logf:
+                for entry in log_entries:
+                    logf.write(entry + "\n")
+
     def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
         dt0 = pd.to_datetime(dt0_str)
         dtN = pd.to_datetime(dtN_str)
@@ -71,7 +166,7 @@ class SeaIceModels:
         dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
         D_iceh   = D_iceh   or self.D_iceh
-        overwrite = overwrite if overwrite is not None else self.overwrite_zarr
+        overwrite = overwrite if overwrite is not None else self.overwrite_zarr_group
         delete_nc = delete_original if delete_original is not None else self.delete_original_cice_iceh_nc
         m_grps   = defaultdict(list)
         P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
@@ -188,173 +283,135 @@ class SeaIceModels:
     #-------------------------------------------------------------------------------------------
     #                             COMPUTE FAST ICE CLASSIFICATION
     #-------------------------------------------------------------------------------------------
-    def compute_ice_speed_types(self, DS, ispd_type, temporally_average=False, mean_period=None):
+    def simple_spatial_averaging_bgrid_to_tgrid(self, var):
         """
+        Dask-safe 4-point unweighted average from B-grid to T-grid.
 
-        Compute multiple formulations of sea ice speed and internal stress from CICE output.
+        Uses efficient array shifting and avoids costly concatenation over new dimensions.
 
-        This method calculates ice speed (in m/s) and internal ice stress (in N/m²) based on vector
-        components of velocity (``uvel``, ``vvel``) and internal stress (``strintx``, ``strinty``) from CICE
-        model output. It supports B-grid computation (native grid), and two approaches to interpolate
-        to the T-grid: a simple 4-point average (``Ta``) and an xESMF conservative remap (``Tx``).
+        Parameters
+        ----------
+        var : xr.DataArray
+            2D or 3D (time, nj, ni) array on B-grid.
 
-        Optionally applies a centered temporal rolling average (e.g., 15 days) before returning.
+        Returns
+        -------
+        xr.DataArray
+            Averaged field on T-grid with shape (time, nj, ni).
+        """
+        self.logger.info("  ↪ Slicing corner points for averaging...")
+        v00          = var.isel(nj=slice(None, -1)  , ni=slice(None, -1  ))
+        v01          = var.isel(nj=slice(None, -1)  , ni=slice(1   , None))
+        v10          = var.isel(nj=slice(1   , None), ni=slice(None, -1  ))
+        v11          = var.isel(nj=slice(1   , None), ni=slice(1   , None))
+        self.logger.info("  ↪ Computing mean of four corners...")
+        avg          = (v00 + v01 + v10 + v11) / 4.0
+        self.logger.info("  ↪ Padding with NaNs to restore original grid size...")
+        avg          = avg.pad(nj=(0,1), ni=(0,1), constant_values=np.nan)
+        self.logger.info("  ↪ Applying cyclic wrap for last column...")
+        avg[..., -1] = avg[..., 0]
+        if "time" in var.coords:
+            avg = avg.assign_coords(time=var.time)
+            self.logger.info("  ↪ Time coordinate restored.")
+        return avg
 
-        INPUTS:
-           DS                 : xarray.Dataset; Input dataset containing CICE variables on the
-                                model grid (`uvel`, `vvel`, `strintx`, `strinty`, `TLAT`, `TLON`, and `time`).
-           ispd_type          : str or list of str; Ice speed types to compute. Options are:
-                                + 'ispd_B': B-grid speed (√(u² + v²))
-                                + 'ispd_Ta': 4-point average of B-grid speed interpolated to T-grid
-                                + 'ispd_Tx': xESMF conservative interpolation to T-grid
-                                + 'ispd_BT': All of the above (used for composite)
-           temporally_average : bool, optional; If True, applies a centered temporal rolling mean over
-                               `mean_period` days to each speed/stress field.
-           mean_period        : int, optional; Temporal window size (in days) for rolling mean.
-                                Defaults to `self.mean_period`.
+    def compute_ice_magnitude_from_ice_components_on_Bgrid(self, DS,
+                                                           ivec_type                  = None,
+                                                           ice_vector_component_names = None,
+                                                           temporally_average         = False,
+                                                           mean_period                = None):
+        """
+        Compute the magnitude from two vector components(default is sea ice speed; e.g. components are: 'uvel', 'vvel') 
+        across multiple grid definitions: B, Ta, Tx, and BT. To be more clear:
+        + B  : represents magnitudes that are returned on the native B-grid
+        + Ta : magnitudes computed on the B-grid then a four-point spatial average is applied 
+               which forms a crude (un-weighted) re-gridding
+        + Tx : magnitudes computed on the B-grid then a weighted spatial average is applied using
+               xesmf module
+        + BT : uses the mean from the above three methods; the reason for this is that it adequately addresses 
+               a scientifically sound spatially consistent sea ice velocity field that accounts for 
+               the no-slip boundary condition that is a result of the B-grid momentum equations
 
-        OUTPUTS:
-           xarray.Dataset; The input dataset `DS` with new variables added for requested speed and stress types:
-              + ispd_B, ists_B
-              + ispd_Ta, ists_Ta
-              + ispd_Tx, ists_Tx
-           Each variable includes coordinate information and physical metadata.
+        INPUTS
+        DS : xr.Dataset; input dataset with where vector components reside on a B-grid and will either be
 
-        NOTES:
-        + The B-grid formulation uses native velocity and stress components.
-        + T-grid (`Ta`) is a local bilinear average across adjacent B-grid corners.
-        + T-grid (`Tx`) uses regridding weights generated by xESMF for conservative interpolation.
-        + Time dimension must exist; rolling averaging requires adequate time resolution.
-        + Composite speed `ispd_BT` should be computed separately via `compute_composite_ice_speed`.
+        ivec_type : tuple of str; this name is a legacy from the first method used to do this 
+            Types of speed to compute. Options include:
+            - 'B' : native B-grid speed
+            - 'Ta': 4-pt local average of B-grid to T-grid
+            - 'Tx': xESMF regridded speed to T-grid
+            - 'BT': composite of the above three (computed last)
 
-        See corresponding method SeaIceProcessor.compute_composite_ice_speed(), which combines the above speed
-        types into a composite field.
+        temporally_average : bool
+            Whether to apply a rolling temporal mean to each speed field.
 
+        mean_period : int or None
+            Length of rolling window. Uses default if None.
+
+        Returns
+        -------
+        xr.Dataset
+            The original dataset with additional `ispd_*` fields.
         """
         mean_period = mean_period if mean_period is not None else self.mean_period
-        if "ispd_B" in ispd_type or "ispd_Ta" in ispd_type or "ispd_BT" in ispd_type:
-            self.logger.info("Computing B-grid ice speed ('ispd_B') and internal ice stress from strintx and strinty ('ists_B')")
-            ispd_B = xr.apply_ufunc(np.hypot, DS['uvel']   , DS['vvel']   , dask="allowed", output_dtypes=[DS['uvel'].dtype])
-            ists_B = xr.apply_ufunc(np.hypot, DS['strintx'], DS['strinty'], dask="allowed", output_dtypes=[DS['strintx'].dtype])
+        ivec_type   = ivec_type                  if ivec_type                  is not None else self.ivec_type
+        ivec_names  = ice_vector_component_names if ice_vector_component_names is not None else ["uvel","vvel"]
+        xvec        = DS[ivec_names[0]]
+        yvec        = DS[ivec_names[1]]
+        if set(ivec_names) == {"uvel", "vvel"}:
+            mag_var_name_prefix = "ispd"
+        else:
+            match               = re.match(r"^(.*?)(x|y)?$", ivec_names[0])
+            mag_var_name_prefix = match.group(1)
+        mag_var_name_prefix = mag_var_name_prefix.rstrip("_")
+        mag_var_names       = {suffix: f"{mag_var_name_prefix}_{suffix}" for suffix in self.valid_ivec_types}
+        B_name              = mag_var_names['B']
+        Ta_name             = mag_var_names['Ta']
+        Tx_name             = mag_var_names['Tx']
+        BT_name             = mag_var_names['BT']
+        self.logger.info("Computing native B-grid sea ice vector magnitudes")
+        B = xr.apply_ufunc(np.hypot, xvec, yvec, dask="allowed")
+        if temporally_average:
+            self.logger.info("Averaging B over time")
+            B = B.rolling(time=mean_period, center=True, min_periods=1).mean()
+        DS[B_name] = B   
+        if "Ta" in ivec_type or "BT" in ivec_type:
+            self.logger.info("Interpolating B-grid to T-grid using 4-pt average method: simple_spatial_averaging_bgrid_to_tgrid()")
+            B = B.chunk({"time": 30, "nj": 540, "ni": 720})
+            Ta = self.simple_spatial_averaging_bgrid_to_tgrid(B)
             if temporally_average:
-                self.logger.info("Temporally-Averaging ispd_B and ists_B")
-                ispd_B = ispd_B.rolling(time=mean_period, center=True, min_periods=1).mean()
-                ists_B = ists_B.rolling(time=mean_period, center=True, min_periods=1).mean()
-            DS['ispd_B'] = ispd_B
-            DS['ists_B'] = ists_B
-            if "ispd_Ta" in ispd_type or "ispd_BT" in ispd_type:
-                self.logger.info("Spatially-Averaging (re-griddding) ispd_B and ists_B to T-grid: CREATING ispd_Ta and ists_Ta")
-                ispd_Ta                = xr.full_like(ispd_B, fill_value=np.nan)
-                ispd_stack             = xr.concat([ispd_B.isel(nj=slice(None, -1), ni=slice(None, -1)),
-                                                    ispd_B.isel(nj=slice(None, -1), ni=slice(1, None)),
-                                                    ispd_B.isel(nj=slice(1, None) , ni=slice(None, -1)),
-                                                    ispd_B.isel(nj=slice(1, None) , ni=slice(1, None)) ], dim="offset")
-                ispd_avg               = ispd_stack.mean(dim="offset", skipna=True)
-                ispd_Ta[..., :-1, :-1] = ispd_avg.data
-                ispd_Ta[..., :, -1]    = ispd_Ta[..., :, 0]  # basic cyclic wrap
-                DS['ispd_Ta']          = xr.DataArray(ispd_Ta,
-                                                    dims   = ("time", "nj", "ni"),
-                                                    coords = {"time" : (("time"),DS.time.values),
-                                                              "nj"   : np.arange(ispd_Ta.sizes["nj"]),
-                                                              "ni"   : np.arange(ispd_Ta.sizes["ni"]),
-                                                              "TLAT" : (("nj", "ni"), self.get_static_grid(DS.TLAT).values),
-                                                              "TLON" : (("nj", "ni"), self.get_static_grid(DS.TLON).values)},
-                                                    attrs  = {"long_name" : "T-grid interpolated B-grid ice speed",
-                                                              "units"     : ispd_B.attrs.get("units", "m/s")})
-                ists_Ta                = xr.full_like(ists_B, fill_value=np.nan)
-                ists_stack             = xr.concat([ists_B.isel(nj=slice(None, -1), ni=slice(None, -1)),
-                                                    ists_B.isel(nj=slice(None, -1), ni=slice(1, None)),
-                                                    ists_B.isel(nj=slice(1, None) , ni=slice(None, -1)),
-                                                    ists_B.isel(nj=slice(1, None) , ni=slice(1, None)) ], dim="offset")
-                ists_avg               = ists_stack.mean(dim="offset", skipna=True)
-                ists_Ta[..., :-1, :-1] = ists_avg.data
-                ists_Ta[..., :, -1]    = ists_Ta[..., :, 0]  # basic cyclic wrap
-                DS['ists_Ta']          = xr.DataArray(ists_Ta,
-                                                    dims   = ("time", "nj", "ni"),
-                                                    coords = {"time" : (("time"),DS.time.values),
-                                                              "nj"   : np.arange(ists_Ta.sizes["nj"]),
-                                                              "ni"   : np.arange(ists_Ta.sizes["ni"]),
-                                                              "TLAT" : (("nj", "ni"), self.get_static_grid(DS.TLAT).values),
-                                                              "TLON" : (("nj", "ni"), self.get_static_grid(DS.TLON).values)},
-                                                    attrs  = {"long_name" : "T-grid interpolated B-grid internal ice stress",
-                                                                "units"     : ists_B.attrs.get("units", "N/m^2")})
-            if "ispd_Tx" in ispd_type or "ispd_BT" in ispd_type:
-                self.logger.info("xESMF regrid to T-grid")
-                if not self.reG_weights_defined:
-                    self.define_reG_weights()
-                DS_reG = self.reG_bgrid_to_tgrid_xesmf(DS)
-                self.logger.info("Computing xESMF-based ice speed ('ispd_Tx') and internal ice stress from strintx and strinty ('ists_Tx')")
-                ispd_Tx = xr.apply_ufunc(np.hypot, DS_reG['uvel']   , DS_reG['vvel']   , dask="allowed", output_dtypes=[DS_reG['uvel'].dtype])
-                ists_Tx = xr.apply_ufunc(np.hypot, DS_reG['strintx'], DS_reG['strinty'], dask="allowed", output_dtypes=[DS_reG['strintx'].dtype])
-                if temporally_average:
-                    self.logger.info("Temporally-Averaging ispd_Tx and ists_Tx")
-                    ispd_Tx = ispd_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
-                    ists_Tx = ists_Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
-                DS['ispd_Tx'] = ispd_Tx.copy()
-                DS['ists_Tx'] = ists_Tx.copy()
+                self.logger.info("Averaging Ta over time")
+                Ta = Ta.rolling(time=mean_period, center=True, min_periods=1).mean()
+            DS[Ta_name] = Ta.assign_attrs({"long_name": "T-grid interpolated B-grid ice speed",
+                                           "units"    : B.attrs.get("units", "m/s")})
+        if "Tx" in ivec_type or "BT" in ivec_type:
+            self.logger.info("Interpolating to T-grid using xESMF")
+            if not self.reG_weights_defined:
+                self.define_reG_weights()
+            Tx = self.reG_bgrid_to_tgrid_xesmf(B)
+            if Tx is None:
+                raise RuntimeError("Regridding failed — check coordinate alignment and weights.")
+            Tx               = Tx.assign_coords(TLAT=DS["TLAT"], TLON=DS["TLON"])
+            Tx["TLAT"].attrs = DS["TLAT"].attrs
+            Tx["TLON"].attrs = DS["TLON"].attrs
+            if temporally_average:
+                self.logger.info("Averaging Tx over time")
+                Tx = Tx.rolling(time=mean_period, center=True, min_periods=1).mean()
+            DS[Tx_name] = Tx
+        if "BT" in ivec_type:
+            required = [k for k in [B_name, Ta_name, Tx_name] if k in DS]
+            if len(required) < 3:
+                self.logger.warning(f"Cannot compute BT — missing one or more of {required}")
+            else:
+                self.logger.info("Computing composite BT method of re-gridding")
+                DS          = self.reapply_landmask(DS)
+                BT          = xr.concat([DS[B_name],
+                                         DS[Ta_name],
+                                         DS[Tx_name]], dim="tmp").mean(dim="tmp", skipna=True)
+                DS[BT_name] = BT.assign_attrs({"long_name"  : f"Composite ice speed (average of {B_name}, {Ta_name}, {Tx_name})",
+                                               "description": "Element-wise average of grids B, Ta, and Tx",
+                                               "units"      : B.attrs.get("units", "m/s")})
         return DS
-
-    def compute_composite_ice_speed(self, DS):
-        """
-
-        Construct a composite sea ice speed field from multiple grid-based definitions.
-
-        This method computes the element-wise average of three distinct ice speed fields:
-        + `ispd_B`: speed computed on the native B-grid (model corners)
-        + `ispd_Ta`: T-grid approximation via local 4-point B-grid average
-        + `ispd_Tx`: T-grid approximation via conservative xESMF regridding
-
-        The resulting variable, `ispd_BT`, provides a more robust and smooth estimate of ice speed
-        for use in landfast ice detection and is especially useful in areas with variable grid orientation.
-
-        INPUTS:
-           DS : xarray.Dataset; Dataset containing `ispd_B`, `ispd_Ta`, and `ispd_Tx`.
-
-        OUPUTS:
-           xarray.DataArray or None; composite sea ice speed field (`ispd_BT`), or None if required
-           components are missing. Metadata includes units and a descriptive long_name.
-
-        NOTES:
-        + All three speed fields must be precomputed using `compute_ice_speed_types`.
-        + NaNs are ignored when averaging, enabling flexible masking near coastlines.
-        + The result is useful for consistent fast ice classification across spatial domains.
-
-
-        See corresponding SeaIceProcessor.compute_ice_speed_types() method, which is used to
-        compute required `ispd_*` variables before combining.
-
-        """
-        ispd_types_reqd = ["ispd_B", "ispd_Ta", "ispd_Tx"]
-        missing = [v for v in ispd_types_reqd if v not in DS]
-        if missing:
-            self.logger.warning(f"⛔ Cannot compute ispd_BT — missing variables: {missing}")
-            return None
-        self.logger.info("➕ Computing ispd_BT (mean of ispd_B, ispd_Ta, ispd_Tx)")
-        ispd_BT      = xr.concat([DS["ispd_B"], DS["ispd_Ta"], DS["ispd_Tx"]], dim="tmp").mean(dim="tmp", skipna=True)
-        ispd_BT.name = "ispd_BT"
-        ispd_BT.attrs.update({"long_name"  : "Composite ice speed (average of ispd_B, ispd_Ta, ispd_Tx)",
-                              "description": "Element-wise average of ispd_B, ispd_Ta, and ispd_Tx",
-                              "units"      : DS["ispd_B"].attrs.get("units", "m/s")})
-        return ispd_BT
-
-    def compute_composite_internal_ice_stress(self, DS):
-        """
-        Function is equivalent to SeaIceProcessor.compute_composite_ice_speed() method and future revisions
-        will see an integration of these two methods into a more general method that handles and component-based
-        field output from CICE.
-        """
-        ists_types_reqd = ["ists_B", "ists_Ta", "ists_Tx"]
-        missing = [v for v in ists_types_reqd if v not in DS]
-        if missing:
-            self.logger.warning(f"⛔ Cannot compute ists_BT — missing variables: {missing}")
-            return None
-        self.logger.info("➕ Computing ists_BT (mean of ists_B, ists_Ta, ists_Tx)")
-        ists_BT      = xr.concat([DS["ists_B"], DS["ists_Ta"], DS["ists_Tx"]], dim="tmp").mean(dim="tmp", skipna=True)
-        ists_BT.name = "ists_BT"
-        ists_BT.attrs.update({"long_name"  : "Composite internal ice stress (average of ists_B, ists_Ta, ists_Tx)",
-                              "description": "Element-wise average of ists_B, ists_Ta, and ists_Tx",
-                              "units"      : DS["ists_B"].attrs.get("units", "N/m^2")})
-        return ists_BT
 
     def reapply_landmask(self, DS, apply_unmodified=False):
         """
@@ -385,17 +442,17 @@ class SeaIceModels:
         self.logger.info("Applied landmask to rolled dataset")
         return DS
 
-    def create_fast_ice_mask(self, DS, ispd_type, ispd_thresh):
+    def create_fast_ice_mask(self, DS, ivec_type, ispd_thresh):
         """
 
         Generate fast ice masks based on sea ice concentration and speed. Intentionally requires
-        all three inputs. For each specified speed type (`ispd_type`), a mask is created where sea ice concentration
+        all three inputs. For each specified speed type (`ivec_type`), a mask is created where sea ice concentration
         exceeds `self.icon_thresh` (typically 0.9) and the ice speed is within the specified threshold range.
         This binary mask defines areas considered to be landfast ice for each speed formulation.
 
         INPUTES:
            DS          : xarray.Dataset; input dataset with sea ice concentration (`aice`) and ice speed fields (`ispd_*`).
-           ispd_type   : list of strings; speed types to process (e.g., "ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT").
+           ivec_type   : list of strings; speed types to process (e.g., "ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT").
            ispd_thresh : float; threshold ice speed (in m/s) below which ice is considered "fast".
 
         OUTPUTS:
@@ -404,13 +461,13 @@ class SeaIceModels:
         """
         masks = {}
         sic_mask = DS['aice'] > self.icon_thresh
-        if "ispd_B" in ispd_type:
+        if "B" in ivec_type:
             masks['FI_B'] = sic_mask & (DS['ispd_B'] > 0) & (DS['ispd_B'] <= ispd_thresh)
-        if "ispd_Ta" in ispd_type:
+        if "Ta" in ivec_type:
             masks['FI_Ta'] = sic_mask & (DS['ispd_Ta'] > 0) & (DS['ispd_Ta'] <= ispd_thresh)
-        if "ispd_Tx" in ispd_type:
+        if "Tx" in ivec_type:
             masks['FI_Tx'] = sic_mask & (DS['ispd_Tx'] > 0) & (DS['ispd_Tx'] <= ispd_thresh)
-        if "ispd_BT" in ispd_type:
+        if "BT" in ivec_type:
             masks['FI_BT'] = sic_mask & (DS['ispd_BT'] > 0) & (DS['ispd_BT'] <= ispd_thresh)
         return masks
 
@@ -443,7 +500,7 @@ class SeaIceModels:
             DS_grouped[m_str][group].append(ds_fi)
         return DS_grouped
 
-    def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ispd_type, m_str, groups_to_write=None):
+    def write_to_zarr(self, DS_grouped, P_zarr_root, ispd_thresh, ivec_type, m_str, groups_to_write=None):
         """
 
          Write monthly fast ice datasets to disk in Zarr format, grouped by ice speed threshold type.
@@ -458,7 +515,7 @@ class SeaIceModels:
            P_zarr_root     : pathlib.Path; path to the root of the Zarr store for the current month
                              (e.g., `.../cice_daily_1993-07.zarr`).
            ispd_thresh     : float; ice speed threshold used for fast ice masking (added to dataset metadata).
-           ispd_type       : list of str; list of ice speed types used in processing. Controls which groups are
+           ivec_type       : list of str; list of ice speed types used in processing. Controls which groups are
                              eligible for writing.
            m_str           : str; month string (e.g., "1993-07") corresponding to the current batch of data.
            groups_to_write : list of str, optional; if provided, restricts Zarr writing to only those group names.
@@ -481,13 +538,17 @@ class SeaIceModels:
                          "FI_Tx" : "fast ice mask based on thresholding ispd_Tx (xESMF regridded uvel/vvel)",
                          "FI_BT" : "fast ice mask based on thresholding ispd_BT (composite of B, Ta, Tx)"}
         for group, datasets in DS_grouped[m_str].items():
+            self.logger.info(f"Inspecting group: {group} with {len(datasets)} datasets")
             if not datasets or (groups_to_write and group not in groups_to_write):
+                self.logger.info(f"Skipping group: {group} (empty or not in groups_to_write)")
                 continue
             if group.startswith("FI_"):
-                ispd_var = group.replace("FI_", "ispd_")
-                if ispd_var not in ispd_type:
+                ispd_var = group.replace("FI_", "")  # e.g. 'BT'
+                if ispd_var not in ivec_type:
+                    self.logger.info(f"Skipping '{group}' as '{ispd_var}' not in ivec_type: {ivec_type}")
                     continue
             group_dir = Path(P_zarr_root,group)
+            print(group_dir)
             if group_dir.exists():
                 if self.overwrite_zarr_group:
                     self.logger.warning(f"Deleting existing group '{group}' at: {group_dir}")
@@ -511,9 +572,9 @@ class SeaIceModels:
                 self.logger.error(f"Failed to write group '{group}': {e}")
         DS_grouped[m_str].clear()
 
-    def drop_unwanted_ispd_vars(self, ds, ispd_type_requested):
-        keep_vars = set(ispd_type_requested) | set(ds.data_vars) - set(self.valid_ispd_types)
-        drop_vars = [v for v in self.valid_ispd_types if v in ds and v not in keep_vars]
+    def drop_unwanted_ispd_vars(self, ds, ivec_type_requested):
+        keep_vars = set(ivec_type_requested) | set(ds.data_vars) - set(self.valid_ivec_types)
+        drop_vars = [v for v in self.valid_ivec_types if v in ds and v not in keep_vars]
         if drop_vars:
             self.logger.info(f"Dropping unused ice speed variables: {drop_vars}")
             return ds.drop_vars(drop_vars)
@@ -565,23 +626,28 @@ class SeaIceModels:
         dtN_str  = dtN_str  or self.dtN_str
         mo_strs  = self.create_monthly_strings( dt0_str=dt0_str, dtN_str=dtN_str )
         datasets = []
+        N_loaded = 0
+        self.logger.info(f"Loading monthly Zarr files: {self.D_zarr}")
         for m_str in mo_strs:
             P_iceh = Path(self.D_zarr, f"iceh_{m_str}.zarr")
             if not P_iceh.exists():
                 self.logger.warning(f"Missing monthly Zarr file: {P_iceh}")
                 continue
-            self.logger.info(f"Loading monthly Zarr: {P_iceh}")
+            self.logger.debug(f"Loading monthly Zarr: {P_iceh}")
             try:
                 ds = xr.open_zarr(P_iceh, consolidated=True)
                 if var_list is not None:
                     ds = ds[var_list]
                 datasets.append(ds)
+                N_loaded += 1
             except Exception as e:
                 self.logger.error(f"Failed to load {P_iceh}: {e}")
         if not datasets:
             self.logger.error("No valid Zarr datasets found.")
             return None
         ds_all = xr.concat(datasets, dim="time").sortby("time")
+        n_time = ds_all.sizes.get("time", 0)
+        self.logger.info(f"Loaded {N_loaded}-zarr files covering {n_time} time steps from {dt0_str} to {dtN_str}")        
         return ds_all
 
     def process_daily_cice(self,
@@ -589,7 +655,7 @@ class SeaIceModels:
                            dt0_str              = None,
                            dtN_str              = None,
                            ispd_thresh          = None,
-                           ispd_type            = None,
+                           ivec_type            = None,
                            overwrite_zarr_group = False):
         """
 
@@ -605,7 +671,7 @@ class SeaIceModels:
            dtN_str              : str, optional; End date in "YYYY-MM-DD" format. Defaults to `self.dtN_str`.
            ispd_thresh          : float, optional; Ice speed threshold (in m/s) used to define landfast ice.
                                   If None, uses `self.ispd_thresh`.
-           ispd_type            : str or list of str, optional; One or more speed types to use
+           ivec_type            : str or list of str, optional; One or more speed types to use
                                   ("ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"). If None, defaults
                                   to all valid types.
            overwrite_zarr_group : bool, optional; If True, overwrite any existing Zarr groups with the same name.
@@ -619,41 +685,38 @@ class SeaIceModels:
         sim_name                  = sim_name    or self.sim_name
         dt0_str                   = dt0_str     or self.dt0_str
         dtN_str                   = dtN_str     or self.dtN_str
-        ispd_type_req             = ispd_type   or self.valid_ispd_types
+        ivec_type_req             = ivec_type   or self.valid_ivec_types
         ispd_thresh               = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
         ispd_thresh_str           = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         datasets_to_return        = []
         self.overwrite_zarr_group = overwrite_zarr_group
-        if isinstance(ispd_type_req, str):
-            ispd_type_req = [ispd_type_req]
-        assertion_err = f"Invalid requested sea ice speed 'type': {ispd_type_req}. Must be one or more of these valid types: {self.valid_ispd_types}"
-        assert all(t in set(self.valid_ispd_types) for t in ispd_type_req), assertion_err
+        if isinstance(ivec_type_req, str):
+            ivec_type_req = [ivec_type_req]
+        assertion_err = f"Invalid requested sea ice speed 'type': {ivec_type_req}. Must be one or more of these valid types: {self.valid_ivec_types}"
+        assert all(t in set(self.valid_ivec_types) for t in ivec_type_req), assertion_err
         m_DS     = self.create_empty_valid_DS_dictionary()
         CICE_all = self.load_iceh_zarr(sim_name=sim_name, dt0_str=dt0_str, dtN_str=dtN_str, var_list=self.cice_var_list)
         if CICE_all is None:
             self.logger.error("No valid CICE Zarr data to process.")
             return
         for m_str in sorted(set(pd.to_datetime(CICE_all.time.values).strftime("%Y-%m"))):
-            P_zarr              = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_daily_{m_str}.zarr")
-            CICE_month          = CICE_all.sel(time=CICE_all.time.dt.strftime("%Y-%m") == m_str)
-            CICE_ispd           = self.compute_ice_speed_types(CICE_month, ispd_type_req)
-            CICE_reM            = self.reapply_landmask(CICE_ispd)
-            CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
-            CICE_reM['ists_BT'] = self.compute_composite_internal_ice_stress(CICE_reM)
-            CICE_reM            = self.drop_unwanted_ispd_vars(CICE_reM, ispd_type_req)
+            P_zarr       = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", f"cice_daily_{m_str}.zarr")
+            CICE_month   = CICE_all.sel(time=CICE_all.time.dt.strftime("%Y-%m") == m_str)
+            CICE_ispd    = self.compute_ice_magnitude_from_ice_components_on_Bgrid(CICE_month)
+            CICE_reM     = self.drop_unwanted_ispd_vars(CICE_ispd, ivec_type_req)
             self.logger.info("Subsetting Ocean into either southern or northern hemisphere (default: southern)")
-            CICE_SO = CICE_reM.isel(nj=self.hemisphere_dict['nj_slice'])
+            CICE_SO      = CICE_reM.isel(nj=self.hemisphere_dict['nj_slice'])
             self.logger.info("Create fast ice masks")
-            masks = self.create_fast_ice_mask(CICE_SO, ispd_type_req, ispd_thresh) #
+            masks        = self.create_fast_ice_mask(CICE_SO, ivec_type_req, ispd_thresh) #
             self.logger.info("Apply fast ice masks to dataset")
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
             for key in CICE_grouped[m_str]:
                 m_DS[m_str][key].extend(CICE_grouped[m_str][key])
-            fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type_req]
+            fast_group = [f"FI_{t.split('_')[-1]}" for t in ivec_type_req]
             for group in fast_group:
                 if group in CICE_grouped[m_str]:
                     datasets_to_return.extend(CICE_grouped[m_str][group])
-            self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ispd_type_req, m_str, groups_to_write=fast_group) #
+            self.write_to_zarr(m_DS, P_zarr, ispd_thresh, ivec_type_req, m_str, groups_to_write=fast_group) #
             m_DS[m_str].clear()
         if datasets_to_return:
             return xr.concat(datasets_to_return, dim="time").sortby("time")
@@ -667,7 +730,7 @@ class SeaIceModels:
                              dtN_str              = None,
                              mean_period          = None,
                              ispd_thresh          = None,
-                             ispd_type            = None,
+                             ivec_type            = None,
                              overwrite_zarr_group = False):
         """
 
@@ -683,7 +746,7 @@ class SeaIceModels:
            dtN_str              : str, optional; End date in "YYYY-MM-DD" format. Defaults to `self.dtN_str`.
            mean_period          : int, optional; Temporal averaging window in days (e.g., 15). Defaults to `self.mean_period`.
            ispd_thresh          : float, optional; Ice speed threshold (in m/s) to define fast ice. Defaults to `self.ispd_thresh`.
-           ispd_type            : str or list of str, optional; One or more speed types to use ("ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT").
+           ivec_type            : str or list of str, optional; One or more speed types to use ("ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT").
                                   If None, defaults to all valid types.
            overwrite_zarr_group : bool, optional; If True, overwrite any existing Zarr groups with the same name.
 
@@ -696,14 +759,14 @@ class SeaIceModels:
         dt0_str      = dt0_str     or self.dt0_str
         dtN_str      = dtN_str     or self.dtN_str
         mean_period  = mean_period or self.mean_period
-        ispd_type    = ispd_type   or self.valid_ispd_types
+        ivec_type    = ivec_type   or self.valid_ivec_types
         ispd_thresh  = float(ispd_thresh) if ispd_thresh is not None else self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         self.overwrite_zarr_group = overwrite_zarr_group
-        if isinstance(ispd_type, str):
-            ispd_type = [ispd_type]
-        valid_types = set(self.valid_ispd_types)
-        assert all(t in valid_types for t in ispd_type), f"❌ Invalid ispd_type: {ispd_type}. Must be one or more of {self.valid_ispd_types}"
+        if isinstance(ivec_type, str):
+            ivec_type = [ivec_type]
+        valid_types = set(self.valid_ivec_types)
+        assert all(t in valid_types for t in ivec_type), f"❌ Invalid ivec_type: {ivec_type}. Must be one or more of {self.valid_ivec_types}"
         self.logger.info(f"Rolling mean first, then fast ice masking between {dt0_str} and {dtN_str}")
         self.logger.info("Loading monthly Zarr datasets")
         CICE_all = self.load_iceh_zarr(sim_name=sim_name, dt0_str=dt0_str, dtN_str=dtN_str, var_list=self.cice_var_list)
@@ -711,8 +774,8 @@ class SeaIceModels:
             self.logger.error("❌ No valid CICE Zarr data to process.")
             return
         datasets_to_return = []
-        CICE_all = CICE_all.chunk({'time': mean_period * 2})
-        CICE_ispd = self.compute_ice_speed_types(CICE_all, ispd_type, temporally_average=True, mean_period=mean_period)
+        CICE_all  = CICE_all.chunk({'time': mean_period * 2})
+        CICE_ispd = self.compute_ice_magnitude_from_ice_components_on_Bgrid(CICE_all, ivec_type, temporally_average=True, mean_period=mean_period)
         self.logger.info("Computing selective rolling means")
         CICE_roll_vars = {}
         for var in CICE_ispd.data_vars:
@@ -728,13 +791,10 @@ class SeaIceModels:
                 continue
             self.logger.info(f"Rolling mean on variable: {var}")
             CICE_roll_vars[var] = da.rolling(time=mean_period, center=True, min_periods=1).mean()
-        CICE_roll = xr.Dataset(CICE_roll_vars, coords=CICE_ispd.coords)
+        CICE_roll         = xr.Dataset(CICE_roll_vars, coords=CICE_ispd.coords)
         CICE_roll['time'] = CICE_roll['time'] - np.timedelta64(1, 'D')
-        CICE_roll = CICE_roll.where(~np.isnan(CICE_roll['aice']), drop=False)
-        CICE_roll = CICE_roll.dropna(dim="time", how="all", subset=["aice"])
-        CICE_reM = self.reapply_landmask(CICE_roll)
-        CICE_reM['ispd_BT'] = self.compute_composite_ice_speed(CICE_reM)
-        CICE_reM['ists_BT'] = self.compute_composite_internal_ice_stress(CICE_reM)
+        CICE_roll         = CICE_roll.where(~np.isnan(CICE_roll['aice']), drop=False)
+        CICE_reM          = CICE_roll.dropna(dim="time", how="all", subset=["aice"])
         self.logger.info(f"Original time steps: {CICE_all.time.size}")
         self.logger.info(f"Rolled time steps: {CICE_reM.time.size}")
         time_vals = pd.to_datetime(CICE_reM.time.values)
@@ -748,14 +808,14 @@ class SeaIceModels:
                 continue
             CICE_SO = CICE_month.isel(nj=self.hemisphere_dict['nj_slice'])
             self.logger.info(f"Rolling monthly group: {m_str} with {CICE_SO.time.size} time steps")
-            masks = self.create_fast_ice_mask(CICE_SO, ispd_type, ispd_thresh)
+            masks = self.create_fast_ice_mask(CICE_SO, ivec_type, ispd_thresh)
             CICE_grouped = self.groupby_fast_ice_masks(CICE_SO, masks, m_str)
-            fast_group = [f"FI_{t.split('_')[-1]}" for t in ispd_type]
+            fast_group = [f"FI_{t.split('_')[-1]}" for t in ivec_type]
             for group in fast_group:
                 if group in CICE_grouped[m_str]:
                     self.logger.debug(f"Adding group '{group}' from {m_str} to return list")
                     datasets_to_return.extend(CICE_grouped[m_str][group])
-            self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ispd_type, m_str, groups_to_write=fast_group)
+            self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ivec_type, m_str, groups_to_write=fast_group)
         if datasets_to_return:
             return xr.concat(datasets_to_return, dim="time").sortby("time")
         else:

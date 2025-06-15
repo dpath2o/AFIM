@@ -3,7 +3,7 @@
 # --- Defaults ---
 ROLLING=false
 DAILY=false
-ISPD_TYPE_LIST=()
+IVEC_TYPE_LIST=()
 START_DATE="1993-01-01"
 END_DATE=""
 YEARLY=false
@@ -17,12 +17,12 @@ PBS_SCRIPT=process_fast_ice.pbs
 print_help() {
     echo ""
     echo "Usage:"
-    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i ISPD_TYPE ...] [-r] [-d]"
+    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i IVEC_TYPE ...] [-r] [-d]"
     echo ""
     echo "Options:"
     echo "  -s SIM_NAME      Simulation name (required)"
     echo "  -t ISPD_THRESH   Ice speed threshold (e.g. 1e-3) (required)"
-    echo "  -i ISPD_TYPE     Ice speed type(s): ispd_B, ispd_Ta, ispd_Tx (repeatable)"
+    echo "  -i IVEC_TYPE     Ice speed type(s): B, Ta, Tx, BT (repeatable)"
     echo "  -S START_DATE    Start date (YYYY-MM-DD, forced to first of month; default 1993-01-01)"
     echo "  -E END_DATE      End date (YYYY-MM-DD, forced to last of month)"
     echo "  -r               Enable rolling fast ice masking"
@@ -34,8 +34,8 @@ print_help() {
     echo "  -h               Show this help message and exit"
     echo ""
     echo "Examples:"
-    echo "  $0 -s gi-mid -t 1e-3 -i ispd_Ta -d"
-    echo "  $0 -s gi-mid -t 1e-3 -i ispd_B -i ispd_Ta -r -d"
+    echo "  $0 -s gi-mid -t 1e-3 -i Ta -d"
+    echo "  $0 -s gi-mid -t 1e-3 -i B -i Ta -r -d"
     echo "  $0 -s gi-mid -t 1e-3 -r -d     # runs all ispd types by default"
     echo ""
 }
@@ -45,7 +45,7 @@ while getopts "s:t:i:rdzkhS:E:ny" opt; do
     case ${opt} in
         s) SIM_NAME="$OPTARG" ;;
         t) ISPD_THRESH="$OPTARG" ;;
-        i) ISPD_TYPE_LIST+=("$OPTARG") ;;
+        i) IVEC_TYPE_LIST+=("$OPTARG") ;;
         r) ROLLING=true ;;
         d) DAILY=true ;;
         z) OVERWRITE_ZARR=true ;;
@@ -76,7 +76,7 @@ fi
 
 # --- Default ISPD types if none specified ---
 if [ ${#ISPD_TYPE_LIST[@]} -eq 0 ]; then
-    ISPD_TYPE_LIST=("ispd_B" "ispd_Ta" "ispd_Tx" "ispd_BT")
+    IVEC_TYPE_LIST=("B" "Ta" "Tx" "BT")
 fi
 
 # Validate start and end date
@@ -111,7 +111,7 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
     YEAR=$(date -d "$DT0" +%Y)
     MONTH=$(date -d "$DT0" +%m)
     VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH}"
-    [ "${#ISPD_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",ISPD_TYPE=${ISPD_TYPE_LIST[*]}"
+    [ "${#IVEC_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",ISPD_TYPE=${IVEC_TYPE_LIST[*]}"
     [ "${ROLLING}" = true ] && VAR_PASS+=",ROLLING=true"
     [ "${DAILY}" = true ] && VAR_PASS+=",DAILY=true"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"

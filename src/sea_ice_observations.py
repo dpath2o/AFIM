@@ -1,11 +1,3 @@
-# import json, os, shutil, sys, time, logging, zarr, re
-# import xarray as xr
-# import pandas as pd
-# import numpy  as np
-# import xesmf     as xe
-# from collections import defaultdict
-# from pathlib     import Path
-# from datetime    import datetime, timedelta
 import json, os, shutil, time, logging
 import xarray as xr
 import pandas as pd
@@ -205,14 +197,13 @@ class SeaIceObservations:
 
     def load_AF2020_FI_org_netcdf(self, P_orgs):
         from pyproj import CRS, Transformer
-        F_weights        = self.AF_FI_dict["AF_reG_weights"]
-        reuse_weights    = os.path.exists(F_weights)
+        P_weights        = self.AF_FI_dict["AF_reG_weights"]
+        reuse_weights    = os.path.exists(P_weights)
         self.logger.info("loading FI observations with xarray mfdataset")
         self.logger.info(f"loading these files:\n{P_orgs}")
         FI_obs           = xr.open_mfdataset(P_orgs, engine='netcdf4')
         self.logger.info("masking FI observations for values greater than 4")
         mask             = (FI_obs['Fast_Ice_Time_series'] >= 4).compute()
-        #FI_OBS           = FI_obs['Fast_Ice_Time_series'].where(mask)
         FI_OBS           = xr.where( FI_obs['Fast_Ice_Time_series'] >= 4, 1.0, np.nan)
         self.logger.info("define model grid")
         G_t              = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
@@ -220,7 +211,7 @@ class SeaIceObservations:
         crs_obs          = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"]) #unique to observations
         crs_spherical    = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])  #spherical coordinates
         transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
-        X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
+        X, Y             = np.meshgrid(FI_obs['x'].isel(time=0).values, FI_obs['y'].isel(time=0).values)
         lon_obs, lat_obs = transformer.transform(X,Y)
         da_obs           = xr.DataArray(data   = FI_OBS.isel(time=0),
                                         dims   = ["nj", "ni"],
@@ -236,9 +227,6 @@ class SeaIceObservations:
                                          filename          = P_weights)
         self.logger.info(f"\tRegridding masked observational dataset")
         FI_OBS_reG        = reG_obs( FI_OBS )
-        #FI_obs_reG_dat    = self.reG_AF2020(FI_obs["Fast_Ice_Time_series"])
-        #mask              = (FI_obs_reG_dat >= 4).compute()
-        #FI_obs_binary     =         xr.where(FI_obs_reG_dat )
         FI                = (('t_FI_obs', 'nj', 'ni'),
                              FI_OBS_reG.values,
                              {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
@@ -278,16 +266,16 @@ class SeaIceObservations:
             self.logger.warning(f"No matching observational dates found between {dt0_str} and {dtN_str}")
         return matched
 
-    def create_AF2020_FI_zarr(self):
+    def create_AF2020_FI_zarr(self, overwrite=False):
         P_zarr = Path(self.AF_FI_dict["P_AF_2020db_avg"])
         if P_zarr.exists():
-            self.logger.info(f"Averaged observational gridded climatology already exists\n{P_zarr}")
-            return xr.open_zarr(P_zarr)
-        elif P_zarr.exists() and overwrite:
-            self.logger.info(f"Averaged observational gridded climatology exists *but* over-writing has been requested\n\tOVER-WRITING: {P_zarr}")
-            shutil.rmtree(P_zarr)
-        else:
-            self.logger.info(f"Averaged observational gridded climatology does *NOT* exist\n\tCREATING NEW: {P_zarr}")
+            if overwrite:
+                self.logger.info(f"Averaged observational gridded climatology exists *but* over-writing has been requested\n\tOVER-WRITING: {P_zarr}")
+                shutil.rmtree(P_zarr)
+            else:
+                self.logger.info(f"Averaged observational gridded climatology already exists\n{P_zarr}")
+                return xr.open_zarr(P_zarr)
+        self.logger.info(f"Averaged observational gridded climatology does *NOT* exist\n\tCREATING NEW: {P_zarr}")
         D_obs  = Path(self.AF_FI_dict['D_AF2020_db_org'])
         P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
         self.logger.info(f"loading all observational fast ice netcdf files:\n{P_orgs}")

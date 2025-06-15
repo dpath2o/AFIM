@@ -1,11 +1,3 @@
-# import os, sys, json, shutil
-# import xarray      as xr
-# import numpy       as np
-# import pandas      as pd
-# import geopandas   as gpd
-# from scipy.spatial import cKDTree
-# from pathlib       import Path
-# from datetime      import datetime
 import os, shutil
 import xarray      as xr
 import numpy       as np
@@ -18,6 +10,39 @@ from datetime      import datetime
 class SeaIceIcebergs:
     def __init__(self, **kwargs):
         return
+
+    def align_modified_landmask(self):
+        """
+        Compute the grounded iceberg mask and coordinates from the difference
+        between original and modified KMT arrays. Store in self.G_t.
+        """
+        if not self.bgrid_loaded:
+            self.load_bgrid()
+        kmt_mod = self.G_t['kmt_mod'].data
+        kmt_org = self.G_t['kmt_org'].data
+        lat     = self.G_t['lat'].data
+        lon     = self.G_t['lon'].data
+        area    = self.G_t['area'].data
+        # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
+        diff_mask           = (kmt_org == 1) & (kmt_mod == 0)
+        self.G_t['GI_mask'] = (('nj', 'ni'), diff_mask)
+        # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
+        nj_idx, ni_idx = np.where(diff_mask)
+        ni_idx_shifted = ni_idx - 1
+        valid          = ni_idx_shifted >= 0
+        nj_idx         = nj_idx[valid]
+        ni_idx         = ni_idx_shifted[valid]
+        GI_lat         = lat[nj_idx, ni_idx]
+        GI_lon         = lon[nj_idx, ni_idx]
+        # Save 1D arrays with iceberg IDs
+        iceberg_id         = np.arange(len(GI_lat))
+        self.G_t['GI_lat'] = (('iceberg_id',), GI_lat)
+        self.G_t['GI_lon'] = (('iceberg_id',), GI_lon)
+        self.G_t['GI_lat'].attrs.update({'long_name': 'Grounded iceberg latitude'})
+        self.G_t['GI_lon'].attrs.update({'long_name': 'Grounded iceberg longitude'})
+        #print(f"{len(iceberg_id)} circumpolar grounded icebergs associated with {self.sim_name}")
+        self.modified_landmask_aligned = True
+        return self.G_t
 
     def compute_grounded_iceberg_area(self, region=None):
         '''
@@ -117,7 +142,7 @@ class SeaIceIcebergs:
         self.GI_thin_mask : ndarray (boolean)
         self.GI_thin_fact : float (fraction thinned out)
         """
-        kmt                   = self.KMT_mod.values.copy()
+        kmt                   = xr.open_dataset(self.P_KMT_org).kmt.values
         mask                  = self.GI_cnts.values >= 1
         counts                = self.GI_cnts.values
         thin_mask, thin_fact  = self._thin_mask(mask, counts, p_min, p_max, scaling_exponent)

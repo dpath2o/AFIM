@@ -32,6 +32,9 @@ echo "Overwrite png     : $overwrite_png"
 echo "FIA Rolling Window: $smooth_FIA_days days"
 echo "Ice types loaded from ENVFILE:"
 for t in "${ice_type[@]}"; do echo "  - $t"; done
+echo "Running for ${sim_name}, ${start_date} to ${end_date}, ispd_thresh=${ispd_thresh}"
+F_log=/g/data/gv90/da1339/logs/sea_ice_metrics/${sim_name}/${start_date}_${end_date}_${ispd_thresh}_sea_ice_metrics.log
+mkdir -p "$(dirname "$F_log")"
 
 # --- Launch computation ---
 python /home/581/da1339/AFIM/src/AFIM/scripts/sea_ice_metrics/compute_fast_ice_metrics.py \
@@ -40,6 +43,7 @@ python /home/581/da1339/AFIM/src/AFIM/scripts/sea_ice_metrics/compute_fast_ice_m
     --ice_type "$ice_type" \
     --start_date "$start_date" \
     --end_date "$end_date" \
+    --log_file "$F_log" \
     $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
     $( [ "$overwrite_png" = true ] && echo "--overwrite_png" ) \
     --smooth_FIA_days "$smooth_FIA_days"

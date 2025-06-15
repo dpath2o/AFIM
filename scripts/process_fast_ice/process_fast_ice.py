@@ -2,11 +2,11 @@ import argparse
 from datetime import datetime, timedelta
 import sys
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
-from sea_ice_processor import SeaIceProcessor
+from sea_ice_toolbox import SeaIceToolbox
 
 def run_loop(sim_name,
              ispd_thresh          = None,
-             ispd_type            = None,
+             ivec_type            = None,
              json_path            = None,
              start_date           = None,
              end_date             = None,
@@ -18,11 +18,11 @@ def run_loop(sim_name,
              delete_original_iceh = False):
     dt_start = datetime.strptime(start_date, "%Y-%m-%d")
     dt_end   = datetime.strptime(end_date, "%Y-%m-%d")
-    SI_proc  = SeaIceProcessor(P_json   = json_path,
-                               P_log    = log_file,
-                               dt0_str  = dt_start,
-                               dtN_str  = dt_end,
-                               sim_name = sim_name)
+    SI_proc  = SeaIceToolbox(P_json   = json_path,
+                             P_log    = log_file,
+                             dt0_str  = dt_start,
+                             dtN_str  = dt_end,
+                             sim_name = sim_name)
     # Always do this step
     SI_proc.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
     if not daily and not rolling:
@@ -30,20 +30,21 @@ def run_loop(sim_name,
         return
     if daily:
         DS_raw = SI_proc.process_daily_cice(ispd_thresh=ispd_thresh,
-                                            ispd_type=ispd_type,
+                                            ivec_type=ivec_type,
                                             overwrite_zarr_group=overwrite_zarr)
     if rolling:
         DS_roll = SI_proc.process_rolling_cice(mean_period=roll_period,
                                                ispd_thresh=ispd_thresh,
-                                               ispd_type=ispd_type,
+                                               ivec_type=ivec_type,
                                                overwrite_zarr_group=overwrite_zarr)
+    SI_proc.client.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run pack ice processor loop over time.")
     parser.add_argument("sim_name"              , help="Name of simulation")
     parser.add_argument("--ispd_thresh"         , help="ice speed threshold for masking fast ice (default: use hard-coded value in JSON file)")
-    parser.add_argument("--ispd_type"           , nargs="+", choices=["ispd_B", "ispd_Ta", "ispd_Tx", "ispd_BT"],
-                        help="List of ice speed masking types to use (choose one or more of: ispd_B, ispd_Ta, ispd_Tx). Example: --ispd_type ispd_B ispd_Ta")
+    parser.add_argument("--ivec_type"           , nargs="+", choices=["B", "Ta", "Tx", "BT"],
+                        help="List of ice speed masking types to use (choose one or more of: B, Ta, Tx). Example: --ivec_type B Ta")
     parser.add_argument("--rolling"             , action="store_true", 
                         help="Enable rolling temporal average (length [MEAN_PERIOD]) of sea ice concentration and sea ice speed prior to fast ice masking")
     parser.add_argument("--daily"               , action="store_true", help="Perform fast ice masking without ")
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     run_loop(sim_name             = args.sim_name,
              ispd_thresh          = args.ispd_thresh,
-             ispd_type            = args.ispd_type,
+             ivec_type            = args.ivec_type,
              json_path            = args.json_config,
              start_date           = args.start_date,
              end_date             = args.end_date,

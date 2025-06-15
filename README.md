@@ -114,7 +114,7 @@ SI_tools.plot_ice_area(FI)
 │       └── process_fast_ice_pbs_wrapper.sh # Wrapper to launch monthly jobs
 ├── src/
 │   ├── sea_ice_toolbox.py      # Unified toolbox class (SeaIceToolbox)
-│   ├── sea_ice_models.py       # Model I/O and fast/pack ice logic (subclassed)
+│   ├── sea_ice_classification.py       # Model I/O and fast/pack ice logic (subclassed)
 │   ├── sea_ice_plotter.py      # Plotting (subclassed)
 │   ├── sea_ice_icebergs.py     # Grounded iceberg logic (subclassed)
 │   ├── sea_ice_observations.py # Observational data integration (subclassed)
