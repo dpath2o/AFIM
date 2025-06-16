@@ -14,34 +14,34 @@ def main():
     video_paths = {sim: {region: {} for region in regions} for sim in sims}
     dt0_str     = "1999-08-01"
     dtN_str     = "1999-10-31"
-    # # STEP 1: Generate PNG frames
-    # for sim_name in sims:
-    #     for var_name in var_names:
-    #         SI_tools = SeaIceToolbox(sim_name             = sim_name,
-    #                                  dt0_str              = dt0_str,
-    #                                  dtN_str              = dtN_str,
-    #                                  P_log                = f"/g/data/gv90/da1339/logs/SeaIceToolBox_{sim_name}_{var_name}_plotting.log",
-    #                                  save_new_figs        = True,
-    #                                  show_figs            = False,
-    #                                  overwrite_saved_figs = False)
-    #         CICE_all = SI_tools.load_iceh_zarr()
-    #         CICE_slice = CICE_all.sel(time=slice(dt0_str,dtN_str))
-    #         for i,dt in enumerate(CICE_slice['time'].values):
-    #             ds_slice = CICE_slice.isel(time=i,nj=SI_tools.hemisphere_dict['nj_slice'])
-    #             plt_da = ds_slice[var_name]
-    #             dt = pd.Timestamp(plt_da.time.values)
-    #             dt_str = f"{dt.year}-{dt.month:02d}-{dt.day:02d}"
-    #             SI_tools.pygmt_map_plot_one_var(plt_da, var_name,
-    #                                             plot_regions  = None,
-    #                                             time_stamp    = dt_str,
-    #                                             tit_str       = dt_str,
-    #                                             plot_GI       = bool(SI_tools.use_gi),
-    #                                             var_sq_size   = 0.2,
-    #                                             GI_fill_color = 'red',
-    #                                             GI_sq_size    = 0.01,
-    #                                             extend_cbar   = True,
-    #                                             show_fig      = False)
-    #         SI_tools.client.close()
+    # STEP 1: Generate PNG frames
+    for sim_name in sims:
+        for var_name in var_names:
+            SI_tools = SeaIceToolbox(sim_name             = sim_name,
+                                     dt0_str              = dt0_str,
+                                     dtN_str              = dtN_str,
+                                     P_log                = f"/g/data/gv90/da1339/logs/SeaIceToolBox_{sim_name}_{var_name}_plotting.log",
+                                     save_new_figs        = True,
+                                     show_figs            = False,
+                                     overwrite_saved_figs = True)
+            CICE_all = SI_tools.load_iceh_zarr()
+            CICE_slice = CICE_all.sel(time=slice(dt0_str,dtN_str))
+            for i,dt in enumerate(CICE_slice['time'].values):
+                ds_slice = CICE_slice.isel(time=i,nj=SI_tools.hemisphere_dict['nj_slice'])
+                plt_da = ds_slice[var_name]
+                dt = pd.Timestamp(plt_da.time.values)
+                dt_str = f"{dt.year}-{dt.month:02d}-{dt.day:02d}"
+                SI_tools.pygmt_map_plot_one_var(plt_da, var_name,
+                                                plot_regions  = None,
+                                                time_stamp    = dt_str,
+                                                tit_str       = dt_str,
+                                                plot_GI       = bool(SI_tools.use_gi),
+                                                var_sq_size   = 0.2,
+                                                GI_fill_color = 'red',
+                                                GI_sq_size    = 0.01,
+                                                extend_cbar   = True,
+                                                show_fig      = False)
+            SI_tools.client.close()
 
     # STEP 2: Convert PNGs to MP4s
     for sim_name in sims:
