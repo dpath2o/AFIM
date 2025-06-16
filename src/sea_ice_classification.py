@@ -866,8 +866,10 @@ class SeaIceClassification:
         """
         sim_name        = sim_name    or self.sim_name
         ispd_thresh     = ispd_thresh or self.ispd_thresh
+        ice_type        = ice_type    or self.ice_type
         dt0_str         = dt0_str     or self.dt0_str
         dtN_str         = dtN_str     or self.dtN_str
+        chunks          = chunks      or {'time': 31}
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         D_zarr          = D_zarr or Path(self.config['D_dict']['AFIM_out'],sim_name,"zarr")
         if isinstance(ice_type, str) and "," in ice_type:
@@ -889,26 +891,26 @@ class SeaIceClassification:
                 except Exception:
                     return False
             P_zarrs = [p for p in P_zarrs if file_in_range(p)]
-        self.logger.info(f"📁 Found {len(P_zarrs)} zarr files: {[p.name for p in P_zarrs]}")
+        self.logger.info(f"Found {len(P_zarrs)} zarr files")
+        self.logger.debug(f"{[p.name for p in P_zarrs]}")
         if not P_zarrs:
-            self.logger.warning(f"⚠️ No Zarr datasets found in {D_zarr}")
+            self.logger.warning(f"No Zarr datasets found in {D_zarr}")
             return None
         DS_list = []
         for P_zarr in P_zarrs:
             self.logger.debug(f"attempting to load: {P_zarr}")
             try:
-                ds = xr.open_zarr(P_zarr, group=ice_type, consolidated=True)
+                ds = xr.open_zarr(P_zarr, group=ice_type, consolidated=True).chunk(chunks)
                 DS_list.append(ds)
             except (OSError, KeyError) as e:
-                self.logger.warning(f"⚠️ Skipping {P_zarr} ({ice_type}): {e}")
+                self.logger.warning(f"Skipping {P_zarr} ({ice_type}): {e}")
         if not DS_list:
-            self.logger.warning(f"⚠️ No {ice_type} datasets found in any Zarr group")
+            self.logger.warning(f"No {ice_type} datasets found in any Zarr group")
             return None
-        DS_FI = xr.concat(DS_list, dim="time")
-        DS_FI = DS_FI.chunk(chunks)
-        self.logger.info(f"✅ Loaded {ice_type}: {len(DS_FI.time)} time steps from {len(DS_list)} files")
+        DS_FI = xr.concat(DS_list, dim="time", coords='minimal')
+        self.logger.info(f"Loaded {ice_type}: {len(DS_FI.time)} time steps from {len(DS_list)} files")
         if zarr_CICE:
-            self.logger.info(f"📦 Load monthly iceh_*.zarr files between {dt0_str} and {dtN_str}")
+            self.logger.info(f"Load monthly iceh_*.zarr files between {dt0_str} and {dtN_str}")
             P_monthly_zarrs = []
             dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
             dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
@@ -919,15 +921,61 @@ class SeaIceClassification:
                     P_monthly_zarrs.append(P_zarr)
             if not P_monthly_zarrs:
                 raise FileNotFoundError(f"No Zarr files found between {dt0_str} and {dtN_str}")
-            self.logger.info(f"📁 Found {len(P_monthly_zarrs)} zarr files: {[p.name for p in P_monthly_zarrs]}")
+            self.logger.info(f"Found {len(P_monthly_zarrs)} zarr files")
+            self.logger.debug(f"{[p.name for p in P_monthly_zarrs]}")
             CICE = xr.open_mfdataset(P_monthly_zarrs,
-                                         engine     = "zarr",
-                                         concat_dim = "time",
-                                         combine    = "nested",
-                                         parallel   = True,
-                                         chunks     = chunks or {})
+                                    engine     = "zarr",
+                                    concat_dim = "time",
+                                    combine    = "nested",
+                                    parallel   = True,
+                                    chunks     = chunks)
             if slice_hem:
                 CICE = CICE.isel(nj=self.hemisphere_dict['nj_slice'])
         else:
             CICE = None
         return DS_FI, CICE
+
+    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean"):
+        """
+        Coarsen daily sim data into windows defined by AF2020 observation periods.
+
+        INPUTS:
+            sim_ds : xr.Dataset; daily CICE model output with time dimension.
+            obs_ds : xr.Dataset; oservational fast ice dataset with `t_FI_obs` coordinate.
+            doy_vals : list of int; DOY start values for each observation period. Defaults to AF2020 standard (24 bins).
+            method : str; Aggregation method ("mean" or "median").
+
+        OUTPUTS:
+            Dataset with same shape as obs_ds[t_FI_obs] and matched time resolution.
+        """
+        if doy_vals is None:
+            doy_vals = self.AF_FI_dict["DOY_vals"]
+        sim_time = sim_ds["time"].values
+        obs_times = pd.to_datetime(obs_ds["t_FI_obs"].values)
+        years = np.unique(obs_times.year)
+        grouped = []
+        for year in years:
+            for i, doy_start in enumerate(doy_vals):
+                dt_start = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(doy_start - 1, unit="D")
+                dt_end = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(
+                    (doy_vals[i+1]-1 if i+1 < len(doy_vals) else 365 + int(pd.Timestamp(f"{year}-12-31").is_leap_year)), unit="D")
+                period_mask = (sim_ds.time >= dt_start) & (sim_ds.time < dt_end)
+                ds_window = sim_ds.sel(time=period_mask)
+                if ds_window.time.size == 0:
+                    self.logger.warning(f"🕳️ No model data in window {dt_start.date()} to {dt_end.date()}")
+                    continue
+                if method == "mean":
+                    ds_agg = ds_window.mean(dim="time")
+                elif method == "median":
+                    ds_agg = ds_window.median(dim="time")
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
+                ds_agg = ds_agg.expand_dims({"t_FI_obs": [dt_start]}).persist()
+                grouped.append(ds_agg)
+        if not grouped:
+            raise ValueError("❌ No observation periods matched simulation data")
+        ds_aligned = xr.concat(grouped, dim="t_FI_obs")
+        self.logger.info(f"✅ Aligned model output to {len(ds_aligned.t_FI_obs)} obs windows")
+        return ds_aligned
+
+

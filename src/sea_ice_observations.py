@@ -139,6 +139,42 @@ class SeaIceObservations:
     #-------------------------------------------------------------------------------------------
     #                                 OBSERVATIONAL DATA
     #-------------------------------------------------------------------------------------------
+    def load_AF2020_FI_area_timeseries(self, year: int = None) -> pd.DataFrame:
+        """
+        Load the full AF2020 observed landfast sea ice area timeseries CSV
+        and optionally filter by a specific year.
+
+        Parameters
+        ----------
+        year : int, optional
+            If provided, filters the CSV to return only rows matching this year.
+
+        Returns
+        -------
+        df : pd.DataFrame
+            A DataFrame containing Circumpolar and sector ice area columns,
+            indexed by (year, DOY_start).
+        """
+        csv_path = self.AF_FI_dict['P_AF2020_csv']
+        df       = pd.read_csv(csv_path)
+        # Standardize column names
+        df = df.rename(columns={
+            'Circumpolar': 'circumpolar',
+            'IOsector': 'IOsector',
+            'WPOsector': 'WPOsector',
+            'RSsector': 'RSsector',
+            'BASsector': 'BASsector',
+            'WSsector': 'WSsector'
+        })
+        # Add multi-index and optional filter
+        df = df.set_index(['Year', 'DOY_start'])
+        if year is not None:
+            if year not in df.index.get_level_values('Year'):
+                raise ValueError(f"Year {year} not found in AF2020 CSV.")
+            df = df.loc[year]
+        self.logger.info(f"Loaded AF2020 FI timeseries from: {csv_path}")
+        return df.reset_index()
+
     def load_AF2020_FI_area_CSV(self, doy_start):
         csv_path    = self.AF_FI_dict['P_AF2020_cli_csv']
         df          = pd.read_csv(csv_path)
@@ -166,217 +202,189 @@ class SeaIceObservations:
         interp_func = interp1d(x, y, kind='linear', fill_value="extrapolate")
         return xr.DataArray(interp_func(full_doy), coords=[("doy", full_doy)])
 
-    def define_AF2020_reG_weights(self, FI_obs_da):
-        from pyproj import CRS, Transformer
-        self.logger.info("define model grid")
-        G_t = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
-        G_t.to_netcdf("/g/data/gv90/da1339/grids/CICE_Tgrid_for_AF2020db_regrid.nc")
-        self.logger.info("defining AF2020 regridder weights")
-        F_weights     = "/g/data/gv90/da1339/grids/weights/AF_FI_2020db_to_AOM2-0p25_Tgrid_bil_meth2.nc" #self.AF_FI_dict["AF_reG_weights"]
-        weights_exist = os.path.exists(F_weights)
-        self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
-        crs_obs          = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"]) #unique to observations
-        crs_spherical    = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])  #spherical coordinates
-        transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
-        X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
-        lon_obs, lat_obs = transformer.transform(X,Y)
-        da_obs           = xr.DataArray(data   = FI_obs_da,
-                                        dims   = ["nj", "ni"],
-                                        coords = dict(lon = (["nj", "ni"], lon_obs),
-                                                      lat = (["nj", "ni"], lat_obs)))
-        self.logger.info(f"Model lon: {G_t['lon'].values.min()} to {G_t['lon'].values.max()}")
-        self.logger.info(f"Obs lon:   {G_obs['lon'].min()} to {G_obs['lon'].max()}")
-        self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
-        self.reG_AF2020 = xe.Regridder(G_obs, G_t,
-                                       method            = "bilinear", #self.AF_FI_dict["AF_reG_weights_method"],
-                                       periodic          = False,
-                                       ignore_degenerate = True,
-                                       #extrap_method     = "nearest_s2d",
-                                       reuse_weights     = weights_exist,
-                                       filename          = F_weights)
-
-    def load_AF2020_FI_org_netcdf(self, P_orgs):
-        from pyproj import CRS, Transformer
-        P_weights        = self.AF_FI_dict["AF_reG_weights"]
-        reuse_weights    = os.path.exists(P_weights)
-        self.logger.info("loading FI observations with xarray mfdataset")
-        self.logger.info(f"loading these files:\n{P_orgs}")
-        FI_obs           = xr.open_mfdataset(P_orgs, engine='netcdf4')
-        self.logger.info("masking FI observations for values greater than 4")
-        mask             = (FI_obs['Fast_Ice_Time_series'] >= 4).compute()
-        FI_OBS           = xr.where( FI_obs['Fast_Ice_Time_series'] >= 4, 1.0, np.nan)
-        self.logger.info("define model grid")
-        G_t              = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
-        self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
-        crs_obs          = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"]) #unique to observations
-        crs_spherical    = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])  #spherical coordinates
-        transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
-        X, Y             = np.meshgrid(FI_obs['x'].isel(time=0).values, FI_obs['y'].isel(time=0).values)
-        lon_obs, lat_obs = transformer.transform(X,Y)
-        da_obs           = xr.DataArray(data   = FI_OBS.isel(time=0),
-                                        dims   = ["nj", "ni"],
-                                        coords = dict(lon = (["nj", "ni"], lon_obs),
-                                                      lat = (["nj", "ni"], lat_obs)))
-        self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid *** ")
-        self.logger.info(f"\tDefine regridder; reusing weights : {reuse_weights}")
-        reG_obs          = xe.Regridder( da_obs, G_t,
-                                         method            = "bilinear",
-                                         periodic          = False,
-                                         ignore_degenerate = True,
-                                         reuse_weights     = reuse_weights,
-                                         filename          = P_weights)
-        self.logger.info(f"\tRegridding masked observational dataset")
-        FI_OBS_reG        = reG_obs( FI_OBS )
-        FI                = (('t_FI_obs', 'nj', 'ni'),
-                             FI_OBS_reG.values,
-                             {'long_name': FI_obs['Fast_Ice_Time_series'].attrs['long_name']})
-        t_alt             = (('t_FI_obs'),
-                             FI_obs.date_alt.values,
-                             {'long_name': FI_obs.date_alt.attrs['long_name'],
-                              'description': FI_obs.date_alt.attrs['description']})
-        t_coords          = (('t_FI_obs'),
-                             FI_obs.time.values,
-                             {'description': "Start date of 15- or 20-day image mosaic window.",
-                              'units': "days since 2000-1-1 0:0:0"})
-        x_coords          = (('nj','ni'),
-                             G_t['lon'].values,
-                             {'long_name': 'longitude', 'units': 'degrees_east'})
-        y_coords          = (('nj','ni'),
-                             G_t['lat'].values,
-                             {'long_name': 'latitude', 'units': 'degrees_north'})
-        self.logger.info("converted AF2020 database for use with SeaIceProcessor")
-        return xr.Dataset({'FI'       : FI,
-                           'FI_t_alt' : t_alt },
-                          coords = {'t_FI_obs' : t_coords,
-                                    'lon'      : x_coords,
-                                    'lat'      : y_coords})
-
-    def filter_AF2020_FI_by_date(self, dt0_str, dtN_str):
-        dt0       = datetime.strptime(dt0_str, "%Y-%m-%d")
-        dtN       = datetime.strptime(dtN_str, "%Y-%m-%d")
-        D_obs     = Path(self.AF_FI_dict['D_AF2020_db_org'])
-        yrs_reqd  = list(range(dt0.year, dtN.year + 1))
-        P_orgs    = [D_obs / f"FastIce_70_{yr}.nc" for yr in yrs_reqd]
-        ds        = self.load_AF2020_FI_org_netcdf(P_orgs)
-        alt_dates = pd.to_datetime(ds['FI_t_alt'].values.astype(str), format='%Y%m%d')
-        ds        = ds.assign_coords(obs_date=("t_FI_obs", alt_dates))
-        ds        = ds.set_index(t_FI_obs="obs_date")
-        matched   = ds.sel(t_FI_obs=slice(dt0, dtN))
-        if matched.dims['t_FI_obs'] == 0:
-            self.logger.warning(f"No matching observational dates found between {dt0_str} and {dtN_str}")
-        return matched
-
-    def create_AF2020_FI_zarr(self, overwrite=False):
-        P_zarr = Path(self.AF_FI_dict["P_AF_2020db_avg"])
-        if P_zarr.exists():
-            if overwrite:
-                self.logger.info(f"Averaged observational gridded climatology exists *but* over-writing has been requested\n\tOVER-WRITING: {P_zarr}")
-                shutil.rmtree(P_zarr)
-            else:
-                self.logger.info(f"Averaged observational gridded climatology already exists\n{P_zarr}")
-                return xr.open_zarr(P_zarr)
-        self.logger.info(f"Averaged observational gridded climatology does *NOT* exist\n\tCREATING NEW: {P_zarr}")
-        D_obs  = Path(self.AF_FI_dict['D_AF2020_db_org'])
-        P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
-        self.logger.info(f"loading all observational fast ice netcdf files:\n{P_orgs}")
-        ds_all    = self.load_AF2020_FI_org_netcdf(P_orgs)
-        alt_dates = pd.to_datetime(ds_all['FI_t_alt'].astype(str), format='%Y%m%d')
-        doy_vals  = alt_dates.dayofyear
-        ds_all    = ds_all.assign_coords(doy=("t_FI_obs", doy_vals))
-        ds_all    = ds_all.where(ds_all.doy.isin(self.AF_FI_dict['DOY_vals']), drop=True)
-        grouped   = ds_all.groupby("doy").mean(dim="t_FI_obs", skipna=True)
-        grouped   = grouped.rename_dims({"doy": "t_doy"})
-        grouped   = grouped.rename_vars({"FI": "FI_OBS_GRD"})
-        grouped   = grouped.assign_attrs(doy_vals=self.AF_FI_dict['DOY_vals']).persist()
-        self.logger.info(f"gridded climatology now looks like\n{grouped}")
-        self.logger.info(f"writing this to {P_zarr}")
-        t1 = time.time()
-        grouped.to_zarr(P_zarr)
-        self.logger.info(f"\tzarr written in {time.time()-t1:0.2f} seconds")
-        return grouped
-
-    def create_AF2020_daily_zarr(self, dt0_str="1993-01-01", dtN_str="2023-12-31"):
-        """
-        Generate a daily, regridded observational dataset of fast ice from AF2020:
-        - 14-day mosaics interpolated to daily (2000–2018)
-        - Climatological daily average used outside that range
-        - Output written to monthly Zarr files
-        """
-        G_t = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
-        dt0 = pd.to_datetime(dt0_str)
-        dtN = pd.to_datetime(dtN_str)
-        all_dates = pd.date_range(dt0, dtN, freq="D")
-        years_all = np.unique(all_dates.year)
-        years_obs = np.arange(2000, 2019)
-        years_clim = [y for y in years_all if y not in years_obs]
-        self.logger.info("Interpolating observational fast ice (2000–2018) to daily")
-        ds_obs_14d = self.filter_AF2020_FI_by_date("2000-01-01", "2018-12-31")
-        ds_obs_daily = ds_obs_14d["FI"].interp( t_FI_obs=pd.date_range("2000-01-01", "2018-12-31", freq="D") ).rename({"t_FI_obs": "time"})
-        self.logger.info("Interpolating climatological fast ice to daily DOY")
-        ds_clim = self.create_AF2020_FI_zarr()
-        ds_clim_daily = ds_clim["FI_OBS_GRD"].interp( t_doy=np.arange(1, 367) )
-        self.logger.info(f"Expanding climatology to years: {years_clim}")
-        ds_clim_list = []
-        for year in years_clim:
-            dates = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq="D")
-            doy_vals = dates.dayofyear
-            da = ds_clim_daily.sel(t_doy=xr.DataArray(doy_vals, dims="time"))
-            da = da.assign_coords(time=("time", dates))
-            ds_clim_list.append(da)
-        ds_clim_expanded = xr.concat(ds_clim_list, dim="time") if ds_clim_list else None
-        self.logger.info("Combining interpolated observations and climatology")
-        if ds_clim_expanded is not None:
-            ds_full = xr.concat([ds_obs_daily, ds_clim_expanded], dim="time").sortby("time")
+    def load_AF2020db(self, dt0_str="2000-01-01", dtN_str="2018-12-31", overwrite_zarr=False):
+        t0 = time.time()
+        D_zarr = Path(self.Sea_Ice_Obs_dict['D_local'],"FI_obs")
+        D_zarr.mkdir(parents=True, exist_ok=True)
+        P_zarr = Path(D_zarr,"AF-FI-2020db_org-timestep_reG.zarr")
+        if Path(P_zarr).exists() and any(Path(P_zarr).iterdir()) and not overwrite_zarr:
+            self.logger.info(f"Loading existing AF2020 observational Zarr file: {P_zarr}")
+            ds = xr.open_zarr(P_zarr, consolidated=Path(P_zarr, ".zmetadata").exists())
         else:
-            ds_full = ds_obs_daily
-        ds_full = ds_full.sel(time=slice(dt0, dtN))
-        ds_full = ds_full.expand_dims("time") if "time" not in ds_full.dims else ds_full
-        ds_full = ds_full.assign_coords(TLAT = (("nj", "ni"), G_t["lat"]),
-                                        TLON = (("nj", "ni"), G_t["lon"]))
-        out_dir = Path(self.AF_FI_dict["D_AF2020_daily_zarr"])
-        self.logger.info(f"Writing daily observational Zarrs to {out_dir}")
-        for year in np.unique(ds_full.time.dt.year.values):
-            for month in np.unique(ds_full.time.sel(time=ds_full.time.dt.year == year).dt.month):
-                ds_month = ds_full.sel(time=ds_full.time.dt.year == year).sel(time=ds_full.time.dt.month == month)
-                if ds_month.time.size == 0:
-                    continue
-                out_path = out_dir / f"{year}/{month:02d}.zarr"
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                self.logger.info(f"Writing: {out_path}")
-                ds_month.to_dataset(name="FI_OBS_DAILY").to_zarr(out_path, mode="w")
-        self.logger.info("Completed writing observational daily Zarr dataset.")
-
-    def load_AF2020_daily(self, dt0_str: str, dtN_str: str) -> xr.Dataset:
-        """
-        Load regridded daily observational landfast sea ice from AF2020, written as monthly Zarr files (via create_AF2020_daily_zarr).
-
-        INPUTS:
-           dt0_str : str; start date (e.g., "1993-01-01")
-           dtN_str : str; end date (e.g., "2023-12-31")
-
-        OUTPUTS:
-           xr.Dataset : daily observational fast ice on model T-grid.
-                        Contains:
-                        + FI_OBS_DAILY (time, nj, ni)
-                        + TLAT, TLON (nj, ni)
-        """
-        dt0 = pd.to_datetime(dt0_str)
-        dtN = pd.to_datetime(dtN_str)
-        all_dates = pd.date_range(dt0, dtN, freq="D")
-        base_dir = Path(self.AF_FI_dict["D_AF2020_daily_zarr"])
-        zarr_paths = []
-        for date in all_dates:
-            path = base_dir / f"{date.year}/{date.month:02d}.zarr"
-            if path.exists():
-                zarr_paths.append(str(path))
-        if not zarr_paths:
-            self.logger.warning(f"No AF2020 daily Zarr files found between {dt0_str} and {dtN_str}")
-            return None
-        self.logger.info(f"Loading {len(zarr_paths)} monthly Zarrs for AF2020 observations")
-        ds = xr.open_mfdataset(zarr_paths, engine="zarr", combine="by_coords")
-        ds = ds.sel(time=slice(dt0, dtN))
-        if "FI_OBS_DAILY" not in ds.data_vars:
-            self.logger.error("Variable 'FI_OBS_DAILY' not found in loaded dataset.")
-            return None
+            self.logger.info(f"{P_zarr} not found *or* overwrite requested. Generating from NetCDF...")
+            ds = self._load_AF2020_FI_org_and_save_zarr(P_zarr)
+        self.logger.info(f"Zarr load/generation completed in {time.time()-t0:.2f} seconds")
+        dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
+        dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
+        ds = ds.assign_coords(obs_date=("t_FI_obs", pd.to_datetime(ds['FI_t_alt'].values.astype(str), format="%Y%m%d")))
+        ds = ds.set_index(t_FI_obs="obs_date")
+        ds = ds.sel(t_FI_obs=slice(dt0, dtN))
+        if ds.dims.get("t_FI_obs", 0) == 0:
+            self.logger.warning(f"No matching observational dates found between {dt0_str} and {dtN_str}")
         return ds
+
+    def _load_AF2020_FI_org_and_save_zarr(self, P_zarr):
+        from pyproj import CRS, Transformer
+        D_obs = Path(self.AF_FI_dict['D_AF2020_db_org'])
+        P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
+        self.logger.info(f"Loading original AF2020 NetCDF files: {P_orgs}")
+        FI_obs = xr.open_mfdataset(P_orgs, engine='netcdf4', combine='by_coords')
+        FI_obs = FI_obs.chunk({'time': 32}) 
+        FI_OBS = xr.where(FI_obs['Fast_Ice_Time_series'] >= 4, 1.0, np.nan)
+        FI_OBS.name = "FI"
+        FI_OBS.attrs["long_name"] = FI_obs['Fast_Ice_Time_series'].attrs['long_name']
+        crs_obs = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"])
+        crs_sph = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])
+        transformer = Transformer.from_crs(crs_obs, crs_sph, always_xy=True)
+        X, Y = np.meshgrid(FI_obs['x'].isel(time=0).values, FI_obs['y'].isel(time=0).values)
+        lon_obs, lat_obs = transformer.transform(X, Y)
+        FI_OBS = FI_OBS.assign_coords(lon=("nj", "ni", lon_obs), lat=("nj", "ni", lat_obs))
+        G_t = self.define_cice_grid(grid_type='t', mask=False, build_grid_corners=False)
+        P_weights = self.AF_FI_dict["AF_reG_weights"]
+        reuse_weights = os.path.exists(P_weights)
+        self.logger.info(f"Regridding observational data using weights: {P_weights} (reuse={reuse_weights})")
+        reG_obs = xe.Regridder(FI_OBS.isel(time=0), G_t,
+                            method="bilinear", periodic=False,
+                            ignore_degenerate=True,
+                            reuse_weights=reuse_weights,
+                            filename=P_weights)
+        FI_OBS_reG = reG_obs(FI_OBS)
+        FI_OBS_reG.name = "FI"
+        FI_OBS_reG.attrs["long_name"] = FI_obs['Fast_Ice_Time_series'].attrs['long_name']
+        # Construct Dataset
+        ds_out = xr.Dataset(data_vars={
+            "FI": FI_OBS_reG,
+            "FI_t_alt": ("t_FI_obs", FI_obs.date_alt,
+                        {"long_name": FI_obs.date_alt.attrs.get("long_name", ""),
+                        "description": FI_obs.date_alt.attrs.get("description", "")})
+        }, coords={
+            "t_FI_obs": ("t_FI_obs", FI_obs.time,
+                        {"description": "Start date of 15- or 20-day image mosaic window.",
+                        "units": "days since 2000-1-1 0:0:0"}),
+            "lon": (("nj", "ni"), G_t['lon'].values, {"units": "degrees_east"}),
+            "lat": (("nj", "ni"), G_t['lat'].values, {"units": "degrees_north"})
+        })
+        self.logger.info(f"Saving regridded dataset to Zarr: {P_zarr}")
+        ds_out.to_zarr(P_zarr, mode="w", consolidated=True)
+        return ds_out
+
+    # def define_AF2020_reG_weights(self, FI_obs_da):
+    #     from pyproj import CRS, Transformer
+    #     self.logger.info("define model grid")
+    #     G_t = self.define_cice_grid( grid_type='t' , mask=False , build_grid_corners=False )
+    #     G_t.to_netcdf("/g/data/gv90/da1339/grids/CICE_Tgrid_for_AF2020db_regrid.nc")
+    #     self.logger.info("defining AF2020 regridder weights")
+    #     F_weights     = self.AF_FI_dict["AF_reG_weights"]
+    #     weights_exist = os.path.exists(F_weights)
+    #     self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
+    #     crs_obs          = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"]) #unique to observations
+    #     crs_spherical    = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])  #spherical coordinates
+    #     transformer      = Transformer.from_crs(crs_obs, crs_spherical, always_xy=True)
+    #     X, Y             = np.meshgrid(FI_obs_native['x'].isel(time=0).values, FI_obs_native['y'].isel(time=0).values)
+    #     lon_obs, lat_obs = transformer.transform(X,Y)
+    #     da_obs           = xr.DataArray(data   = FI_obs_da,
+    #                                     dims   = ["nj", "ni"],
+    #                                     coords = dict(lon = (["nj", "ni"], lon_obs),
+    #                                                   lat = (["nj", "ni"], lat_obs)))
+    #     self.logger.info(f"Model lon: {G_t['lon'].values.min()} to {G_t['lon'].values.max()}")
+    #     self.logger.info(f"Obs lon:   {G_obs['lon'].min()} to {G_obs['lon'].max()}")
+    #     self.logger.info(f"{'🔁 Reusing' if weights_exist else '⚙️ Creating'} regrid weights: {F_weights}")
+    #     self.reG_AF2020 = xe.Regridder(G_obs, G_t,
+    #                                    method            = "bilinear",
+    #                                    periodic          = False,
+    #                                    ignore_degenerate = True,
+    #                                    reuse_weights     = weights_exist,
+    #                                    filename          = F_weights)
+
+    # def load_AF2020_FI_org_netcdf(self, P_orgs):
+    #     from pyproj import CRS, Transformer
+    #     import xesmf as xe
+    #     # Setup
+    #     P_weights     = self.AF_FI_dict["AF_reG_weights"]
+    #     reuse_weights = os.path.exists(P_weights)
+    #     self.logger.info("loading FI observations with xarray mfdataset")
+    #     self.logger.info(f"loading these files:\n{P_orgs}")
+    #     FI_obs = xr.open_mfdataset(P_orgs, engine='netcdf4', chunks={'time': 1})
+    #     self.logger.info("masking FI observations for values greater than 4")
+    #     FI_OBS                    = xr.where(FI_obs['Fast_Ice_Time_series'] >= 4, 1.0, np.nan)
+    #     FI_OBS.name               = "FI"
+    #     FI_OBS.attrs["long_name"] = FI_obs['Fast_Ice_Time_series'].attrs['long_name']
+    #     self.logger.info("define model grid")
+    #     G_t = self.define_cice_grid(grid_type='t', mask=False, build_grid_corners=False)
+    #     self.logger.info("convert 'AF_FI_OBS_2020db' Cartesian coordinates to spherical coordindates")
+    #     crs_obs          = CRS.from_epsg(self.AF_FI_dict["projection_FI_obs"])
+    #     crs_sph          = CRS.from_epsg(self.AF_FI_dict["projection_wgs84"])
+    #     transformer      = Transformer.from_crs(crs_obs, crs_sph, always_xy=True)
+    #     X, Y             = np.meshgrid(FI_obs['x'].isel(time=0).values, FI_obs['y'].isel(time=0).values)
+    #     lon_obs, lat_obs = transformer.transform(X, Y)
+    #     FI_OBS = FI_OBS.assign_coords(lon=(("nj", "ni"), lon_obs),
+    #                                   lat=(("nj", "ni"), lat_obs))
+    #     self.logger.info("*** Regridding 'AF_FI_OBS_2020db' to CICE T-grid ***")
+    #     self.logger.info(f"\tDefine regridder; reusing weights: {reuse_weights}")
+    #     reG_obs = xe.Regridder(FI_OBS.isel(time=0),  # representative grid for weights
+    #                            G_t,
+    #                            method="bilinear",
+    #                            periodic=False,
+    #                            ignore_degenerate=True,
+    #                            reuse_weights=reuse_weights,
+    #                          filename=P_weights)
+    #     self.logger.info("\tRegridding masked observational dataset")
+    #     FI_OBS_reG = reG_obs(FI_OBS)  # shape: (time, nj, ni)
+    #     FI_OBS_reG.name = "FI"
+    #     FI_OBS_reG.attrs["long_name"] = FI_obs['Fast_Ice_Time_series'].attrs['long_name']
+    #     ds_out = xr.Dataset(data_vars = {"FI"       : FI_OBS_reG,
+    #                                      "FI_t_alt" : (("t_FI_obs",), FI_obs.date_alt, {"long_name"   : FI_obs.date_alt.attrs.get("long_name", ""),
+    #                                                                                     "description" : FI_obs.date_alt.attrs.get("description", "")})},
+    #                         coords    = {"t_FI_obs" : (("t_FI_obs",), FI_obs.time, {"description": "Start date of 15- or 20-day image mosaic window.",
+    #                                                                                 "units": "days since 2000-1-1 0:0:0"}),
+    #                                      "lon"      : (("nj", "ni"), G_t['lon'].values, {"units": "degrees_east"}),
+    #                                      "lat"      : (("nj", "ni"), G_t['lat'].values, {"units": "degrees_north"})})
+    #     self.logger.info("converted AF2020 database for use with SeaIceProcessor (Dask-friendly)")
+    #     return ds_out
+
+    # def filter_AF2020_FI_by_date(self, dt0_str=None, dtN_str=None):
+    #     dt0_str   = dt0_str or self.dt0_str
+    #     dtN_str   = dtN_str or self.dtN_str 
+    #     dt0       = datetime.strptime(dt0_str, "%Y-%m-%d")
+    #     dtN       = datetime.strptime(dtN_str, "%Y-%m-%d")
+    #     D_obs     = Path(self.AF_FI_dict['D_AF2020_db_org'])
+    #     yrs_reqd  = list(range(dt0.year, dtN.year + 1))
+    #     P_orgs    = [D_obs / f"FastIce_70_{yr}.nc" for yr in yrs_reqd]
+    #     ds        = self.load_AF2020_FI_org_netcdf(P_orgs)
+    #     alt_dates = pd.to_datetime(ds['FI_t_alt'].values.astype(str), format='%Y%m%d')
+    #     ds        = ds.assign_coords(obs_date=("t_FI_obs", alt_dates))
+    #     ds        = ds.set_index(t_FI_obs="obs_date")
+    #     matched   = ds.sel(t_FI_obs=slice(dt0, dtN))
+    #     if matched.dims['t_FI_obs'] == 0:
+    #         self.logger.warning(f"No matching observational dates found between {dt0_str} and {dtN_str}")
+    #     return matched
+
+    # def create_AF2020_FI_zarr(self, overwrite=False):
+    #     P_zarr = Path(self.AF_FI_dict["P_AF_2020db_avg"])
+    #     if P_zarr.exists():
+    #         if overwrite:
+    #             self.logger.info(f"Averaged observational gridded climatology exists *but* over-writing has been requested\n\tOVER-WRITING: {P_zarr}")
+    #             shutil.rmtree(P_zarr)
+    #         else:
+    #             self.logger.info(f"Averaged observational gridded climatology already exists\n{P_zarr}")
+    #             return xr.open_zarr(P_zarr)
+    #     self.logger.info(f"Averaged observational gridded climatology does *NOT* exist\n\tCREATING NEW: {P_zarr}")
+    #     D_obs  = Path(self.AF_FI_dict['D_AF2020_db_org'])
+    #     P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
+    #     self.logger.info(f"loading all observational fast ice netcdf files:\n{P_orgs}")
+    #     ds_all    = self.load_AF2020_FI_org_netcdf(P_orgs)
+    #     alt_dates = pd.to_datetime(ds_all['FI_t_alt'].astype(str), format='%Y%m%d')
+    #     doy_vals  = alt_dates.dayofyear
+    #     ds_all    = ds_all.assign_coords(doy=("t_FI_obs", doy_vals))
+    #     ds_all    = ds_all.where(ds_all.doy.isin(self.AF_FI_dict['DOY_vals']), drop=True)
+    #     grouped   = ds_all.groupby("doy").mean(dim="t_FI_obs", skipna=True)
+    #     grouped   = grouped.rename_dims({"doy": "t_doy"})
+    #     grouped   = grouped.rename_vars({"FI": "FI_OBS_GRD"})
+    #     grouped   = grouped.assign_attrs(doy_vals=self.AF_FI_dict['DOY_vals']).persist()
+    #     self.logger.info(f"gridded climatology now looks like\n{grouped}")
+    #     self.logger.info(f"writing this to {P_zarr}")
+    #     t1 = time.time()
+    #     grouped.to_zarr(P_zarr)
+    #     self.logger.info(f"\tzarr written in {time.time()-t1:0.2f} seconds")
+    #     return grouped
 

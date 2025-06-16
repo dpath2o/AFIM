@@ -16,7 +16,6 @@ from sea_ice_icebergs       import SeaIceIcebergs
 from sea_ice_observations   import SeaIceObservations
 from sea_ice_ACCESS         import SeaIceACCESS
 
-#class SeaIceToolbox:
 class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIcebergs, SeaIceObservations, SeaIceACCESS):
     """
     Unified toolbox for processing and analysing Antarctic sea ice from CICE simulations
@@ -174,7 +173,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                                                     # that the user is interested; unfortunately, the toolbox
                                                     # does not allow for a user to be interested in both at the 
                                                     # same time; either 'south' or 'north'; defualt is 'south'
-	             P_log                       = None,# the log file to send print statements to	             
+	             P_log                       = None,# the log file to send print statements to
+                 log_level                   = None,# the logging level (see python logging doc for more info)
                  overwrite_zarr              = None,# whether or not to overwrite a zarr; default is false
 	             overwrite_AF2020_zarr       = None,# whether or not to overwrite AF2020db zarr; default is false
                  overwrite_saved_figs        = None,# whether or not to overwite saved figures; default is false
@@ -190,10 +190,11 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
             self.config = json.load(f)
         self.D_dict             = self.config.get('D_dict'            , {})
         D_log                   = self.D_dict['logs']
-        P_log                   = P_log if P_log is not None else Path(D_log, f'SeaIceProcessor_FI_{self.sim_name}.log')
+        P_log                   = P_log     if P_log     is not None else Path(D_log, f'SeaIceProcessor_FI_{self.sim_name}.log')
+        log_level               = log_level if log_level is not None else logging.INFO
         if not os.path.exists(P_log):
             os.system(f"touch {P_log}")
-        self.setup_logging(logfile=P_log)
+        self.setup_logging(logfile=P_log, log_level=log_level)
         self.initialise_dask_client(client=client)
         self.CICE_dict          = self.config.get("CICE_dict"         , {})
         self.GI_dict            = self.config.get('GI_dict'           , {})
@@ -271,21 +272,23 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         SeaIceObservations.__init__(self, **kwargs)
         SeaIceACCESS.__init__(self, **kwargs)
 
-    def setup_logging(self, logfile=None):
+    def setup_logging(self, logfile=None, log_level=logging.INFO):
         self.logger = logging.getLogger(self.sim_name)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(log_level)
         if not self.logger.handlers:
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             ch = logging.StreamHandler()
             ch.setFormatter(formatter)
+            ch.setLevel(log_level)
             self.logger.addHandler(ch)
             if logfile:
                 if os.path.exists(logfile):
                     os.remove(logfile)
                 fh = logging.FileHandler(logfile)
                 fh.setFormatter(formatter)
+                fh.setLevel(log_level)
                 self.logger.addHandler(fh)
-                self.logger.info(f"log file intialised: {logfile}")
+            self.logger.info(f"log file initialised: {logfile}")
     
     def initialise_dask_client(self, client=None, threads_per_worker=1):
         # Case 1: User has passed a client explicitly
@@ -300,7 +303,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
             self.client = existing_client
         # Case 3: No client at all — create a new one
         else:
-            self.client = Client(threads_per_worker=threads_per_worker)
+            self.client = Client(threads_per_worker=threads_per_worker, memory_limit="16GB")
             self.logger.info("Initialized new Dask client.")
         self.logger.info(f"Dask distributed client can be accessed at url {self.client.dashboard_link}")
 
