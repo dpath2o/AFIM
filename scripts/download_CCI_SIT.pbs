@@ -1,0 +1,15 @@
+#!/bin/bash
+#PBS -P gv90
+#PBS -q copyq
+#PBS -l walltime=10:00:00
+#PBS -l ncpus=1
+#PBS -l mem=10GB
+#PBS -l jobfs=1GB
+#PBS -l storage=scratch/jk72+gdata/jk72+gdata/xp65+gdata/gv90+scratch/gv90
+#PBS -N download_CCI_SIT
+#PBS -o $PBS_JOBFS/download_CCI_SIT.out
+#PBS -e $PBS_JOBFS/download_CCI_SIT.err
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+cd ~/AFIM/scripts
+python download_CCI_SIT.py
