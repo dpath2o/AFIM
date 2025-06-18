@@ -1,5 +1,5 @@
 # create_animations.py
-import sys, os
+import sys, os, glob
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -8,12 +8,12 @@ def main():
     mod_path = '/home/581/da1339/AFIM/src/AFIM/src'
     sys.path.insert(0, mod_path)
     from sea_ice_toolbox import SeaIceToolbox
-    sims       = ["elps-min", "gi-nil", "AOM2-ERA5"]
-    regions    = ["north", "south"]
-    var_names  = ["aice", "hi"]
+    sims        = ["elps-min", "gi-nil", "AOM2-ERA5", "FI-heavy", "Roth-cf-def", "re-evp-off", "ndte-max", "ndte-min", "ktens-ext", "elps-ext", "elps-max"]
+    regions     = ["north", "south"]
+    var_names   = ["aice", "hi", "dvidtd", "dvidtt"]
     video_paths = {sim: {region: {} for region in regions} for sim in sims}
-    dt0_str     = "1999-08-01"
-    dtN_str     = "1999-10-31"
+    dt0_str     = "1999-01-01"
+    dtN_str     = "1999-12-31"
     # STEP 1: Generate PNG frames
     for sim_name in sims:
         for var_name in var_names:
@@ -43,7 +43,7 @@ def main():
                                                 show_fig      = False)
             SI_tools.client.close()
 
-    # STEP 2: Convert PNGs to MP4s
+    #STEP 2: Convert PNGs to MP4s
     for sim_name in sims:
         for region in regions:
             for var_name in var_names:

@@ -1,0 +1,17 @@
+#!/bin/bash
+#PBS -N create_FI_diff_plots
+#PBS -P gv90
+#PBS -q normalbw
+#PBS -l walltime=24:00:00
+#PBS -l mem=64GB
+#PBS -l ncpus=28
+#PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
+#PBS -o create_FI_diff_plots.out
+#PBS -e create_FI_diff_plots.err
+#PBS -l jobfs=10GB
+#PBS -l wd
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+echo "Starting animation job on $HOSTNAME"
+python3 create_FI_diff_plots.py
+echo "Done."

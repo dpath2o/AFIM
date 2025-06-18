@@ -2,7 +2,7 @@
 #PBS -N create_animations
 #PBS -P gv90
 #PBS -q normalbw
-#PBS -l walltime=04:00:00
+#PBS -l walltime=24:00:00
 #PBS -l mem=64GB
 #PBS -l ncpus=28
 #PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72

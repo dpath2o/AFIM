@@ -170,6 +170,7 @@ class SeaIcePlotter:
         xannot_lines = [f"{tick}\tig\t{label}" for tick, label in zip(xticks, month_labels)]
         xannot_path.write_text("\n".join(xannot_lines) + "\n")
         # FIA figure
+        default_line_colors = ["orange", "green", "blue", "red", "magenta", "cyan"]
         fig = pygmt.Figure()
         pygmt.config(FORMAT_GEO_MAP="ddd.x", MAP_GRID_PEN="0p,white")
         if diff_plot:
@@ -185,9 +186,8 @@ class SeaIcePlotter:
             for i, (name, da) in enumerate(FIA_dict.items()):
                 if isinstance(da, xr.Dataset):
                     da = da.to_array().squeeze()
-                if i<1 and not diff_plot: #name == "AF2020db_cli":
+                if i==0 and not diff_plot: #name == "AF2020db_cli":
                     fig.plot(x=obs_FIA['doy'].values, y=obs_FIA.values, pen="1.5p,blue,--", label="AF2020 Climatology (2000–2018)")
-                    continue
                 time       = pd.to_datetime(da["time"].values)
                 area       = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days else da.values
                 df         = pd.DataFrame({"area": area}, index=time)
@@ -198,8 +198,12 @@ class SeaIcePlotter:
                 area_min   = grouped.min()
                 area_max   = grouped.max()
                 area_mean  = grouped.mean()
-                leg_lab    = self.plot_ice_area_dict[name]["label"]
-                line_color = self.plot_ice_area_dict[name]["color"]
+                if name in ["FI_BT", "FI_BT_roll", "FI_BT_bool"]:
+                    leg_lab    = self.plot_ice_area_dict[name]["label"]
+                    line_color = self.plot_ice_area_dict[name]["color"]
+                else:
+                    leg_lab    = name
+                    line_color = default_line_colors[i]
                 if diff_plot:
                     area_mean_diff  = obs_FIA - area_mean
                     print(area_mean_diff)
@@ -439,119 +443,6 @@ class SeaIcePlotter:
         if show_fig:
             fig.show()
         pygmt.clib.Session.__exit__
-
-    def plot_monthly_ice_metric_by_year(self, area_dict,
-                                        ice_type         = "FIA",
-                                        roll_days        = 0,
-                                        ylim             = None,
-                                        figsize          = (18, 10),
-                                        tit_str          = None,
-                                        P_png            = None,
-                                        tick_fontsize    = 12,
-                                        label_fontsize   = 14,
-                                        title_fontsize   = 18,
-                                        legend_fontsize  = 12,
-                                        plot_annotations = False):
-        """
-        Plot daily ice area/volume by month (Jan–Dec) for each simulation year (excluding the first).
-        For AF2020db_cli: plot as dashed line with max/min markers (FIA only).
-        For each model type (FI_BT, FI_BT_bool, FI_BT_roll):
-            - Plot climatology as solid line
-            - Shade min/max bounds of each day of year
-        If ice_type == "SIA", also attempt to plot NSIDC climatology.
-
-        INPUTS:
-        area_dict : dict; {sim_name: DataArray} containing 1D time series of ice metric (area/volume).
-        ice_type  : str; one of ("SIA", "SIV", "FIA", "FIV").
-        roll_days : int; smoothing window (rolling mean in days).
-        ylim      : tuple or None; y-axis limits. If None, auto-set based on ice_type.
-        """
-        plt.figure(figsize=figsize, constrained_layout=True)
-        cmap         = plt.get_cmap("tab10")
-        month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        xticks       = [1,32,62,92,122,152,182,212,242,272,302,332]
-        self.plot_ice_area_dict = {"FI_BT": {"label": "daily ice-speed mask", "color": "black"},
-                                   "FI_BT_bool": {"label": "Binary-days (6 of 7) ice-speed mask", "color": "orange"},
-                                   "FI_BT_roll": {"label": "15-day-avg ice-speed mask", "color": "green"},}
-        # Y-axis labels and defaults
-        ice_type = ice_type.upper()
-        ylabels = {"SIA": "Sea Ice Area (10⁶ km²)",
-                   "SIV": "Sea Ice Volume (10⁶ km³)",
-                   "FIA": "Fast Ice Area (10³ km²)",
-                   "FIV": "Fast Ice Volume (km³)"}
-        if ylim is None:
-            ylim_defaults = {"SIA": (0, 20), "FIA": (100, 800)}
-            ylim = ylim_defaults.get(ice_type, None)
-        sim_annots = []
-        sim_annot_colors = []
-        for i, (name, da) in enumerate(area_dict.items()):
-            if isinstance(da, xr.Dataset):
-                da = da.to_array().squeeze()
-            if name == "AF2020db_cli" and ice_type == "FIA":
-                doy = da["doy"].values
-                values = da.values
-                plt.plot(doy, values, label="AF2020 Climatology (2000–2018)", linestyle="--", color="blue", linewidth=1.5)
-                if plot_annotations:
-                    max_doy, min_doy = doy[np.argmax(values)], doy[np.argmin(values)]
-                    plt.plot(max_doy, values[np.argmax(values)], "b^")
-                    plt.plot(min_doy, values[np.argmin(values)], "bv")
-                    sim_annots += [f"AF2020 Max: {values[np.argmax(values)]:.1f} @ DOY {max_doy}",
-                                f"AF2020 Min: {values[np.argmin(values)]:.1f} @ DOY {min_doy}"]
-                    sim_annot_colors += ["blue"] * 2
-                continue
-            if name == "NSIDC" and ice_type == "SIA":
-                time = pd.to_datetime(da["time"].values)
-                area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
-                df = pd.DataFrame({"area": area}, index=time)
-                df["doy"] = df.index.dayofyear
-                clim_mean = df.groupby("doy")["area"].mean()
-                plt.plot(clim_mean.index, clim_mean.values, label="NSIDC Climatology", linestyle="--", color="black", linewidth=1.5)
-                if plot_annotations:
-                    max_doy, min_doy = clim_mean.idxmax(), clim_mean.idxmin()
-                    plt.plot(max_doy, clim_mean[max_doy], "k^")
-                    plt.plot(min_doy, clim_mean[min_doy], "kv")
-                    sim_annots += [f"NSIDC Max: {clim_mean[max_doy]:.1f} @ DOY {max_doy}",
-                                f"NSIDC Min: {clim_mean[min_doy]:.1f} @ DOY {min_doy}"]
-                    sim_annot_colors += ["black"] * 2
-                continue
-            time = pd.to_datetime(da["time"].values)
-            area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
-            df = pd.DataFrame({"area": area}, index=time)
-            df["doy"] = df.index.dayofyear
-            df["year"] = df.index.year
-            df = df[df["year"] > df["year"].min()]  # drop first year
-            grouped = df.groupby("doy")["area"]
-            area_min, area_max, area_mean = grouped.min(), grouped.max(), grouped.mean()
-            style = self.plot_ice_area_dict.get(name, {"label": name, "color": cmap(i)})
-            plt.fill_between(area_min.index, area_min, area_max, alpha=0.2, color=style["color"], label=f"{style['label']} min/max range")
-            plt.plot(area_mean.index, area_mean, color=style["color"], linewidth=2, label=f"{style['label']} climatology")
-            if plot_annotations:
-                max_doy, min_doy = area_mean.idxmax(), area_mean.idxmin()
-                plt.plot(max_doy, area_mean[max_doy], marker="^", color=style["color"])
-                plt.plot(min_doy, area_mean[min_doy], marker="v", color=style["color"])
-                sim_annots += [f"{name} Max: {area_mean[max_doy]:.1f} @ DOY {max_doy}",
-                            f"{name} Min: {area_mean[min_doy]:.1f} @ DOY {min_doy}"]
-                sim_annot_colors += [style["color"]] * 2
-        plt.xticks(xticks, labels=month_labels, fontsize=tick_fontsize)
-        plt.yticks(fontsize=tick_fontsize)
-        plt.xlim(1, 366)
-        if ylim: plt.ylim(ylim)
-        plt.ylabel(ylabels.get(ice_type, "Ice Metric"), fontsize=label_fontsize)
-        plt.xlabel("Month", fontsize=label_fontsize)
-        if tit_str:
-            plt.title(tit_str, fontsize=title_fontsize)
-        plt.grid(axis="y", linestyle="--", alpha=0.5)
-        plt.legend(loc="upper left", fontsize=legend_fontsize)
-        if sim_annots and plot_annotations:
-            ax = plt.gca()
-            for i, (text, color) in enumerate(zip(sim_annots, sim_annot_colors)):
-                ax.text(0.78, 0.02 + i * 0.03, text, transform=ax.transAxes,
-                        fontsize=11, va='bottom', ha='center', color=color)
-        if P_png and self.save_fig:
-            plt.savefig(P_png, dpi=100)
-            print(f"📏 Saved plot to {P_png}")
-        if self.show_fig:
-            plt.show()
 
     def plot_timeseries_groupby_month(self, ds, var_name, sim_name=None, dt0_str=None, dtN_str=None):
         self.sim_name = sim_name if sim_name is not None else getattr(self, "sim_name")
