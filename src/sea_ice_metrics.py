@@ -74,7 +74,7 @@ class SeaIceMetrics:
         """
         window    = window    if window    is not None else self.bool_window
         min_count = min_count if min_count is not None else self.bool_min_days
-        self.logger.info(f"🔁 Rolling boolean presence: window = {window}, min_count = {min_count}")
+        self.logger.info(f"Rolling boolean presence: window = {window}, min_count = {min_count}")
         FI_roll_mask = FI_mask.rolling({dim: window}, center=True).construct(f"{dim}_window").sum(dim=f"{dim}_window")
         FI_bool      = (FI_roll_mask >= min_count)
         return FI_bool
