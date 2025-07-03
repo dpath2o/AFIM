@@ -1,0 +1,16 @@
+#!/bin/bash
+#PBS -N taylor_diag
+#PBS -l walltime=02:00:00
+#PBS -l mem=100GB
+#PBS -l ncpus=28
+#PBS -l jobfs=10GB
+#PBS -P gv90
+#PBS -q normalbw
+#PBS -l storage=gdata/gv90+gdata/xp65
+#PBS -o taylor_diag.out
+#PBS -e taylor_diag.err
+#PBS -M daniel.atwater@utas.edu.au
+#PBS -m abe
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+python /home/581/da1339/AFIM/src/AFIM/scripts/plotting/taylor_diagram.py

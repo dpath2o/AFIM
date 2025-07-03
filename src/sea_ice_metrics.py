@@ -8,77 +8,6 @@ class SeaIceMetrics:
     def __init__(self, **kwargs):
         return
 
-    def extract_pack_ice(self, DS_FI, DS_HEM):
-        """
-        Extract the pack ice portion of the original dataset using a precomputed fast ice mask.
-
-        This method uses the inverse of the fast ice mask (`PI_mask`) to isolate pack ice regions 
-        from the full sea ice dataset. It assumes that `DS_FI` (a fast ice output) contains a valid 
-        boolean `PI_mask` derived from previous masking logic.
-
-        INPUTS:
-            DS_FI  : xarray.Dataset; dataset containing the boolean `PI_mask` variable indicating pack ice regions.
-            DS_HEM : xarray.Dataset; original unmasked sea ice dataset (e.g., the Southern Hemisphere slice of `iceh`).
-
-        OUPUTS:
-            xarray.Dataset; a masked version of `DS_HEM` where only pack ice regions are retained.
-
-        """
-        assert "PI_mask" in DS_FI, "PI_mask not found in dataset"
-        self.logger.info("masking for pack ice on dataset")
-        DS_PI = DS_HEM.where(DS_FI["PI_mask"])
-        return DS_PI
-
-    def compute_rolling_mean_on_dataset(self, ds, mean_period=None):
-        """
-
-        Apply a centered temporal rolling mean to a dataset.
-
-        This method smooths temporal noise by computing a centered moving average across the time dimension,
-        typically for use in rolling fast ice classification.
-
-        INPUTS:
-           ds          : xarray.Dataset; input dataset with a `time` dimension.
-           mean_period : int, optional; rolling window size in days. Defaults to `self.mean_period`.
-
-        OUTPUTS:
-           xarray.Dataset; dataset with all variables averaged over the specified rolling window.
-
-        """
-        mean_period = mean_period if mean_period is not None else self.mean_period
-        return ds.rolling(time=mean_period, center=True, min_periods=1).mean()
-
-    def boolean_fast_ice(self, FI_mask, dim="time", window=7, min_count=6):
-        """
-
-        Generate a boolean (or binary-days) presence mask for fast ice using a rolling window threshold.
-
-        This method applies a binary persistence filter to a fast ice mask. A cell is considered to
-        contain fast ice if it meets or exceeds `min_count` valid (True) values within a rolling window
-        of length `window`.
-
-        INPUTS:
-           FI_mask   : xarray.DataArray; Boolean time series mask of fast ice presence (True/False).
-           dim       : str, optional; the name of the time dimension. Defaults to "time".
-           window    : int, optional; size of the rolling window in days. Defaults to `self.bool_window` or 7.
-           min_count : int, optional; minimum number of True values in the window to classify as fast ice.
-                       Defaults to `self.bool_min_days` or 6.
-
-        OUTPUTS:
-           xarray.DataArray; Boolean mask where True indicates persistent fast ice presence.
-
-        NOTES:
-        + Used for defining stable fast ice coverage (e.g., in climatologies or seasonality studies).
-        + This operation is memory-intensive and is automatically persisted with Dask.
-
-        """
-        window    = window    if window    is not None else self.bool_window
-        min_count = min_count if min_count is not None else self.bool_min_days
-        self.logger.info(f"Rolling boolean presence: window = {window}, min_count = {min_count}")
-        FI_roll_mask = FI_mask.rolling({dim: window}, center=True).construct(f"{dim}_window").sum(dim=f"{dim}_window")
-        FI_bool      = (FI_roll_mask >= min_count)
-        return FI_bool
-
     def sea_ice_metrics_wrapper(self,
                                 sim_name        = None,
                                 ice_type        = None,
@@ -118,6 +47,7 @@ class SeaIceMetrics:
         sim_name                 = sim_name if sim_name is not None else self.sim_name
         ispd_thresh              = ispd_thresh or self.ispd_thresh
         ispd_thresh_str          = f"{ispd_thresh:.1e}".replace("e-0", "e-")
+        ice_type                 = ice_type or self.ice_type
         dt_range_str             = f"{self.dt0_str[:4]}-{self.dtN_str[:4]}"
         FIA_dict                 = {}
         af2020_df                = pd.read_csv(self.AF_FI_dict['P_AF2020_cli_csv'])
@@ -132,7 +62,10 @@ class SeaIceMetrics:
                 FIA_dict[i_type] = METS['FIA']
             else:
                 self.logger.info(f"{P_METS} does NOT exists and/or overwriting--computing")
-                roll        = i_type.endswith("_roll")
+                if hasattr(i_type, "endswith"):
+                    roll = i_type.endswith("_roll")
+                else:
+                    roll = False
                 DS, CICE_SO = self.load_processed_cice(ispd_thresh = ispd_thresh,
                                                        ice_type    = ice_type,
                                                        zarr_CICE   = True,
@@ -141,7 +74,8 @@ class SeaIceMetrics:
                 if i_type==f"{ice_type}_bool":
                     bool_mask          = self.boolean_fast_ice(DS['FI_mask'], dim="time", window=7, min_count=6)
                     DS_bool            = CICE_SO.where(bool_mask)
-                    DS_bool["FI_mask"] = DS["FI_mask"]
+                    #DS_bool["FI_mask"] = DS["FI_mask"]
+                    DS_bool["FI_mask"] = bool_mask
                     DS                 = DS_bool
                 METS = self.compute_sea_ice_metrics(DS, sim_name, i_type, self.ispd_thresh_str, P_METS, P_sum, FIA_dict["AF2020db_cli"])
             FIA_dict[i_type] = METS['FIA']
@@ -226,20 +160,21 @@ class SeaIceMetrics:
         self.logger.info(f"📊 Metrics summary written to {P_sum}")
         return DS_METS
 
-    def compute_ice_area(self, SIC, GC_area, ice_area_scale=None):
+    def compute_ice_area(self, SIC, GC_area, ice_area_scale=None, spatial_dim_names=None):
         if self.use_gi:
             GI_total_area = self.compute_grounded_iceberg_area()
         else:
             GI_total_area = 0
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
         self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
         self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
-        IA = ((SIC * GC_area).sum(dim=("nj", "ni"))).persist()
+        IA = ((SIC * GC_area).sum(dim=spatial_dim_names)).persist()
         IA = IA + GI_total_area
         IA = IA/ice_area_scale
         return IA
 
-    def compute_ice_volume(self, SIC, HI, GC_area, ice_volume_scale=1e12):
+    def compute_ice_volume(self, SIC, HI, GC_area, ice_volume_scale=1e12, spatial_dim_names=None):
         """
         Compute total sea ice volume in m³, optionally scaled for output.
 
@@ -252,14 +187,14 @@ class SeaIceMetrics:
         Returns:
         - Scaled total sea ice volume
         """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
         GI_total_area = self.compute_grounded_iceberg_area() if self.use_gi else 0
         self.logger.info(f"{GI_total_area:0.2f} m² total grounded iceberg area for {self.sim_name}")
         self.logger.info("🧮 Computing ice volume: sum(SIC × HI × area)")
-        IV = (SIC * HI * GC_area).sum(dim=("nj", "ni")).persist()
+        IV = (SIC * HI * GC_area).sum(dim=spatial_dim_names).persist()
         IV += GI_total_area
         IV /= ice_volume_scale
         return IV
-
 
     def compute_variable_aggregate(self, da, time_coord_name='time'):
         return da.sum(dim=time_coord_name) / da[time_coord_name].sizes.get(time_coord_name, 1)

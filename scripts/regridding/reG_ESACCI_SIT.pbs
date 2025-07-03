@@ -1,0 +1,14 @@
+#!/bin/bash
+#PBS -N reG-ESACCI-SIT
+#PBS -P gv90
+#PBS -q normalbw
+#PBS -l walltime=24:00:00
+#PBS -l ncpus=28
+#PBS -l mem=256GB
+#PBS -l jobfs=6GB
+#PBS -l storage=gdata/gv90+gdata/xp65
+#PBS -o reG_ESACCI_SIT.out
+#PBS -e reG_ESACCI_SIT.err
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+python ~/AFIM/src/AFIM/scripts/regridding/reG_ESACCI_SIT.py

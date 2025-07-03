@@ -20,26 +20,39 @@ class SeaIcePlotter:
         This sets the `self.antarctic_ice_shelves` attribute for optional overlay
         during plotting. Geometries are cleaned, reprojected, and buffered.
         """
-        coast_path              = self.config['pygmt_dict']['P_coast_shape']
-        gdf                     = gpd.read_file(coast_path)
+        gdf                     = gpd.read_file(self.config['pygmt_dict']['P_coast_shape'])
         shelves                 = gdf[gdf['POLY_TYPE'] == 'S']
         shelves                 = shelves[~shelves.geometry.is_empty & shelves.geometry.notnull()]
         shelves                 = shelves.to_crs("EPSG:4326")
         shelves.geometry        = shelves.geometry.buffer(0)
         return shelves.geometry
 
+    def create_IBCSO_bath(self):
+        ds               = xr.open_dataset(self.config['pygmt_dict']['P_IBCSO_bed'])
+        bed              = ds.band_data.isel(band=0)
+        bed_masked       = bed.where(bed < 0)
+        bed_masked.name  = "bath" 
+        bed_masked.attrs = {}    
+        ds_out           = bed_masked.to_dataset()
+        ds_out.attrs     = {}        
+        ds_out.encoding  = {}     
+        ds_out.to_netcdf(self.config['pygmt_dict']["P_IBCSO_bath"])
+
+    def load_IBCSO_bath(self):
+        return xr.open_dataset(self.config['pygmt_dict']["P_IBCSO_bath"]).bath
+
     def prepare_data_for_pygmt_plot(self, da, lon_coord_name=None, lat_coord_name=None, diff_plot=False):
         lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict['lon_coord_name']
         lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict['lat_coord_name']
         data_dict      = {}
-        dat2d          = da.data
+        data2d         = np.asarray(da.data).astype(float)
         lon2d          = da[lon_coord_name].data
         lat2d          = da[lat_coord_name].data
         if diff_plot:
-            mask = (da.data>-1) & (da.data<1)
+            mask = (data2d >= -1) & (data2d <= 1) & np.isfinite(data2d)
         else:
-            mask = (da.data > 0) & np.isfinite(da.data)
-        data_dict['data']  = dat2d[mask].ravel()
+            mask = (data2d > 0) & np.isfinite(data2d)
+        data_dict['data']  = data2d[mask].ravel()
         data_dict['lon']   = lon2d[mask].ravel()
         data_dict['lat']   = lat2d[mask].ravel()
         data_dict['lon2d'] = lon2d
@@ -217,6 +230,7 @@ class SeaIcePlotter:
         if enable_FIP:
             fig.shift_origin(yshift="-6c")
             ANT_IS         = self.load_ice_shelves()
+            SO_BATH        = self.load_IBCSO_bath()
             plot_data_dict = self.prepare_data_for_pygmt_plot(FIP_DA, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
             if plot_GI:
                 plot_GI_dict = self.load_GI_lon_lats(plot_data_dict)
@@ -226,7 +240,9 @@ class SeaIcePlotter:
                 projection = reg_vals['projection'].format(fig_width=30)
                 if i>0:
                     fig.shift_origin(yshift="-10.25c")
-                fig.basemap(region=region, projection=projection, frame=["af"])
+                fig.basemap(region=region, projection=projection, frame=['xa10g10f','ya5g5f'])
+                fig.coast(land=land_color, water=water_color)
+                fig.grdimage(grid=SO_BATH, cmap='geo')
                 fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style="s0.2c", cmap=True)
                 if plot_GI:
                     fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
@@ -254,6 +270,7 @@ class SeaIcePlotter:
                                time_stamp     = None,
                                tit_str        = None,
                                plot_GI        = False,
+                               diff_plot      = False,
                                cmap           = None,
                                series         = None,
                                reverse        = None,
@@ -270,6 +287,7 @@ class SeaIcePlotter:
                                land_color     = None,
                                water_color    = None,
                                P_png          = None,
+                               var_out        = None,
                                overwrite_fig  = None,
                                show_fig       = None):
         """
@@ -288,17 +306,29 @@ class SeaIcePlotter:
         cbar_pos    = cbar_position if cbar_position is not None else self.pygmt_dict['cbar_pos'].format(width=fig_size*0.8,height=0.75)
         land_color  = land_color    if land_color    is not None else self.pygmt_dict['land_color']
         water_color = water_color   if water_color   is not None else self.pygmt_dict['water_color']
+        if var_out is None:
+            var_out = var_name        
         ANT_IS         = self.load_ice_shelves()
-        plot_data_dict = self.prepare_data_for_pygmt_plot(da, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name)
-        required_keys  = ['lon', 'lat', 'data']
+        SO_BATH        = self.load_IBCSO_bath()
+        plot_data_dict = self.prepare_data_for_pygmt_plot(da, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
+        required_keys = ['lon', 'lat', 'data']
         try:
-            if (not plot_data_dict or any(k not in plot_data_dict or
-                                          plot_data_dict[k] is None or
-                                          (hasattr(plot_data_dict[k], "chunks") and plot_data_dict[k].size == 0) for k in required_keys)):
-                self.logger.warning("plot_data_dict is empty or missing required keys — skipping plot.")
+            if not isinstance(plot_data_dict, dict):
+                self.logger.warning("plot_data_dict is not a dictionary — skipping plot.")
                 return
-        except ValueError as e:
-            self.logger.warning(f"Skipping plot due to chunking error: {e}")
+            for k in required_keys:
+                if k not in plot_data_dict:
+                    self.logger.warning(f"Missing key '{k}' in plot_data_dict — skipping plot.")
+                    return
+                v = plot_data_dict[k]
+                if v is None:
+                    self.logger.warning(f"plot_data_dict['{k}'] is None — skipping plot.")
+                    return
+                if hasattr(v, "size") and v.size == 0:
+                    self.logger.warning(f"plot_data_dict['{k}'] is empty — skipping plot.")
+                    return
+        except Exception as e:
+            self.logger.warning(f"Skipping plot due to error: {e}")
             return
         cbar_frame = self.create_cbar_frame(series, cbar_lab, units=cbar_units, extend_cbar=extend_cbar)
         hem_plot   = False
@@ -325,9 +355,9 @@ class SeaIcePlotter:
             basemap_frame = ["af"]
         for i, (reg_name, reg_vals) in enumerate(reg_dict.items()):
             if P_png is None and self.save_fig:
-                P_png = Path(self.D_graph, sim_name, reg_name, var_name, f"{time_stamp}_{sim_name}_{reg_name}_{var_name}.png")
-            region     = reg_vals['plot_region']    
-            projection = reg_vals['projection']                
+                P_png = Path(self.D_graph, sim_name, reg_name, var_out, f"{time_stamp}_{sim_name}_{reg_name}_{var_out}.png")
+            region     = reg_vals['plot_region']
+            projection = reg_vals['projection']               
             if hem_plot:
                 projection = projection.format(fig_size=fig_size)
             elif reg_name in list(self.Ant_8sectors.keys()):
@@ -337,14 +367,36 @@ class SeaIcePlotter:
                 projection = projection.format(fig_width=fig_size)
             fig = pygmt.Figure()
             pygmt.config(FONT_TITLE="16p,Courier-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica", COLOR_FOREGROUND='black')
-            pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)#, truncate=(series[0],series[1]))#, continuous=True)
             fig.basemap(region=region, projection=projection, frame=basemap_frame)
-            fig.coast(land=land_color, water=water_color)            
-            fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style=f"s{var_sq_size}c", cmap=True)
+            fig.grdimage(grid=SO_BATH, cmap='geo')
+            if "diff" in var_name.lower():
+                lat        = da[lat_coord_name].values.flatten()
+                lon        = da[lon_coord_name].values.flatten()
+                val        = da.values.flatten()
+                valid_mask = ~np.isnan(val)
+                lat_valid  = lat[valid_mask]
+                lon_valid  = lon[valid_mask]
+                val_valid  = val[valid_mask].astype(int)
+                label_map  = {1: "simulation", 0: "agreement", 2: "observation"}
+                labels     = [label_map[v] for v in val_valid]
+                df         = pd.DataFrame({"longitude" : lon_valid,
+                                           "latitude"  : lat_valid,
+                                           "z"  : val_valid.astype(int)})
+                pygmt.makecpt(cmap="categorical", series=[0,2,1], color_model="+cagreement,simulation,observation")
+                fig.plot(data=df, style=f"s{var_sq_size}c", cmap=True)
+            elif "mask" in var_name.lower():
+                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill='red', style=f"s{var_sq_size}c")
+            else:
+                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)#, truncate=(series[0],series[1]))#, continuous=True)
+                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style=f"s{var_sq_size}c", cmap=True)           
+            fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")#land=land_color, water=water_color)
             if plot_GI:
                 fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
             fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
-            fig.colorbar(position=cbar_pos, frame=cbar_frame)
+            if "diff" in var_name.lower():
+                fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
+            elif "mask" not in var_name.lower():
+                fig.colorbar(position=cbar_pos, frame=cbar_frame)
             if P_png:
                 if not P_png.exists():
                     P_png.parent.mkdir(parents=True, exist_ok=True)
@@ -359,7 +411,7 @@ class SeaIcePlotter:
                 P_png = None
             if show_fig:
                 fig.show()
-        pygmt.clib.Session.__exit__         
+            pygmt.clib.Session.__exit__
 
     def pygmt_plot_continuous_timeseries(self, area_dict, 
                                         roll_days=0,
@@ -401,14 +453,6 @@ class SeaIcePlotter:
             if isinstance(keys_to_plot, str):
                 keys_to_plot = [keys_to_plot]
             area_dict = {k: v for k, v in area_dict.items() if k in keys_to_plot}
-        # if xannot_path is None:
-        #     xticks = pd.date_range(start=min([pd.to_datetime(da[time_coord_name].values).min() for da in area_dict.values()]),
-        #                         end=max([pd.to_datetime(da[time_coord_name].values).max() for da in area_dict.values()]),
-        #                         freq="MS")
-        #     month_labels = [dt.strftime("%b") for dt in xticks]
-        #     xannot_path = Path("xannots_continuous.txt")
-        #     xannot_lines = [f"{dt.strftime('%Y-%m-%d')}\tig\t{label}" for dt, label in zip(xticks, month_labels)]
-        #     xannot_path.write_text("\n".join(xannot_lines) + "\n")
         fig = pygmt.Figure()
         pygmt.config(FONT_TITLE="18p,Helvetica-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica", FORMAT_DATE_MAP="o", FORMAT_TIME_PRIMARY_MAP="full")
         all_times = np.concatenate([pd.to_datetime(da[time_coord_name].values) for da in area_dict.values()])
@@ -418,14 +462,9 @@ class SeaIcePlotter:
                   ylim[0], ylim[1]]
         projection = f"X{figsize[0]}c/{figsize[1]}c"
         frame = ["xaf1y+lTime", "yaf100+lFast Ice Area (1000 km\u00b2)", "WSne"]
-        #frame = [f"sxc{xannot_path}", f"ya100f+lFast Ice Area (1000 km\u00b2)", "WSne"]
         if tit_str:
             frame.append(f"+t{tit_str}")
         fig.basemap(region=region, projection=projection, frame=frame)
-        # Plot observational climatology if provided
-        #af2020_df = pd.read_csv(self.AF_FI_dict['P_AF2020_cli_csv'])
-        #obs_clim  = self.interpolate_obs_fia(af2020_df)         
-        #fig.plot(x=obs_times[time_coord_name].values, y=obs_clim.values, pen="1.5p,blue,--", label="Obs Climatology")
         for i, (name, da) in enumerate(area_dict.items()):
             if isinstance(da, xr.Dataset):
                 da = da.to_array().squeeze()
@@ -440,6 +479,164 @@ class SeaIcePlotter:
             P_png.parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(P_png)
             self.logger.info(f"Saved PyGMT timeseries to {P_png}")
+        if show_fig:
+            fig.show()
+        pygmt.clib.Session.__exit__
+
+    def plot_monthly_ice_metric_by_year(self, area_dict,
+                                        ice_type         = "FIA",
+                                        roll_days        = 0,
+                                        ylim             = None,
+                                        figsize          = (18, 10),
+                                        tit_str          = None,
+                                        P_png            = None,
+                                        tick_fontsize    = 12,
+                                        label_fontsize   = 14,
+                                        title_fontsize   = 18,
+                                        legend_fontsize  = 12,
+                                        plot_annotations = False):
+        plt.figure(figsize=figsize, constrained_layout=True)
+        cmap         = plt.get_cmap("tab10")
+        month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        xticks       = [1,32,62,92,122,152,182,212,242,272,302,332]
+        self.plot_ice_area_dict = {"FI_BT": {"label": "daily ice-speed mask", "color": "black"},
+                                   "FI_BT_bool": {"label": "Binary-days (6 of 7) ice-speed mask", "color": "orange"},
+                                   "FI_BT_roll": {"label": "15-day-avg ice-speed mask", "color": "green"},}
+        # Y-axis labels and defaults
+        ice_type = ice_type.upper()
+        ylabels = {"SIA": "Sea Ice Area (10⁶ km²)",
+                   "SIV": "Sea Ice Volume (10⁶ km³)",
+                   "FIA": "Fast Ice Area (10³ km²)",
+                   "FIV": "Fast Ice Volume (km³)"}
+        if ylim is None:
+            ylim_defaults = {"SIA": (0, 20), "FIA": (100, 800)}
+            ylim = ylim_defaults.get(ice_type, None)
+        sim_annots = []
+        sim_annot_colors = []
+        for i, (name, da) in enumerate(area_dict.items()):
+            if isinstance(da, xr.Dataset):
+                da = da.to_array().squeeze()
+            if name == "AF2020db_cli" and ice_type == "FIA":
+                doy = da["doy"].values
+                values = da.values
+                plt.plot(doy, values, label="AF2020 Climatology (2000–2018)", linestyle="--", color="blue", linewidth=1.5)
+                if plot_annotations:
+                    max_doy, min_doy = doy[np.argmax(values)], doy[np.argmin(values)]
+                    plt.plot(max_doy, values[np.argmax(values)], "b^")
+                    plt.plot(min_doy, values[np.argmin(values)], "bv")
+                    sim_annots += [f"AF2020 Max: {values[np.argmax(values)]:.1f} @ DOY {max_doy}", f"AF2020 Min: {values[np.argmin(values)]:.1f} @ DOY {min_doy}"]
+                    sim_annot_colors += ["blue"] * 2
+                continue
+            if name == "NSIDC" and ice_type == "SIA":
+                time = pd.to_datetime(da["time"].values)
+                area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
+                df = pd.DataFrame({"area": area}, index=time)
+                df["doy"] = df.index.dayofyear
+                clim_mean = df.groupby("doy")["area"].mean()
+                plt.plot(clim_mean.index, clim_mean.values, label="NSIDC Climatology", linestyle="--", color="black", linewidth=1.5)
+                if plot_annotations:
+                    max_doy, min_doy = clim_mean.idxmax(), clim_mean.idxmin()
+                    plt.plot(max_doy, clim_mean[max_doy], "k^")
+                    plt.plot(min_doy, clim_mean[min_doy], "kv")
+                    sim_annots += [f"NSIDC Max: {clim_mean[max_doy]:.1f} @ DOY {max_doy}", f"NSIDC Min: {clim_mean[min_doy]:.1f} @ DOY {min_doy}"]
+                    sim_annot_colors += ["black"] * 2
+                continue  
+            time = pd.to_datetime(da["time"].values)
+            area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
+            df = pd.DataFrame({"area": area}, index=time)
+            df["doy"] = df.index.dayofyear
+            df["year"] = df.index.year
+            df = df[df["year"] > df["year"].min()]  # drop first year
+            grouped = df.groupby("doy")["area"]
+            area_min, area_max, area_mean = grouped.min(), grouped.max(), grouped.mean()
+            style = self.plot_ice_area_dict.get(name, {"label": name, "color": cmap(i)})
+            plt.fill_between(area_min.index, area_min, area_max, alpha=0.2, color=style["color"], label=f"{style['label']} min/max range")
+            plt.plot(area_mean.index, area_mean, color=style["color"], linewidth=2, label=f"{style['label']} climatology")
+            if plot_annotations:
+                max_doy, min_doy = area_mean.idxmax(), area_mean.idxmin()
+                plt.plot(max_doy, area_mean[max_doy], marker="^", color=style["color"])
+                plt.plot(min_doy, area_mean[min_doy], marker="v", color=style["color"])
+                sim_annots += [f"{name} Max: {area_mean[max_doy]:.1f} @ DOY {max_doy}", f"{name} Min: {area_mean[min_doy]:.1f} @ DOY {min_doy}"]
+                sim_annot_colors += [style["color"]] * 2
+        plt.xticks(xticks, labels=month_labels, fontsize=tick_fontsize)
+        plt.yticks(fontsize=tick_fontsize)
+        plt.xlim(1, 366)    
+        if ylim: plt.ylim(ylim)
+        plt.ylabel(ylabels.get(ice_type, "Ice Metric"), fontsize=label_fontsize)
+        plt.xlabel("Month", fontsize=label_fontsize)
+        if tit_str:
+            plt.title(tit_str, fontsize=title_fontsize)
+        plt.grid(axis="y", linestyle="--", alpha=0.5)
+        plt.legend(loc="upper left", fontsize=legend_fontsize)
+        if sim_annots and plot_annotations:
+            ax = plt.gca()
+            for i, (text, color) in enumerate(zip(sim_annots, sim_annot_colors)):
+                ax.text(0.78, 0.02 + i * 0.03, text, transform=ax.transAxes, fontsize=11, va='bottom', ha='center', color=color)
+        if P_png and self.save_fig:
+            plt.savefig(P_png, dpi=100)
+            print(f"📏 Saved plot to {P_png}")
+
+    def plot_timeseries(self, timeseries_dict,
+                        roll_days  = None,
+                        ylabel     = "Ice Area (10³ km²)",
+                        tit_str    = None,
+                        ylim       = None,
+                        P_png      = None,
+                        fig_width  = "15c",
+                        fig_height = "5c",
+                        pen_styles = None,
+                        time_coord = "time",
+                        show_fig   = None):
+        """
+        Plot one or more ice area time series using PyGMT.
+
+        Parameters
+        ----------
+        timeseries_dict : dict
+            Dictionary of {label: xarray.DataArray}, where each DataArray must have a 'time' dimension.
+        roll_days : int
+            Number of days to apply as centered rolling mean (default = 15).
+        ylabel : str
+            Y-axis label.
+        tit_str : str
+            Optional title string.
+        ylim : tuple
+            Y-axis limits (min, max). If None, inferred from data.
+        P_png : str
+            Path to output PNG file (optional).
+        fig_width, fig_height : str
+            Width and height for PyGMT projection.
+        pen_styles : dict
+            Optional dictionary of {label: pen} styles for line colors, e.g., {"AF2020": "1.5p,blue,--"}
+        """
+        show_fig   = show_fig      if show_fig      is not None else self.show_fig
+        dfs = []
+        for label, da in timeseries_dict.items():
+            if time_coord not in da.dims:
+                raise ValueError(f"DataArray for '{label}' has no 'time' dimension.")
+            ta          = pd.to_datetime(da[time_coord].values)
+            vals        = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days else da.values
+            df          = pd.DataFrame({"time": ta, "value": vals})
+            df["label"] = label
+            dfs.append(df)
+        df_all = pd.concat(dfs, ignore_index=True).dropna()
+        xlim = [df_all["time"].min(), df_all["time"].max()]
+        if ylim is None:
+            ymin = df_all["value"].min()
+            ymax = df_all["value"].max()
+            pad = 0.05 * (ymax - ymin)
+            ylim = [ymin - pad, ymax + pad]
+        region = [xlim[0], xlim[1], ylim[0], ylim[1]]
+        fig = pygmt.Figure()
+        fig.basemap(region=region, projection=f"X{fig_width}/{fig_height}", frame=["af+l{tit_str}", f"y+l{ylabel}", "x+lDate"])
+        for label in df_all["label"].unique():
+            df_plot = df_all[df_all["label"] == label]
+            pen     = "1p,black" if pen_styles is None else pen_styles.get(label, "1p,black")
+            fig.plot(x=df_plot["time"], y=df_plot["value"], pen=pen, label=label)
+        fig.legend(position="JTR+jTR+o0.2c", box=False)
+        if P_png and self.save_fig:
+            fig.savefig(P_png)
+            print(f"📏 Saved plot to {P_png}")
         if show_fig:
             fig.show()
         pygmt.clib.Session.__exit__
