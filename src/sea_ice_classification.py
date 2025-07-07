@@ -11,6 +11,7 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 class SeaIceClassification:
+    
     def __init__(self, sim_name=None, **kwargs):
         return
         
@@ -331,6 +332,7 @@ class SeaIceClassification:
                              mean_period          = None,
                              ispd_thresh          = None,
                              ivec_type            = None,
+                             write_zarr_group     = True,
                              overwrite_zarr_group = False):
         """
 
@@ -415,7 +417,8 @@ class SeaIceClassification:
                 if group in CICE_grouped[m_str]:
                     self.logger.debug(f"Adding group '{group}' from {m_str} to return list")
                     datasets_to_return.extend(CICE_grouped[m_str][group])
-            self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ivec_type, m_str, groups_to_write=fast_group)
+            if write_zarr_group:
+                self.write_to_zarr(CICE_grouped, P_FI_zarr, ispd_thresh, ivec_type, m_str, groups_to_write=fast_group)
         if datasets_to_return:
             return xr.concat(datasets_to_return, dim="time").sortby("time")
         else:

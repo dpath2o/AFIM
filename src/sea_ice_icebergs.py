@@ -8,6 +8,7 @@ from pathlib       import Path
 from datetime      import datetime
 
 class SeaIceIcebergs:
+    
     def __init__(self, **kwargs):
         return
 

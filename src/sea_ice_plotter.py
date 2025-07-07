@@ -10,6 +10,7 @@ from pathlib             import Path
 from datetime            import datetime
 
 class SeaIcePlotter:
+
     def __init__(self,**kwargs):
         return
 
@@ -267,6 +268,7 @@ class SeaIcePlotter:
                                sim_name       = None,
                                plot_regions   = None,
                                regional_dict  = None,
+                               hemisphere     = "south",
                                time_stamp     = None,
                                tit_str        = None,
                                plot_GI        = False,
@@ -284,6 +286,8 @@ class SeaIcePlotter:
                                var_sq_size    = 0.2,
                                GI_sq_size     = 0.1,
                                GI_fill_color  = "red",
+                               plot_iceshelves= True,
+                               plot_bathymetry= True,
                                land_color     = None,
                                water_color    = None,
                                P_png          = None,
@@ -307,9 +311,11 @@ class SeaIcePlotter:
         land_color  = land_color    if land_color    is not None else self.pygmt_dict['land_color']
         water_color = water_color   if water_color   is not None else self.pygmt_dict['water_color']
         if var_out is None:
-            var_out = var_name        
-        ANT_IS         = self.load_ice_shelves()
-        SO_BATH        = self.load_IBCSO_bath()
+            var_out = var_name
+        if plot_iceshelves:
+            ANT_IS = self.load_ice_shelves()
+        if plot_bathymetry:
+            SO_BATH = self.load_IBCSO_bath()
         plot_data_dict = self.prepare_data_for_pygmt_plot(da, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
         required_keys = ['lon', 'lat', 'data']
         try:
@@ -354,6 +360,8 @@ class SeaIcePlotter:
         else:
             basemap_frame = ["af"]
         for i, (reg_name, reg_vals) in enumerate(reg_dict.items()):
+            if hem_plot and reg_name!=hemisphere:
+                continue
             if P_png is None and self.save_fig:
                 P_png = Path(self.D_graph, sim_name, reg_name, var_out, f"{time_stamp}_{sim_name}_{reg_name}_{var_out}.png")
             region     = reg_vals['plot_region']
@@ -368,7 +376,10 @@ class SeaIcePlotter:
             fig = pygmt.Figure()
             pygmt.config(FONT_TITLE="16p,Courier-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica", COLOR_FOREGROUND='black')
             fig.basemap(region=region, projection=projection, frame=basemap_frame)
-            fig.grdimage(grid=SO_BATH, cmap='geo')
+            if plot_bathymetry:
+                fig.grdimage(grid=SO_BATH, cmap='geo')
+            else:
+                fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30", land=land_color, water=water_color)
             if "diff" in var_name.lower():
                 lat        = da[lat_coord_name].values.flatten()
                 lon        = da[lon_coord_name].values.flatten()
@@ -387,12 +398,14 @@ class SeaIcePlotter:
             elif "mask" in var_name.lower():
                 fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill='red', style=f"s{var_sq_size}c")
             else:
-                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)#, truncate=(series[0],series[1]))#, continuous=True)
+                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
                 fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style=f"s{var_sq_size}c", cmap=True)           
-            fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")#land=land_color, water=water_color)
+            if plot_bathymetry:
+                fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
             if plot_GI:
                 fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
-            fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
+            if plot_iceshelves:
+                fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
             if "diff" in var_name.lower():
                 fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
             elif "mask" not in var_name.lower():
@@ -412,76 +425,6 @@ class SeaIcePlotter:
             if show_fig:
                 fig.show()
             pygmt.clib.Session.__exit__
-
-    def pygmt_plot_continuous_timeseries(self, area_dict, 
-                                        roll_days=0,
-                                        tit_str=None,
-                                        P_png=None,
-                                        ylim=(0,1000),
-                                        figsize=(30, 15),
-                                        time_coord_name = "time",
-                                        keys_to_plot=None,
-                                        xannot_path=None,
-                                        show_fig=True):
-        """
-        Plot a continuous time series of ice area using PyGMT.
-
-        Parameters
-        ----------
-        area_dict : dict
-            {sim_name: DataArray} with 1D time series of area.
-        roll_days : int
-            Rolling mean window size in days.
-        tit_str : str
-            Title string.
-        P_png : Path or str
-            Output path for PNG file.
-        ylim : tuple
-            Y-axis limits.
-        figsize : tuple
-            Figure size in centimeters (width, height).
-        obs_clim : pd.Series or DataArray, optional
-            Observational climatology to overlay.
-        keys_to_plot : list, optional
-            Subset of keys to plot.
-        xannot_path : Path, optional
-            Path to x-axis annotation file for months.
-        show_fig : bool
-            Whether to display the figure interactively.
-        """
-        if keys_to_plot is not None:
-            if isinstance(keys_to_plot, str):
-                keys_to_plot = [keys_to_plot]
-            area_dict = {k: v for k, v in area_dict.items() if k in keys_to_plot}
-        fig = pygmt.Figure()
-        pygmt.config(FONT_TITLE="18p,Helvetica-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica", FORMAT_DATE_MAP="o", FORMAT_TIME_PRIMARY_MAP="full")
-        all_times = np.concatenate([pd.to_datetime(da[time_coord_name].values) for da in area_dict.values()])
-        tmin, tmax = all_times.min(), all_times.max()
-        region = [pd.Timestamp(tmin).strftime("%Y-%m-%dT00:00:00"),
-                  pd.Timestamp(tmax).strftime("%Y-%m-%dT00:00:00"),
-                  ylim[0], ylim[1]]
-        projection = f"X{figsize[0]}c/{figsize[1]}c"
-        frame = ["xaf1y+lTime", "yaf100+lFast Ice Area (1000 km\u00b2)", "WSne"]
-        if tit_str:
-            frame.append(f"+t{tit_str}")
-        fig.basemap(region=region, projection=projection, frame=frame)
-        for i, (name, da) in enumerate(area_dict.items()):
-            if isinstance(da, xr.Dataset):
-                da = da.to_array().squeeze()
-            time = pd.to_datetime(da[time_coord_name].values)
-            area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 3 else da.values
-            color = self.plot_var_dict.get(name, {}).get("line_clr", f"C{i}")
-            label = self.plot_var_dict.get(name, {}).get("label", name)
-            fig.plot(x=time, y=area, pen=f"2p,{color}", label=label)
-        fig.legend(position="JTL+jTL+o0.2c", box="+gwhite+p.5p")
-        if P_png:
-            P_png = Path(P_png)
-            P_png.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(P_png)
-            self.logger.info(f"Saved PyGMT timeseries to {P_png}")
-        if show_fig:
-            fig.show()
-        pygmt.clib.Session.__exit__
 
     def plot_monthly_ice_metric_by_year(self, area_dict,
                                         ice_type         = "FIA",
@@ -576,70 +519,115 @@ class SeaIcePlotter:
             plt.savefig(P_png, dpi=100)
             print(f"📏 Saved plot to {P_png}")
 
-    def plot_timeseries(self, timeseries_dict,
-                        roll_days  = None,
-                        ylabel     = "Ice Area (10³ km²)",
-                        tit_str    = None,
-                        ylim       = None,
-                        P_png      = None,
-                        fig_width  = "15c",
-                        fig_height = "5c",
-                        pen_styles = None,
-                        time_coord = "time",
-                        show_fig   = None):
+    def plot_timeseries(self, ts_dict,
+                        roll_days : int   = None,
+                        tit_str   : str   = None,
+                        ylim      : tuple = None,
+                        ylabel    : str   = "Fast Ice Area (1000-km²)",
+                        ytick_inc : int   = 100,
+                        xlabel    : str   = "Date",
+                        xtick_inc : int   = 1,
+                        P_png     : str   = None,
+                        fig_width : str   = "15c",
+                        fig_height: str   = "5c",
+                        legend_pos: str   = "JTL+jTL+o0.2c",
+                        legend_box: str   = "+gwhite+p0.5p",
+                        pen_weight: str   = "1p",
+                        time_coord: str   = "time",
+                        keys2plot : list  = None,
+                        show_fig  : bool  = None):
         """
-        Plot one or more ice area time series using PyGMT.
+        Plot one or more time series using PyGMT.
 
         Parameters
         ----------
-        timeseries_dict : dict
-            Dictionary of {label: xarray.DataArray}, where each DataArray must have a 'time' dimension.
-        roll_days : int
-            Number of days to apply as centered rolling mean (default = 15).
+        ts_dict : dict
+            Dictionary of {label: xarray.DataArray or Dataset}. Each value must have a 'time' coordinate.
+        roll_days : int, optional
+            Number of days for centered rolling average. If None or < 3, no smoothing is applied.
+        tit_str : str, optional
+            Title for the plot.
+        ylim : tuple, optional
+            Y-axis limits (ymin, ymax). Inferred from data if None.
         ylabel : str
             Y-axis label.
-        tit_str : str
-            Optional title string.
-        ylim : tuple
-            Y-axis limits (min, max). If None, inferred from data.
-        P_png : str
-            Path to output PNG file (optional).
-        fig_width, fig_height : str
-            Width and height for PyGMT projection.
-        pen_styles : dict
-            Optional dictionary of {label: pen} styles for line colors, e.g., {"AF2020": "1.5p,blue,--"}
+        ytick_inc : int
+            Interval for y-axis ticks.
+        xlabel : str
+            X-axis label.
+        xtick_inc : int
+            Interval (in months or years) for x-axis ticks.
+        P_png : str, optional
+            Path to save PNG output. If None, figure is not saved.
+        fig_width : str
+            Width of the figure for PyGMT (e.g., "15c").
+        fig_height : str
+            Height of the figure for PyGMT (e.g., "5c").
+        legend_pos : str
+            PyGMT legend position string (e.g., "JTR+jTR+o0.2c").
+        legend_box : str
+            PyGMT legend box style string.
+        pen_weight : str
+            Pen thickness for the lines (e.g., "1p", "2p").
+        time_coord : str
+            Name of the time coordinate in each xarray object.
+        keys2plot : list, optional
+            Subset of keys in ts_dict to plot. If None, all keys are used.
+        show_fig : bool, optional
+            If True, show the figure interactively. Defaults to self.show_fig.
+
+        Returns
+        -------
+        fig : pygmt.Figure
+            The generated PyGMT figure.
         """
-        show_fig   = show_fig      if show_fig      is not None else self.show_fig
+        show_fig = self.show_fig if show_fig is None else show_fig
+        if keys2plot is not None:
+            if isinstance(keys2plot, str):
+                keys2plot = [keys2plot]
+            ts_dict = {k: v for k, v in ts_dict.items() if k in keys2plot}
         dfs = []
-        for label, da in timeseries_dict.items():
-            if time_coord not in da.dims:
-                raise ValueError(f"DataArray for '{label}' has no 'time' dimension.")
-            ta          = pd.to_datetime(da[time_coord].values)
-            vals        = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days else da.values
-            df          = pd.DataFrame({"time": ta, "value": vals})
-            df["label"] = label
+        for name, da in ts_dict.items():
+            if isinstance(da, xr.Dataset):
+                da = da.to_array().squeeze()
+            if time_coord not in da.coords:
+                raise ValueError(f"Missing time coordinate '{time_coord}' in variable '{name}'")
+            time        = pd.to_datetime(da[time_coord].values)
+            values      = da.rolling({time_coord: roll_days}, center=True, min_periods=1).mean().values if roll_days and roll_days >= 3 else da.values
+            df          = pd.DataFrame({"time": time, "value": values})
+            df["label"] = name
             dfs.append(df)
-        df_all = pd.concat(dfs, ignore_index=True).dropna()
-        xlim = [df_all["time"].min(), df_all["time"].max()]
+        df_all     = pd.concat(dfs, ignore_index=True).dropna()
+        all_times  = df_all["time"]
+        tmin, tmax = all_times.min(), all_times.max()
         if ylim is None:
             ymin = df_all["value"].min()
             ymax = df_all["value"].max()
-            pad = 0.05 * (ymax - ymin)
+            pad  = 0.05 * (ymax - ymin)
             ylim = [ymin - pad, ymax + pad]
-        region = [xlim[0], xlim[1], ylim[0], ylim[1]]
+        region     = [tmin.strftime("%Y-%m-%dT00:00:00"), tmax.strftime("%Y-%m-%dT00:00:00"), ylim[0], ylim[1]]
+        projection = f"X{fig_width}/{fig_height}"
+        frame      = [f"xaf{xtick_inc}y+l\"{xlabel}\"", f"yaf{ytick_inc}+l\"{ylabel}\"", "WSne"]
+        if tit_str:
+            frame.append(f"+t\"{tit_str}\"")
         fig = pygmt.Figure()
-        fig.basemap(region=region, projection=f"X{fig_width}/{fig_height}", frame=["af+l{tit_str}", f"y+l{ylabel}", "x+lDate"])
-        for label in df_all["label"].unique():
-            df_plot = df_all[df_all["label"] == label]
-            pen     = "1p,black" if pen_styles is None else pen_styles.get(label, "1p,black")
-            fig.plot(x=df_plot["time"], y=df_plot["value"], pen=pen, label=label)
-        fig.legend(position="JTR+jTR+o0.2c", box=False)
+        pygmt.config(FONT_TITLE              = "18p,Helvetica-Bold",
+                     FONT_ANNOT_PRIMARY      = "14p,Helvetica",
+                     FORMAT_DATE_MAP         = "o",
+                     FORMAT_TIME_PRIMARY_MAP = "full")
+        fig.basemap(region=region, projection=projection, frame=frame)
+        for i, (label, _) in enumerate(ts_dict.items()):
+            df = df_all[df_all["label"] == label]
+            color = self.plot_var_dict.get(label, {}).get("line_clr", f"C{i}")
+            legend_label = self.plot_var_dict.get(label, {}).get("label", label)
+            fig.plot(x=df["time"], y=df["value"], pen=f"{pen_weight},{color}", label=legend_label)
+        fig.legend(position=legend_pos, box=legend_box)
         if P_png and self.save_fig:
             fig.savefig(P_png)
             print(f"📏 Saved plot to {P_png}")
         if show_fig:
             fig.show()
-        pygmt.clib.Session.__exit__
+        return fig
 
     def plot_timeseries_groupby_month(self, ds, var_name, sim_name=None, dt0_str=None, dtN_str=None):
         self.sim_name = sim_name if sim_name is not None else getattr(self, "sim_name")
@@ -677,3 +665,28 @@ class SeaIcePlotter:
         plt.show()
         plt.savefig(f"/g/data/gv90/da1339/GRAPHICAL/timeseries/{sim_name}_FIA_grouped_by_month.png")
 
+    def plot_taylor(self, stats_dict, out_path):
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111, polar=True)
+        ax.set_theta_zero_location('E')
+        ax.set_theta_direction(-1)
+
+        for rms in [0.2, 0.5, 1.0, 1.5]:
+            rs = np.linspace(0.5, 2.0, 500)
+            theta = np.arccos(np.clip(1 - (rms**2 - 1)/(2 * rs), -1, 1))
+            ax.plot(theta, rs, '--', color='gray', lw=0.6)
+        ax.plot([0], [1], 'ko', label='Reference')
+
+        for label, stat in stats_dict.items():
+            angle = np.arccos(stat["corr"])
+            r = stat["std_ratio"]
+            ax.plot(angle, r, 'o', label=label)
+
+        ax.set_rmax(2)
+        ax.set_rticks([0.5, 1.0, 1.5, 2.0])
+        ax.set_rlabel_position(135)
+        ax.set_title("Taylor Diagram: Sea Ice Speed Comparison", fontsize=12)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.45, 1.1))
+        plt.tight_layout()
+        plt.savefig(out_path)
+        plt.close()

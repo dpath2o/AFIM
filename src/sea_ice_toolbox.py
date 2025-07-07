@@ -4,6 +4,7 @@ import xesmf              as xe
 import pandas             as pd
 import numpy              as np
 import matplotlib.pyplot  as plt
+from collections          import defaultdict
 from pathlib              import Path
 from datetime             import datetime, timedelta
 from dask.distributed     import Client, LocalCluster, get_client
@@ -465,17 +466,21 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
     def radians_to_degrees(self, da):
         return (da * 180) / np.pi
 
-    def normalise_longitudes(self,lon):
-        return ((lon + 360) % 360) - 180
-
     def get_static_grid(self, var):
         if "time" in var.dims:
             return var.isel(time=0)
         return var
 
-    def build_grid_corners(self, lat_rads, lon_rads, grid_res=0.25):
-        lon                  = self.radians_to_degrees(lon_rads)
-        lat                  = self.radians_to_degrees(lat_rads)
+    def normalise_longitudes(self,lon):
+        return ((lon + 360) % 360) - 180
+
+    def build_grid_corners(self, lat_rads, lon_rads, grid_res=0.25, source_in_radians=True):
+        if source_in_radians:
+            lon = self.radians_to_degrees(lon_rads)
+            lat = self.radians_to_degrees(lat_rads)
+        else:
+            lon = lon_rads
+            lat = lat_rads
         ny, nx               = lat.shape
         lat_b                = np.zeros((ny + 1, nx + 1))
         lon_b                = np.zeros((ny + 1, nx + 1))
@@ -683,6 +688,9 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                 DS[var] = da.where(kmt_mask)
         self.logger.info("Applied landmask to rolled dataset")
         return DS
+
+    def dict_to_ds(self, data_dict):
+        return xr.Dataset({k: v for k, v in data_dict.items()})
 
     #-------------------------------------------------------------------------------------------
     #                            RE-ORGANISE MODEL OUTPUT DATA
@@ -1143,7 +1151,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         mean_period = mean_period if mean_period is not None else self.mean_period
         return ds.rolling(time=mean_period, center=True, min_periods=1).mean()
 
-    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean"):
+    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean", obs_time_coord="time"):
         """
         Coarsen daily sim data into windows defined by AF2020 observation periods.
 
@@ -1159,7 +1167,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         if doy_vals is None:
             doy_vals = self.AF_FI_dict["DOY_vals"]
         sim_time = sim_ds["time"].values
-        obs_times = pd.to_datetime(obs_ds["t_FI_obs"].values)
+        obs_times = pd.to_datetime(obs_ds[obs_time_coord].values)
         years = np.unique(obs_times.year)
         grouped = []
         for year in years:
@@ -1178,10 +1186,16 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                     ds_agg = ds_window.median(dim="time")
                 else:
                     raise ValueError(f"Unsupported method: {method}")
-                ds_agg = ds_agg.expand_dims({"t_FI_obs": [dt_start]})
+                ds_agg = ds_agg.expand_dims({obs_time_coord: [dt_start]})
                 grouped.append(ds_agg)
         if not grouped:
             raise ValueError("❌ No observation periods matched simulation data")
-        ds_aligned = xr.concat(grouped, dim="t_FI_obs")
-        self.logger.info(f"✅ Aligned model output to {len(ds_aligned.t_FI_obs)} obs windows")
+        ds_aligned = xr.concat(grouped, dim=obs_time_coord)
+        self.logger.info(f"✅ Aligned model output to {len(ds_aligned[obs_time_coord])} obs windows")
         return ds_aligned
+
+    def align_time_coordinate_of_three_arrays(self, ds1, ds2, ds3, time_coord="time"):
+        for da in [ds1, ds2, ds3]:
+            da[time_coord] = pd.to_datetime(da[time_coord].values).normalize()
+        t_common = np.intersect1d(np.intersect1d(ds1[time_coord].values, ds2[time_coord].values), ds3[time_coord].values)
+        return ds1.sel(time=t_common), ds2.sel(time=t_common), ds3.sel(time=t_common)

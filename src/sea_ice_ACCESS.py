@@ -7,6 +7,7 @@ import numpy  as np
 from pathlib  import Path
 
 class SeaIceACCESS:
+
     def __init__(self, **kwargs):
         if self.client is None:
             print("Warning: No Dask client was provided to SeaIceACCESS.")
@@ -50,7 +51,6 @@ class SeaIceACCESS:
         var_list = sorted(flat_vars)
         self.logger.info(f"Found {len(var_list)} unique variables.")
         return var_list
-
 
     def load_ACCESS_OM_CICE(self, experiment=None, dt0_str=None, dtN_str=None):
         experiment = experiment if experiment is not None else self.AOM2_dict['experiment']

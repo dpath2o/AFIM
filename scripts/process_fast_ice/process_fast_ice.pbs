@@ -1,12 +1,12 @@
 #!/bin/bash
 #PBS -l walltime=1:00:00
-#PBS -l mem=250GB
+#PBS -l mem=190GB
 #PBS -l ncpus=28
 #PBS -l jobfs=1GB
 #PBS -l storage=gdata/gv90+gdata/hh5+gdata/ik11+gdata/jk72
 #PBS -l wd
 #PBS -P jk72
-#PBS -q normalbw
+#PBS -q normal
 module use /g/data/hh5/public/modules
 module load conda/analysis3-24.07
 cd ~/AFIM/src/AFIM/scripts/process_fast_ice/

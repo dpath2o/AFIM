@@ -18,26 +18,26 @@ def run_loop(sim_name,
              delete_original_iceh = False):
     dt_start = datetime.strptime(start_date, "%Y-%m-%d")
     dt_end   = datetime.strptime(end_date, "%Y-%m-%d")
-    SI_proc  = SeaIceToolbox(P_json   = json_path,
+    SI_tools = SeaIceToolbox(P_json   = json_path,
                              P_log    = log_file,
                              dt0_str  = dt_start,
                              dtN_str  = dt_end,
                              sim_name = sim_name)
     # Always do this step
-    SI_proc.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
+    SI_tools.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
     if not daily and not rolling:
-        SI_proc.logger.info("✅ Only monthly Zarr creation requested — exiting.")
+        SI_tools.logger.info("Only monthly Zarr creation requested — exiting.")
         return
     if daily:
-        DS_raw = SI_proc.process_daily_cice(ispd_thresh=ispd_thresh,
+        DS_raw = SI_tools.process_daily_cice(ispd_thresh=ispd_thresh,
                                             ivec_type=ivec_type,
                                             overwrite_zarr_group=overwrite_zarr)
     if rolling:
-        DS_roll = SI_proc.process_rolling_cice(mean_period=roll_period,
+        DS_roll = SI_tools.process_rolling_cice(mean_period=roll_period,
                                                ispd_thresh=ispd_thresh,
                                                ivec_type=ivec_type,
                                                overwrite_zarr_group=overwrite_zarr)
-    SI_proc.client.close()
+    SI_tools.client.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run pack ice processor loop over time.")

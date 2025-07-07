@@ -1,10 +1,11 @@
-import xarray as xr
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from scipy.ndimage import binary_dilation, distance_transform_edt    
-    
+import xarray      as xr
+import numpy       as np
+import pandas      as pd
+from pathlib       import Path
+from scipy.ndimage import binary_dilation, distance_transform_edt
+
 class SeaIceMetrics:
+
     def __init__(self, **kwargs):
         return
 
@@ -160,9 +161,13 @@ class SeaIceMetrics:
         self.logger.info(f"📊 Metrics summary written to {P_sum}")
         return DS_METS
 
-    def compute_ice_area(self, SIC, GC_area, ice_area_scale=None, spatial_dim_names=None):
-        if self.use_gi:
-            GI_total_area = self.compute_grounded_iceberg_area()
+    def compute_ice_area(self, SIC, GC_area, ice_area_scale=None, spatial_dim_names=None, add_grounded_iceberg_area=None, grounded_iceberg_area=None):
+        add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
+        if add_grounded_iceberg_area:
+            if grounded_iceberg_area is not None:
+                GI_total_area = grounded_iceberg_area
+            else:
+                GI_total_area = self.compute_grounded_iceberg_area()
         else:
             GI_total_area = 0
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
@@ -199,29 +204,192 @@ class SeaIceMetrics:
     def compute_variable_aggregate(self, da, time_coord_name='time'):
         return da.sum(dim=time_coord_name) / da[time_coord_name].sizes.get(time_coord_name, 1)
 
-    # GROWTH METRICS
-    def compute_fia_onset_doy(self, FIA, threshold_km2=50):
-        t = FIA["time"].dt.dayofyear
-        onset = FIA.where(FIA > threshold_km2, drop=True)
-        return int(t.sel(time=onset.time[0]).item()) if onset.size > 0 else None
-
-    def compute_fia_growth_rate(self, FIA, start_doy=71, end_doy=273):
+    # SEASONAL METRICS
+    def detect_onset_via_derivative(self, da, window=15, polyorder=2, min_onset_doy=50):
         """
-        Compute linear growth rate of FIA between start_doy and end_doy.
-        Default start_doy and end_doy obtained from https://doi.org/10.5194/tc-15-5061-2021
+        Detect onset of ice growth using Savitzky-Golay derivative filter.
+        
+        Parameters
+        ----------
+        da : xr.DataArray
+            Time series with daily time axis (single year).
+        window : int
+            Smoothing window for Savitzky-Golay filter (must be odd).
+        polyorder : int
+            Polynomial order for filter.
+        min_onset_doy : int
+            DOY to start searching for growth onset.
+        
+        Returns
+        -------
+        int or None
+            Estimated DOY of onset, or None if not found.
         """
-        t_doy = FIA["time"].dt.dayofyear
-        mask  = (t_doy >= start_doy) & (t_doy <= end_doy)
-        FIA_sub = FIA.where(mask, drop=True)
-        if FIA_sub.time.size < 2:
-            return np.nan
-        days = (FIA_sub.time - FIA_sub.time[0]) / np.timedelta64(1, 'D')
-        slope = np.polyfit(days, FIA_sub.values, 1)[0]
-        return slope
+        from scipy.signal import savgol_filter
+        if da.time.size < window:
+            return None
+        y     = da.values
+        dy_dt = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=1)
+        doy   = da["time"].dt.dayofyear.values
+        mask  = doy >= min_onset_doy
+        growth_start_candidates = np.where((dy_dt > 0) & mask)[0]
+        if growth_start_candidates.size == 0:
+            return None
+        # Optional: Find first continuous upward segment
+        onset_idx = growth_start_candidates[0]
+        return int(doy[onset_idx])
 
-    def compute_fia_max_growth(self, FIA):
-        dFIA = FIA.diff("time")
-        return dFIA.max().item()
+    def compute_seasonal_duration_derivative(da, window=15, polyorder=2, min_onset_doy=50, max_retreat_doy=330):
+        """
+        Compute ice season duration using first derivative of smoothed time series.
+
+        Seasonal Duration = Retreat DOY − Onset DOY
+        Where: Onset DOY is the beginning of sustained growth, and Retreat DOY is the end of sustained presence (start of ablation),
+        
+        Parameters
+        ----------
+        da : xr.DataArray
+            Time series for a single year (daily resolution).
+        window : int
+            Smoothing window for Savitzky-Golay filter.
+        polyorder : int
+            Polynomial order for smoothing.
+        min_onset_doy : int
+            Minimum DOY to search for onset.
+        max_retreat_doy : int
+            Maximum DOY to search for retreat.
+
+        Returns
+        -------
+        (onset_doy, retreat_doy, duration_days)
+            Tuple of day-of-year values (int) and duration (int), or (None, None, None)
+        """
+        from scipy.signal import savgol_filter
+        if da.time.size < window:
+            return None, None, None
+        y   = da.values
+        doy = da["time"].dt.dayofyear.values
+        dy_dt = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=1)
+        # --- Onset detection (first sustained positive trend) ---
+        onset_candidates = np.where((dy_dt > 0) & (doy >= min_onset_doy))[0]
+        if onset_candidates.size == 0:
+            return None, None, None
+        onset_idx = onset_candidates[0]
+        onset_doy = doy[onset_idx]
+        # --- Retreat detection (first sustained negative trend after peak) ---
+        peak_idx = np.argmax(y)
+        retreat_candidates = np.where((dy_dt < 0) & (np.arange(len(y)) > peak_idx) & (doy <= max_retreat_doy))[0]
+        if retreat_candidates.size == 0:
+            return onset_doy, None, None
+        retreat_idx = retreat_candidates[-1]
+        retreat_doy = doy[retreat_idx]
+        # Handle wraparound (e.g., retreat in next year)
+        duration = retreat_doy - onset_doy if retreat_doy > onset_doy else (365 - onset_doy + retreat_doy)
+        return onset_doy, retreat_doy, duration
+
+    def compute_retreat_via_inflection(self, da, window=15, polyorder=2, min_retreat_doy=240):
+        from scipy.signal import savgol_filter
+        y           = da.values
+        doy         = da["time"].dt.dayofyear.values
+        d2y_dt2     = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=2)
+        inflections = np.where((d2y_dt2 < 0) & (doy >= min_retreat_doy))[0]
+        if inflections.size == 0:
+            return None
+        return doy[inflections[-1]]
+
+    def compute_seasonal_statistics(self, da, 
+                                    growth_range        = (71 , 273),
+                                    retreat_early_range = (273, 330),
+                                    retreat_late_range1 = (331, 365),
+                                    retreat_late_range2 = (1  , 71)  ):
+        """
+        Generalized method to compute seasonal growth and retreat statistics for any sea ice metric (e.g., SIA, FIA, SIV, FIV).
+
+        Parameters
+        ----------
+        da                  : xr.DataArray;  Time series of a sea ice metric with a 'time' dimension.
+        var_name            : str, optional; Label for result entry (e.g., 'SIA', 'FIV').
+        growth_range        : tuple of int;  Day-of-year range for ice growth period.
+        retreat_early_range : tuple of int;  DOY range for early melt (e.g., melt onset to late spring).
+        retreat_late_range1 : tuple of int;  DOY range for late melt in previous year.
+        retreat_late_range2 : tuple of int;  DOY range for late melt in next year.
+
+        Returns
+        -------
+        dict; Summary statistics: mean/std growth and retreat rates.
+        """
+        da                  = da.sel(time=~da["time"].dt.is_leap_year)
+        da                  = da.sel(time=da["time"].dt.year > da["time"].dt.year.min())
+        maximums            = []
+        minimums            = []
+        growth_rates        = []
+        retreat_rates       = []
+        retreat_early_rates = []
+        retreat_late_rates  = []
+        min_doys            = []
+        max_doys            = []
+        onset_doys          = []
+        duration_days       = []
+        for year in np.unique(da.time.dt.year):
+            this_year = da.sel(time=da.time.dt.year == year).compute()
+            maximums.append(this_year.max().values)
+            minimums.append(this_year.min().values)
+            time_min  = this_year["time"].values[this_year.argmin("time").values]
+            time_max  = this_year["time"].values[this_year.argmax("time").values]
+            min_doys.append(pd.to_datetime(time_min).dayofyear)
+            max_doys.append(pd.to_datetime(time_max).dayofyear)
+            onset_doy   = self.detect_onset_via_derivative(this_year)
+            retreat_doy = self.compute_retreat_via_inflection(this_year)
+            duration_days.append(retreat_doy - onset_doy if retreat_doy > onset_doy else (365 - onset_doy + retreat_doy))
+            if onset_doy:
+                onset_doys.append(onset_doy)          
+            grow = this_year.sel(time=((this_year.time.dt.dayofyear >= growth_range[0]) & (this_year.time.dt.dayofyear <= growth_range[1])))
+            if grow.time.size >= 2:
+                days  = (grow.time - grow.time[0]) / np.timedelta64(1, 'D')
+                slope = np.polyfit(days, grow.values.flatten(), 1)[0]
+                growth_rates.append(slope * 1e6)
+            early = this_year.sel(time=((this_year.time.dt.dayofyear >= retreat_early_range[0]) & (this_year.time.dt.dayofyear <= retreat_early_range[1])))
+            if early.time.size >= 2:
+                days  = (early.time - early.time[0]) / np.timedelta64(1, 'D')
+                slope = np.polyfit(days, early.values.flatten(), 1)[0]
+                retreat_early_rates.append(slope * 1e6)
+            fall      = this_year.sel(time=this_year.time.dt.dayofyear >= retreat_late_range1[0])
+            next_year = da.sel(time=da.time.dt.year == (year + 1))
+            spring    = next_year.sel(time=next_year.time.dt.dayofyear <= retreat_late_range2[1])
+            late      = xr.concat([fall, spring], dim="time")
+            if late.time.size >= 2:
+                days  = (late.time - late.time[0]) / np.timedelta64(1, 'D')
+                slope = np.polyfit(days, late.values.flatten(), 1)[0]
+                retreat_late_rates.append(slope * 1e6)
+            if early.time.size >= 1 and late.time.size >= 1:
+                decay = xr.concat([early, late], dim="time")
+                if decay.time.size >= 2:
+                    days  = (decay.time - decay.time[0]) / np.timedelta64(1, 'D')
+                    slope = np.polyfit(days, decay.values.flatten(), 1)[0]
+                    rate  = slope * 1e6
+                    if rate > 0:
+                        rate *= -1
+                    retreat_rates.append(rate)
+        return {"Maximum Mean"       : np.mean(maximums),
+                "Maximum Std"        : np.std(maximums),
+                "Minimum Mean"       : np.mean(minimums),
+                "Minimum Std"        : np.std(minimums),
+                "Growth Mean"        : np.mean(growth_rates),
+                "Growth Std"         : np.std(growth_rates),
+                "retreat Mean"       : np.mean(retreat_rates),
+                "retreat Std"        : np.std(retreat_rates),
+                "retreat Early Mean" : np.mean(retreat_early_rates),
+                "retreat Early Std"  : np.std(retreat_early_rates),
+                "retreat Late Mean"  : np.mean(retreat_late_rates),
+                "retreat Late Std"   : np.std(retreat_late_rates),
+                "Duration-days Mean" : np.mean(duration_days),
+                "Duration-days std"  : np.std(duration_days),
+                "DOY Min Mean"       : np.mean(min_doys),
+                "DOY Min Std"        : np.std(min_doys),
+                "DOY Max Mean"       : np.mean(max_doys),
+                "DOY Max Std"        : np.std(max_doys),
+                "DOY Onset Mean"     : np.mean(onset_doys) if onset_doys else None,
+                "DOY Onset Std"      : np.std(onset_doys)  if onset_doys else None}
 
     # STABILITY METRICS
     def compute_fip_spatial_stats(self, FIP):
@@ -281,54 +449,71 @@ class SeaIceMetrics:
         max_dist          = float(fast_ice_dists.max().values)
         return mean_dist, max_dist
 
-    # SEASONALITY METRICS
-    def compute_doy_max(self, FIA):
-        idx = FIA.argmax("time")
-        return int(FIA["time"].dt.dayofyear[idx].item())
-
-    def compute_fast_ice_duration(self, FIA, threshold_km2=None):
+    # INTER-COMPARISONS
+    def compute_statistics(self, model, obs, dropna=True):
         """
-        Compute duration of the fast ice season.
-
-        If `threshold_km2` is given: duration is the number of days with FIA > threshold.
-        If `threshold_km2` is None: duration is defined as (DOY_max - DOY_min) per year.
+        Compute standard statistics between two aligned time series.
 
         Parameters
         ----------
-        FIA : xarray.DataArray
-            Daily fast ice area with time coordinate.
-        threshold_km2 : float or None
-            Fixed threshold for defining start/end. If None, uses annual min/max to define season.
+        model : xr.DataArray or np.ndarray
+        obs   : xr.DataArray or np.ndarray
+        dropna : bool
+            Drop NaNs before computing metrics (default: True)
 
         Returns
         -------
-        dict[int, int] or int
-            Duration per year in days, or single int if only one year.
-        """
-        if "time" not in FIA.dims:
-            raise ValueError("FIA must have 'time' coordinate.")
-        if threshold_km2 is not None:
-            mask = FIA > threshold_km2
-            if mask.sum() == 0:
-                return 0
-            times = FIA["time"].where(mask, drop=True)
-            return int((times[-1] - times[0]) / np.timedelta64(1, "D")) + 1
-        durations = {}
-        for yr, da in FIA.groupby("time.year"):
-            if da.time.size < 2:
-                durations[yr.item()] = 0
-                continue
-            t_doy = da["time"].dt.dayofyear
-            i_min = da.argmin("time").item()
-            i_max = da.argmax("time").item()
-            t0, t1 = int(t_doy[i_min].item()), int(t_doy[i_max].item())
-            durations[yr.item()] = abs(t1 - t0)
-        if len(durations) == 1:
-            return list(durations.values())[0]
-        return durations
+        dict
+            Dictionary of Bias, RMSE, MAE, Corr, SD_model, SD_obs
 
-    def compute_fia_rmse(self, model_fia, obs_fia):
-        if model_fia.sizes["time"] != obs_fia.size:
-            raise ValueError("Time dimension mismatch between model and observations.")
-        error = model_fia.values - obs_fia.values
-        return float(np.sqrt(np.mean(error**2)))
+        Notes:
+        -------------------------------------
+        Metric	                Definition	                        Good For
+        Bias	                Mean(model - obs)	                Systematic offset
+        RMSE	                √(mean((model - obs)²))	            Total error magnitude
+        RMSD	                Same as RMSE 	                    Shape error (variance around mean)
+        MAE	                    Mean absolute error	Error           magnitude without squaring
+        Correlation	Pearson     correlation coefficient	            Phase & shape agreement
+        Standard deviation	    Variability	                        Amplitude bias
+        Skill Score	            Normalized error relative to cliimatology Relative improvement over a reference baseline        
+        """
+        from sklearn.metrics import mean_squared_error, mean_absolute_error
+        from scipy.stats import pearsonr        
+        t_xsect = np.intersect1d(model.time.values, obs.time.values)
+        model   = model.sel(time=t_xsect)
+        obs     = obs.sel(time=t_xsect)        
+        if isinstance(model, xr.DataArray):
+            model = model.values
+        if isinstance(obs, xr.DataArray):
+            obs = obs.values
+        if dropna:
+            valid = (~np.isnan(model)) & (~np.isnan(obs))
+            model = model[valid]
+            obs = obs[valid]
+        bias     = np.mean(model - obs)
+        rmse     = np.sqrt(mean_squared_error(obs, model))
+        mae      = mean_absolute_error(obs, model)
+        corr, _  = pearsonr(model, obs)
+        sd_model = np.std(model)
+        sd_obs   = np.std(obs)
+        return {"Bias"    : bias,
+                "RMSE"    : rmse,
+                "MAE"     : mae,
+                "Corr"    : corr,
+                "SD_Model": sd_model,
+                "SD_Obs"  : sd_obs,}
+
+    def compute_taylor_stats(self, da1, da2, chunk_size=30):
+        all_model, all_obs = [], []
+        for i in range(0, da1.sizes['time'], chunk_size):
+            a = da1.isel(time=slice(i, i+chunk_size)).compute().values.flatten()
+            b = da2.isel(time=slice(i, i+chunk_size)).compute().values.flatten()
+            valid = np.isfinite(a) & np.isfinite(b)
+            if valid.sum() > 0:
+                all_model.append(a[valid])
+                all_obs.append(b[valid])
+        model, obs         = np.concatenate(all_model), np.concatenate(all_obs)
+        corr               = np.corrcoef(model, obs)[0, 1]
+        std_model, std_obs = np.std(model), np.std(obs)
+        rmsd               = np.sqrt(np.mean((model - obs - (np.mean(model) - np.mean(obs)))**2))
+        return {"corr": corr, "std_ratio": std_model / std_obs, "rmsd_ratio": rmsd / std_obs}
