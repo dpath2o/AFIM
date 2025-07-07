@@ -1,7 +1,7 @@
 from ftplib import FTP
 import os
 FTP_HOST   = "ftp.awi.de"
-D_FTP_root = "/sea_ice/projects/cci/crdp/v4p0-preview1"
+D_FTP_root = "sea_ice/projects/cci/crdp/v4p0"
 D_local    = "/g/data/gv90/da1339/SeaIce"
 def download_ftp_tree(ftp: FTP, remote_dir: str, local_dir: str):
     os.makedirs(local_dir, exist_ok=True)

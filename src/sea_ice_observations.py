@@ -328,7 +328,7 @@ class SeaIceObservations:
         ESA_sit_sigma_reG = xr.DataArray(data   = np.concatenate(sigma_list, axis=0),
                                          dims   = ("time", "nj", "ni"),
                                          coords = {"time": time_list,
-                                                   "TLON": (("nj", "ni"), CICE_SO.values),
-                                                   "TLAT": (("nj", "ni"), CICE_SO.values)},
-                                         name   = "ESA_sit_sigma")
+                                                   "TLON": (("nj", "ni"), CICE_SO.TLON.values),
+                                                   "TLAT": (("nj", "ni"), CICE_SO.TLAT.values)},
+                                        name    = "ESA_sit_sigma")
         return xr.Dataset({"ESA_sit": ESA_sit_reG, "ESA_sit_sigma": ESA_sit_sigma_reG})
