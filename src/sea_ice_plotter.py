@@ -175,8 +175,8 @@ class SeaIcePlotter:
         series     = series        if series        is not None else [0.01, 1.0, 0.01]
         cbar_frame = cbar_frame    if cbar_frame    is not None else ["x+lFast Ice Persistence", "y+l1/100"]
         # load fast ice observation climatology
-        af2020_df = pd.read_csv(self.AF_FI_dict['P_AF2020_cli_csv'])
-        obs_FIA   = self.interpolate_obs_fia(af2020_df) 
+        AF2020_CSV = self.load_AF2020_FIA_summary( start=self.dt0_str, end=self.dtN_str )
+        obs_FIA    = AF2020_CSV['FIA_clim_repeat'].sel(region='circumpolar')
         # ----- Create and save x-axis annotation file for months -----
         xticks       = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 360]
         month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Dec"]
@@ -196,42 +196,55 @@ class SeaIcePlotter:
                     **{"frame" : [f"sxc{xannot_path}",
                                   f"ya100f+lFast Ice Area (1000 km\u00b2)",
                                   "WSne"]})
-        if enable_FIA: 
+        if enable_FIA:
             for i, (name, da) in enumerate(FIA_dict.items()):
                 if isinstance(da, xr.Dataset):
                     da = da.to_array().squeeze()
-                if i==0 and not diff_plot: #name == "AF2020db_cli":
-                    fig.plot(x=obs_FIA['doy'].values, y=obs_FIA.values, pen="1.5p,blue,--", label="AF2020 Climatology (2000–2018)")
-                time       = pd.to_datetime(da["time"].values)
-                area       = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days else da.values
-                df         = pd.DataFrame({"area": area}, index=time)
-                df["doy"]  = df.index.dayofyear
-                df["year"] = df.index.year
-                df         = df[df["year"] > df["year"].min()]
-                grouped    = df.groupby("doy")["area"]
-                area_min   = grouped.min()
-                area_max   = grouped.max()
-                area_mean  = grouped.mean()
-                if name in ["FI_BT", "FI_BT_roll", "FI_BT_bool"]:
-                    leg_lab    = self.plot_ice_area_dict[name]["label"]
+                da = da.load()  # explicitly load once (Dask-safe)
+                # Convert time to day-of-year
+                df = pd.DataFrame({
+                    "time": pd.to_datetime(da["time"].values),
+                    "area": da.values
+                })
+                df["doy"]  = df["time"].dt.dayofyear
+                df["year"] = df["time"].dt.year
+                # Drop first year (optional)
+                df = df[df["year"] > df["year"].min()]
+                grouped = df.groupby("doy")["area"]
+                area_min  = grouped.min()
+                area_max  = grouped.max()
+                area_mean = grouped.mean()
+                # Observation climatology
+                if i == 0 and not diff_plot:
+                    obs_df = pd.DataFrame({
+                        "time": pd.to_datetime(obs_FIA["time"].values),
+                        "area": obs_FIA.values
+                    })
+                    obs_df["doy"] = obs_df["time"].dt.dayofyear
+                    fig.plot(x=obs_df["doy"], y=obs_df["area"], pen="1.5p,blue,--", label="AF2020 Climatology (2000–2018)")
+                # Labels/colors
+                if name in self.plot_ice_area_dict:
+                    leg_lab    = self.plot_ice_area_dict[name]["label"].format(min_win=self.bool_min_days, win=self.bool_window)
                     line_color = self.plot_ice_area_dict[name]["color"]
                 else:
                     leg_lab    = name
-                    line_color = default_line_colors[i]
+                    line_color = default_line_colors[i % len(default_line_colors)]
+                # Plot either raw or difference
                 if diff_plot:
-                    area_mean_diff  = obs_FIA - area_mean
-                    print(area_mean_diff)
-                    fig.plot(x=area_mean_diff.doy, y=area_mean_diff.values, pen=f"2p,{line_color}", label=f"{leg_lab} climatology")
+                    obs_interp = np.interp(area_mean.index, obs_df["doy"], obs_df["area"])
+                    area_mean_diff = obs_interp - area_mean.values
+                    fig.plot(x=area_mean.index, y=area_mean_diff, pen=f"2p,{line_color}", label=f"{leg_lab} diff")
                 else:
-                    fig.plot(x=np.concatenate([area_min.index, area_max.index[::-1]]),
-                            y=np.concatenate([area_min.values, area_max.values[::-1]]),
-                            fill=f"{line_color}@70", close=True, transparency=60)
+                    fig.plot(
+                        x=np.concatenate([area_min.index, area_max.index[::-1]]),
+                        y=np.concatenate([area_min.values, area_max.values[::-1]]),
+                        fill=f"{line_color}@70", close=True, transparency=60
+                    )
                     fig.plot(x=area_mean.index, y=area_mean.values, pen=f"2p,{line_color}", label=f"{leg_lab} climatology")
             fig.legend(position="JTL+jTL+o0.2c", box="+gwhite+p.5p")
         if enable_FIP:
             fig.shift_origin(yshift="-6c")
             ANT_IS         = self.load_ice_shelves()
-            SO_BATH        = self.load_IBCSO_bath()
             plot_data_dict = self.prepare_data_for_pygmt_plot(FIP_DA, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
             if plot_GI:
                 plot_GI_dict = self.load_GI_lon_lats(plot_data_dict)
@@ -242,8 +255,7 @@ class SeaIcePlotter:
                 if i>0:
                     fig.shift_origin(yshift="-10.25c")
                 fig.basemap(region=region, projection=projection, frame=['xa10g10f','ya5g5f'])
-                fig.coast(land=land_color, water=water_color)
-                fig.grdimage(grid=SO_BATH, cmap='geo')
+                fig.coast(land='gray', water='white', shorelines="1/0.5p,gray30")
                 fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style="s0.2c", cmap=True)
                 if plot_GI:
                     fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
@@ -288,12 +300,14 @@ class SeaIcePlotter:
                                GI_fill_color  = "red",
                                plot_iceshelves= True,
                                plot_bathymetry= True,
+                               add_stat_annot = False,
                                land_color     = None,
                                water_color    = None,
                                P_png          = None,
                                var_out        = None,
                                overwrite_fig  = None,
-                               show_fig       = None):
+                               show_fig       = None,
+                               return_fig     = None,):
         """
         Composite plot showing monthly climatology of FIA and east/west persistence map.
         """
@@ -301,6 +315,8 @@ class SeaIcePlotter:
         show_fig    = show_fig      if show_fig      is not None else self.show_fig
         ow_fig      = overwrite_fig if overwrite_fig is not None else self.ow_fig
         time_stamp  = time_stamp    if time_stamp    is not None else self.dt0_str
+        lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict.get("lon_coord_name", "TLON")
+        lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict.get("lat_coord_name", "TLAT")
         cmap        = cmap          if cmap          is not None else self.plot_var_dict[var_name]['cmap']
         series      = series        if series        is not None else self.plot_var_dict[var_name]['series']
         reverse     = reverse       if reverse       is not None else self.plot_var_dict[var_name]['reverse']
@@ -406,10 +422,17 @@ class SeaIcePlotter:
                 fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
             if plot_iceshelves:
                 fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
+            if add_stat_annot:
+                annot_text = self.generate_regional_annotation_stats(da, region, lon_coord_name, lat_coord_name)
+                for i, line in enumerate(annot_text):
+                    fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
             if "diff" in var_name.lower():
                 fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
             elif "mask" not in var_name.lower():
-                fig.colorbar(position=cbar_pos, frame=cbar_frame)
+                try:
+                    fig.colorbar(position=cbar_pos, frame=cbar_frame)
+                except pygmt.exceptions.GMTCLibError as e:
+                    self.logger.warning(f"Error in adding colorbar: {e} — skipping colorbar.")
             if P_png:
                 if not P_png.exists():
                     P_png.parent.mkdir(parents=True, exist_ok=True)
@@ -424,7 +447,48 @@ class SeaIcePlotter:
                 P_png = None
             if show_fig:
                 fig.show()
-            pygmt.clib.Session.__exit__
+            if return_fig:
+                return fig
+            else:
+                pygmt.clib.Session.__exit__
+
+    def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name):
+        """
+        Add statistics (mean, std, min/max) and their locations on the map.
+        """
+        # Get the latitude and longitude coordinates (TLAT, TLON)
+        da_lats    = da[lat_coord_name].values
+        da_lons    = da[lon_coord_name].values
+        lon_min_ni = np.searchsorted(da_lons[0, :], region[0])
+        lon_max_ni = np.searchsorted(da_lons[0, :], region[1])        
+        lat_min_nj = np.searchsorted(da_lats[:, 0], region[2])
+        lat_max_nj = np.searchsorted(da_lats[:, 0], region[3])
+        da_sliced  = da.isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        lon_sliced = da[lon_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        lat_sliced = da[lat_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        # Get the data, latitudes, and longitudes
+        data       = da_sliced.values.flatten()
+        lat        = lat_sliced.values.flatten()
+        lon        = lon_sliced.values.flatten()
+        valid_mask = ~np.isnan(data)
+        data_valid = data[valid_mask]
+        lat_valid  = lat[valid_mask]
+        lon_valid  = lon[valid_mask]
+        # Calculate statistics
+        spatial_mean   = np.mean(data_valid)
+        spatial_std    = np.std(data_valid)
+        spatial_extent = len(data_valid)
+        data_min       = np.min(data_valid)
+        data_max       = np.max(data_valid)
+        # Get min/max locations (lat, lon)
+        min_index    = np.argmin(data_valid)
+        max_index    = np.argmax(data_valid)
+        min_location = (lat_valid[min_index], lon_valid[min_index])
+        max_location = (lat_valid[max_index], lon_valid[max_index])
+        # Format text to display
+        text  = [f"Mean: {spatial_mean:.2f}", f"Std: {spatial_std:.2f}", f"Extent: {spatial_extent}"]
+        text += [f"Min:  {data_min:.2f} at {min_location}", f"Max: {data_max:.2f} at {max_location}"]
+        return text
 
     def plot_monthly_ice_metric_by_year(self, area_dict,
                                         ice_type         = "FIA",

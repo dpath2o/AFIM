@@ -143,8 +143,7 @@ class SeaIceObservations:
     def load_AF2020_FIA_summary(self, 
                                 repeat_climatology: bool = True,
                                 start             : str  = "1994-01-01",
-                                end               : str  = "1999-12-31",
-                                smooth            : int  = 5) -> xr.Dataset:
+                                end               : str  = "1999-12-31") -> xr.Dataset:
         """
         Load AF2020 landfast sea ice area time series and compute day-of-year climatology.
 
@@ -167,7 +166,7 @@ class SeaIceObservations:
                 - 'FIA_clim':          Smoothed climatology [doy, region]
                 - 'FIA_clim_repeat':   Climatology repeated over [start, end] (optional)
         """
-        # Load and rename
+        from scipy.interpolate import interp1d
         csv_path = self.AF_FI_dict['P_AF2020_csv']
         df = pd.read_csv(csv_path)
         regions = ["circumpolar", "indian_ocean", "western_pacific", "ross_sea", "amundsen_sea", "weddell_sea"]
@@ -176,34 +175,59 @@ class SeaIceObservations:
                                 'WPOsector'  : 'western_pacific',
                                 'RSsector'   : 'ross_sea',
                                 'BASsector'  : 'amundsen_sea',
-                                'WSsector'   : 'weddell_sea'})
+                                'WSsector'  : 'weddell_sea'})
         df = df.dropna(subset=["Year", "Month_start", "Day_of_month_start"])
         df["date"] = pd.to_datetime({"year": df["Year"].astype(int),
-                                     "month": df["Month_start"].astype(int),
-                                     "day": df["Day_of_month_start"].astype(int)}, errors="coerce")
+                                    "month": df["Month_start"].astype(int),
+                                    "day": df["Day_of_month_start"].astype(int)}, errors="coerce")
         df = df.dropna(subset=["date"])
         df["doy"] = df["date"].dt.dayofyear
         df = df.set_index("date")
         df = df[regions + ["doy"]]
         fia_obs = df[regions] / 1000.0  # km² → 1000 km²
         fia_obs_xr = fia_obs.to_xarray().to_array("region").transpose("date", "region")
-        clim_doy = df.groupby("doy")[regions].mean().sort_index() / 1000.0
-        if smooth > 1:
-            clim_doy = clim_doy.rolling(smooth, center=True, min_periods=1).mean()
-        clim_doy_xr = clim_doy.to_xarray()
-        fia_clim_doy = clim_doy_xr.to_array("region").transpose("doy", "region")
+        if 'doy' not in df.columns or 'circumpolar' not in df.columns:
+            raise ValueError("Expected 'doy' and 'circumpolar' columns for climatology generation.")
+        doy_vals = np.arange(1, 366)
+        x = df.groupby("doy")["circumpolar"].mean().dropna().index.values
+        y = df.groupby("doy")["circumpolar"].mean().dropna().values / 1000.0
+        interp_func = interp1d(x, y, kind='linear', fill_value="extrapolate")
+        clim_interp = pd.DataFrame({"circumpolar": interp_func(doy_vals)}, index=doy_vals)
+        fia_clim_doy = xr.DataArray(clim_interp["circumpolar"].values[:, None],  # <-- Add [:, None] to make it 2D
+                                    coords={"doy": doy_vals, "region": ["circumpolar"]},
+                                    dims=["doy", "region"])
+
         if repeat_climatology:
             model_dates = pd.date_range(start, end, freq="D")
-            repeated = np.stack([ [clim_doy.loc[dt.timetuple().tm_yday, r] if dt.timetuple().tm_yday in clim_doy.index else np.nan for r in regions] for dt in model_dates ])
-            fia_clim_re = xr.DataArray( repeated, coords={"time": model_dates, "region": regions}, dims=["time", "region"] )
+            doy_map = model_dates.dayofyear
+            valid_mask = doy_map < 366
+            model_dates = model_dates[valid_mask]
+            doy_map = doy_map[valid_mask]
+            repeated = fia_clim_doy.sel(doy=xr.DataArray(doy_map, dims="time")).values
+            fia_clim_re = xr.DataArray(repeated,
+                                       coords = {"time": model_dates, "region": ["circumpolar"]},
+                                       dims   = ["time", "region"])
         else:
             fia_clim_re = None
-        ds = xr.Dataset({"FIA_obs": fia_obs_xr,
-                         "FIA_clim": fia_clim_doy})
+        ds = xr.Dataset({"FIA_obs": fia_obs_xr.sel(region="circumpolar"),
+                        "FIA_clim": fia_clim_doy})
         if fia_clim_re is not None:
             ds["FIA_clim_repeat"] = fia_clim_re
         self.logger.info(f"AF2020 FIA data loaded from {csv_path}")
         return ds
+
+
+    def AF2020_interpolate_FIA_clim(self, csv_df, full_doy=np.arange(1, 366)):
+        from scipy.interpolate import interp1d
+        df = csv_df.copy()
+        if 'Circumpolar' not in df.columns or 'DOY_start' not in df.columns:
+            raise ValueError("Expected columns 'DOY_start' and 'circumpolar' in CSV.")
+        x = df['DOY_start'].values
+        y = df['Circumpolar'].values/1e3
+        if len(x) != len(y):
+            raise ValueError("x and y arrays must be equal in length.")
+        interp_func = interp1d(x, y, kind='linear', fill_value="extrapolate")
+        return xr.DataArray(interp_func(full_doy), coords=[("doy", full_doy)])
 
     def AF2020_clim_to_model_time(self, model: xr.DataArray, clim: xr.DataArray) -> xr.DataArray:
         """

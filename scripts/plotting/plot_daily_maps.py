@@ -7,67 +7,55 @@ import xarray as xr
 mod_path = '/home/581/da1339/AFIM/src/AFIM/src'
 if mod_path not in sys.path:
     sys.path.insert(0, mod_path)
-from sea_ice_plotter import SeaIcePlotter
+from sea_ice_toolbox import SeaIceToolbox
 
-def plot_monthly_variable_maps(sim_name, ice_type, var_names, var_name_back=None, ispd_thresh=1.0e-3):
+def plot_monthly_variable_maps(sim_name, var_names, ispd_thresh=5.0e-4, dt0_str="1994-01-01", dtN_str="1999-12-31", script_log=None):
     if isinstance(var_names, str):
         var_names = [var_names]
-    D_out   = Path(f"/g/data/gv90/da1339/afim_output/{sim_name}/zarr/{ice_type}")
-    P_zarrs = sorted(D_out.glob(f"{ice_type}_*.zarr"))
-    months  = [f.stem.split("_")[1] for f in P_zarrs]
-    for yr_mo_str in months:
-        P_zarr = D_out / f"{ice_type}_{yr_mo_str}.zarr"
-        if not P_zarr.exists():
-            print(f"\u26a0\ufe0f Missing dataset: {P_zarr}")
-            continue
-        ds              = xr.open_dataset(P_zarr, engine="zarr")
-        dt_start        = pd.Timestamp(f"{yr_mo_str}-01")
-        dt_end          = dt_start + pd.offsets.MonthEnd(0)
-        yr_mo_start_str = dt_start.strftime("%Y-%m-%d")
-        yr_mo_end_str   = dt_end.strftime("%Y-%m-%d")
-        if ice_type=="SO":
-            ice_type_plot = "SI"
-        else:
-            ice_type_plot = ice_type
-        plotter = SeaIcePlotter(sim_name   = sim_name,
-                                ice_type   = ice_type_plot,
-                                plot_type  = 'regional',
-                                hemisphere = 'south',
-                                save_fig   = True,
-                                show_fig   = False,
-                                overwrite  = False )
-        for var in var_names:
-            if var not in ds:
-                print(f"Skipping {var}: not found in {P_zarr}")
+    SI_tools      = SeaIceToolbox(sim_name             = sim_name,
+                                  ice_speed_threshold  = ispd_thresh,
+                                  dt0_str              = dt0_str,
+                                  dtN_str              = dtN_str,
+                                  P_log                = script_log,
+                                  save_new_figs        = True,
+                                  show_figs            = False,
+                                  overwrite_saved_figs = True)
+    FI_raw, CICE  = SI_tools.load_processed_cice( zarr_CICE = True )
+    for i in range(len(CICE['time'].values)):
+        CICE_slc = CICE.isel(time=i, nj=SI_tools.hemisphere_dict['nj_slice'])
+        dt       = pd.Timestamp(CICE.isel(time=i)['time'].values)
+        dt_str   = f"{dt:%Y-%m-%d}"
+        for var_name in var_names:
+            if var_name not in CICE_slc:
+                SI_tools.logger.info(f"Skipping {var_name} as it is not found in not found in {CICE_slc.keys()}")
                 continue
-            print(f"Plotting {var} for {yr_mo_str}")
-            extra_kwargs = {"ispd_thresh"   : ispd_thresh,
-                            "var_name_back" : var_name_back,
-                            "series"        : [0.0, 0.5] if var == "ispd" else None}
-            if var == "aice" and ice_type=="FI":
-                extra_kwargs = {"cmap": "viridis", "series": [0.9, 1], "cmap_reverse": True}
-            elif var == "divu":
-                extra_kwargs = {"cmap": "mag", "series": [-10, 10], "cmap_reverse": False}
-            plotter.plot_map(ds            = ds,
-                             var_name      = var,
-                             var_name_back = var_name_back,
-                             dt0_str       = yr_mo_start_str,
-                             dtN_str       = yr_mo_end_str,
-                             time_coord_name = "time",
-                             lon_coord_name  = "lon",
-                             lat_coord_name  = "lat",
-                             **{k: v for k, v in extra_kwargs.items() if v is not None} )
+            var_all = CICE_slc[var_name]
+            SI_tools.logger.info(f"Plotting {var_name} for date {dt_str}")
+            SI_tools.pygmt_map_plot_one_var(var_all, var_name,
+                                            sim_name       = sim_name,
+                                            time_stamp     = dt_str,
+                                            tit_str        = f"{sim_name} {dt_str}",
+                                            plot_GI        = False,
+                                            plot_iceshelves= False,
+                                            plot_bathymetry= False,
+                                            add_stat_annot = True,
+                                            overwrite_fig  = True,
+                                            show_fig       = False)
+            pygmt.clib.Session.__exit__
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot monthly sea ice variable maps using SeaIcePlotter.")
-    parser.add_argument("--sim_name"     , required=True, help="Simulation name (e.g. 'baseline')")
-    parser.add_argument("--ice_type"     , required=True, choices=["FI", "PI", "SO"], help="Ice type: FI, PI, or SO")
+    parser.add_argument("--sim_name"     , required=True, help="Simulation name (e.g. 'elps-min')")
     parser.add_argument("--var_names"    , required=True, nargs='+', help="One or more variable names to plot")
-    parser.add_argument("--var_name_back", default=None , help="Optional background variable name")
     parser.add_argument("--ispd_thresh"  , type=float, default=1.0e-3, help="Threshold for ispd plots")
-    args = parser.parse_args()
-    plot_monthly_variable_maps(sim_name=args.sim_name,
-                               ice_type=args.ice_type,
-                               var_names=args.var_names,
-                               var_name_back=args.var_name_back,
-                               ispd_thresh=args.ispd_thresh)
+    parser.add_argument("--start_date"   , help="Start date (YYYY-MM-DD), which is then added to FI_days as the first center-date", default="1994-01-01")
+    parser.add_argument("--end_date"     , help="End date (YYYY-MM-DD), will stop processing when this end_date-FI_days", default="1999-12-31")
+    parser.add_argument("--log_file"     , help="Path to log file to log the messages from SeaIceToolbox (default is ~/logs/plot_daily_maps/[SIM_NAME].log)") 
+    args       = parser.parse_args()
+    script_log = args.log_file if args.log_file is not None else Path(f"{Path.home()}/logs/plot_daily_maps/{args.sim_name}")
+    plot_monthly_variable_maps(sim_name    = args.sim_name,
+                               var_names   = args.var_names,
+                               ispd_thresh = args.ispd_thresh,
+                               dt0_str     = args.start_date,
+                               dtN_str     = args.end_date,
+                               script_log  = script_log)

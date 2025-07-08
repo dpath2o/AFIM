@@ -1,4 +1,4 @@
-import os, sys, time, json, logging, re
+import os, sys, time, json, logging, re, psutil
 import xarray             as xr
 import xesmf              as xe
 import pandas             as pd
@@ -1066,7 +1066,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         ice_type        = ice_type    or self.ice_type
         dt0_str         = dt0_str     or self.dt0_str
         dtN_str         = dtN_str     or self.dtN_str
-        chunks          = chunks      or {'time': 31}
+        chunks          = chunks      or self.CICE_dict['FI_chunks']
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         D_zarr          = D_zarr or Path(self.config['D_dict']['AFIM_out'],sim_name,"zarr")
         if isinstance(ice_type, str) and "," in ice_type:
@@ -1081,6 +1081,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         if dt0_str and dtN_str:
             dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
             dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
+            self.logger.info(f"searching for files between {dt0} and {dtN} in {Path(D_zarr,f'ispd_thresh_{ispd_thresh_str}')}")
             def file_in_range(path):
                 try:
                     dt_file = datetime.strptime(path.name.split("_")[-1].split(".zarr")[0], "%Y-%m")
@@ -1097,15 +1098,16 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         for P_zarr in P_zarrs:
             self.logger.debug(f"attempting to load: {P_zarr}")
             try:
-                ds = xr.open_zarr(P_zarr, group=ice_type, consolidated=True).chunk(chunks)
+                ds = xr.open_zarr(P_zarr, group=ice_type, consolidated=True)
                 DS_list.append(ds)
             except (OSError, KeyError) as e:
                 self.logger.warning(f"Skipping {P_zarr} ({ice_type}): {e}")
         if not DS_list:
             self.logger.warning(f"No {ice_type} datasets found in any Zarr group")
             return None
-        DS_FI = xr.concat(DS_list, dim="time", coords='minimal')
+        DS_FI = xr.concat(DS_list, dim="time", coords='minimal').chunk(chunks)
         self.logger.info(f"Loaded {ice_type}: {len(DS_FI.time)} time steps from {len(DS_list)} files")
+        self.logger.info(f"Memory after Zarr load: {psutil.virtual_memory().percent:.1f}% used")
         if zarr_CICE:
             self.logger.info(f"Load monthly iceh_*.zarr files between {dt0_str} and {dtN_str}")
             P_monthly_zarrs = []
@@ -1121,11 +1123,11 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
             self.logger.info(f"Found {len(P_monthly_zarrs)} zarr files")
             self.logger.debug(f"{[p.name for p in P_monthly_zarrs]}")
             CICE = xr.open_mfdataset(P_monthly_zarrs,
-                                    engine     = "zarr",
-                                    concat_dim = "time",
-                                    combine    = "nested",
-                                    parallel   = True,
-                                    chunks     = chunks)
+                                     engine     = "zarr",
+                                     concat_dim = "time",
+                                     combine    = "nested",
+                                     parallel   = True)
+            CICE = CICE.chunk(chunks)
             if slice_hem:
                 CICE = CICE.isel(nj=self.hemisphere_dict['nj_slice'])
         else:

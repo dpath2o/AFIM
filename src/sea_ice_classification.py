@@ -425,7 +425,7 @@ class SeaIceClassification:
             self.logger.warning("⚠️ No fast ice datasets to return.")
             return None
 
-    def boolean_fast_ice(self, FI_mask, dim="time", window=7, min_count=6, min_periods=1):
+    def boolean_fast_ice(self, FI_mask, dim="time", window=11, min_count=9, min_periods=1):
         """
 
         Generate a boolean (or binary-days) presence mask for fast ice using a rolling window threshold.
@@ -437,9 +437,9 @@ class SeaIceClassification:
         INPUTS:
            FI_mask   : xarray.DataArray; Boolean time series mask of fast ice presence (True/False).
            dim       : str, optional; the name of the time dimension. Defaults to "time".
-           window    : int, optional; size of the rolling window in days. Defaults to `self.bool_window` or 7.
+           window    : int, optional; size of the rolling window in days. Defaults to `self.bool_window` or 11.
            min_count : int, optional; minimum number of True values in the window to classify as fast ice.
-                       Defaults to `self.bool_min_days` or 6.
+                       Defaults to `self.bool_min_days` or 9.
 
         OUTPUTS:
            xarray.DataArray; Boolean mask where True indicates persistent fast ice presence.

@@ -1,3 +1,4 @@
+import gc
 import xarray      as xr
 import numpy       as np
 import pandas      as pd
@@ -12,48 +13,27 @@ class SeaIceMetrics:
     def sea_ice_metrics_wrapper(self,
                                 sim_name        = None,
                                 ice_type        = None,
+                                dt0_str         = None,
+                                dtN_str         = None,
                                 ispd_thresh     = None,
                                 D_out           = None,
                                 overwrite_zarr  = False,
                                 overwrite_png   = False,
-                                smooth_FIA_days = 15):
+                                smooth_FIA_days = 15,
+                                drop_first_year = True):
         """
-        Compute and plot a suite of fast ice metrics from processed simulation output.
-
-        This wrapper method automates the loading, computation, and visualization of key
-        fast ice metrics for a given simulation. It handles all three processing modes
-        (raw, rolling mean, and boolean persistence) and generates Zarr-based metrics files
-        as well as regional and hemispheric PNG plots.
-
-        INPUTS:
-           sim_name        : str, optional; simulation name (defaults to `self.sim_name`).
-           ice_type        : str; the base fast ice type to process (e.g., "FI_B", "FI_BT").
-           ispd_thresh     : float, optional; threshold for ice speed masking. Required for Zarr path construction.
-           D_out           : Path or str, optional; output directory for Zarr and CSV metric files.
-                             Defaults to simulation Zarr path under `"metrics/"`.
-           overwrite_zarr  : bool, optional; if True, recompute metrics and overwrite existing Zarr files.
-           overwrite_png   : bool, optional; if True, regenerate PNG figures even if they already exist.
-           smooth_FIA_days : int, optional; smoothing window (in days) for plotting the FIA time series.
-
-        OUTPUTS:
-           None; results are written to disk and plotted using `SeaIcePlotter`.
-
-        NOTES:
-           + Calls `load_processed_cice()` for data loading, `compute_sea_ice_metrics()` for analysis,
-             and `SeaIcePlotter` for figure generation.
-           + This is the primary public method for computing FIA, FIP, and climatology comparisons.
-           + Requires access to AF2020 climatology (`P_AF2020_cli_csv`) for observational benchmarking.
-
         """
-        sim_name                 = sim_name if sim_name is not None else self.sim_name
-        ispd_thresh              = ispd_thresh or self.ispd_thresh
-        ispd_thresh_str          = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        ice_type                 = ice_type or self.ice_type
-        dt_range_str             = f"{self.dt0_str[:4]}-{self.dtN_str[:4]}"
-        FIA_dict                 = {}
-        af2020_df                = pd.read_csv(self.AF_FI_dict['P_AF2020_cli_csv'])
-        FIA_dict["AF2020db_cli"] = self.interpolate_obs_fia(af2020_df)
-        ice_types                = [ice_type, f"{ice_type}_roll", f"{ice_type}_bool"]
+        sim_name           = sim_name if sim_name is not None else self.sim_name
+        dt0_str            = dt0_str  if dt0_str  is not None else "1994-01-01"
+        dtN_str            = dtN_str  if dtN_str  is not None else "1999-12-31"
+        ispd_thresh        = ispd_thresh or self.ispd_thresh
+        ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-")
+        ice_type           = ice_type or self.ice_type
+        dt_range_str       = f"{dt0_str[:4]}-{dtN_str[:4]}"
+        FIA_dict           = {}
+        AF2020_CSV         = self.load_AF2020_FIA_summary( start=dt0_str, end=dtN_str )
+        FIA_dict["AF2020"] = AF2020_CSV['FIA_clim_repeat'].sel(region='circumpolar')
+        ice_types          = [ice_type, f"{ice_type}_roll", f"{ice_type}_bool"]
         for i_type in ice_types:
             P_METS = Path(self.D_metrics, f"{i_type}_mets.zarr")
             P_sum  = Path(self.D_metrics, f"{i_type}_summary.csv")
@@ -67,101 +47,156 @@ class SeaIceMetrics:
                     roll = i_type.endswith("_roll")
                 else:
                     roll = False
-                DS, CICE_SO = self.load_processed_cice(ispd_thresh = ispd_thresh,
+                # important to know that "FI" (below) is either daily (``raw``; i.e. classified without any other criteria
+                # other than ice speed threshold) or daily-rolling-mean (``rolled``; i.e. classified after ice speed has had
+                # a rolling-mean applied to it) ... the load of either is controlled by the True/False "rolling" option 
+                FI, CICE_SO = self.load_processed_cice(ispd_thresh = ispd_thresh,
                                                        ice_type    = ice_type,
+                                                       dt0_str     = dt0_str,
+                                                       dtN_str     = dtN_str,
                                                        zarr_CICE   = True,
                                                        rolling     = roll,
                                                        slice_hem   = True)
                 if i_type==f"{ice_type}_bool":
-                    bool_mask          = self.boolean_fast_ice(DS['FI_mask'], dim="time", window=7, min_count=6)
-                    DS_bool            = CICE_SO.where(bool_mask)
-                    #DS_bool["FI_mask"] = DS["FI_mask"]
-                    DS_bool["FI_mask"] = bool_mask
-                    DS                 = DS_bool
-                METS = self.compute_sea_ice_metrics(DS, sim_name, i_type, self.ispd_thresh_str, P_METS, P_sum, FIA_dict["AF2020db_cli"])
+                    bool_mask          = self.boolean_fast_ice(FI['FI_mask'])
+                    FI_bool            = CICE_SO.where(bool_mask)
+                    FI_bool["FI_mask"] = bool_mask
+                    FI                 = FI_bool
+                METS = self.compute_sea_ice_metrics( FI, FIA_dict["AF2020"], P_METS )
             FIA_dict[i_type] = METS['FIA']
         P_png = Path(self.D_graph, sim_name, f"FIA_FIP_{sim_name}_{ispd_thresh_str}_{dt_range_str}.png")
         self.plot_FIA_FIP_faceted(FIA_dict, METS['FIP'], P_png=P_png, plot_GI=True if self.use_gi else False)
 
-    def compute_sea_ice_metrics(self, DS, sim_name, i_type, ispd_thresh_str, P_METS, P_sum, obs_clim):
+    def compute_sea_ice_metrics(self, FI_sim, FIA_obs, P_METS=None):
         """
+        Compute sea ice metrics from a processed fast ice simulation and compare against observations.
 
-        Compute and persist diagnostic metrics describing fast ice coverage and seasonality.
+        Parameters
+        ----------
+        FI_sim : xr.Dataset
+            Processed fast ice dataset containing 'aice', 'hi', 'tarea', and 'FI_mask'.
+        FIA_obs : xr.DataArray
+            Observational fast ice area time series (e.g., AF2020 climatology repeated).
+        P_METS : Path or str, optional
+            Output path to store Zarr archive of computed metrics.
 
-        This method evaluates a suite of spatial and temporal diagnostics from a given fast ice dataset:
-        + Area-integrated fast ice area/extent (FIA)
-        + Fast ice persistence (FIP)
-        + Onset timing, growth dynamics, duration, and spatial statistics
-        + Optional RMSE against observational climatology (AF2020)
-
-        Results are stored as a Zarr file and also exported as a CSV summary.
-
-        INPUTS:
-           DS              : xarray.Dataset; fast ice dataset including `aice` and `FI_mask`.
-           sim_name        : str; simulation name used for file naming and CSV metadata.
-           i_type          : str; fast ice group identifier (e.g., "FI_B", "FI_BT_bool").
-           ispd_thresh_str : str; stringified ice speed threshold (e.g., "1.0e-3") for output naming.
-           P_METS          : Path; path to output `.zarr` file storing full metrics dataset.
-           P_sum           : Path; path to output `.csv` file storing scalar summary metrics.
-           obs_clim        : xarray.DataArray or None; observational climatology of fast ice area (FIA)
-                             for model comparison.
-
-        OUTPUTS:
-           xarray.Dataset; dataset containing 3D spatial metrics (FIP), time series metrics (FIA),
-           and scalar diagnostics.
-
-        NOTES:
-        + FIA and FIP are computed directly from `aice` and `FI_mask`, then used to derive other metrics.
-        + Summary includes:
-            + Onset DOY, max growth, growth rate, season duration
-            + FIP mean/std
-            + Spatial distance extent
-            + Optional RMSE to observational climatology
-        + Automatically writes outputs to disk (Zarr + CSV).
-
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing computed FIA, FIP, and additional seasonal and spatial metrics.
         """
         METS = {}
-        # 3D + 1D metrics
-        FIA = self.compute_ice_area(DS['aice'], DS['tarea']).compute()
-        FIP = self.compute_variable_aggregate(DS['aice']).compute()
-        METS["FIA"] = FIA
-        METS["FIP"] = FIP
-        # Scalar / 1D metrics
-        summary = {}
-        summary["onset_doy"]    = self.compute_fia_onset_doy(FIA)
-        summary["growth_rate"]  = self.compute_fia_growth_rate(FIA)
-        summary["max_growth"]   = self.compute_fia_max_growth(FIA)
-        summary["doy_max"]      = self.compute_doy_max(FIA)
-        summary["duration"]     = self.compute_fast_ice_duration(FIA)
-        fip_mean, fip_std       = self.compute_fip_spatial_stats(FIP)
-        summary["FIP_mean"]     = fip_mean
-        summary["FIP_std"]      = fip_std
-        mean_dist, max_dist     = self.compute_fast_ice_distance_extent(DS['FI_mask'])
-        summary["mean_FI_dist"] = mean_dist
-        summary["max_FI_dist"]  = max_dist
-        if obs_clim is not None:
-            model_doy = FIA["time"].dt.dayofyear.values
-            obs_vals = np.interp(model_doy, obs_clim.coords["doy"].values, obs_clim.values)
-            summary["rmse_to_obs"] = self.compute_fia_rmse(FIA, xr.DataArray(obs_vals, coords=[("time", FIA["time"].data)]))
-        # 🔁 Convert any dicts (e.g. duration) to xarray.DataArray
-        for key, val in summary.items():
-            if isinstance(val, dict):
-                summary[key] = xr.DataArray(pd.Series(val), dims="year")
-        # Combine all into a dataset
-        DS_METS = xr.Dataset(summary)
-        DS_METS["FIA"] = FIA
-        DS_METS["FIP"] = FIP
-        DS_METS.to_zarr(P_METS, mode="w", consolidated=True)
-        self.logger.info(f"📊 Metrics written to {P_METS}")
-        df = pd.DataFrame([DS_METS])
-        df["sim_name"]    = sim_name
-        df["ice_type"]    = i_type
-        df["ispd_thresh"] = ispd_thresh_str
-        df.to_csv(P_sum, index=False)
-        self.logger.info(f"📊 Metrics summary written to {P_sum}")
+        # --- 1D Time Series Metrics ---
+        FIA = self.compute_ice_area(FI_sim['aice'], FI_sim['tarea'])
+        FIV = self.compute_ice_volume(FI_sim['aice'], FI_sim['hi'], FI_sim['tarea'])
+        FIP = self.compute_variable_aggregate(FI_sim['aice'])
+        # Compute immediately before use in downstream stat methods
+        FIA_comp = FIA.compute()
+        del FIA
+        gc.collect()
+        FIV_comp = FIV.compute()
+        del FIV
+        gc.collect()
+        FIP_comp = FIP.compute()
+        del FIP
+        gc.collect()
+        METS["FIA"] = FIA_comp
+        METS["FIV"] = FIV_comp
+        METS["FIP"] = FIP_comp
+        # --- Seasonal Statistics (1D time series) ---
+        try:
+            FIA_seasonal = self.compute_seasonal_statistics(FIA_comp)
+            FIV_seasonal = self.compute_seasonal_statistics(FIV_comp)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Seasonal statistics failed: {e}")
+            FIA_seasonal = {}
+            FIV_seasonal = {}
+        # --- Spatial Statistics from FIP (2D map) ---
+        try:
+            FIP_stats = self.compute_fip_spatial_stats(FIP_comp)
+        except Exception as e:
+            self.logger.warning(f"⚠️ FIP spatial statistics failed: {e}")
+            FIP_stats = {}
+        # --- Fast Ice Distance Metrics ---
+        try:
+            FI_dist = self.compute_fast_ice_distance_extent(FI_sim['FI_mask'])
+        except Exception as e:
+            self.logger.warning(f"⚠️ Distance extent computation failed: {e}")
+            FI_dist = {}
+        # --- Skill Statistics vs Observations ---
+        try:
+            FIA_skill = self.compute_skill_statistics(FIA_comp, FIA_obs)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Skill statistics failed: {e}")
+            FIA_skill = {}
+        # --- Build Dataset from METS ---
+        DS_METS = xr.Dataset()
+        for k, v in METS.items():
+            if isinstance(v, xr.DataArray):
+                DS_METS[k] = v
+            elif np.ndim(v) == 2:
+                DS_METS[k] = xr.DataArray(v, dims=('nj', 'ni'))
+            elif np.ndim(v) == 1:
+                DS_METS[k] = xr.DataArray(v, dims=('time',))
+            else:
+                DS_METS[k] = xr.DataArray(v, dims=())
+        # --- Merge All Metrics into Dataset ---
+        summary = {**{f"FIA_{k}": v for k, v in FIA_seasonal.items()},
+                   **{f"FIV_{k}": v for k, v in FIV_seasonal.items()},
+                   **FIP_stats,
+                   **FI_dist,
+                   **FIA_skill}
+        for k, v in summary.items():
+            DS_METS[k] = xr.DataArray(v, dims=())  # All summary stats are scalars
+        # --- Save to Zarr (Optional) ---
+        if P_METS is not None:
+            DS_METS.to_zarr(P_METS, mode="w", consolidated=True)
+            self.logger.info(f"📊 Metrics written to {P_METS}")
         return DS_METS
 
     def compute_ice_area(self, SIC, GC_area, ice_area_scale=None, spatial_dim_names=None, add_grounded_iceberg_area=None, grounded_iceberg_area=None):
+        """
+        Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally 
+        including the grounded iceberg area (GI_total_area).
+
+        This method computes the sea ice area by multiplying the sea ice concentration (SIC) by the grid cell area (GC_area),
+        summing the result over the specified spatial dimensions, and optionally adding the grounded iceberg area. The final
+        result is then scaled by an optional ice area scale factor.
+
+        Parameters:
+        -----------
+        SIC : xarray.DataArray
+            Sea ice concentration field with dimensions (nj, ni) representing the concentration of sea ice at each grid point.
+            
+        GC_area : xarray.DataArray
+            Grid cell area with the same dimensions (nj, ni) as SIC, representing the area of each grid cell in square meters.
+            
+        ice_area_scale : float, optional
+            A scale factor for the sea ice area calculation. If not provided, the default scale is used from the `FIC_scale` attribute.
+            
+        spatial_dim_names : list of str, optional
+            The dimension names over which to sum the sea ice area (typically latitude and longitude). If not provided, the default spatial dimensions 
+            are used from the `CICE_dict` attribute.
+            
+        add_grounded_iceberg_area : bool, optional
+            A flag indicating whether to include the grounded iceberg area in the ice area calculation. Defaults to the class attribute `use_gi`.
+            
+        grounded_iceberg_area : float, optional
+            The grounded iceberg area in square meters to be added to the sea ice area. If not provided, the grounded iceberg area is computed using 
+            `compute_grounded_iceberg_area()`.
+
+        Returns:
+        --------
+        IA : xarray.DataArray
+            The total sea ice area, including the optional grounded iceberg area, with the same spatial dimensions as SIC and GC_area.
+            The value is returned after summing over the spatial dimensions and scaling by the provided `ice_area_scale`.
+
+        Notes:
+        ------
+        - The grounded iceberg area is added to the sea ice area calculation if `add_grounded_iceberg_area` is `True`. If no grounded iceberg area 
+        is provided, the method will compute it using the `compute_grounded_iceberg_area()` method.
+        - The sea ice area is computed as the sum of SIC * GC_area across the specified spatial dimensions, and then scaled by `ice_area_scale`.
+        """
         add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
         if add_grounded_iceberg_area:
             if grounded_iceberg_area is not None:
@@ -174,10 +209,50 @@ class SeaIceMetrics:
         self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
         self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
-        IA = ((SIC * GC_area).sum(dim=spatial_dim_names)).persist()
+        IA = ((SIC * GC_area).sum(dim=spatial_dim_names))
         IA = IA + GI_total_area
         IA = IA/ice_area_scale
         return IA
+
+    def compute_ice_extent(self, SIC, GC_area, ice_extent_threshold=0.15, spatial_dim_names=None, 
+                        add_grounded_iceberg_area=None, grounded_iceberg_area=None):
+        """
+        Compute sea ice extent (SIE) by summing the grid cell areas where the sea ice concentration exceeds the threshold.
+        Parameters:
+            SIC                   : Sea ice concentration (array)
+            GC_area               : Grid cell area (array)
+            ice_extent_threshold  : Threshold for sea ice extent (default 0.15)
+            spatial_dim_names     : List of spatial dimension names for summing (default to class attribute)
+            add_grounded_iceberg_area : Whether to include grounded iceberg area in the computation
+            grounded_iceberg_area : Grounded iceberg area (optional)
+        Returns:
+            SIE                   : Sea ice extent
+        """
+        
+        add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
+        if add_grounded_iceberg_area:
+            if grounded_iceberg_area is not None:
+                GI_total_area = grounded_iceberg_area
+            else:
+                GI_total_area = self.compute_grounded_iceberg_area()
+        else:
+            GI_total_area = 0
+            
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
+
+        # Apply the threshold for sea ice concentration (e.g., SIC >= 0.15 for SIE)
+        SIC_thresholded = SIC.where(SIC >= ice_extent_threshold, 0)
+
+        # Compute sea ice extent by summing the grid cell areas where SIC > threshold
+        self.logger.info(f"🧮 Spatially-integrating sea ice concentration exceeding threshold ({ice_extent_threshold * 100}%)")
+        SIE = (SIC_thresholded * GC_area).sum(dim=spatial_dim_names)
+
+        # Optionally add grounded iceberg area
+        SIE = SIE + GI_total_area
+
+        return SIE
+
 
     def compute_ice_volume(self, SIC, HI, GC_area, ice_volume_scale=1e12, spatial_dim_names=None):
         """
@@ -196,7 +271,7 @@ class SeaIceMetrics:
         GI_total_area = self.compute_grounded_iceberg_area() if self.use_gi else 0
         self.logger.info(f"{GI_total_area:0.2f} m² total grounded iceberg area for {self.sim_name}")
         self.logger.info("🧮 Computing ice volume: sum(SIC × HI × area)")
-        IV = (SIC * HI * GC_area).sum(dim=spatial_dim_names).persist()
+        IV = (SIC * HI * GC_area).sum(dim=spatial_dim_names)
         IV += GI_total_area
         IV /= ice_volume_scale
         return IV
@@ -394,7 +469,8 @@ class SeaIceMetrics:
     # STABILITY METRICS
     def compute_fip_spatial_stats(self, FIP):
         valid = FIP.where(~np.isnan(FIP))
-        return float(valid.mean()), float(valid.std())
+        return {'FIP_spatial_mean' : float(valid.mean()),
+                'FIP_spatial_std'  : float(valid.std())}
 
     def compute_cellwise_stability(self, FI_mask):
         total = FI_mask.sizes['time']
@@ -447,10 +523,11 @@ class SeaIceMetrics:
         fast_ice_dists    = coast_dist_da.where(fi_mask_time_mean)
         mean_dist         = float(fast_ice_dists.mean().values)
         max_dist          = float(fast_ice_dists.max().values)
-        return mean_dist, max_dist
+        return {'FI_mean_dist_ext' : mean_dist,
+                'FI_max_dist_ext'  : max_dist}
 
     # INTER-COMPARISONS
-    def compute_statistics(self, model, obs, dropna=True):
+    def compute_skill_statistics(self, model, obs, dropna=True):
         """
         Compute standard statistics between two aligned time series.
 
