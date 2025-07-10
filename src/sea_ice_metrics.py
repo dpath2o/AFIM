@@ -214,46 +214,6 @@ class SeaIceMetrics:
         IA = IA/ice_area_scale
         return IA
 
-    def compute_ice_extent(self, SIC, GC_area, ice_extent_threshold=0.15, spatial_dim_names=None, 
-                        add_grounded_iceberg_area=None, grounded_iceberg_area=None):
-        """
-        Compute sea ice extent (SIE) by summing the grid cell areas where the sea ice concentration exceeds the threshold.
-        Parameters:
-            SIC                   : Sea ice concentration (array)
-            GC_area               : Grid cell area (array)
-            ice_extent_threshold  : Threshold for sea ice extent (default 0.15)
-            spatial_dim_names     : List of spatial dimension names for summing (default to class attribute)
-            add_grounded_iceberg_area : Whether to include grounded iceberg area in the computation
-            grounded_iceberg_area : Grounded iceberg area (optional)
-        Returns:
-            SIE                   : Sea ice extent
-        """
-        
-        add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
-        if add_grounded_iceberg_area:
-            if grounded_iceberg_area is not None:
-                GI_total_area = grounded_iceberg_area
-            else:
-                GI_total_area = self.compute_grounded_iceberg_area()
-        else:
-            GI_total_area = 0
-            
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
-
-        # Apply the threshold for sea ice concentration (e.g., SIC >= 0.15 for SIE)
-        SIC_thresholded = SIC.where(SIC >= ice_extent_threshold, 0)
-
-        # Compute sea ice extent by summing the grid cell areas where SIC > threshold
-        self.logger.info(f"🧮 Spatially-integrating sea ice concentration exceeding threshold ({ice_extent_threshold * 100}%)")
-        SIE = (SIC_thresholded * GC_area).sum(dim=spatial_dim_names)
-
-        # Optionally add grounded iceberg area
-        SIE = SIE + GI_total_area
-
-        return SIE
-
-
     def compute_ice_volume(self, SIC, HI, GC_area, ice_volume_scale=1e12, spatial_dim_names=None):
         """
         Compute total sea ice volume in m³, optionally scaled for output.

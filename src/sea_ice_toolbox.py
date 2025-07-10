@@ -191,7 +191,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
             self.config = json.load(f)
         self.D_dict             = self.config.get('D_dict'            , {})
         D_log                   = self.D_dict['logs']
-        P_log                   = P_log     if P_log     is not None else Path(D_log, f'SeaIceProcessor_FI_{self.sim_name}.log')
+        P_log                   = P_log     if P_log     is not None else Path(D_log, f'SeaIceToolbox_{self.sim_name}.log')
         log_level               = log_level if log_level is not None else logging.INFO
         if not os.path.exists(P_log):
             os.system(f"touch {P_log}")

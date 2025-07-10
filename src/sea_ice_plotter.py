@@ -306,8 +306,7 @@ class SeaIcePlotter:
                                P_png          = None,
                                var_out        = None,
                                overwrite_fig  = None,
-                               show_fig       = None,
-                               return_fig     = None,):
+                               show_fig       = None):
         """
         Composite plot showing monthly climatology of FIA and east/west persistence map.
         """
@@ -390,7 +389,9 @@ class SeaIcePlotter:
             elif reg_name in list(self.Ant_2sectors.keys()):
                 projection = projection.format(fig_width=fig_size)
             fig = pygmt.Figure()
-            pygmt.config(FONT_TITLE="16p,Courier-Bold", FONT_ANNOT_PRIMARY="14p,Helvetica", COLOR_FOREGROUND='black')
+            pygmt.config(FONT_TITLE         = "16p,Courier-Bold",
+                         FONT_ANNOT_PRIMARY = "14p,Helvetica",
+                         COLOR_FOREGROUND   = 'black')
             fig.basemap(region=region, projection=projection, frame=basemap_frame)
             if plot_bathymetry:
                 fig.grdimage(grid=SO_BATH, cmap='geo')
@@ -408,7 +409,7 @@ class SeaIcePlotter:
                 labels     = [label_map[v] for v in val_valid]
                 df         = pd.DataFrame({"longitude" : lon_valid,
                                            "latitude"  : lat_valid,
-                                           "z"  : val_valid.astype(int)})
+                                           "z"         : val_valid.astype(int)})
                 pygmt.makecpt(cmap="categorical", series=[0,2,1], color_model="+cagreement,simulation,observation")
                 fig.plot(data=df, style=f"s{var_sq_size}c", cmap=True)
             elif "mask" in var_name.lower():
@@ -425,7 +426,10 @@ class SeaIcePlotter:
             if add_stat_annot:
                 annot_text = self.generate_regional_annotation_stats(da, region, lon_coord_name, lat_coord_name)
                 for i, line in enumerate(annot_text):
-                    fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
+                    try:
+                        fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
+                    except pygmt.exceptions.GMTCLibError as e:
+                        self.logger.warning(f"Error in plotting anotation text {e} -- skipping annotation")
             if "diff" in var_name.lower():
                 fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
             elif "mask" not in var_name.lower():
@@ -447,10 +451,6 @@ class SeaIcePlotter:
                 P_png = None
             if show_fig:
                 fig.show()
-            if return_fig:
-                return fig
-            else:
-                pygmt.clib.Session.__exit__
 
     def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name):
         """
@@ -680,10 +680,11 @@ class SeaIcePlotter:
                      FORMAT_DATE_MAP         = "o",
                      FORMAT_TIME_PRIMARY_MAP = "full")
         fig.basemap(region=region, projection=projection, frame=frame)
+        colors = ["red", "blue", "green", "purple", "orange"]
         for i, (label, _) in enumerate(ts_dict.items()):
             df = df_all[df_all["label"] == label]
-            color = self.plot_var_dict.get(label, {}).get("line_clr", f"C{i}")
-            legend_label = self.plot_var_dict.get(label, {}).get("label", label)
+            color = colors[i]#self.plot_var_dict.get(label, {}).get("line_clr", f"C{i}")
+            legend_label = sim_name#self.plot_var_dict.get(label, {}).get("label", label)
             fig.plot(x=df["time"], y=df["value"], pen=f"{pen_weight},{color}", label=legend_label)
         fig.legend(position=legend_pos, box=legend_box)
         if P_png and self.save_fig:
@@ -692,6 +693,143 @@ class SeaIcePlotter:
         if show_fig:
             fig.show()
         return fig
+
+    def plot_timeseries_matplotlib(self, ts_dict,
+                                    roll_days: int = None,
+                                    tit_str: str = None,
+                                    ylim: tuple = None,
+                                    ylabel: str = "Fast Ice Area (1000-km²)",
+                                    ytick_inc: int = 100,
+                                    xlabel: str = "Date",
+                                    xtick_inc: int = 1,
+                                    P_png: str = None,
+                                    fig_width: str = "15c",
+                                    fig_height: str = "5c",
+                                    legend_pos: str = "best",  # Matplotlib uses standard positioning
+                                    legend_box: str = "upper left",
+                                    pen_weight: int = 2,
+                                    time_coord: str = "time",
+                                    keys2plot: list = None,
+                                    show_fig: bool = None):
+        """
+        Plot one or more time series using Matplotlib.
+
+        Parameters
+        ----------
+        ts_dict : dict
+            Dictionary of {label: xarray.DataArray or Dataset}. Each value must have a 'time' coordinate.
+        roll_days : int, optional
+            Number of days for centered rolling average. If None or < 3, no smoothing is applied.
+        tit_str : str, optional
+            Title for the plot.
+        ylim : tuple, optional
+            Y-axis limits (ymin, ymax). Inferred from data if None.
+        ylabel : str
+            Y-axis label.
+        ytick_inc : int
+            Interval for y-axis ticks.
+        xlabel : str
+            X-axis label.
+        xtick_inc : int
+            Interval for x-axis ticks.
+        P_png : str, optional
+            Path to save PNG output. If None, figure is not saved.
+        fig_width : str
+            Width of the figure (e.g., "15c").
+        fig_height : str
+            Height of the figure (e.g., "5c").
+        legend_pos : str
+            Matplotlib legend position string (e.g., "best").
+        legend_box : str
+            Matplotlib legend box style string.
+        pen_weight : int
+            Line thickness for the time series (default 2).
+        time_coord : str
+            Name of the time coordinate in each xarray object.
+        keys2plot : list, optional
+            Subset of keys in ts_dict to plot. If None, all keys are used.
+        show_fig : bool, optional
+            If True, show the figure interactively. Defaults to self.show_fig.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The generated Matplotlib figure.
+        """
+        show_fig = self.show_fig if show_fig is None else show_fig
+        if keys2plot is not None:
+            if isinstance(keys2plot, str):
+                keys2plot = [keys2plot]
+            ts_dict = {k: v for k, v in ts_dict.items() if k in keys2plot}
+
+        # Prepare the data for plotting
+        dfs = []
+        for name, da in ts_dict.items():
+            if isinstance(da, xr.Dataset):
+                da = da.to_array().squeeze()
+            if time_coord not in da.coords:
+                raise ValueError(f"Missing time coordinate '{time_coord}' in variable '{name}'")
+            
+            # Convert to Pandas DataFrame
+            time = pd.to_datetime(da[time_coord].values)
+            values = da.values
+            if roll_days and roll_days >= 3:
+                values = pd.Series(values).rolling(window=roll_days, center=True, min_periods=1).mean().values
+            
+            df = pd.DataFrame({"time": time, "value": values})
+            df["label"] = name
+            dfs.append(df)
+        
+        # Combine all DataFrames into one
+        df_all = pd.concat(dfs, ignore_index=True).dropna()
+
+        # Set axis limits
+        all_times = df_all["time"]
+        tmin, tmax = all_times.min(), all_times.max()
+        if ylim is None:
+            ymin = df_all["value"].min()
+            ymax = df_all["value"].max()
+            pad = 0.05 * (ymax - ymin)
+            ylim = [ymin - pad, ymax + pad]
+
+        # Set up the plot
+        fig, ax = plt.subplots(figsize=(int(fig_width[:-1]), int(fig_height[:-1])))  # Convert to inches
+        ax.set_xlim([tmin, tmax])
+        ax.set_ylim(ylim)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        
+        # Add title if provided
+        if tit_str:
+            ax.set_title(tit_str)
+        
+        # Plot the data
+        for label, _ in ts_dict.items():
+            df = df_all[df_all["label"] == label]
+            color = self.plot_var_dict.get(label, {}).get("line_clr", f"C{list(ts_dict.keys()).index(label)}")
+            legend_label = self.plot_var_dict.get(label, {}).get("label", label)
+            ax.plot(df["time"], df["value"], label=legend_label, lw=pen_weight, color=color)
+
+        # Set x-axis ticks
+        ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True, prune="both"))
+        ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m-%d'))
+
+        # Customize the y-axis ticks
+        ax.yaxis.set_major_locator(plt.MultipleLocator(ytick_inc))
+
+        # Add legend
+        ax.legend(loc=legend_pos, frameon=True, facecolor="white", edgecolor="black")
+
+        # Show or save the plot
+        if P_png and self.save_fig:
+            fig.savefig(P_png)
+            print(f"📏 Saved plot to {P_png}")
+        
+        if show_fig:
+            plt.show()
+        
+        return fig
+
 
     def plot_timeseries_groupby_month(self, ds, var_name, sim_name=None, dt0_str=None, dtN_str=None):
         self.sim_name = sim_name if sim_name is not None else getattr(self, "sim_name")

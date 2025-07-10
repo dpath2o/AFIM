@@ -216,7 +216,6 @@ class SeaIceObservations:
         self.logger.info(f"AF2020 FIA data loaded from {csv_path}")
         return ds
 
-
     def AF2020_interpolate_FIA_clim(self, csv_df, full_doy=np.arange(1, 366)):
         from scipy.interpolate import interp1d
         df = csv_df.copy()
