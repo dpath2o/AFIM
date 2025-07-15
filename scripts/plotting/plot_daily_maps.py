@@ -11,35 +11,6 @@ if mod_path not in sys.path:
     sys.path.insert(0, mod_path)
 from sea_ice_toolbox import SeaIceToolbox
 
-def delete_gmt_session(D_gmt_session, age_threshold=120):
-    """
-    Delete whole directories that are older than the specified age (in seconds) from the given GMT session directory.
-    
-    Parameters:
-    -----------
-    D_gmt_session : str or Path
-        The path to the directory containing GMT session files to be cleaned.
-    age_threshold : int
-        The age threshold in seconds. Directories older than this age will be deleted (default is 300 seconds, or 5 minutes).
-    """
-    current_time = time.time()
-    directory = Path(D_gmt_session)
-    # Check if the directory exists and is valid
-    if not directory.exists() or not directory.is_dir():
-        print(f"Directory {directory} does not exist or is not a valid directory.")
-        return
-    # Loop through directories in the session directory
-    for file_path in directory.iterdir():
-        if file_path.is_dir():  # Check if it's a directory
-            file_mtime = file_path.stat().st_mtime
-            # Check if the directory is older than the threshold
-            if current_time - file_mtime > age_threshold:
-                try:
-                    shutil.rmtree(file_path)  # Delete the directory and its contents
-                    print(f"Deleted: {file_path}")
-                except Exception as e:
-                    print(f"Failed to delete {file_path}: {e}")
-
 def plot_monthly_variable_maps(sim_name, var_names, ispd_thresh=5.0e-4, dt0_str="1994-01-01", dtN_str="1999-12-31", script_log=None):
     if isinstance(var_names, str):
         var_names = [var_names]
@@ -51,36 +22,31 @@ def plot_monthly_variable_maps(sim_name, var_names, ispd_thresh=5.0e-4, dt0_str=
                                   save_new_figs        = True,
                                   show_figs            = False,
                                   overwrite_saved_figs = True)
-    FI_raw, CICE    = SI_tools.load_processed_cice(zarr_CICE=True)
+    _, CICE         = SI_tools.load_processed_cice(zarr_CICE=True)
     D_gmt_sess_base = Path(f"{Path.home()}/.gmt/sessions")
-    
-    # Loop through each time step
     for i in range(len(CICE['time'].values)):
         CICE_slc = CICE.isel(time=i, nj=SI_tools.hemisphere_dict['nj_slice'])
         dt       = pd.Timestamp(CICE.isel(time=i)['time'].values)
         dt_str   = f"{dt:%Y-%m-%d}"
-        
-        # Loop through each variable to plot
         for var_name in var_names:
             if var_name not in CICE_slc:
                 SI_tools.logger.info(f"Skipping {var_name} as it is not found in {CICE_slc.keys()}")
                 continue
             var_all = CICE_slc[var_name]
             SI_tools.logger.info(f"Plotting {var_name} for date {dt_str}")
-            # Plot the variable
-            SI_tools.pygmt_map_plot_one_var(var_all, var_name,
-                                            sim_name       = sim_name,
-                                            time_stamp     = dt_str,
-                                            tit_str        = f"{sim_name} {dt_str}",
-                                            plot_GI        = False,
-                                            plot_iceshelves= False,
-                                            plot_bathymetry= False,
-                                            add_stat_annot = True,
-                                            overwrite_fig  = False,
-                                            show_fig       = False)
-            
-        # After plotting each var_name, delete old GMT session directories
-        #delete_gmt_session(D_gmt_sess_base)
+            try:
+                SI_tools.pygmt_map_plot_one_var(var_all, var_name,
+                                                sim_name       = sim_name,
+                                                time_stamp     = dt_str,
+                                                tit_str        = f"{sim_name} {dt_str}",
+                                                plot_GI        = False,
+                                                plot_iceshelves= False,
+                                                plot_bathymetry= False,
+                                                add_stat_annot = True,
+                                                overwrite_fig  = False,
+                                                show_fig       = False)
+            except:
+                SI_tools.logger.warning("something went wrong when plotting")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot monthly sea ice variable maps using SeaIcePlotter.")

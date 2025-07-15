@@ -15,7 +15,7 @@ def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, log_file, smooth_FIA
                              P_log               = log_file,
                              ice_speed_threshold = ispd_thresh,
                              overwrite_zarr      = overwrite_zarr,
-                             overwrite_png       = overwrite_png)
+                             overwrite_saved_figs= overwrite_png)
     for itype in ice_type:
         SI_tools.sea_ice_metrics_wrapper(ice_type = itype)
     SI_tools.client.close()

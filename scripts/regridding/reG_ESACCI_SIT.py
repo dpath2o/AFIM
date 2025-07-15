@@ -30,36 +30,49 @@ def main():
             lon_raw = ds['lon'].values
             lat_raw = ds['lat'].values
             sit_raw = ds['sea_ice_thickness'].values
-            valid = np.isfinite(lon_raw) & np.isfinite(lat_raw) & np.isfinite(sit_raw)
-            lon = lon_raw[valid]
-            lat = lat_raw[valid]
-            sit = sit_raw[valid]
+            valid   = np.isfinite(lon_raw) & np.isfinite(lat_raw) & np.isfinite(sit_raw)
+            lon     = lon_raw[valid]
+            lat     = lat_raw[valid]
+            sit     = sit_raw[valid]
             sit_binned, _, _, _ = binned_statistic_2d(lon, lat, sit, statistic='mean', bins=[lon_bins, lat_bins])
             sit_grid = np.transpose(sit_binned)  # shape: (lat, lon)
-            time_val = pd.to_datetime(ds['time'].dt.floor('D').values[0])
+            if "time" in ds and ds.time.size > 0:
+                time_val = pd.to_datetime(ds.time.values[0]).floor("D")
+            else:
+                # Fallback: try extracting from filename
+                time_str = f.name.split("-")[-2]  # e.g. "20021001"
+                time_val = pd.to_datetime(time_str, format="%Y%m%d")
             sit_da   = xr.DataArray(sit_grid[np.newaxis, :, :],
                                     dims=("time", "y", "x"),
                                     coords={"time": [time_val], "y": lat_centers, "x": lon_centers},
                                     name="SIT")
             sit_valid = sit_da.where(sit_da.notnull(), 0.0)
-            siv       = (sit_valid * area_da).sum(dim=("y", "x"))
+            siv       = (sit_valid * area_da).sum(dim=("y", "x"))/1e9
             sit_list.append(sit_da)
-            siv_list.append(xr.DataArray(np.atleast_1d(siv_km3.values),  # ensures 1D array
-                                        coords={"time": [time_val]},
-                                        dims=["time"],
-                                        name="SIV"))
+            siv_list.append(xr.DataArray(np.atleast_1d(siv.values),
+                                         coords = {"time": [time_val]},
+                                         dims   = ["time"],
+                                         name   = "SIV"))
         except Exception as e:
             print(f"Failed on {f.name}: {e}")
     sit_all = xr.concat(sit_list, dim="time")
-    siv_all = xr.concat(siv_list, dim="time").rename("SIV")
-    ESA_CCI_out = xr.merge([sit_all, siv_all])
-    ESA_CCI_out['doy'] = ESA_CCI_out['time'].dt.dayofyear
-    siv_clim = ESA_CCI_out['SIV'].groupby('doy').mean(dim='time').rename("SIV_clim")
-    sit_clim = ESA_CCI_out['SIT'].groupby('doy').mean(dim='time').rename("SIT_clim")
-    ESA_CCI_out_all = xr.Dataset({"SIT": ESA_CCI_out['SIT'],
-                                "SIV": ESA_CCI_out['SIV'],
-                                "SIT_clim": sit_clim,
-                                "SIV_clim": siv_clim})
+    if siv_list:
+        siv_all = xr.concat(siv_list, dim="time").rename("SIV")
+    else:
+        raise RuntimeError("No valid SIV entries were processed.")
+    ESA_CCI_out        = xr.merge([sit_all, siv_all])
+    ESA_CCI_out['SIV'] = ESA_CCI_out['SIV'].assign_coords(doy=ESA_CCI_out['time'].dt.dayofyear)
+    ESA_CCI_out['SIT'] = ESA_CCI_out['SIT'].assign_coords(doy=ESA_CCI_out['time'].dt.dayofyear)
+    siv_clim           = ESA_CCI_out['SIV'].groupby('doy').mean(dim='time').rename("SIV_clim")
+    sit_clim           = ESA_CCI_out['SIT'].groupby('doy').mean(dim='time').rename("SIT_clim")
+    siv_clim_sd        = ESA_CCI_out['SIV'].groupby('doy').std(dim='time').rename("SIV_clim_sd")
+    sit_clim_sd        = ESA_CCI_out['SIT'].groupby('doy').std(dim='time').rename("SIT_clim_sd")
+    ESA_CCI_out_all    = xr.Dataset({"SIT"        : ESA_CCI_out['SIT'],
+                                     "SIV"        : ESA_CCI_out['SIV'],
+                                     "SIT_clim"   : sit_clim,
+                                     "SIV_clim"   : siv_clim,
+                                     "SIT_clim_sd": sit_clim_sd,
+                                     "SIV_clim_sd": siv_clim_sd})
     ESA_CCI_out_all.to_netcdf( Path(Path.home(),"seaice","ESA_CCI","ESA_CCI_L2P_envisat_SH_SIT_SIV_daily.nc") )
 
 if __name__ == '__main__':

@@ -1,10 +1,10 @@
 #!/bin/bash
 #PBS -N reG-ESACCI-SIT
 #PBS -P gv90
-#PBS -q normalbw
-#PBS -l walltime=24:00:00
-#PBS -l ncpus=28
-#PBS -l mem=256GB
+#PBS -q normal
+#PBS -l walltime=3:00:00
+#PBS -l ncpus=14
+#PBS -l mem=190GB
 #PBS -l jobfs=6GB
 #PBS -l storage=gdata/gv90+gdata/xp65
 #PBS -o reG_ESACCI_SIT.out

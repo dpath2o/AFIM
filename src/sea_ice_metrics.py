@@ -12,23 +12,79 @@ class SeaIceMetrics:
 
     def sea_ice_metrics_wrapper(self,
                                 sim_name        = None,
-                                ice_type        = None,
                                 dt0_str         = None,
                                 dtN_str         = None,
+                                ice_type        = None,
                                 ispd_thresh     = None,
-                                D_out           = None,
-                                overwrite_zarr  = False,
-                                overwrite_png   = False,
-                                smooth_FIA_days = 15,
-                                drop_first_year = True):
+                                overwrite_zarr  = None,
+                                overwrite_png   = None):
         """
+        Compute, load, and plot summary fast ice metrics (FIA and FIP) for a given simulation and configuration.
+
+        This method wraps the full processing and plotting pipeline for fast ice area (FIA) and fast ice persistence (FIP)
+        by optionally loading pre-computed metrics from disk (Zarr), or re-computing them from processed CICE model output.
+        It also loads the observational AF2020 climatology for comparison and generates a faceted figure comparing
+        multiple fast ice masking types (raw, rolling, and boolean). Metrics are written to disk if not already present
+        or if overwrite is enabled.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Name of the model simulation to process. Defaults to `self.sim_name`.
+        dt0_str : str, optional
+            Start date (inclusive) of the processing window in 'YYYY-MM-DD' format. Defaults to `self.dt0_str`.
+        dtN_str : str, optional
+            End date (inclusive) of the processing window in 'YYYY-MM-DD' format. Defaults to `self.dtN_str`.
+        ice_type : str, optional
+            Type of fast ice mask to use (e.g., 'FI_BT'). Defaults to `self.ice_type`.
+        ispd_thresh : float, optional
+            Ice speed threshold (in m/s) used to define fast ice. Defaults to `self.ispd_thresh`.
+        overwrite_zarr : bool, optional
+            If True, re-compute and overwrite existing metric Zarr files. Defaults to `self.overwrite_zarr_group`.
+        overwrite_png : bool, optional
+            If True, overwrite the output PNG plot file. Defaults to `self.overwrite_png`.
+
+        Notes
+        -----
+        - The method processes and compares three variants of the fast ice mask:
+          1. Raw (e.g., 'FI_BT') – direct thresholding of daily speed
+          2. Rolling mean (e.g., 'FI_BT_roll') – speed is smoothed before thresholding
+          3. Boolean (e.g., 'FI_BT_bool') – based on a persistence filter applied after masking
+
+        - Each mask is used to compute and/or load:
+          * FIA (Fast Ice Area) — integrated area over time
+          * FIP (Fast Ice Persistence) — fraction of time with fast ice presence
+
+        - Observational climatology is loaded from AF2020 via `load_AF2020_FIA_summary()`.
+
+        - All computed metrics are saved as Zarr and CSV files under `self.D_metrics`.
+
+        - The final plot is saved under `self.D_graph/sim_name/`.
+
+        Output
+        ------
+        - Saves summary metrics as:
+          * Zarr: {ice_type}_mets.zarr
+          * CSV:  {ice_type}_summary.csv
+        - Generates faceted figure:
+          * PNG: FIA_FIP_{sim_name}_{ispd_thresh}_{year-range}.png
+
+        See Also
+        --------
+        - self.load_AF2020_FIA_summary
+        - self.load_processed_cice
+        - self.boolean_fast_ice
+        - self.compute_sea_ice_metrics
+        - self.plot_FIA_FIP_faceted
         """
-        sim_name           = sim_name if sim_name is not None else self.sim_name
-        dt0_str            = dt0_str  if dt0_str  is not None else "1994-01-01"
-        dtN_str            = dtN_str  if dtN_str  is not None else "1999-12-31"
-        ispd_thresh        = ispd_thresh or self.ispd_thresh
+        sim_name           = sim_name       if sim_name       is not None else self.sim_name
+        ice_type           = ice_type       if ice_type       is not None else self.ice_type
+        dt0_str            = dt0_str        if dt0_str        is not None else self.dt0_str
+        dtN_str            = dtN_str        if dtN_str        is not None else self.dtN_str
+        ispd_thresh        = ispd_thresh    if ispd_thresh    is not None else self.ispd_thresh
+        overwrite_zarr     = overwrite_zarr if overwrite_zarr is not None else self.overwrite_zarr_group
+        overwrite_png      = overwrite_png  if overwrite_png  is not None else self.ow_fig
         ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        ice_type           = ice_type or self.ice_type
         dt_range_str       = f"{dt0_str[:4]}-{dtN_str[:4]}"
         FIA_dict           = {}
         AF2020_CSV         = self.load_AF2020_FIA_summary( start=dt0_str, end=dtN_str )
@@ -65,7 +121,10 @@ class SeaIceMetrics:
                 METS = self.compute_sea_ice_metrics( FI, FIA_dict["AF2020"], P_METS )
             FIA_dict[i_type] = METS['FIA']
         P_png = Path(self.D_graph, sim_name, f"FIA_FIP_{sim_name}_{ispd_thresh_str}_{dt_range_str}.png")
-        self.plot_FIA_FIP_faceted(FIA_dict, METS['FIP'], P_png=P_png, plot_GI=True if self.use_gi else False)
+        self.plot_FIA_FIP_faceted(FIA_dict, METS['FIP'],
+                                  P_png         = P_png,
+                                  overwrite_fig = overwrite_png,
+                                  plot_GI       = True if self.use_gi else False)
 
     def compute_sea_ice_metrics(self, FI_sim, FIA_obs, P_METS=None):
         """
@@ -140,21 +199,32 @@ class SeaIceMetrics:
                 DS_METS[k] = xr.DataArray(v, dims=('time',))
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
+        sim_config = self.sim_config
         # --- Merge All Metrics into Dataset ---
         summary = {**{f"FIA_{k}": v for k, v in FIA_seasonal.items()},
                    **{f"FIV_{k}": v for k, v in FIV_seasonal.items()},
                    **FIP_stats,
                    **FI_dist,
-                   **FIA_skill}
+                   **FIA_skill,
+                   **sim_config}
+        # Add summary statistics as scalar variables
         for k, v in summary.items():
-            DS_METS[k] = xr.DataArray(v, dims=())  # All summary stats are scalars
+            if k in sim_config:
+                DS_METS.attrs[k] = v  # Store sim_config as dataset-level attributes
+            else:
+                DS_METS[k] = xr.DataArray(v, dims=())  # Summary metrics remain as DataArrays
         # --- Save to Zarr (Optional) ---
         if P_METS is not None:
             DS_METS.to_zarr(P_METS, mode="w", consolidated=True)
             self.logger.info(f"📊 Metrics written to {P_METS}")
         return DS_METS
 
-    def compute_ice_area(self, SIC, GC_area, ice_area_scale=None, spatial_dim_names=None, add_grounded_iceberg_area=None, grounded_iceberg_area=None):
+    def compute_ice_area(self, SIC, GC_area,
+                         ice_area_scale            = None,
+                         spatial_dim_names         = None,
+                         sic_threshold             = None,
+                         add_grounded_iceberg_area = None,
+                         grounded_iceberg_area     = None):
         """
         Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally 
         including the grounded iceberg area (GI_total_area).
@@ -177,6 +247,10 @@ class SeaIceMetrics:
         spatial_dim_names : list of str, optional
             The dimension names over which to sum the sea ice area (typically latitude and longitude). If not provided, the default spatial dimensions 
             are used from the `CICE_dict` attribute.
+
+        sic_threshold : float, optional
+            Minimum SIC value to be included in the area calculation. Points with SIC below this threshold are excluded.
+            Defaults to `self.icon_thresh`.
             
         add_grounded_iceberg_area : bool, optional
             A flag indicating whether to include the grounded iceberg area in the ice area calculation. Defaults to the class attribute `use_gi`.
@@ -208,35 +282,146 @@ class SeaIceMetrics:
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
         self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
         ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
-        self.logger.info(f"🧮 Spatially-integrating the product of sea ice concentrations and grid cell areas")
-        IA = ((SIC * GC_area).sum(dim=spatial_dim_names))
-        IA = IA + GI_total_area
-        IA = IA/ice_area_scale
+        self.logger.info(f"spatially-integrating the product of sea ice concentrations and grid cell areas")
+        mask    = SIC > sic_threshold
+        SIC     = SIC.where(mask)
+        GC_area = GC_area.where(mask)
+        IA      = ((SIC * GC_area).sum(dim=spatial_dim_names))
+        IA      = IA + GI_total_area
+        IA      = IA/ice_area_scale
         return IA
 
-    def compute_ice_volume(self, SIC, HI, GC_area, ice_volume_scale=1e12, spatial_dim_names=None):
+    def compute_ice_volume(self, SIC, HI, GC_area,
+                           ice_volume_scale  = 1e12, 
+                           spatial_dim_names = None,
+                           sic_threshold     = None):
         """
-        Compute total sea ice volume in m³, optionally scaled for output.
+        Compute total sea ice volume by integrating sea ice concentration, thickness, and grid cell area.
 
-        Parameters:
-        - SIC: Sea ice concentration [unitless]
-        - HI: Sea ice thickness [m]
-        - GC_area: Grid cell area [m²]
-        - ice_volume_scale: Scale factor (e.g. 1e12 for 1000 km³)
+        This method calculates the total sea ice volume as the sum of the product of sea ice concentration (SIC),
+        thickness (HI), and grid cell area (GC_area) across the model domain. A SIC threshold can be applied to exclude
+        grid cells with low concentrations. Optionally includes grounded iceberg volume and applies a scaling factor 
+        for unit conversion.
 
-        Returns:
-        - Scaled total sea ice volume
+        Parameters
+        ----------
+        SIC : xarray.DataArray
+            Sea ice concentration (unitless, typically between 0 and 1).
+            
+        HI : xarray.DataArray
+            Sea ice thickness in meters.
+            
+        GC_area : xarray.DataArray
+            Grid cell area in square meters (m²).
+
+        ice_volume_scale : float, optional
+            Scale factor for the output volume. Default is `1e12`, converting m³ to 1000 km³.
+
+        spatial_dim_names : list of str, optional
+            Names of spatial dimensions to sum over (e.g., ['nj', 'ni']). Defaults to `self.CICE_dict['spatial_dims']`.
+
+        sic_threshold : float, optional
+            Minimum SIC value to be included in the volume calculation. Grid cells with SIC ≤ `sic_threshold` are masked.
+            Defaults to `self.icon_thresh`.
+
+        Returns
+        -------
+        float
+            Total sea ice volume, optionally including grounded ice and scaled (e.g., in 1000 km³ if default scale is used).
+
+        Notes
+        -----
+        - SIC, HI, and GC_area must share the same grid and be broadcastable.
+        - Grid cells below `sic_threshold` are excluded from the volume calculation.
+        - If `self.use_gi` is True, a grounded iceberg area is converted to volume and included.
         """
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
         GI_total_area = self.compute_grounded_iceberg_area() if self.use_gi else 0
         self.logger.info(f"{GI_total_area:0.2f} m² total grounded iceberg area for {self.sim_name}")
-        self.logger.info("🧮 Computing ice volume: sum(SIC × HI × area)")
+        mask    = SIC > sic_threshold
+        HI      = HI.where(mask)
+        SIC     = SIC.where(mask)
+        GC_area = GC_area.where(mask)
+        self.logger.info("computing ice volume: sum(SIC × HI × area)")
         IV = (SIC * HI * GC_area).sum(dim=spatial_dim_names)
         IV += GI_total_area
         IV /= ice_volume_scale
         return IV
 
+    def compute_ice_thickness(self, HI, SIC, GC_area, spatial_dim_names=None, sic_threshold=None):
+        """
+        Compute average sea ice thickness weighted by grid cell area and sea ice concentration.
+
+        This method calculates the domain-averaged sea ice thickness as the ratio of the total sea ice volume to 
+        the total sea ice area. A SIC threshold is used to exclude low-concentration grid cells from both the numerator 
+        and denominator.
+
+        Parameters
+        ----------
+        HI : xarray.DataArray
+            Sea ice thickness in meters.
+
+        SIC : xarray.DataArray
+            Sea ice concentration (unitless, typically between 0 and 1).
+
+        GC_area : xarray.DataArray
+            Grid cell area in square meters (m²).
+
+        spatial_dim_names : list of str, optional
+            Names of spatial dimensions over which to compute the sums. Defaults to `self.CICE_dict['spatial_dims']`.
+
+        sic_threshold : float, optional
+            Minimum SIC value to include in the average. Grid cells with SIC ≤ `sic_threshold` are excluded.
+            Defaults to `self.icon_thresh`.
+
+        Returns
+        -------
+        float or xarray.DataArray
+            Domain-averaged sea ice thickness, computed as the total volume divided by total area.
+
+        Notes
+        -----
+        - Computed as: ∑(HI × area) / ∑(SIC × area), with masking by `sic_threshold`.
+        - Excludes cells with SIC below threshold from both numerator and denominator.
+        - Units are in meters.
+        """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
+        self.logger.info(f"masking for sea ice concentration above {sic_threshold}")
+        mask    = SIC > sic_threshold
+        HI      = HI.where(mask)
+        SIC     = SIC.where(mask)
+        GC_area = GC_area.where(mask)
+        self.logger.info(f"computing area and volume")
+        sia     = (SIC * GC_area).sum(dim=spatial_dim_names)
+        siv     = (HI * GC_area).sum(dim=spatial_dim_names)
+        return siv / sia
+
     def compute_variable_aggregate(self, da, time_coord_name='time'):
+        """
+        Compute the time-mean aggregate of a variable by summing over time and normalizing by time dimension length.
+
+        This method computes the average of a DataArray along a given time dimension using the total sum divided by 
+        the number of time steps. Useful for handling Dask arrays or preserving lazy evaluation.
+
+        Parameters
+        ----------
+        da : xarray.DataArray
+            The input data array to be aggregated over time.
+        time_coord_name : str, optional
+            Name of the time coordinate/dimension. Defaults to `'time'`.
+
+        Returns
+        -------
+        xarray.DataArray
+            Time-averaged data array.
+
+        Notes
+        -----
+        - Falls back to division by 1 if the time dimension is missing.
+        - This is equivalent to `da.mean(dim='time')` but avoids triggering eager computation.
+        """
         return da.sum(dim=time_coord_name) / da[time_coord_name].sizes.get(time_coord_name, 1)
 
     # SEASONAL METRICS
@@ -323,6 +508,38 @@ class SeaIceMetrics:
         return onset_doy, retreat_doy, duration
 
     def compute_retreat_via_inflection(self, da, window=15, polyorder=2, min_retreat_doy=240):
+        """
+        Estimate the day of sea ice retreat based on the latest inflection point in a time series.
+
+        This method uses the second derivative of a smoothed time series to identify the last significant
+        inflection point indicating retreat (change from decelerating to accelerating melt) during the melt season.
+        The signal is smoothed using a Savitzky–Golay filter.
+
+        Parameters
+        ----------
+        da : xarray.DataArray
+            A 1D time series of sea ice area (or similar metric) with a `time` coordinate.
+        window : int, optional
+            Window length (in days) for the Savitzky–Golay filter. Must be an odd integer.
+            Default is 15.
+        polyorder : int, optional
+            Polynomial order used in the Savitzky–Golay filter. Default is 2.
+        min_retreat_doy : int, optional
+            Minimum day-of-year (DOY) to begin searching for inflection points. Default is 240 (~end of August).
+
+        Returns
+        -------
+        int or None
+            Day-of-year (DOY) of the last negative inflection point (i.e., where curvature becomes negative),
+            indicating sea ice retreat. Returns `None` if no such inflection point is found after `min_retreat_doy`.
+
+        Notes
+        -----
+        - Inflection points are defined where the second derivative (`d²y/dt²`) becomes negative.
+        - This method assumes the time series is sufficiently smooth and uniformly spaced in time.
+        - The last inflection point after `min_retreat_doy` is returned as the estimated retreat day.
+        - No output is returned if no qualifying inflection points are found.
+        """
         from scipy.signal import savgol_filter
         y           = da.values
         doy         = da["time"].dt.dayofyear.values
@@ -338,20 +555,58 @@ class SeaIceMetrics:
                                     retreat_late_range1 = (331, 365),
                                     retreat_late_range2 = (1  , 71)  ):
         """
-        Generalized method to compute seasonal growth and retreat statistics for any sea ice metric (e.g., SIA, FIA, SIV, FIV).
+        Compute seasonal growth, retreat, and timing statistics for a sea ice metric (e.g., SIA, FIA, SIV, FIV).
+
+        This method loops over all years in the provided time series and calculates:
+        - Minimum and maximum values and their day-of-year (DOY)
+        - Growth rate during the ice advance season
+        - Retreat rate, split into early (spring) and late (autumn–next year) seasons
+        - Overall retreat rate (from both early and late phases)
+        - Duration of the seasonal ice cycle (onset to retreat)
+        - DOY of growth onset (based on derivative)
+        - DOY of retreat (based on inflection analysis)
 
         Parameters
         ----------
-        da                  : xr.DataArray;  Time series of a sea ice metric with a 'time' dimension.
-        var_name            : str, optional; Label for result entry (e.g., 'SIA', 'FIV').
-        growth_range        : tuple of int;  Day-of-year range for ice growth period.
-        retreat_early_range : tuple of int;  DOY range for early melt (e.g., melt onset to late spring).
-        retreat_late_range1 : tuple of int;  DOY range for late melt in previous year.
-        retreat_late_range2 : tuple of int;  DOY range for late melt in next year.
+        da : xarray.DataArray
+            Time series of a sea ice variable (must have a 'time' coordinate). Should be continuous and span multiple years.
+        growth_range : tuple of int, optional
+            Day-of-year (DOY) range used to compute the seasonal **growth** rate. Default is (71, 273), i.e. mid-March to late-September.
+        retreat_early_range : tuple of int, optional
+            DOY range for computing **early melt/retreat** rate (e.g., spring melt). Default is (273, 330).
+        retreat_late_range1 : tuple of int, optional
+            DOY range for the **late melt** phase in the current year (e.g., late December). Default is (331, 365).
+        retreat_late_range2 : tuple of int, optional
+            DOY range for the **late melt** phase in the following year (e.g., January). Default is (1, 71).
 
         Returns
         -------
-        dict; Summary statistics: mean/std growth and retreat rates.
+        dict
+            Dictionary of summary statistics, including:
+            - "Maximum Mean", "Maximum Std"
+            - "Minimum Mean", "Minimum Std"
+            - "Growth Mean", "Growth Std"
+            - "retreat Mean", "retreat Std"
+            - "retreat Early Mean", "retreat Early Std"
+            - "retreat Late Mean", "retreat Late Std"
+            - "Duration-days Mean", "Duration-days std"
+            - "DOY Min Mean", "DOY Min Std"
+            - "DOY Max Mean", "DOY Max Std"
+            - "DOY Onset Mean", "DOY Onset Std" (if detectable)
+
+        Notes
+        -----
+        - Only non-leap years are included in the analysis to maintain consistent DOY ranges.
+        - The first year is excluded to ensure late-season comparisons can access next year's data.
+        - Growth and retreat rates are computed as the slope (Δvalue / Δdays) × 1e6 for clearer units (e.g., 10⁶ km²/day).
+        - Retreat DOY is detected using the inflection point of a smoothed curve (via `compute_retreat_via_inflection`).
+        - Onset DOY is computed from the maximum positive slope in early-season growth (via `detect_onset_via_derivative`).
+        - Retreat duration handles wrap-around years (e.g., onset in September, retreat in March).
+
+        See Also
+        --------
+        - self.compute_retreat_via_inflection : Detects retreat date via curvature analysis
+        - self.detect_onset_via_derivative    : Detects growth onset via slope analysis
         """
         da                  = da.sel(time=~da["time"].dt.is_leap_year)
         da                  = da.sel(time=da["time"].dt.year > da["time"].dt.year.min())
@@ -428,34 +683,124 @@ class SeaIceMetrics:
 
     # STABILITY METRICS
     def compute_fip_spatial_stats(self, FIP):
+        """
+        Compute spatial mean and standard deviation of Fast Ice Persistence (FIP).
+
+        This method calculates the mean and standard deviation of FIP values over a spatial domain,
+        ignoring any NaN values (i.e., outside the coastline or invalid grid cells).
+
+        Parameters
+        ----------
+        FIP : xarray.DataArray
+            A 2D (or broadcastable) array of fast ice persistence values ranging from 0 to 1,
+            where each cell represents the fraction of time with fast ice presence over a given period.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'FIP_spatial_mean' : float
+                Mean FIP across valid spatial cells.
+            - 'FIP_spatial_std' : float
+                Standard deviation of FIP across valid spatial cells.
+
+        Notes
+        -----
+        - NaNs are excluded from all statistics using `xarray.where()`.
+        - Intended to summarize spatial characteristics of fast ice persistence across the domain.
+        """
         valid = FIP.where(~np.isnan(FIP))
         return {'FIP_spatial_mean' : float(valid.mean()),
                 'FIP_spatial_std'  : float(valid.std())}
 
     def compute_cellwise_stability(self, FI_mask):
-        total = FI_mask.sizes['time']
-        return FI_mask.sum(dim='time') / total
-
-    def compute_stability_index(self, persistent_FIA, total_FIA):
-        return persistent_FIA / total_FIA if total_FIA > 0 else np.nan
-
-    def compute_fast_ice_distance_extent(self, FI_mask, grid_dx_km=9.8):
         """
-        Compute mean and maximum distance (in km) of fast ice from the coastline.
+        Compute cellwise fast ice stability as the fraction of time fast ice is present.
+
+        This method calculates, for each grid cell, the proportion of time steps where fast ice is detected,
+        using a boolean mask over time.
 
         Parameters
         ----------
         FI_mask : xarray.DataArray
-        Boolean mask of fast ice presence over time (time, nj, ni)
-        grid_dx_km : float
-        Approximate horizontal grid spacing in kilometers (default 9.8 km; Antarctic coast)
+            A boolean DataArray of shape (time, nj, ni), where True indicates presence of fast ice
+            and False/NaN indicates absence.
 
         Returns
         -------
-        mean_dist : float
-        Mean distance from coast for fast ice presence
-        max_dist : float
-        Maximum distance from coast for fast ice presence
+        xarray.DataArray
+            A 2D field (nj, ni) of fractional fast ice stability, where each value represents the
+            fraction of time that fast ice was present.
+
+        Notes
+        -----
+        - Assumes the 'time' dimension exists and is the first dimension.
+        - This metric can be interpreted as the temporal persistence of fast ice at each location.
+        """
+        total = FI_mask.sizes['time']
+        return FI_mask.sum(dim='time') / total
+
+    def compute_stability_index(self, persistent_FIA, total_FIA):
+        """
+        Compute the fast ice stability index as the ratio of persistent to total fast ice area.
+
+        This index quantifies the stability of fast ice by comparing the area of long-lived (persistent)
+        fast ice to the total fast ice area over the same period.
+
+        Parameters
+        ----------
+        persistent_FIA : float
+            Area (in consistent units, e.g., km²) of fast ice that is persistent across the full season
+            or meets a defined persistence threshold.
+        total_FIA : float
+            Total fast ice area (in same units) accumulated or detected over the season.
+
+        Returns
+        -------
+        float
+            Stability index, defined as persistent_FIA / total_FIA.
+
+        Notes
+        -----
+        - Returns NaN or inf if `total_FIA` is zero.
+        - Values close to 1 indicate stable fast ice with little seasonal turnover,
+          whereas values near 0 indicate transient or unstable ice conditions.
+        """
+        return persistent_FIA / total_FIA if total_FIA > 0 else np.nan
+
+    def compute_fast_ice_distance_extent(self, FI_mask, grid_dx_km=9.8):
+        """
+        Compute the mean and maximum distance of fast ice from the coastline.
+
+        This method estimates how far fast ice extends from the coast by computing the
+        Euclidean distance of each grid cell to the nearest coastal cell (defined as the
+        boundary between land and ocean). It then computes statistics on those distances,
+        weighted by the mean presence of fast ice.
+
+        Parameters
+        ----------
+        FI_mask : xarray.DataArray
+            Boolean mask of fast ice presence (shape: time × nj × ni), where True indicates fast ice.
+        grid_dx_km : float, optional
+            Approximate horizontal grid spacing in kilometers (default is 9.8 km for ~0.25° Antarctic grid).
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'FI_mean_dist_ext' : float
+                Mean distance (km) of fast ice presence from the coastline.
+            - 'FI_max_dist_ext' : float
+                Maximum distance (km) of fast ice from the coastline.
+
+        Notes
+        -----
+        - The coastline is computed from the land mask in the model's `kmt` field.
+        - A morphological dilation is used to identify coastal boundary cells.
+        - Distance is computed using a 2D Euclidean distance transform.
+        - Fast ice extent is summarized from the time-mean of the mask (`FI_mask.mean(dim="time") > 0.5`).
+        - Results are reported in kilometers.
+        - Requires `self.P_KMT_mod` and `self.P_KMT_org` to point to NetCDF files with a `kmt` variable.
         """
         if self.use_gi:
             P_kmt = self.P_KMT_mod
@@ -489,30 +834,44 @@ class SeaIceMetrics:
     # INTER-COMPARISONS
     def compute_skill_statistics(self, model, obs, dropna=True):
         """
-        Compute standard statistics between two aligned time series.
+        Compute statistical skill metrics between model and observational time series.
+
+        This method compares two aligned 1D time series and returns standard evaluation metrics
+        including bias, RMSE, MAE, correlation, and standard deviations.
 
         Parameters
         ----------
-        model : xr.DataArray or np.ndarray
-        obs   : xr.DataArray or np.ndarray
-        dropna : bool
-            Drop NaNs before computing metrics (default: True)
+        model : xarray.DataArray or np.ndarray
+            Time series of modelled values.
+        obs : xarray.DataArray or np.ndarray
+            Time series of observed values (must be aligned with model).
+        dropna : bool, optional
+            Whether to drop NaN values prior to computing statistics. Default is True.
 
         Returns
         -------
         dict
-            Dictionary of Bias, RMSE, MAE, Corr, SD_model, SD_obs
+            Dictionary of metrics including:
+            - "Bias"     : Mean(model - obs)
+            - "RMSE"     : Root Mean Squared Error
+            - "MAE"      : Mean Absolute Error
+            - "Corr"     : Pearson correlation coefficient
+            - "SD_Model" : Standard deviation of model
+            - "SD_Obs"   : Standard deviation of observations
 
-        Notes:
-        -------------------------------------
-        Metric	                Definition	                        Good For
-        Bias	                Mean(model - obs)	                Systematic offset
-        RMSE	                √(mean((model - obs)²))	            Total error magnitude
-        RMSD	                Same as RMSE 	                    Shape error (variance around mean)
-        MAE	                    Mean absolute error	Error           magnitude without squaring
-        Correlation	Pearson     correlation coefficient	            Phase & shape agreement
-        Standard deviation	    Variability	                        Amplitude bias
-        Skill Score	            Normalized error relative to cliimatology Relative improvement over a reference baseline        
+        Notes
+        -----
+        - Time alignment is ensured using `np.intersect1d()` on time coordinates if xarray is used.
+        - If `dropna=True`, only valid (non-NaN) pairs are used in the statistics.
+        - RMSE captures total error magnitude, while MAE gives average absolute error.
+        - Pearson correlation (`Corr`) quantifies phase agreement.
+        - The method assumes that input arrays represent the same variable over the same time span.
+
+        See Also
+        --------
+        - sklearn.metrics.mean_squared_error
+        - sklearn.metrics.mean_absolute_error
+        - scipy.stats.pearsonr
         """
         from sklearn.metrics import mean_squared_error, mean_absolute_error
         from scipy.stats import pearsonr        
@@ -539,18 +898,3 @@ class SeaIceMetrics:
                 "Corr"    : corr,
                 "SD_Model": sd_model,
                 "SD_Obs"  : sd_obs,}
-
-    def compute_taylor_stats(self, da1, da2, chunk_size=30):
-        all_model, all_obs = [], []
-        for i in range(0, da1.sizes['time'], chunk_size):
-            a = da1.isel(time=slice(i, i+chunk_size)).compute().values.flatten()
-            b = da2.isel(time=slice(i, i+chunk_size)).compute().values.flatten()
-            valid = np.isfinite(a) & np.isfinite(b)
-            if valid.sum() > 0:
-                all_model.append(a[valid])
-                all_obs.append(b[valid])
-        model, obs         = np.concatenate(all_model), np.concatenate(all_obs)
-        corr               = np.corrcoef(model, obs)[0, 1]
-        std_model, std_obs = np.std(model), np.std(obs)
-        rmsd               = np.sqrt(np.mean((model - obs - (np.mean(model) - np.mean(obs)))**2))
-        return {"corr": corr, "std_ratio": std_model / std_obs, "rmsd_ratio": rmsd / std_obs}

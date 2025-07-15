@@ -1,6 +1,6 @@
 #!/bin/bash
 # List of simulations
-simulations=("elps-min" "elps-ext" "elps-max" "elps-mid" "ktens-min" "ktens-max" "ktens-ext" "Pstar-max" "Cstar-min" "gi-mid" "gi-nil" "gi-nil-def" "ndte-max" "ndte-max-re-off") 
+simulations=("elps-min" "elps-max" "ndte-max" "ndte-max-re-off" "Pstar-max" "Cstar-min" "ktens-nil" "ktens-max" "gi-mid")
 # Directory for plotting scripts
 cd ~/AFIM/src/AFIM/scripts/plotting
 # Loop through each simulation and submit a job
@@ -24,6 +24,6 @@ for sim_name in "${simulations[@]}"; do
     # Change to the directory containing the plotting script
     cd ~/AFIM/src/AFIM/scripts/plotting
     # Run the Python script for the simulation
-    python plot_daily_maps.py --sim_name ${sim_name} --var_names aice hi divu shear strength dvidtt
+    python plot_daily_maps.py --sim_name ${sim_name} --var_names aice hi
 EOF
 done
