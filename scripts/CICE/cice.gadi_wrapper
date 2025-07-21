@@ -1,0 +1,333 @@
+#!/bin/bash
+
+USER_NAME="da1339"
+MIN_RETRY_MINUTES=180
+RETRY_FREQUENCY_MINUTES=10
+
+# === Default values ===
+PROJECT=""
+NCPUS=840
+QUEUE="normalbw"
+RUNNUM="01"
+WALLHRS=8
+MEM="700GB"
+DRYRUN=false
+ICE_IN="ice_in"
+START_YEAR=1993
+END_YEAR=1999
+
+# === CICE namelist defaults ===
+FYEAR_INIT=1993
+NPT_UNIT="y"
+NPT=1
+RUNTYPE="initial"
+USE_RESTART_TIME=".false."
+KMT_FILE="/g/data/gv90/da1339/grounded_icebergs/MyThin_db/kmt_mod_thinned-0p75_v1p50_iter0.nc"
+KDYN=1
+NDTE=240
+REVISED_EVP=".true."
+KTENS=0.2
+E_YIELDCURVE=1.2
+E_PLASTICPOT=1.2
+PSTAR=27500
+CSTAR=20
+
+# === Help Function ===
+show_help() {
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Wrapper script for CICE model PBS job submission and ice_in modification."
+    echo ""
+    echo "Core PBS Submission Options:"
+    echo "  -p, --project        NCI project code (required)"
+    echo "  -n, --ncpus          Number of CPUs to request (default: 840)"
+    echo "  -q, --queue          Queue to submit job to (default: normalbw)"
+    echo "  -r, --runnum         Run number or label used in job name (default: 01)"
+    echo "  -w, --wallhours      Walltime in hours (default: 24)"
+    echo "  -m, --mem            Memory request, e.g., 700GB (default: 700GB)"
+    echo "  -d, --dryrun         Edit ice_in but do not submit PBS job"
+    echo "  --start YEAR         Starting year of simulation loop"
+    echo "  --end YEAR           Ending year of simulation loop"
+    echo ""
+    echo "Unique name of simulation:"
+    echo "  -S, --sim_name       Unique name of simulation (required)"
+    echo "  --user               The username on the same system where the job is running (default: da1339)"
+    echo "  --archive_dir        Where results will be stored (default: /g/data/PROJECT/USER/afim_ouput/SIM_NAME)"
+    echo ""
+    echo "CICE Namelist Edits:"
+    echo "      --fyear_init     Initial forcing year (default: 1993)"
+    echo "      --npt_unit       Time unit for run length (e.g. 'y', 'd') (default: 'y')"
+    echo "      --npt            Number of time units to run (default: 1)"
+    echo "      --restart        Set runtype to 'continue' and enable restart timing"
+    echo ""
+    echo "Ice Dynamics Parameters:"
+    echo "      --kdyn           Dynamics flag (default: 1)"
+    echo "      --ndte           Number of dynamics subcycles (default: 720)"
+    echo "      --revised_evp    Use revised EVP dynamics (default: false)"
+    echo "      --ktens          Tension factor (default: 0.2)"
+    echo "      --e_f            Yield curve exponent (default: 1.2)"
+    echo "      --e_g            Plastic potential exponent (default: 1.2)"
+    echo "      --Pstar          Ice strength parameter (default: 27500)"
+    echo "      --Cstar          Ice strength scaling (default: 20)"
+    echo ""
+    echo "Input Files:"
+    echo "      --kmt_file       Path to modified landmask file"
+    echo ""
+    echo "General:"
+    echo "  -h, --help           Show this help and exit"
+    echo ""
+    echo "Notes:"
+    echo "  When starting with RUNTYPE='initial', no iced restart file is expected."
+    echo "  If one is present, it will be ignored for the initial year to avoid confusion."
+    echo "  Subsequent runs will extract FYEAR_INIT from the iced restart filename."
+}
+
+# === Argument Parsing ===
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--project) PROJECT="$2"; shift 2;;
+        -n|--ncpus) NCPUS="$2"; shift 2;;
+        -q|--queue) QUEUE="$2"; shift 2;;
+        -r|--runnum) RUNNUM="$2"; shift 2;;
+        -w|--wallhours) WALLHRS="$2"; shift 2;;
+        -m|--mem) MEM="$2"; shift 2;;
+        -d|--dryrun) DRYRUN=true; shift;;
+        --restart) RUNTYPE="continue"; USE_RESTART_TIME=".true."; shift;;
+        --fyear_init) FYEAR_INIT="$2"; shift 2;;
+        --npt_unit) NPT_UNIT="$2"; shift 2;;
+        --npt) NPT="$2"; shift 2;;
+        --kmt_file) KMT_FILE="$2"; shift 2;;
+        --kdyn) KDYN="$2"; shift 2;;
+        --ndte) NDTE="$2"; shift 2;;
+        --ktens) KTENS="$2"; shift 2;;
+        --e_f) E_YIELDCURVE="$2"; shift 2;;
+        --e_g) E_PLASTICPOT="$2"; shift 2;;
+        --Pstar) PSTAR="$2"; shift 2;;
+        --Cstar) CSTAR="$2"; shift 2;;
+        --start) START_YEAR="$2"; shift 2;;
+        --end) END_YEAR="$2"; shift 2;;
+        -S|--sim_name) SIM_NAME="$2"; shift 2;;
+        --user) USER_NAME="$2"; shift 2;;
+        --archive_dir) ARCHIVE_DIR="$2"; shift 2;;
+        -h|--help) show_help; exit 0;;
+        *) echo "Unknown option: $1"; show_help; exit 1;;
+    esac
+done
+
+if [[ -z "$PROJECT" ]]; then
+    echo "❌ Error: --project is required."
+    show_help
+    exit 1
+fi
+if [[ -z "$SIM_NAME" ]]; then
+    echo "❌ Error: --sim_name is required."
+    show_help
+    exit 1
+fi
+if [[ -z "$ARCHIVE_DIR" ]]; then
+    ARCHIVE_DIR="/g/data/${PROJECT}/${USER_NAME}/afim_ouput/${SIM_NAME}"
+fi
+
+echo "========== CICE Wrapper Input Summary =========="
+echo "PROJECT       = $PROJECT"
+echo "NCPUS         = $NCPUS"
+echo "QUEUE         = $QUEUE"
+echo "RUNNUM        = $RUNNUM"
+echo "WALLHRS       = $WALLHRS"
+echo "MEM           = $MEM"
+echo "DRYRUN        = $DRYRUN"
+echo "ICE_IN        = $ICE_IN"
+echo "START_YEAR    = $START_YEAR"
+echo "END_YEAR      = $END_YEAR"
+echo "SIM_NAME      = $SIM_NAME"
+echo "USER_NAME     = $USER_NAME"
+echo "ARCHIVE_DIR   = $ARCHIVE_DIR"
+echo "FYEAR_INIT    = $FYEAR_INIT"
+echo "NPT_UNIT      = $NPT_UNIT"
+echo "NPT           = $NPT"
+echo "KMT_FILE      = $KMT_FILE"
+echo "KDYN          = $KDYN"
+echo "NDTE          = $NDTE"
+echo "REVISED_EVP   = $REVISED_EVP"
+echo "KTENS         = $KTENS"
+echo "E_YIELDCURVE  = $E_YIELDCURVE"
+echo "E_PLASTICPOT  = $E_PLASTICPOT"
+echo "PSTAR         = $PSTAR"
+echo "CSTAR         = $CSTAR"
+echo "================================================"
+
+if [[ ! -f "$ICE_IN" ]]; then
+    echo "❌ ERROR: ice_in file '$ICE_IN' not found."
+    exit 1
+fi
+echo "Performing fixed (not year dependent) ./ice_in edits..."
+sed -i \
+    -e "s/^[[:space:]]*nprocs.*/    nprocs = $NCPUS/" \
+    -e "s/^[[:space:]]*runtype.*/    runtype = '$RUNTYPE'/" \
+    -e "s/^[[:space:]]*use_restart_time.*/    use_restart_time = $USE_RESTART_TIME/" \
+    -e "s|^[[:space:]]*kmt_file.*|    kmt_file = '$KMT_FILE'|" \
+    -e "s/^[[:space:]]*kdyn.*/    kdyn = $KDYN/" \
+    -e "s/^[[:space:]]*ndte.*/    ndte = $NDTE/" \
+    -e "s/^[[:space:]]*revised_evp.*/    revised_evp = $REVISED_EVP/" \
+    -e "s/^[[:space:]]*Ktens.*/    Ktens = $KTENS/" \
+    -e "s/^[[:space:]]*e_yieldcurve.*/    e_yieldcurve = $E_YIELDCURVE/" \
+    -e "s/^[[:space:]]*e_plasticpot.*/    e_plasticpot = $E_PLASTICPOT/" \
+    -e "s/^[[:space:]]*Pstar.*/    Pstar = $PSTAR/" \
+    -e "s/^[[:space:]]*Cstar.*/    Cstar = $CSTAR/" \
+    "$ICE_IN"
+awk -v unit="$NPT_UNIT" -v npt="$NPT" '
+BEGIN { seen_unit=0; seen_npt=0 }
+{
+    if ($1 ~ /^npt_unit$/) {
+        print "    npt_unit = '\''" unit "'\''"
+        seen_unit=1
+        next
+    }
+    if ($1 ~ /^npt$/) {
+        print "    npt = " npt
+        seen_npt=1
+        next
+    }
+    print
+}
+END {
+    if (!seen_unit) print "    npt_unit = '\''" unit "'\''"
+    if (!seen_npt)  print "    npt = " npt
+}
+' "$ICE_IN" > ice_in.tmp
+
+if [[ $? -ne 0 ]]; then
+    echo "❌ ERROR: awk command failed while editing ice_in. Aborting."
+    exit 1
+else
+    mv ice_in.tmp "$ICE_IN"
+    echo "✅ awk edit applied and ice_in updated."
+fi
+ICE_RUNDIR=$(awk '/setenv ICE_RUNDIR/ {print $3}' cice.settings)
+if [[ -z "$ICE_RUNDIR" ]]; then
+    echo "❌ ERROR: Failed to extract ICE_RUNDIR from cice.settings"
+    exit 1
+else
+    echo "✅ CICE RUN DIR set to: ${ICE_RUNDIR}"
+fi
+
+# === Adjust loop only if --restart ===
+if [[ "$RESTART_MODE" == true ]]; then
+    echo "--restart specified. Detecting last completed year in ${ICE_RUNDIR}..."
+    LAST_ICE=$(ls -1 ${ICE_RUNDIR}/restart/iced.*.nc 2>/dev/null | sort | tail -n 1)
+    if [[ -z "$LAST_ICE" ]]; then
+        echo "Error: No iced restart file found, but --restart was specified."
+        exit 1
+    fi
+    echo "found last restart fle: ${LAST_ICE}" 
+    FYEAR_INIT=$(basename $LAST_ICE | cut -d'.' -f2 | cut -d'-' -f1)
+    echo "Restarting from iced restart year: $FYEAR_INIT"
+    START_YEAR=$FYEAR_INIT
+fi
+
+# === Simulation Loop (dynamic while) ===
+YEAR=$START_YEAR
+while (( YEAR <= END_YEAR )); do
+    echo ""
+    echo "🧊 Editing $ICE_IN for year $YEAR ..."
+    echo "🔧 Setting fyear_init = $YEAR ..."
+    if grep -q '^[[:space:]]*fyear_init[[:space:]]*=' "$ICE_IN"; then
+        awk -v year="$YEAR" '
+        BEGIN { changed = 0 }
+        {
+            if ($0 ~ /^[[:space:]]*fyear_init[[:space:]]*=/) {
+                printf "    fyear_init = %d\n", year
+                changed = 1
+                next
+            }
+            print
+        }
+        END {
+            if (changed == 0) {
+                print "⚠️ fyear_init not found" > "/dev/stderr"
+                exit 1
+            }
+        }
+        ' "$ICE_IN" > ice_in.tmp && mv ice_in.tmp "$ICE_IN"
+        if [[ $? -eq 0 ]]; then
+            echo "✅ Set fyear_init = $YEAR in $ICE_IN"
+        else
+            echo "❌ Failed to update fyear_init in $ICE_IN"
+            exit 1
+        fi
+    else
+        echo "❌ Could not find a 'fyear_init =' line in $ICE_IN"
+        exit 1
+    fi
+    echo "ice_in edit complete for year $YEAR."
+    if [ "$DRYRUN" = true ]; then
+        echo "(Dry run mode): PBS job for year $YEAR not submitted."
+        echo "but this is what would be submitted ..."
+        echo "#!/bin/bash"
+        echo "#PBS -N afim-${PROJECT}-run${RUNNUM}-y${YEAR}"
+        echo "#PBS -P ${PROJECT}"
+        echo "#PBS -l walltime=${WALLHRS}:00:00"
+        echo "#PBS -q ${QUEUE}"
+        echo "#PBS -l mem=${MEM}"
+        echo "#PBS -l ncpus=${NCPUS}"
+        echo "#PBS -l storage=gdata/gv90+gdata/xp65"
+        echo "#PBS -l wd"
+        echo "#PBS -j oe"
+        echo "#PBS -m abe"
+        echo "#PBS -M daniel.atwater@utas.edu.au"
+        echo "./cice.run ${NCPUS}"
+        exit 1
+    else
+        echo "Submitting PBS job for year $YEAR with ${NCPUS} CPUs to ${QUEUE} queue..."
+        JOB_ID=$(qsub <<EOF
+#!/bin/bash
+#PBS -N afim-${PROJECT}-run${RUNNUM}-y${YEAR}
+#PBS -P ${PROJECT}
+#PBS -l walltime=${WALLHRS}:00:00
+#PBS -q ${QUEUE}
+#PBS -l mem=${MEM}
+#PBS -l ncpus=${NCPUS}
+#PBS -l storage=gdata/gv90+gdata/xp65
+#PBS -l wd
+#PBS -j oe
+#PBS -m abe
+#PBS -M daniel.atwater@utas.edu.au
+./cice.run ${NCPUS}
+EOF
+        )
+        NEXT_YEAR=$((YEAR + 1))
+        EXPECTED_RESTART="${ICE_RUNDIR}/restart/iced.${NEXT_YEAR}-01-01-00000.nc"
+        echo "Waiting ${MIN_RETRY_MINUTES} minutes before checking job status..."
+        sleep $((60 * MIN_RETRY_MINUTES))
+        JOB_STATE=$(qstat -fx "$JOB_ID" 2>/dev/null | awk '/job_state/ {print $3}')
+        while [[ "$JOB_STATE" != "F" && -n "$JOB_STATE" ]]; do
+            echo "Job $JOB_ID is still running... waiting another ${RETRY_FREQUENCY_MINUTES} minutes."
+            sleep $((60 * RETRY_FREQUENCY_MINUTES))
+            JOB_STATE=$(qstat -fx "$JOB_ID" 2>/dev/null | awk '/job_state/ {print $3}')
+        done
+        if [[ "$JOB_STATE" == "F" ]]; then
+            WALLTIME=$(qstat -fx "$JOB_ID" 2>/dev/null | awk '/resources_used.walltime/ {print $3}')
+            echo "Job $JOB_ID finished. Walltime used: $WALLTIME"
+        else
+            echo "Job $JOB_ID status is unknown or job no longer in system."
+            exit 1
+        fi
+        if [[ ! -f "$EXPECTED_RESTART" ]]; then
+            echo "Restart file $EXPECTED_RESTART not found after ${MAX_RETRY} minutes."
+            exit 1
+        else
+            echo "Found restart file: $(basename "$EXPECTED_RESTART")"
+        fi
+        echo "copying history files from ${ICE_RUNDIR} to ${ARCHIVE_DIR}/history/daily"
+        mkdir -pv "${ARCHIVE_DIR}/history/daily"
+        mv "${ICE_RUNDIR}/history/iceh.${YEAR}*.nc" "${ARCHIVE_DIR}/history/daily/"
+        cp "${ICE_RUNDIR}/ice*" "${ARCHIVE_DIR}/"
+        cp $EXPECTED_RESTART "${ARCHIVE_DIR}/"
+    fi
+    YEAR=$NEXT_YEAR
+done
+echo ""
+echo "final housekeeping ... cleaning ${ICE_RUNDIR}"
+rm "${ICE_RUNDIR}/history/*.nc"
+rm "${ICE_RUNDIR}/restart/*.nc"
+rm "${ICE_RUNDIR}/*runlog*"
