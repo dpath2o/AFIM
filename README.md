@@ -6,33 +6,33 @@ This package is actively developed as part of a PhD research project at the Univ
 
 There are currently no other open-source tools dedicated to post-processing **CICE** model outputs for fast and pack ice with this level of structure, specificity, and automation.
 
-📖 [CICE documentation (ReadTheDocs)](https://cice-consortium-cice.readthedocs.io/en/main/)
-📘 [AFIM documentation (ReadTheDocs)](https://AFIM.readthedocs.io/en/main/)
++ [CICE documentation (ReadTheDocs)](https://cice-consortium-cice.readthedocs.io/en/main/)
++ [AFIM documentation (ReadTheDocs)](https://AFIM.readthedocs.io/en/main/)
 
 [![Documentation Status](https://readthedocs.org/projects/afim/badge/?version=latest)](https://afim.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/afim.svg)](https://badge.fury.io/py/afim)
 
 ### AFIM Sensitivity Study
 
-🧾 [AFIM Sensitivity Experiment Design and Methodology](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
++ [AFIM Sensitivity Experiment Design and Methodology](https://dpath2o.github.io/AFIM/AFIM_sensitivity_methodology.html)
 
-👉🏻[AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
++ [AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
 
 Explore key outputs from AFIM simulations:
 
 | Gallery Type                      | Description                                                                                                             | Link                                                                           |
 |-----------------------------------|-------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | **FIP Simulation Tree Gallery**   | Simulation > Region > threshold > figures                                                                               | [View Gallery](https://dpath2o.github.io/AFIM/fip_tree_gallery.html)           |
-| 🔬 **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html)  |
-| 🧪 **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh`                                          | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html)  |
-| 📈 **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations                                                              | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html)    |
-| 📦 **AFIM Archive Status**        | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.)                                          | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
+| **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html)  |
+| **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh`                                          | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html)  |
+| **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations                                                              | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html)    |
+| **AFIM Archive Status**        | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.)                                          | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
 
 ---
 
-## 🚀 Highlights
+## Highlights
 
-### 🧊 `SeaIceToolbox` — Unified API
+### `SeaIceToolbox` — Unified API
 
 - **All-in-one class** for Antarctic sea ice analysis:
   - Model I/O, fast/pack ice masking, Zarr output
@@ -43,32 +43,32 @@ Explore key outputs from AFIM simulations:
 - Regridding, derived fields, and observational overlays built-in
 - Highly configurable via JSON
 
-### 🧭 Batch Processing & HPC-Ready
+### Batch Processing & HPC-Ready
 
 - Command-line and scriptable workflows for large-scale or HPC batch processing
 - PBS job scripts and wrappers for automated monthly/seasonal runs
 
-### 📊 Advanced Plotting
+### Advanced Plotting
 
 - Generate spatial maps, regional/faceted views, and time series
 - Overlay observational and grounded iceberg data
 
-### 🏔️ Grounded Iceberg Handling
+### Grounded Iceberg Handling
 
 - Mask grounded iceberg regions and modify landmasks for improved coastal fast ice simulation
 
-### 🔄 Regridding and Derived Fields
+### Regridding and Derived Fields
 
 - Supports B-grid, T-grid (average and xESMF) interpolation
 - Computes vector magnitudes for stress and velocity fields
 
-### 📓 Interactive Analysis
+### Interactive Analysis
 
 - Jupyter notebook [`fi_anal.ipynb`](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) demonstrates full workflows
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 git clone https://github.com/dpath2o/AFIM.git
@@ -85,7 +85,7 @@ conda activate afim
 
 ---
 
-## 🧪 Example: Interactive Python Usage
+## Example: Interactive Python Usage
 
 ```python
 from sea_ice_toolbox import SeaIceToolbox
@@ -102,7 +102,7 @@ SI_tools.plot_ice_area(FI)
 
 ---
 
-## 🗂️ Project Layout
+## Project Layout
 
 ```
 ├── notebooks/                  # Jupyter notebooks
@@ -124,14 +124,14 @@ SI_tools.plot_ice_area(FI)
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - Full API docs and method descriptions under `docs/`
 - [fi_anal.ipynb](https://github.com/dpath2o/AFIM/blob/main/notebooks/fi_anal.ipynb) is the best place to start interactively
 
 ---
 
-## 📮 Contributions
+## Contributions
 
 Contributions and feature requests welcome. Feel free to open an [Issue](https://github.com/dpath2o/AFIM/issues) or submit a pull request!
 
