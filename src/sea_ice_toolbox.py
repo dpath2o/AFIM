@@ -9,6 +9,8 @@ from pathlib              import Path
 from datetime             import datetime, timedelta
 from dask.distributed     import Client, LocalCluster, get_client
 from distributed.client   import _get_global_client
+import warnings
+warnings.filterwarnings( "ignore", message="Sending large graph of size", category=UserWarning, module="distributed.client")
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
 from sea_ice_classification import SeaIceClassification
 from sea_ice_metrics        import SeaIceMetrics
@@ -16,6 +18,42 @@ from sea_ice_plotter        import SeaIcePlotter
 from sea_ice_icebergs       import SeaIceIcebergs
 from sea_ice_observations   import SeaIceObservations
 from sea_ice_ACCESS         import SeaIceACCESS
+
+__all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
+
+_dask_client = None
+
+def get_shared_dask_client(threads_per_worker=1):
+    global _dask_client
+    if _dask_client is None:
+        _dask_client = Client(threads_per_worker=threads_per_worker, memory_limit="16GB")
+    return _dask_client
+
+class SeaIceToolboxManager:
+    _shared_client = None
+    def __init__(self, P_log):
+        self.P_log = P_log
+        if SeaIceToolboxManager._shared_client is None:
+            dummy = SeaIceToolbox(sim_name='__SI-toolbox-mgr__', P_log=self.P_log)
+            SeaIceToolboxManager._shared_client = dummy.client
+            self.client = SeaIceToolboxManager._shared_client
+    def get_toolbox(self, sim_name, **kwargs):
+        return SeaIceToolbox(sim_name=sim_name, client=self._shared_client, P_log=self.P_log, **kwargs)
+    def shutdown(self):
+        """Cleanly shut down the Dask client and close any log file handlers."""
+        # Shutdown Dask client if it was created by the manager
+        if SeaIceToolboxManager._shared_client is not None:
+            SeaIceToolboxManager._shared_client.close()
+            print("Dask client shut down.")
+            SeaIceToolboxManager._shared_client = None
+        # Remove log file handlers
+        logger = logging.getLogger("SeaIceToolbox")  # global/shared logger if used
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                handler.flush()
+                handler.close()
+                logger.removeHandler(handler)
+                print(f"Closed log file handler: {handler.baseFilename}")
 
 class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIcebergs, SeaIceObservations, SeaIceACCESS):
     """
@@ -183,6 +221,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                  show_figs                   = None,# whether or not to show/print figures to screen; default is false
                  delete_original_cice_iceh_nc= None,# whether or not to delete the original CICE ice history
                  client                      = None,# dask distributed client, can be externally passed here
+                 force_recompile_ice_in      = False,# reinitialise ice_in JSON file; see help self.parse_simulation_metadata()
                  **kwargs):
         self.sim_name = sim_name if sim_name is not None else 'test'
         if P_json is None:
@@ -196,7 +235,10 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         if not os.path.exists(P_log):
             os.system(f"touch {P_log}")
         self.setup_logging(logfile=P_log, log_level=log_level)
+        self.client = client if client is not None else get_shared_dask_client()
         self.initialise_dask_client(client=client)
+        if sim_name=="__SI-toolbox-mgr__":
+            return
         self.CICE_dict          = self.config.get("CICE_dict"         , {})
         self.GI_dict            = self.config.get('GI_dict'           , {})
         self.NSIDC_dict         = self.config.get('NSIDC_dict'        , {}) 
@@ -235,7 +277,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         self.D_graph             = Path(self.config['D_dict']['graph'], 'AFIM')
         self.D_tmp               = Path(self.config['D_dict']['tmp'])
         self.D_metrics           = Path(self.D_zarr, f"ispd_thresh_{self.ispd_thresh_str}", "metrics")
-        self.sim_config          = self.parse_simulation_metadata()   
+        self.sim_config          = self.parse_simulation_metadata(force_recompile=force_recompile_ice_in)   
         self.valid_ivec_types    = self.config.get("valid_ivec_types", [])
         self.valid_ice_types     = self.config.get("valid_ice_types", [])
         self.cice_vars_reqd      = self.CICE_dict["cice_vars_reqd"]
@@ -259,9 +301,13 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                 GI_thin_str    = f"{self.GI_thin:0.2f}".replace('.', 'p')
                 GI_vers_str    = f"{self.GI_version:0.2f}".replace('.', 'p')
                 self.P_KMT_mod = os.path.join(self.GI_dict['D_GI_thin'],
-                                            self.GI_dict['KMT_mod_fmt'].format(GI_thin   = GI_thin_str,
-                                                                                version   = GI_vers_str,
-                                                                                iteration = self.GI_iteration))
+                                              self.GI_dict['KMT_mod_fmt'].format(GI_thin   = GI_thin_str,
+                                                                                 version   = GI_vers_str,
+                                                                                 iteration = self.GI_iteration))
+                self.P_GI_thin = os.path.join(self.GI_dict['D_GI_thin'],
+                                              self.GI_dict['GI_thin_fmt'].format(GI_thin   = GI_thin_str,
+                                                                                 version   = GI_vers_str,
+                                                                                 iteration = self.GI_iteration))
             else:
                 self.use_gi = False
         else:
@@ -282,37 +328,38 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
     def setup_logging(self, logfile=None, log_level=logging.INFO):
         self.logger = logging.getLogger(self.sim_name)
         self.logger.setLevel(log_level)
+
+        # Formatter and stream handler (console)
         if not self.logger.handlers:
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             ch = logging.StreamHandler()
             ch.setFormatter(formatter)
             ch.setLevel(log_level)
             self.logger.addHandler(ch)
-            if logfile:
-                if os.path.exists(logfile):
-                    os.remove(logfile)
-                fh = logging.FileHandler(logfile)
+
+        # Optional file logging
+        if logfile:
+            file_handler_exists = any(
+                isinstance(h, logging.FileHandler) and h.baseFilename == str(logfile)
+                for h in self.logger.handlers
+            )
+            if not file_handler_exists:
+                fh = logging.FileHandler(logfile, mode='a')  # append mode
                 fh.setFormatter(formatter)
                 fh.setLevel(log_level)
                 self.logger.addHandler(fh)
-            self.logger.info(f"log file initialised: {logfile}")
-    
+                self.logger.info(f"log file connected: {logfile}")
+
     def initialise_dask_client(self, client=None, threads_per_worker=1):
-        # Case 1: User has passed a client explicitly
         if client is not None:
-            self.client = client
             self.logger.info("Using externally provided Dask client.")
-        # Case 2: No client passed — try to detect existing global client
-        elif _get_global_client() is not None:
-            existing_client = _get_global_client()
-            self.logger.warning("Dask client already exists but was not passed to SeaIceToolbox.")
-            self.logger.warning("Please explicitly pass the existing Dask client using `client=...` to avoid confusion.")
-            self.client = existing_client
-        # Case 3: No client at all — create a new one
-        else:
-            self.client = Client(threads_per_worker=threads_per_worker, memory_limit="16GB")
+            return client
+        try:
+            return get_client()  # more robust than _get_global_client
+        except ValueError:
+            new_client = Client(threads_per_worker=threads_per_worker, memory_limit="16GB")
             self.logger.info("Initialized new Dask client.")
-        self.logger.info(f"Dask distributed client can be accessed at url {self.client.dashboard_link}")
+            return new_client
 
     def parse_simulation_metadata(self, force_recompile=False):
         """
@@ -336,6 +383,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         sim_name   = Path(self.D_sim).name
         P_diag     = Path(self.D_sim, "ice_diag.d")
         P_json     = Path(self.D_sim, f"ice_in_AFIM_subset_{sim_name}.json")
+        self.logger.info(f"reading {P_diag} to construct {P_json}")
         if P_json.exists() and not force_recompile:
             with open(P_json, "r") as f:
                 return json.load(f)
@@ -386,7 +434,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                     iter_str = kmt_name.split("iter")[1].split(".")[0]   # e.g., "0"
                     result["GI_iter"] = int(iter_str)
                 else:
-                    result["GI_iter"] = 0
+                    result["GI_iter"] = None
             except Exception:
                 result["GI_iter"] = None
         else:

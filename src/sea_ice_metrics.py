@@ -272,6 +272,7 @@ class SeaIceMetrics:
         - The sea ice area is computed as the sum of SIC * GC_area across the specified spatial dimensions, and then scaled by `ice_area_scale`.
         """
         add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
+        sic_threshold             = sic_threshold             if sic_threshold             is not None else self.icon_thresh
         if add_grounded_iceberg_area:
             if grounded_iceberg_area is not None:
                 GI_total_area = grounded_iceberg_area

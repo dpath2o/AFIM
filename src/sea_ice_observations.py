@@ -320,7 +320,6 @@ class SeaIceObservations:
     def bin_esa_thickness_to_cice_grid(self, ESA_CCI, region=None):
         from scipy.stats import binned_statistic_2d
         from tqdm import tqdm
-        if region = 
         x_edges = np.linspace(CICE_SO['TLON'].min().item(), CICE_SO['TLON'].max().item(), CICE_SO['TLON'].shape[1] + 1)
         y_edges = np.linspace(CICE_SO['TLAT'].min().item(), CICE_SO['TLAT'].max().item(), CICE_SO['TLAT'].shape[0] + 1)
         unique_days = np.unique(ESA_CCI['time'].dt.floor('D').values)

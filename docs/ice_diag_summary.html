@@ -23,129 +23,149 @@
     </style></head><body>
     <h1>CICE Diagnostic Parameters per Simulation</h1>
     <p>Parsed from each simulation's <code>ice_diag.d</code> file.</p>
-    <p style='font-size: small;'>Last updated: 2025-06-08 15:30:13</p>
+    <p style='font-size: small;'>Last updated: 2025-07-22 05:23:53</p>
 <div style='overflow-x:auto; max-width:95vw;'>
 <table>
 <thead><tr><th>#</th><th>rheology</th><th>momentum term</th><th>sim_name</th><th>dt</th><th>ndtd</th><th>ndte</th><th>kdyn</th><th>revised_evp</th><th>e_yieldcurve</th><th>e_plasticpot</th><th>Ktens</th><th>kstrength</th><th>Pstar</th><th>Cstar</th><th>Cf</th><th>visc_method</th><th>kmt_file</th><th>relevant citations</th></tr></thead>
 <tbody>
 <tr>
 <td>1</td>
-<td rowspan='7'>isotropic</td>
-<td rowspan='7'>internal ice strength</td>
-<td>Cstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>30.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+<td rowspan='12'>isotropic</td>
+<td rowspan='12'></td>
+<td>AOM2-ERA5</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>average zeta</td><td>kmt.nc</td><td></td>
 </tr>
 <tr>
 <td>2</td>
-<td>Cstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+<td>FI-heavy</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>Hibler</td><td>0.500000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
 <td>3</td>
-<td>Pstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.500000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+<td>gi-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p65_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
 <td>4</td>
-<td>Pstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.100000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+<td>gi-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
 <td>5</td>
-<td>Roth-cf-def</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>17.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
+<td>gi-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p85_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
 <td>6</td>
-<td>Roth-cf-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>24.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
-</tr>
-<tr>
-<td>7</td>
-<td>Roth-cf-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>10.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
-</tr>
-<tr>
-<td>8</td>
-<td rowspan='10'>isotropic</td>
-<td rowspan='10'></td>
-<td>FI-heavy</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>Hibler</td><td>0.500000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td>
-</tr>
-<tr>
-<td>9</td>
-<td>gi-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p65_v1p50.nc</td><td></td>
-</tr>
-<tr>
-<td>10</td>
-<td>gi-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td>
-</tr>
-<tr>
-<td>11</td>
-<td>gi-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p85_v1p50.nc</td><td></td>
-</tr>
-<tr>
-<td>12</td>
 <td>gi-nil</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.30</td><td>Hibler</td><td>0.500000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>ACCESS-OM2-025_kmt.nc</td><td></td>
 </tr>
 <tr>
-<td>13</td>
+<td>7</td>
 <td>gi-nil-def</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>ACCESS-OM2-025_kmt.nc</td><td></td>
 </tr>
 <tr>
-<td>14</td>
-<td>ndte-max</td><td>1800.00</td><td>1</td><td>720</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td>
+<td>8</td>
+<td>ndte-max</td><td>1800.00</td><td>1</td><td>720</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
-<td>15</td>
-<td>ndte-min</td><td>1800.00</td><td>1</td><td>100</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td></td>
+<td>9</td>
+<td>ndte-max-re-off</td><td>1800.00</td><td>1</td><td>720</td><td>EVP</td><td>F</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
-<td>16</td>
-<td>re-evp-off</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>F</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2013.05.013'>Bouillon et al. (2013)</a></td>
+<td>10</td>
+<td>ndte-min</td><td>1800.00</td><td>1</td><td>120</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td></td>
 </tr>
 <tr>
-<td>17</td>
+<td>11</td>
+<td>re-evp-off</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>F</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2013.05.013'>Bouillon et al. (2013)</a></td>
+</tr>
+<tr>
+<td>12</td>
 <td>ry93</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p85_v1p50.nc</td><td></td>
 </tr>
 <tr>
+<td>13</td>
+<td rowspan='7'>isotropic</td>
+<td rowspan='7'>internal ice strength</td>
+<td>Cstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>30.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+</tr>
+<tr>
+<td>14</td>
+<td>Cstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>10.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+</tr>
+<tr>
+<td>15</td>
+<td>Pstar-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.500000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+</tr>
+<tr>
+<td>16</td>
+<td>Pstar-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Hibler</td><td>0.100000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/1520-0485(1979)009<0815:ADTSIM>2.0.CO;2'>Hibler (1979)</a></td>
+</tr>
+<tr>
+<td>17</td>
+<td>Roth-cf-def</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>17.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
+</tr>
+<tr>
 <td>18</td>
-<td rowspan='2'>anisotropic</td>
-<td rowspan='2'></td>
-<td>eap-FI</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td>
+<td>Roth-cf-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>24.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
 </tr>
 <tr>
 <td>19</td>
-<td>eap-def</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td>
+<td>Roth-cf-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.20</td><td>Rothrock</td><td></td><td></td><td>10.00</td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1029/JC080i033p04514'>Rothrock (1975)</a></td>
 </tr>
 <tr>
 <td>20</td>
-<td rowspan='9'>isotropic</td>
-<td rowspan='9'>viscosities</td>
-<td>elps-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>0.80</td><td>0.80</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
+<td rowspan='2'>anisotropic</td>
+<td rowspan='2'></td>
+<td>eap-FI</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td>
 </tr>
 <tr>
 <td>21</td>
-<td>elps-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.50</td><td>2.50</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
+<td>eap-def</td><td>1800.00</td><td>1</td><td>240</td><td>EAP</td><td>F</td><td></td><td></td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1029/2012JC007990'>Tsamados et al. (2013)</a></td>
 </tr>
 <tr>
 <td>22</td>
-<td>elps-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.60</td><td>1.60</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
+<td rowspan='12'>isotropic</td>
+<td rowspan='12'>viscosities</td>
+<td>elps-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>0.80</td><td>0.80</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>23</td>
-<td>elps-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
+<td>elps-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.50</td><td>2.50</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>24</td>
-<td>ktens-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.60</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+<td>elps-mid</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.60</td><td>1.60</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>25</td>
-<td>ktens-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+<td>elps-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>26</td>
-<td>ktens-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.10</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+<td>elps-min-gi1</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter1.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>27</td>
-<td>ktens-nil</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.00</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+<td>elps-min-gi2</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter2.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
 </tr>
 <tr>
 <td>28</td>
-<td>visc-meth</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average strength</td><td>kmt_mod_thinned-0p75_v1p50.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2017.05.006'>Kimmritz et al. (2016)</a></td>
+<td>elps-min-gi3</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter3.nc</td><td><a href='https://doi.org/10.1006/jcph.2001.6710'>Hunke (2001)</a></td>
+</tr>
+<tr>
+<td>29</td>
+<td>ktens-ext</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.60</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+</tr>
+<tr>
+<td>30</td>
+<td>ktens-max</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.30</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+</tr>
+<tr>
+<td>31</td>
+<td>ktens-min</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.10</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+</tr>
+<tr>
+<td>32</td>
+<td>ktens-nil</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>2.00</td><td>2.00</td><td>0.00</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average zeta</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1175/2009JPO4105.1'>König-Beatty & Holland (2010)</a></td>
+</tr>
+<tr>
+<td>33</td>
+<td>visc-meth</td><td>1800.00</td><td>1</td><td>240</td><td>EVP</td><td>T</td><td>1.20</td><td>1.20</td><td>0.20</td><td>Hibler</td><td>0.275000D+05</td><td>20.00</td><td></td><td>average strength</td><td>kmt_mod_thinned-0p75_v1p50_iter0.nc</td><td><a href='https://doi.org/10.1016/j.ocemod.2017.05.006'>Kimmritz et al. (2016)</a></td>
 </tr>
 </tbody></table></div></body></html>

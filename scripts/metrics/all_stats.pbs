@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -l walltime=06:00:00
+#PBS -l mem=120GB
+#PBS -l ncpus=28
+#PBS -j oe
+#PBS -q normal
+#PBS -P gv90
+#PBS -l storage=gdata/xp65+gdata/gv90
+#PBS -N ALL_THE_STATS
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+python3 ~/AFIM/src/AFIM/scripts/metrics/all_stats.py

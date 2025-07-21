@@ -85,6 +85,80 @@ class SeaIceIcebergs:
             self.G_t['GI_total_area'] = total_area
             return total_area
 
+    def check_GI_coverage(self, da, varname="GI_counts", lon_name="lon", lat_name="lat"):
+        """
+        Assess grounded iceberg (GI) or landmask coverage across Antarctica.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            The GI or KMT data.
+        varname : str
+            Determines masking logic: 'GI_counts' uses >0, anything else uses >1.
+        lon_name : str, default 'lon'
+            Name of the longitude coordinate.
+        lat_name : str, default 'lat'
+            Name of the latitude coordinate.
+
+        Returns
+        -------
+        report : dict
+            Dictionary of summary statistics and Antarctic sector coverage.
+        """
+        report = {}
+        lon = da[lon_name]
+        lat = da[lat_name]
+        lon_vals = lon.values
+        lat_vals = lat.values
+        # Handle longitude wrapping
+        if lon_vals.max() <= 180:
+            lon_wrapped = np.mod(lon_vals + 360, 360)
+            if lon_vals.ndim == 1:
+                da = da.assign_coords({lon_name: (da[lon_name].dims, lon_wrapped)})
+                da = da.sortby(lon_name)
+            elif lon_vals.ndim == 2:
+                da = da.assign_coords({lon_name: (da[lon_name].dims, lon_wrapped)})
+                self.logger.warning("Skipping sortby(): longitude is 2D.")
+            else:
+                raise ValueError("Longitude data must be 1D or 2D.")
+        # Construct binary coverage mask
+        if varname == "GI_counts":
+            mask = da.values > 0
+        else:
+            mask = da.values > 1
+        # Basic spatial stats
+        report['lon_range'] = (float(np.nanmin(lon_vals)), float(np.nanmax(lon_vals)))
+        report['lat_range'] = (float(np.nanmin(lat_vals)), float(np.nanmax(lat_vals)))
+        report['n_valid_cells'] = int(np.count_nonzero(mask))
+        report['n_total_cells'] = int(np.prod(mask.shape))
+        report['coverage_fraction'] = report['n_valid_cells'] / report['n_total_cells']
+        report['nonfinite_count'] = int(np.sum(~np.isfinite(da.values)))
+        # Value stats
+        report['mean_value'] = float(np.nanmean(da.values)) if np.any(mask) else float('nan')
+        report['max_value'] = float(np.nanmax(da.values)) if np.any(mask) else float('nan')
+        report['min_nonzero'] = float(np.nanmin(da.values[da.values > 0])) if np.any(da.values > 0) else float('nan')
+        # Sector-based coverage check
+        if lon_vals.ndim == 2 and lat_vals.ndim == 2:
+            try:
+                sector_edges = np.linspace(0, 360, 9)  # 8 sectors
+                presence_by_sector = []
+                for i in range(len(sector_edges) - 1):
+                    lon_min, lon_max = sector_edges[i], sector_edges[i + 1]
+                    sector_mask = (
+                        (lon_vals >= lon_min) & (lon_vals < lon_max) &
+                        (lat_vals < -60)  # Limit to Antarctic region
+                    )
+                    if np.any(sector_mask):
+                        sector_data = da.values[sector_mask]
+                        presence_by_sector.append(np.any(sector_data > 0))
+                    else:
+                        presence_by_sector.append(False)
+                report['sector_gaps'] = [i for i, present in enumerate(presence_by_sector) if not present]
+                report['sector_gap_count'] = len(report['sector_gaps'])
+            except Exception as e:
+                report['sector_check_failed'] = str(e)
+        return report
+
     def load_existing_thinned(self):
         """
         Load previously saved thinned grounded iceberg data and modified KMT file.
@@ -92,11 +166,15 @@ class SeaIceIcebergs:
         Sets the attributes `self.GI_thin_da`, `self.GI_thin_mask`, and `self.GI_KMT`
         if their respective NetCDF files exist.
         """
-        if os.path.exists(self.GI_P_counts):
-            self.GI_thin_da = xr.open_dataarray(self.GI_P_counts)
+        if os.path.exists(self.P_GI_thin):
+            self.GI_thin_da = xr.open_dataarray(self.P_GI_thin)
+            self.logger.info(f"GROUNDED ICEBERG COUNTS PER GRID CELL REPORT {self.P_GI_thin}")
+            self.logger.info(self.check_GI_coverage(self.GI_thin_da))
             self.GI_thin_mask = self.GI_thin_da.values > 0
         if os.path.exists(self.P_KMT_mod):
             self.GI_KMT = xr.open_dataarray(self.P_KMT_mod)
+            self.logger.info(f"MODIFIED LANDMASK REPORT {self.P_KMT_mod}")
+            self.logger.info(self.check_GI_coverage(self.GI_KMT, varname="kmt"))
 
     def process_raw_grounded_iceberg_database(self, GI_P_raw=None):
         """
