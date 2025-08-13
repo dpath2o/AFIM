@@ -49,20 +49,20 @@ while getopts "s:t:i:S:E:bzpd:nh" opt; do
         d) SMOOTH_FIA_DAYS="$OPTARG" ;;
         n) DRY_RUN=true ;;
         h) print_help; exit 0 ;;
-        \?) echo "❌ Invalid option: -$OPTARG"; print_help; exit 1 ;;
-        :) echo "❌ Option -$OPTARG requires an argument."; print_help; exit 1 ;;
+        \?) echo "Invalid option: -$OPTARG"; print_help; exit 1 ;;
+        :) echo "Option -$OPTARG requires an argument."; print_help; exit 1 ;;
     esac
 done
 
 # --- Validate required inputs ---
 if [[ -z "$SIM_NAME" || -z "$ISPD_THRESH" ]]; then
-    echo "❌ -s SIM_NAME and -t ISPD_THRESH are required"
+    echo "-s SIM_NAME and -t ISPD_THRESH are required"
     print_help
     exit 1
 fi
 # Validate start and end date
 if [[ -z "$START_DATE" || -z "$END_DATE" ]]; then
-    echo "❌ Must provide both -S START_DATE and -E END_DATE." >&2
+    echo "Must provide both -S START_DATE and -E END_DATE." >&2
     exit 1
 fi
 # Force START_DATE to first of the month
@@ -71,7 +71,7 @@ START_DATE=$(date -d "$START_DATE" +%Y-%m-01)
 END_DATE=$(date -d "$(date -d "$END_DATE +1 month" +%Y-%m-01) -1 day" +%F)
 # Ensure start is before end
 if [[ "$START_DATE" > "$END_DATE" ]]; then
-    echo "❌ START_DATE must be before END_DATE." >&2
+    echo "START_DATE must be before END_DATE." >&2
     exit 1
 fi
 
@@ -93,7 +93,7 @@ JOB_NAME="fi_mets_${SIM_NAME}_${ISPD_THRESH}"
 QSUB_CMD="qsub -N ${JOB_NAME} -v ENVFILE=$TMP_ENV $PBS_SCRIPT"
 echo "🔧 $QSUB_CMD"
 if [[ "$DRY_RUN" = true ]]; then
-    echo "🧪 [DRY RUN] Would submit PBS job with ENVFILE: $TMP_ENV"
+    echo "[DRY RUN] Would submit PBS job with ENVFILE: $TMP_ENV"
 else
     eval $QSUB_CMD
 fi

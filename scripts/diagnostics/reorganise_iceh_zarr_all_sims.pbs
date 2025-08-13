@@ -1,0 +1,36 @@
+#!/bin/bash
+#PBS -P gv90
+#PBS -q normalbw
+#PBS -l walltime=06:00:00
+#PBS -l mem=64GB
+#PBS -l ncpus=10
+#PBS -l jobfs=4GB
+#PBS -l storage=gdata/gv90+gdata/xp65
+#PBS -N merge_iceh_zarr
+#PBS -j oe
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+cd ~/AFIM/src/AFIM/scripts/diagnostics/
+SIM_ROOT="/g/data/gv90/da1339/afim_output"
+SIMS=("ktens-nil" "ndte-max-re-off" "ndte-max" "ndte-min" "notensnogi" "re-evp-off" "ry93")
+
+for sim in "${SIMS[@]}"; do
+    python3 reorganise_iceh_zarr_all_sims.py "$sim"
+done
+
+# for sim_dir in "$SIM_ROOT"/*; do
+#     sim_name=$(basename "$sim_dir")
+#     # Skip known problematic or non-standard directories
+#     if [[ "$sim_name" == "CMEMS-ORAS" || "$sim_name" == "FI-tuned" || "$sim_name" == "pack_ice.zarr" ]]; then
+#         echo "⚠️  Skipping $sim_name (excluded)"
+#         continue
+#     fi
+#     # Only run if iceh_*.zarr exist under sim_dir/zarr
+#     if compgen -G "$sim_dir/zarr/iceh_????-??.zarr" > /dev/null; then
+#         echo "✅ Submitting $sim_name"
+#         python3 reorganise_iceh_zarr_all_sims.py "$sim_name"
+#     else
+#         echo "🚫 No iceh_????-??.zarr files for $sim_name — skipping"
+#     fi
+# done
+# echo "🏁 All eligible simulations processed."

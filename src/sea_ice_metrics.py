@@ -1,194 +1,246 @@
-import gc
+import gc, re, dask
 import xarray      as xr
 import numpy       as np
 import pandas      as pd
 from pathlib       import Path
-from scipy.ndimage import binary_dilation, distance_transform_edt
 
 class SeaIceMetrics:
 
     def __init__(self, **kwargs):
         return
 
-    def sea_ice_metrics_wrapper(self,
-                                sim_name        = None,
-                                dt0_str         = None,
-                                dtN_str         = None,
-                                ice_type        = None,
-                                ispd_thresh     = None,
-                                overwrite_zarr  = None,
-                                overwrite_png   = None):
+    def fast_ice_metrics_wrapper(self,
+                                 sim_name       = None,
+                                 dt0_str        = None,
+                                 dtN_str        = None,
+                                 ice_type       = None,
+                                 ispd_thresh    = None,
+                                 cice_vars      = None,
+                                 drop_vars      = None,
+                                 drop_coords    = None,
+                                 ice_area_scale = None,
+                                 overwrite_zarr = None,
+                                 overwrite_png  = None):
         """
-        Compute, load, and plot summary fast ice metrics (FIA and FIP) for a given simulation and configuration.
+        Compute, load, and plot fast ice metrics (FIA and FIP) for a given simulation.
 
-        This method wraps the full processing and plotting pipeline for fast ice area (FIA) and fast ice persistence (FIP)
-        by optionally loading pre-computed metrics from disk (Zarr), or re-computing them from processed CICE model output.
-        It also loads the observational AF2020 climatology for comparison and generates a faceted figure comparing
-        multiple fast ice masking types (raw, rolling, and boolean). Metrics are written to disk if not already present
-        or if overwrite is enabled.
+        This method orchestrates the full pipeline for computing fast ice area (FIA)
+        and fast ice persistence (FIP) from CICE model output, comparing them with
+        observational data, and saving output figures and Zarr files.
 
         Parameters
         ----------
         sim_name : str, optional
-            Name of the model simulation to process. Defaults to `self.sim_name`.
-        dt0_str : str, optional
-            Start date (inclusive) of the processing window in 'YYYY-MM-DD' format. Defaults to `self.dt0_str`.
-        dtN_str : str, optional
-            End date (inclusive) of the processing window in 'YYYY-MM-DD' format. Defaults to `self.dtN_str`.
+            Simulation name. Defaults to `self.sim_name`.
+        dt0_str, dtN_str : str, optional
+            Start and end dates (inclusive), formatted as 'YYYY-MM-DD'.
+            Defaults to `self.dt0_str` and `self.dtN_str`.
         ice_type : str, optional
             Type of fast ice mask to use (e.g., 'FI_BT'). Defaults to `self.ice_type`.
         ispd_thresh : float, optional
-            Ice speed threshold (in m/s) used to define fast ice. Defaults to `self.ispd_thresh`.
-        overwrite_zarr : bool, optional
-            If True, re-compute and overwrite existing metric Zarr files. Defaults to `self.overwrite_zarr_group`.
-        overwrite_png : bool, optional
-            If True, overwrite the output PNG plot file. Defaults to `self.overwrite_png`.
-
-        Notes
-        -----
-        - The method processes and compares three variants of the fast ice mask:
-          1. Raw (e.g., 'FI_BT') – direct thresholding of daily speed
-          2. Rolling mean (e.g., 'FI_BT_roll') – speed is smoothed before thresholding
-          3. Boolean (e.g., 'FI_BT_bool') – based on a persistence filter applied after masking
-
-        - Each mask is used to compute and/or load:
-          * FIA (Fast Ice Area) — integrated area over time
-          * FIP (Fast Ice Persistence) — fraction of time with fast ice presence
-
-        - Observational climatology is loaded from AF2020 via `load_AF2020_FIA_summary()`.
-
-        - All computed metrics are saved as Zarr and CSV files under `self.D_metrics`.
-
-        - The final plot is saved under `self.D_graph/sim_name/`.
+            Ice speed threshold for defining fast ice (in m/s).
+        cice_vars : list of str, optional
+            CICE variables to load. Default: ['aice', 'hi', 'strength', 'tarea']
+        drop_vars, drop_coords : list of str, optional
+            Variables and coordinates to drop from loaded datasets.
+        ice_area_scale : float, optional
+            Scale factor for converting grid cell area. Default from `self.FIC_scale`.
+        overwrite_zarr, overwrite_png : bool, optional
+            If True, overwrite saved Zarr and PNG files respectively.
 
         Output
         ------
-        - Saves summary metrics as:
-          * Zarr: {ice_type}_mets.zarr
-          * CSV:  {ice_type}_summary.csv
-        - Generates faceted figure:
-          * PNG: FIA_FIP_{sim_name}_{ispd_thresh}_{year-range}.png
+        - Saves Zarr and CSV metric files.
+        - Generates faceted FIA+FIP PNG figure for three variants of ice mask.
 
-        See Also
-        --------
-        - self.load_AF2020_FIA_summary
-        - self.load_processed_cice
-        - self.boolean_fast_ice
-        - self.compute_sea_ice_metrics
-        - self.plot_FIA_FIP_faceted
+        Notes
+        -----
+        - Evaluates raw, rolling, and binary variants of the input ice type.
+        - Mask names are assumed to follow CICE convention with suffixes.
+        - See Also: `compute_sea_ice_metrics`, `plot_FIA_FIP_faceted`
         """
-        sim_name           = sim_name       if sim_name       is not None else self.sim_name
-        ice_type           = ice_type       if ice_type       is not None else self.ice_type
-        dt0_str            = dt0_str        if dt0_str        is not None else self.dt0_str
-        dtN_str            = dtN_str        if dtN_str        is not None else self.dtN_str
-        ispd_thresh        = ispd_thresh    if ispd_thresh    is not None else self.ispd_thresh
-        overwrite_zarr     = overwrite_zarr if overwrite_zarr is not None else self.overwrite_zarr_group
-        overwrite_png      = overwrite_png  if overwrite_png  is not None else self.ow_fig
-        ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        dt_range_str       = f"{dt0_str[:4]}-{dtN_str[:4]}"
-        FIA_dict           = {}
-        AF2020_CSV         = self.load_AF2020_FIA_summary( start=dt0_str, end=dtN_str )
-        FIA_dict["AF2020"] = AF2020_CSV['FIA_clim_repeat'].sel(region='circumpolar')
-        ice_types          = [ice_type, f"{ice_type}_roll", f"{ice_type}_bool"]
+        sim_name       = sim_name or self.sim_name
+        ice_type       = ice_type or self.ice_type
+        dt0_str        = dt0_str or self.dt0_str
+        dtN_str        = dtN_str or self.dtN_str
+        ispd_thresh    = ispd_thresh    if ispd_thresh is not None else self.ispd_thresh
+        ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
+        cice_vars      = cice_vars      if cice_vars is not None else ['aice', 'hi', 'strength', 'tarea']
+        drop_vars      = drop_vars      if drop_vars is not None else self.CICE_dict["drop_vars"]
+        drop_coords    = drop_coords    if drop_coords is not None else self.CICE_dict["drop_coords"]
+        overwrite_zarr = overwrite_zarr if overwrite_zarr is not None else self.overwrite_zarr_group
+        overwrite_png  = overwrite_png  if overwrite_png is not None else self.ow_fig
+        # dependent variables
+        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
+        dt_range_str    = f"{dt0_str[:4]}-{dtN_str[:4]}"
+        ice_type_clean  = re.sub(r'(_roll|_bin)?(_BT|_B|_Ta|_Tx)?$', '', ice_type)
+        ice_types       = [ice_type, f"{ice_type}_roll", f"{ice_type}_bin"]
+        # loop over three ice_types
         for i_type in ice_types:
-            P_METS = Path(self.D_metrics, f"{i_type}_mets.zarr")
-            P_sum  = Path(self.D_metrics, f"{i_type}_summary.csv")
-            if P_METS.exists() and not self.overwrite_zarr_group:
-                self.logger.info(f"{P_METS} exists and not overwriting--loading")
-                METS             = xr.open_zarr(P_METS)
-                FIA_dict[i_type] = METS['FIA']
-            else:
-                self.logger.info(f"{P_METS} does NOT exists and/or overwriting--computing")
-                if hasattr(i_type, "endswith"):
-                    roll = i_type.endswith("_roll")
+            P_METS    = Path(self.D_metrics, f"{i_type}_mets.zarr")
+            mask_name = f"{ice_type_clean}_mask"
+            if not P_METS.exists() or overwrite_zarr:
+                self.logger.info(f"Computing metrics: {P_METS}")
+                roll   = i_type.endswith("_roll")
+                I_mask = self.load_classified_ice(rolling     = roll,
+                                                  ice_type    = ice_type,
+                                                  ispd_thresh = ispd_thresh,
+                                                  dt0_str     = dt0_str,
+                                                  dtN_str     = dtN_str,
+                                                  variables   = mask_name)[mask_name]
+                CICE_SO = self.load_cice_zarr(slice_hem=True, variables=cice_vars)
+                if i_type.endswith("_bin") and ice_type_clean == "FI":
+                    FI_bin       = self.binary_days_fast_ice_classification(I_mask).chunk(self.CICE_dict["FI_chunks"])
+                    I            = CICE_SO.where(FI_bin)
+                    I[mask_name] = FI_bin
                 else:
-                    roll = False
-                # important to know that "FI" (below) is either daily (``raw``; i.e. classified without any other criteria
-                # other than ice speed threshold) or daily-rolling-mean (``rolled``; i.e. classified after ice speed has had
-                # a rolling-mean applied to it) ... the load of either is controlled by the True/False "rolling" option 
-                FI, CICE_SO = self.load_processed_cice(ispd_thresh = ispd_thresh,
-                                                       ice_type    = ice_type,
-                                                       dt0_str     = dt0_str,
-                                                       dtN_str     = dtN_str,
-                                                       zarr_CICE   = True,
-                                                       rolling     = roll,
-                                                       slice_hem   = True)
-                if i_type==f"{ice_type}_bool":
-                    bool_mask          = self.boolean_fast_ice(FI['FI_mask'])
-                    FI_bool            = CICE_SO.where(bool_mask)
-                    FI_bool["FI_mask"] = bool_mask
-                    FI                 = FI_bool
-                METS = self.compute_sea_ice_metrics( FI, FIA_dict["AF2020"], P_METS )
-            FIA_dict[i_type] = METS['FIA']
-        P_png = Path(self.D_graph, sim_name, f"FIA_FIP_{sim_name}_{ispd_thresh_str}_{dt_range_str}.png")
-        self.plot_FIA_FIP_faceted(FIA_dict, METS['FIP'],
-                                  P_png         = P_png,
-                                  overwrite_fig = overwrite_png,
-                                  plot_GI       = True if self.use_gi else False)
+                    I = CICE_SO.where(I_mask)
+                I      = I.chunk(self.CICE_dict["FI_chunks"])
+                I_dict = {mask_name  : I_mask.persist(),
+                          'aice'     : I['aice'].drop_vars(drop_coords).persist(),
+                          'hi'       : I['hi'].drop_vars(drop_coords).persist(),
+                          'strength' : I['strength'].drop_vars(drop_coords).persist(),
+                          'dvidtt'   : I['dvidtt'].drop_vars(drop_coords).persist(),
+                          'tarea'    : CICE_SO['tarea'].isel(time=0).drop_vars(drop_coords).persist()}
+                self.compute_sea_ice_metrics(I_dict,
+                                            ice_type       = ice_type_clean,
+                                            dt0_str        = dt0_str,
+                                            dtN_str        = dtN_str,
+                                            P_mets_zarr    = P_METS,
+                                            ice_area_scale = ice_area_scale)
+        # plot fast ice area and persistence
+        self.pygmt_FIA_FIP_panel(sim_name      = sim_name,
+                                 ispd_thresh   = ispd_thresh,
+                                 overwrite_fig = overwrite_png,
+                                 plot_GI       = self.use_gi)
 
-    def compute_sea_ice_metrics(self, FI_sim, FIA_obs, P_METS=None):
+    @staticmethod
+    def _clean_zarr_chunks(ds):
+        for var in ds.variables:
+            if 'chunks' in ds[var].encoding:
+                del ds[var].encoding['chunks']
+        return ds.chunk(None)
+
+    def compute_sea_ice_metrics(self, da_dict,
+                                ice_type       = None,
+                                dt0_str        = None,
+                                dtN_str        = None,
+                                P_mets_zarr    = None,
+                                ice_area_scale = None):
         """
-        Compute sea ice metrics from a processed fast ice simulation and compare against observations.
+        Compute sea ice metrics from a processed sea ice simulation and compare against observations.
 
         Parameters
         ----------
-        FI_sim : xr.Dataset
-            Processed fast ice dataset containing 'aice', 'hi', 'tarea', and 'FI_mask'.
-        FIA_obs : xr.DataArray
-            Observational fast ice area time series (e.g., AF2020 climatology repeated).
-        P_METS : Path or str, optional
-            Output path to store Zarr archive of computed metrics.
+        da_dict : dict
+            Dictionary containing xarray DataArrays or Datasets for the fields:
+            'aice', 'hi', 'tarea', and a corresponding mask ('FI_mask' or 'PI_mask').
+        ice_type : str, optional
+            Type of ice to process (e.g., 'FI', 'FI_BT_bin', etc.). Will be cleaned internally.
+        dt0_str : str, optional
+            Start date of the analysis window in 'YYYY-MM-DD'. Defaults to self.dt0_str.
+        dtN_str : str, optional
+            End date of the analysis window in 'YYYY-MM-DD'. Defaults to self.dtN_str.
+        P_mets_zarr : str or Path, optional
+            Path to save Zarr archive of computed metrics. If None, uses default path.
+        ice_area_scale : float, optional
+            Scaling factor to apply to the area field. Defaults to self.FIC_scale.
 
         Returns
         -------
-        xr.Dataset
-            Dataset containing computed FIA, FIP, and additional seasonal and spatial metrics.
+        xarray.Dataset
+            Dataset containing time series, spatial, and summary metrics.
         """
-        METS = {}
-        # --- 1D Time Series Metrics ---
-        FIA = self.compute_ice_area(FI_sim['aice'], FI_sim['tarea'])
-        FIV = self.compute_ice_volume(FI_sim['aice'], FI_sim['hi'], FI_sim['tarea'])
-        FIP = self.compute_variable_aggregate(FI_sim['aice'])
-        # Compute immediately before use in downstream stat methods
-        FIA_comp = FIA.compute()
-        del FIA
-        gc.collect()
-        FIV_comp = FIV.compute()
-        del FIV
-        gc.collect()
-        FIP_comp = FIP.compute()
-        del FIP
-        gc.collect()
-        METS["FIA"] = FIA_comp
-        METS["FIV"] = FIV_comp
-        METS["FIP"] = FIP_comp
-        # --- Seasonal Statistics (1D time series) ---
+        ice_type       = ice_type  or self.ice_type
+        dt0_str        = dt0_str   or self.dt0_str
+        dtN_str        = dtN_str   or self.dtN_str
+        P_mets_zarr    = Path(P_mets_zarr) if P_mets_zarr else Path(self.D_metrics, f"{ice_type}_mets.zarr")
+        ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
+        spatial_dim_names = self.CICE_dict['spatial_dims']
+        self.logger.info(f"¡¡¡ COMPUTING ICE METRICS for {ice_type} !!!")
+        ice_type_clean = re.sub(r'(_roll|_bin)?(_BT|_B|_Ta|_Tx)?$', '', ice_type)
+        if ice_type_clean not in ("FI", "PI"):
+            raise ValueError(f"Unexpected cleaned ice_type: {ice_type_clean}")
+        self.logger.info(f"results will be written to {P_mets_zarr}")
+        mask_name = f"{ice_type_clean}_mask"
+        I_mask    = da_dict[mask_name]
+        I_C       = da_dict['aice']
+        I_T       = da_dict['hi']
+        I_S       = da_dict['strength']
+        I_TVT     = da_dict['dvidtt']
+        I_MVT     = da_dict['dvidtd']
+        I_TAT     = da_dict['daidtt']
+        I_MAT     = da_dict['daidtd']
+        A         = da_dict['tarea']
+        # --- Time Series Metrics ---
+        IA   = self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale)
+        IV   = self.compute_hemisphere_ice_volume(I_C, I_T, A)
+        IT   = self.compute_hemisphere_ice_thickness(I_C, I_T, A)
+        IS   = self.compute_hemisphere_ice_strength(I_C, I_T, I_S)
+        ITVR = self.compute_hemisphere_ice_volume_rate(I_C, I_TVT)
+        IMVR = self.compute_hemisphere_ice_volume_rate(I_C, I_MVT)
+        ITAR = self.compute_hemisphere_ice_area_rate(I_TAT, IA, A)
+        IMAR = self.compute_hemisphere_ice_area_rate(I_MAT, IA, A)
+        IP   = self.compute_hemisphere_variable_aggregate(I_C)
+        self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
+        IHI = I_T.mean(dim=self.CICE_dict["time_dim"])
+        self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
+        IST = (I_S/I_T).sum(dim=self.CICE_dict["time_dim"]) / 1e6
+        self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
+        ITVR_YR = (I_TVT*1e2).mean(dim=self.CICE_dict["time_dim"]) / 3.65
+        IMVR_YR = (I_MVT*1e2).mean(dim=self.CICE_dict["time_dim"]) / 3.65
+        self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
+        ITAR_YR = (I_TAT*A).mean(dim=self.CICE_dict["time_dim"]) / 31_536_000
+        IMAR_YR = (I_MAT*A).mean(dim=self.CICE_dict["time_dim"]) / 31_536_000
+        self.logger.info("loading data into output dictionary...")
+        METS = {f"{ice_type_clean}A"      : IA.load(),      #1D
+                f"{ice_type_clean}V"      : IV.load(),      #1D
+                f"{ice_type_clean}T"      : IT.load(),      #1D
+                f"{ice_type_clean}S"      : IS.load(),      #1D
+                f"{ice_type_clean}TVR"    : ITVR.load(),    #1D
+                f"{ice_type_clean}MVR"    : IMVR.load(),    #1D
+                f"{ice_type_clean}TAR"    : ITAR.load(),    #1D
+                f"{ice_type_clean}MAR"    : IMAR.load(),    #1D
+                f"{ice_type_clean}P"      : IP.load(),      #2D
+                f"{ice_type_clean}HI"     : IHI.load(),     #2D
+                f"{ice_type_clean}ST"     : IST.load(),     #2D
+                f"{ice_type_clean}TVR_YR" : ITVR_YR.load(), #2D
+                f"{ice_type_clean}MVR_YR" : IMVR_YR.load(), #2D
+                f"{ice_type_clean}TAR_YR" : ITAR_YR.load(), #2D
+                f"{ice_type_clean}MAR_YR" : IMAR_YR.load()} #2D
+        # --- Skill Statistics ---
         try:
-            FIA_seasonal = self.compute_seasonal_statistics(FIA_comp)
-            FIV_seasonal = self.compute_seasonal_statistics(FIV_comp)
+            if ice_type_clean == "FI":
+                self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
+                IA_obs = xr.open_dataset(self.AF_FI_dict['P_AF2020_FIA'], engine="netcdf4")["AF2020"]
+            elif ice_type_clean == "PI":
+                NSIDC = self.compute_NSIDC_metrics()
+                IA_obs = NSIDC['SIA']
+            else:
+                IA_obs = None
+            IA_obs   = IA_obs.load()
+            IA_skill = self.compute_skill_statistics(IA, IA_obs) if IA_obs is not None else {}
         except Exception as e:
-            self.logger.warning(f"⚠️ Seasonal statistics failed: {e}")
-            FIA_seasonal = {}
-            FIV_seasonal = {}
-        # --- Spatial Statistics from FIP (2D map) ---
+            self.logger.warning(f"compute_skill_statistics failed: {e}")
+            IA_skill = {}
+        # --- Seasonal Statistics ---
         try:
-            FIP_stats = self.compute_fip_spatial_stats(FIP_comp)
+            IA_seasonal = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type_clean}A")
         except Exception as e:
-            self.logger.warning(f"⚠️ FIP spatial statistics failed: {e}")
-            FIP_stats = {}
-        # --- Fast Ice Distance Metrics ---
+            self.logger.warning(f"compute_seasonal_statistics failed: {e}")
+            IA_seasonal = {}
+        # --- Persistence Statistics ---
         try:
-            FI_dist = self.compute_fast_ice_distance_extent(FI_sim['FI_mask'])
+            IP_stab = self.persistence_stability_index(IP, A)
         except Exception as e:
-            self.logger.warning(f"⚠️ Distance extent computation failed: {e}")
-            FI_dist = {}
-        # --- Skill Statistics vs Observations ---
+            self.logger.warning(f"persistence_stability_index failed: {e}")
+            IP_stab = {}
         try:
-            FIA_skill = self.compute_skill_statistics(FIA_comp, FIA_obs)
+            IP_dist = self.persistence_ice_distance_mean_max(IP)
         except Exception as e:
-            self.logger.warning(f"⚠️ Skill statistics failed: {e}")
-            FIA_skill = {}
-        # --- Build Dataset from METS ---
+            self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
+            IP_dist = {}
+        # --- Build Output Dataset ---
         DS_METS = xr.Dataset()
         for k, v in METS.items():
             if isinstance(v, xr.DataArray):
@@ -199,32 +251,113 @@ class SeaIceMetrics:
                 DS_METS[k] = xr.DataArray(v, dims=('time',))
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
-        sim_config = self.sim_config
-        # --- Merge All Metrics into Dataset ---
-        summary = {**{f"FIA_{k}": v for k, v in FIA_seasonal.items()},
-                   **{f"FIV_{k}": v for k, v in FIV_seasonal.items()},
-                   **FIP_stats,
-                   **FI_dist,
-                   **FIA_skill,
-                   **sim_config}
-        # Add summary statistics as scalar variables
+        # --- Merge Metadata ---
+        summary = {**{f"{ice_type_clean}A_{k}": v for k, v in IA_seasonal.items()},
+                   **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
         for k, v in summary.items():
-            if k in sim_config:
-                DS_METS.attrs[k] = v  # Store sim_config as dataset-level attributes
+            if k in self.sim_config:
+                DS_METS.attrs[k] = v
             else:
-                DS_METS[k] = xr.DataArray(v, dims=())  # Summary metrics remain as DataArrays
-        # --- Save to Zarr (Optional) ---
-        if P_METS is not None:
-            DS_METS.to_zarr(P_METS, mode="w", consolidated=True)
-            self.logger.info(f"📊 Metrics written to {P_METS}")
+                DS_METS[k] = xr.DataArray(v, dims=())
+        # --- Save to Zarr ---
+        if P_mets_zarr:
+            DS_METS = self._clean_zarr_chunks(DS_METS)
+            DS_METS.to_zarr(P_mets_zarr, mode="w", consolidated=True)
+            self.logger.info(f"Metrics written to {P_mets_zarr}")
         return DS_METS
 
-    def compute_ice_area(self, SIC, GC_area,
-                         ice_area_scale            = None,
-                         spatial_dim_names         = None,
-                         sic_threshold             = None,
-                         add_grounded_iceberg_area = None,
-                         grounded_iceberg_area     = None):
+    def load_computed_metrics(self,
+                              spatial_grid_type : str   = "bin", #bin, roll, None (which is 'daily')
+                              ice_type          : str   = None,
+                              ispd_thresh       : str   = None):
+        ice_type    = ice_type       if ice_type    is not None else self.ice_type
+        ispd_thresh = ispd_thresh    if ispd_thresh is not None else self.ispd_thresh
+        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
+        D_mets      = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", "metrics")
+        P_mets      = Path(D_mets, f"{ice_type}_{spatial_grid_type}_mets.zarr") if spatial_grid_type is not None else Path(D_mets, f"{ice_type}_mets.zarr")
+        return xr.open_dataset(P_mets)
+
+    def compute_hemisphere_ice_area_rate(self, DAT, IA, A,
+                                           spatial_dim_names  : list  = None):
+        """
+        """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        self.logger.info("Computing **DYNAMIC AREA TENDENCY** for hemisphere")
+        self.logger.debug(f"  • Spatial dimension names           : {spatial_dim_names}")
+        self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
+                          f"  1. multiply dynamic area tendency (1/s) by grid cell area (m^2) and sum\n"
+                          f"  2. divide by ice area and volumetric scaling factor 1e9")
+        return (DAT*A).sum(dim=spatial_dim_names) / IA / 1e9 # m/s
+
+    def compute_hemisphere_ice_volume_rate(self, SIC, DVT,
+                                           spatial_dim_names  : list  = None,
+                                           sic_threshold      : float = None):
+        """
+        """
+        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        self.logger.info("Computing **DYNAMIC VOLUME TENDENCY** for hemisphere")
+        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
+                          f"  • Spatial dimension names           : {spatial_dim_names}")
+        self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
+                          f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                          f"  2. Multiply by 100 cm/m, sum over spatial dims, then divide by seconds per day")
+        mask = SIC > sic_threshold
+        DVT  = DVT.where(mask)
+        return (DVT*1e2).sum(dim=spatial_dim_names) / 8.64e4 #m/s
+
+    def compute_hemisphere_ice_strength(self, SIC, HI, IS,
+                                        spatial_dim_names  : list  = None,
+                                        sic_threshold      : float = None,
+                                        ice_strength_scale : float = 1e5):
+        """
+        Compute hemispheric mean sea ice pressure in hectopascals (hPa), based on masked concentration,
+        thickness, strength, and area fields.
+
+        This function calculates an area-weighted mean ice thickness (m) by dividing total
+        ice volume by total ice-covered area. It then converts internal ice strength (N/m) 
+        into an equivalent pressure field (Pa = N/m²), and finally into hectopascals (hPa). 
+        Grid cells below a threshold sea ice concentration are masked from the analysis.
+
+        INPUTS:
+        -------------------
+        SIC               : xr.DataArray; Sea ice concentration (unitless, typically 0–1), per grid cell.
+        HI                : xr.DataArray; Sea ice thickness in meters, per grid cell.
+        IS                : xr.DataArray; Internal ice strength in N/m, per grid cell.
+        A                 : xr.DataArray; Grid cell area in m².
+        spatial_dim_names : list, optional; Names of the spatial dimensions to reduce over (e.g., ["nj", "ni"]).
+                            If not provided, defaults to values in self.CICE_dict['spatial_dims'].
+        sic_threshold     : float, optional; Threshold for masking sea ice concentration (default: self.icon_thresh).
+
+        OUTPUTS:
+        -------
+        P : xr.DataArray; Sea ice pressure in hectopascals (hPa), with masked cells excluded
+            and computed as (IS / mean_thickness) / 100.
+
+        Notes
+        -----
+        - The output pressure is an approximation derived from CICE's internal strength field and is not a direct model output.
+        - Use with caution where sea ice thickness is very small or near-zero.
+        """
+        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        self.logger.info("Computing **INTERNAL ICE PRESSURE** for hemisphere")
+        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
+                          f"  • Spatial dimension names           : {spatial_dim_names}")
+        self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
+                          f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                          f"  2. Divide internal ice strength (N/m = kg*m/s^2) by thickness (m) to get ice pressure (kg/m*s^2 = Pa) then divide by 100 to get hPa")
+        mask = SIC > sic_threshold
+        HI   = HI.where(mask)
+        IS   = IS.where(mask)
+        return (IS / HI).sum(dim=spatial_dim_names) / ice_strength_scale
+
+    def compute_hemisphere_ice_area(self, SIC, A,
+                                    ice_area_scale            = None,
+                                    spatial_dim_names         = None,
+                                    sic_threshold             = None,
+                                    add_grounded_iceberg_area = None,
+                                    grounded_iceberg_area     = None):
         """
         Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally 
         including the grounded iceberg area (GI_total_area).
@@ -238,7 +371,7 @@ class SeaIceMetrics:
         SIC : xarray.DataArray
             Sea ice concentration field with dimensions (nj, ni) representing the concentration of sea ice at each grid point.
             
-        GC_area : xarray.DataArray
+        A : xarray.DataArray
             Grid cell area with the same dimensions (nj, ni) as SIC, representing the area of each grid cell in square meters.
             
         ice_area_scale : float, optional
@@ -273,29 +406,34 @@ class SeaIceMetrics:
         """
         add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
         sic_threshold             = sic_threshold             if sic_threshold             is not None else self.icon_thresh
+        spatial_dim_names         = spatial_dim_names         if spatial_dim_names         is not None else self.CICE_dict['spatial_dims']
+        ice_area_scale            = ice_area_scale            if ice_area_scale            is not None else self.FIC_scale
+        self.logger.info("Computing Ice **AREA** for Hemisphere")
+        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
+                          f"  • Spatial dimension names           : {spatial_dim_names}\n"
+                          f"  • Ice area scaling factor           : {ice_area_scale:.2e} (to convert m² → km² or other units)\n"
+                          f"  • Include grounded iceberg area     : {add_grounded_iceberg_area}")
         if add_grounded_iceberg_area:
-            if grounded_iceberg_area is not None:
-                GI_total_area = grounded_iceberg_area
-            else:
-                GI_total_area = self.compute_grounded_iceberg_area()
+            GI_total_area = (grounded_iceberg_area if grounded_iceberg_area is not None else self.compute_grounded_iceberg_area() )
         else:
             GI_total_area = 0
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        self.logger.info(f"{GI_total_area:0.2f} m^2 total circumpolar grounded iceberg area for {self.sim_name}")
-        ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
-        self.logger.info(f"spatially-integrating the product of sea ice concentrations and grid cell areas")
-        mask    = SIC > sic_threshold
-        SIC     = SIC.where(mask)
-        GC_area = GC_area.where(mask)
-        IA      = ((SIC * GC_area).sum(dim=spatial_dim_names))
-        IA      = IA + GI_total_area
-        IA      = IA/ice_area_scale
-        return IA
+        self.logger.debug("\n[Sea Ice Area Computation Steps]\n"
+                        f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                        f"  2. Multiply SIC × area and sum over {spatial_dim_names}\n"
+                        f"  3. Add grounded iceberg area (GIA) = {GI_total_area:.2f} m²\n"
+                        f"  4. Divide by scale factor {ice_area_scale:.2e} to convert units")
+        mask = SIC > sic_threshold
+        SIC  = SIC.where(mask)
+        A    = A.where(mask)
+        IA   = ((SIC * A).sum(dim=spatial_dim_names))#.chunk({'time': -1}).compute()
+        return (IA + GI_total_area) / ice_area_scale 
 
-    def compute_ice_volume(self, SIC, HI, GC_area,
-                           ice_volume_scale  = 1e12, 
-                           spatial_dim_names = None,
-                           sic_threshold     = None):
+    def compute_hemisphere_ice_volume(self, SIC, HI, A,
+                                      add_grounded_iceberg_area = None,
+                                      ice_volume_scale          = 1e12, 
+                                      spatial_dim_names         = None,
+                                      sic_threshold             = None,
+                                      grounded_iceberg_area     = None):
         """
         Compute total sea ice volume by integrating sea ice concentration, thickness, and grid cell area.
 
@@ -312,7 +450,7 @@ class SeaIceMetrics:
         HI : xarray.DataArray
             Sea ice thickness in meters.
             
-        GC_area : xarray.DataArray
+        A : xarray.DataArray
             Grid cell area in square meters (m²).
 
         ice_volume_scale : float, optional
@@ -336,21 +474,33 @@ class SeaIceMetrics:
         - Grid cells below `sic_threshold` are excluded from the volume calculation.
         - If `self.use_gi` is True, a grounded iceberg area is converted to volume and included.
         """
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
-        GI_total_area = self.compute_grounded_iceberg_area() if self.use_gi else 0
-        self.logger.info(f"{GI_total_area:0.2f} m² total grounded iceberg area for {self.sim_name}")
-        mask    = SIC > sic_threshold
-        HI      = HI.where(mask)
-        SIC     = SIC.where(mask)
-        GC_area = GC_area.where(mask)
-        self.logger.info("computing ice volume: sum(SIC × HI × area)")
-        IV = (SIC * HI * GC_area).sum(dim=spatial_dim_names)
-        IV += GI_total_area
-        IV /= ice_volume_scale
-        return IV
+        add_grounded_iceberg_area = add_grounded_iceberg_area if add_grounded_iceberg_area is not None else self.use_gi
+        spatial_dim_names         = spatial_dim_names         if spatial_dim_names         is not None else self.CICE_dict['spatial_dims']
+        sic_threshold             = sic_threshold             if sic_threshold             is not None else self.icon_thresh
+        self.logger.info("Computing Ice **VOLUME** for Hemisphere")
+        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
+                          f"  • Spatial dimension names           : {spatial_dim_names}\n"
+                          f"  • Ice volume scaling factor         : {ice_volume_scale:.2e} (to convert {1e6:.1e}-km^3)\n"
+                          f"  • Include grounded iceberg area     : {add_grounded_iceberg_area}")
+        if add_grounded_iceberg_area:
+            GI_total_area = (grounded_iceberg_area if grounded_iceberg_area is not None else self.compute_grounded_iceberg_area() )
+        else:
+            GI_total_area = 0
+        self.logger.debug("\n[Sea Ice Volume Computation Steps]\n"
+                        f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                        f"  2. Multiply SIC × thickness × area and sum over {spatial_dim_names}\n"
+                        f"  3. Add grounded iceberg area (GIA) = {GI_total_area:.2f} m²\n"
+                        f"  4. Divide by scale factor {ice_volume_scale:.2e} to convert units")
+        mask = SIC > sic_threshold
+        HI   = HI.where(mask)
+        SIC  = SIC.where(mask)
+        A    = A.where(mask)
+        IV   = (SIC * HI * A).sum(dim=spatial_dim_names)#.chunk({'time': -1}).compute()
+        return (IV + GI_total_area) / ice_volume_scale 
 
-    def compute_ice_thickness(self, HI, SIC, GC_area, spatial_dim_names=None, sic_threshold=None):
+    def compute_hemisphere_ice_thickness(self, SIC, HI, A, 
+                                         spatial_dim_names = None,
+                                         sic_threshold     = None):
         """
         Compute average sea ice thickness weighted by grid cell area and sea ice concentration.
 
@@ -389,513 +539,441 @@ class SeaIceMetrics:
         """
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
         sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
-        self.logger.info(f"masking for sea ice concentration above {sic_threshold}")
-        mask    = SIC > sic_threshold
-        HI      = HI.where(mask)
-        SIC     = SIC.where(mask)
-        GC_area = GC_area.where(mask)
-        self.logger.info(f"computing area and volume")
-        sia     = (SIC * GC_area).sum(dim=spatial_dim_names)
-        siv     = (HI * GC_area).sum(dim=spatial_dim_names)
-        return siv / sia
+        self.logger.info("Computing Ice **THICKNESS** for Hemisphere")
+        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
+                          f"  • Spatial dimension names           : {spatial_dim_names}")
+        self.logger.debug("\n[Sea Ice Thickness Computation Steps]\n"
+                        f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                        f"  2. Compute ice area: Multiply SIC × area and sum over {spatial_dim_names}\n"
+                        f"  3. Compute ice volume: Multiply SIC × thickness × area and sum over {spatial_dim_names}\n"
+                        f"  4. Divide by area / volume = thickness in metres")
+        mask = SIC > sic_threshold
+        HI   = HI.where(mask)
+        SIC  = SIC.where(mask)
+        A    = A.where(mask)
+        IA   = (SIC * A).sum(dim=spatial_dim_names)
+        IV   = (HI * A).sum(dim=spatial_dim_names)
+        return (IV / IA)
 
-    def compute_variable_aggregate(self, da, time_coord_name='time'):
+    def compute_hemisphere_variable_aggregate(self, da, time_coord_name='time', flat_mean=False, da2=None, scale=None):
         """
-        Compute the time-mean aggregate of a variable by summing over time and normalizing by time dimension length.
+        Compute a time-aggregated field from a DataArray across the specified time dimension.
 
-        This method computes the average of a DataArray along a given time dimension using the total sum divided by 
-        the number of time steps. Useful for handling Dask arrays or preserving lazy evaluation.
+        This method calculates the mean of the input variable over time, with an optional
+        normalisation step based on the maximum value across the time dimension.
+        Designed for Dask-backed DataArrays to support scalable computation.
 
         Parameters
         ----------
         da : xarray.DataArray
-            The input data array to be aggregated over time.
+            Input data array to aggregate over time. Typically a geophysical variable such as
+            sea ice thickness (m), strength (N/m), or velocity (m/s), with time as one of the dimensions.
         time_coord_name : str, optional
-            Name of the time coordinate/dimension. Defaults to `'time'`.
+            Name of the time dimension to aggregate over. Default is 'time'.
+        flat_mean : bool, optional
+            If True, the data has simple mean over time, Default is False.
 
         Returns
         -------
         xarray.DataArray
-            Time-averaged data array.
+            A time-aggregated version of the input array. If `normalise_max` is True,
+            the result represents the normalised mean occurrence across the time dimension;
+            otherwise, it is the simple time mean.
 
         Notes
         -----
-        - Falls back to division by 1 if the time dimension is missing.
-        - This is equivalent to `da.mean(dim='time')` but avoids triggering eager computation.
+        - If the specified `time_coord_name` is not found in the input DataArray,
+        the original array is returned with a warning.
+        - If `normalise_max` is enabled, the output represents a relative frequency-like
+        measure, especially useful for thresholded or binary input fields (e.g., fast ice presence).
+        - Assumes that all non-time dimensions are to be preserved in the output.
         """
-        return da.sum(dim=time_coord_name) / da[time_coord_name].sizes.get(time_coord_name, 1)
+        self.logger.info("Computing Ice **AGGREGATE OVER TIME** (percentage of occurence)")
+        if time_coord_name not in da.dims:
+            self.logger.warning(f"No time dimension '{time_coord_name}' found. Returning original array.")
+            return da
+        time_len = da[time_coord_name].sizes.get(time_coord_name, 1)
+        if flat_mean:
+            return da.mean(dim=time_coord_name)
+        elif da2 and scale:
+            return (da/da2).sum(dim=time_coord_name) / scale
+        else:
+            return da.sum(dim=time_coord_name) / time_len
 
     # SEASONAL METRICS
-    def detect_onset_via_derivative(self, da, window=15, polyorder=2, min_onset_doy=50):
+    @staticmethod
+    def _ensure_odd(n: int) -> int:
+        return n if n % 2 == 1 else n + 1
+
+    @staticmethod
+    def _safe_slope(y: np.ndarray, t_days: np.ndarray, scaling: float) -> float | None:
+        """Least-squares slope without polyfit overhead; returns None if flat/NaN."""
+        mask = np.isfinite(y) & np.isfinite(t_days)
+        if mask.sum() < 2:
+            return None
+        y = y[mask]
+        t = t_days[mask]
+        t = t - t[0]  # improves conditioning
+        t_mean = t.mean()
+        y_mean = y.mean()
+        denom = np.sum((t - t_mean) ** 2)
+        if denom == 0:
+            return None
+        slope = np.sum((t - t_mean) * (y - y_mean)) / denom
+        return float(slope * scaling)
+
+    @staticmethod
+    def _year_index_slices(times: np.ndarray) -> dict[int, np.ndarray]:
+        years = pd.DatetimeIndex(times).year.values
+        uniq = np.unique(years)
+        return {int(y): np.where(years == y)[0] for y in uniq}
+
+    @staticmethod
+    def _drop_leap_day(times: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        # Remove Feb 29 for DOY-consistent filters
+        di = pd.DatetimeIndex(times)
+        keep = ~((di.month == 2) & (di.day == 29))
+        return times[keep], y[keep]
+
+    @staticmethod
+    def _summary(x):
+        x = [v for v in x if v is not None]
+        return (float(np.mean(x)), float(np.std(x))) if len(x) else (None, None)
+
+    def compute_seasonal_statistics(self, da,
+                                    stat_name : str = 'FIA',
+                                    window: int = 15,
+                                    polyorder: int = 2,
+                                    min_onset_doy: int = 50,
+                                    min_retreat_doy: int = 240,
+                                    growth_range: tuple[int, int] = (71, 273),
+                                    retreat_early_range: tuple[int, int] = (273, 330),
+                                    retreat_late_range: tuple[tuple[int, int], tuple[int, int]] = ((331, 365), (1, 71)),
+                                    scaling_factor: float = 1e6,
+                                    drop_leap_day: bool = True,
+                                    return_per_year: bool = False):
         """
-        Detect onset of ice growth using Savitzky-Golay derivative filter.
-        
+        Fast version that loads once, computes derivatives once per year, and uses NumPy slicing.
+
         Parameters
         ----------
-        da : xr.DataArray
-            Time series with daily time axis (single year).
-        window : int
-            Smoothing window for Savitzky-Golay filter (must be odd).
-        polyorder : int
-            Polynomial order for filter.
-        min_onset_doy : int
-            DOY to start searching for growth onset.
-        
+        da : xr.DataArray  # 1D, daily, with 'time'
+        window, polyorder, min_onset_doy, min_retreat_doy : as before
+        growth_range, retreat_early_range, retreat_late_range : as before
+        scaling_factor : float  # multiplies slopes for nicer units
+        drop_leap_day : bool    # remove Feb 29 to keep DOY logic simple
+        return_per_year : bool  # also return a per-year table if True
+
         Returns
         -------
-        int or None
-            Estimated DOY of onset, or None if not found.
+        summary : dict[str, float | None]
+        (optional) per_year : pandas.DataFrame  # one row per year (except last, by design)
         """
         from scipy.signal import savgol_filter
-        if da.time.size < window:
-            return None
-        y     = da.values
-        dy_dt = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=1)
-        doy   = da["time"].dt.dayofyear.values
-        mask  = doy >= min_onset_doy
-        growth_start_candidates = np.where((dy_dt > 0) & mask)[0]
-        if growth_start_candidates.size == 0:
-            return None
-        # Optional: Find first continuous upward segment
-        onset_idx = growth_start_candidates[0]
-        return int(doy[onset_idx])
+        from tqdm         import tqdm
+        if 'time' not in da.dims:
+            raise ValueError("Input DataArray must have a 'time' dimension")
+        self.logger.info(f"computing SEASONAL STATISTICS for {stat_name} ... ")
+        # 1) Load once (small 1D array) and optionally drop leap days
+        self.logger.debug("   1. loading array ")
+        da = da.load()  # safe for 1D daily series
+        times = da.time.values
+        y_full = da.values.astype(np.float32)
+        self.logger.debug("   2. drop leap-days")
+        if drop_leap_day:
+            times, y_full = self._drop_leap_day(times, y_full)
+        self.logger.debug("   3. compute DOY indeces once")
+        doy_full = pd.DatetimeIndex(times).dayofyear.values
+        idx_by_year = self._year_index_slices(times)
+        years_sorted = sorted(idx_by_year.keys())
+        self.logger.debug("   4. prepare statistical lists")
+        per_year_rows = []
+        max_list, min_list = [], []
+        grow_list, ret_list = [], []
+        ret_early_list, ret_late_list = [], []
+        min_doy_list, max_doy_list = [], []
+        onset_list = [] 
+        duration_list = []
+        self.logger.debug("   5. Ensure Savitzky–Golay (savgol) settings are valid")
+        window = self._ensure_odd(window)
+        if window < polyorder + 2:
+            window = polyorder + 3 if (polyorder + 3) % 2 == 1 else polyorder + 4
+        self.logger.debug("   6. compute derivatives once per-year")
+        for i, year in enumerate(years_sorted[:-1]):
+            self.logger.debug(f"     ....{year}")
+            idx_this = idx_by_year[year]
+            idx_next = idx_by_year[years_sorted[i + 1]]
+            t_this = times[idx_this]
+            y_this = y_full[idx_this]
+            doy_this = doy_full[idx_this]
+            # Skip tiny years
+            if y_this.size < max(window, polyorder + 2):
+                continue
+            # Derivatives once per year
+            try:
+                dy_dt = savgol_filter(y_this, window_length=window, polyorder=polyorder, deriv=1, mode='interp')
+                d2y_dt2 = savgol_filter(y_this, window_length=window, polyorder=polyorder, deriv=2, mode='interp')
+            except ValueError:
+                # window too long for this year, skip
+                continue
+            # --- Max/Min & their DOY ---
+            if np.all(~np.isfinite(y_this)):
+                # skip year with all NaN
+                continue
+            with np.errstate(invalid='ignore'):
+                max_idx = int(np.nanargmax(y_this))
+                min_idx = int(np.nanargmin(y_this))
+            max_val = float(y_this[max_idx])
+            min_val = float(y_this[min_idx])
+            max_doy = int(doy_this[max_idx])
+            min_doy = int(doy_this[min_idx])
+            max_list.append(max_val); min_list.append(min_val)
+            max_doy_list.append(max_doy); min_doy_list.append(min_doy)
+            # --- Onset via derivative (first positive slope after min_onset_doy) ---
+            onset_candidates = np.flatnonzero((dy_dt > 0) & (doy_this >= min_onset_doy))
+            onset_doy = int(doy_this[onset_candidates[0]]) if onset_candidates.size else None
+            # --- Retreat via inflection (last negative curvature after min_retreat_doy) ---
+            retreat_candidates = np.flatnonzero((d2y_dt2 < 0) & (doy_this >= min_retreat_doy))
+            retreat_doy = int(doy_this[retreat_candidates[-1]]) if retreat_candidates.size else None
+            # --- Duration (onset → retreat, handle wrap) ---
+            if onset_doy is not None and retreat_doy is not None:
+                duration = (retreat_doy - onset_doy) if (retreat_doy > onset_doy) else (365 - onset_doy + retreat_doy)
+                duration_list.append(int(duration))
+                onset_list.append(int(onset_doy))
+            # --- Slopes (growth / retreat early / retreat late / overall retreat) ---
+            # Build masks once (NumPy, no xarray .where)
+            doy_mask = doy_this  # alias
+            g0, g1 = growth_range
+            re0, re1 = retreat_early_range
+            rl0a, rl1a = retreat_late_range[0]
+            rl0b, rl1b = retreat_late_range[1]
+            # growth season (this year)
+            g_mask = (doy_mask >= g0) & (doy_mask <= g1)
+            y_grow = y_this[g_mask]
+            t_grow = (t_this[g_mask] - t_this[g_mask][0]) / np.timedelta64(1, 'D') if y_grow.size else np.array([])
+            slope_grow = self._safe_slope(y_grow, t_grow, scaling_factor)
+            if slope_grow is not None:
+                grow_list.append(slope_grow)
+            # retreat early (this year)
+            e_mask = (doy_mask >= re0) & (doy_mask <= re1)
+            y_early = y_this[e_mask]
+            t_early = (t_this[e_mask] - t_this[e_mask][0]) / np.timedelta64(1, 'D') if y_early.size else np.array([])
+            slope_early = self._safe_slope(y_early, t_early, scaling_factor)
+            if slope_early is not None:
+                ret_early_list.append(slope_early)
+            # retreat late (next year)
+            t_next = times[idx_next]
+            y_next = y_full[idx_next]
+            doy_next = doy_full[idx_next]
+            l_mask_a = (doy_mask >= rl0a) & (doy_mask <= rl1a)
+            l_mask_b = (doy_next >= rl0b) & (doy_next <= rl1b)
+            y_late = np.concatenate([y_this[l_mask_a], y_next[l_mask_b]])
+            t_late = np.concatenate([(t_this[l_mask_a] - t_this[l_mask_a][0]) / np.timedelta64(1, 'D') if l_mask_a.any() else np.array([]),
+                                      # Continue time axis across year boundary
+                                     ((t_next[l_mask_b] - t_this[l_mask_a][0]) / np.timedelta64(1, 'D')) if l_mask_b.any() and l_mask_a.any() else
+                                     ((t_next[l_mask_b] - t_next[l_mask_b][0]) / np.timedelta64(1, 'D')) if l_mask_b.any() else np.array([])]) if (l_mask_a.any() or l_mask_b.any()) else np.array([])
+            slope_late = self._safe_slope(y_late, t_late, scaling_factor)
+            if slope_late is not None:
+                ret_late_list.append(slope_late)
+            # overall retreat (early + late concatenated)
+            if y_early.size or y_late.size:
+                y_ret = np.concatenate([y_early, y_late])
+                # stitch time so it's strictly increasing
+                t_ret = np.concatenate([t_early if y_early.size else np.array([]), (t_late + (t_early[-1] + 1) if y_early.size and y_late.size else t_late)])
+                slope_ret = self._safe_slope(y_ret, t_ret, scaling_factor)
+                if slope_ret is not None:
+                    # Keep sign convention negative (ablation)
+                    ret_list.append(-abs(slope_ret))
+            if return_per_year:
+                per_year_rows.append({'year'                : year,
+                                      'max'                 : max_val,   'min'         : min_val,
+                                      'doy_max'             : max_doy,   'doy_min'     : min_doy,
+                                      'onset_doy'           : onset_doy, 'retreat_doy' : retreat_doy,
+                                      'duration_days'       : duration if (onset_doy is not None and retreat_doy is not None) else None,
+                                      'growth_slope'        : slope_grow,
+                                      'retreat_early_slope' : slope_early,
+                                      'retreat_late_slope'  : slope_late,
+                                      'retreat_slope'       : slope_ret if slope_ret is not None else None,})
+        self.logger.debug("   7. compile summary and return")
+        summary = {"Maximum Mean"       : self._summary(max_list)[0],       "Maximum Std"       : self._summary(max_list)[1],
+                   "Minimum Mean"       : self._summary(min_list)[0],       "Minimum Std"       : self._summary(min_list)[1],
+                   "Growth Mean"        : self._summary(grow_list)[0],      "Growth Std"        : self._summary(grow_list)[1],
+                   "Retreat Mean"       : self._summary(ret_list)[0],       "Retreat Std"       : self._summary(ret_list)[1],
+                   "Retreat Early Mean" : self._summary(ret_early_list)[0], "Retreat Early Std" : self._summary(ret_early_list)[1],
+                   "Retreat Late Mean"  : self._summary(ret_late_list)[0],  "Retreat Late Std"  : self._summary(ret_late_list)[1],
+                   "Duration-days Mean" : self._summary(duration_list)[0],  "Duration-days Std" : self._summary(duration_list)[1],
+                   "DOY Min Mean"       : self._summary(min_doy_list)[0],   "DOY Min Std"       : self._summary(min_doy_list)[1],
+                   "DOY Max Mean"       : self._summary(max_doy_list)[0],   "DOY Max Std"       : self._summary(max_doy_list)[1],
+                   "DOY Onset Mean"     : self._summary(onset_list)[0],     "DOY Onset Std"     : self._summary(onset_list)[1],}
+        if return_per_year:
+            return summary, pd.DataFrame(per_year_rows).set_index('year')
+        return summary
 
-    def compute_seasonal_duration_derivative(da, window=15, polyorder=2, min_onset_doy=50, max_retreat_doy=330):
+    # PERSISTENCE METRICS
+    def persistence_stability_index(self, ice_prstnc, A, persistence = 0.8):
         """
-        Compute ice season duration using first derivative of smoothed time series.
+        Compute the Hemispheric Persistence Stability Index.
 
-        Seasonal Duration = Retreat DOY − Onset DOY
-        Where: Onset DOY is the beginning of sustained growth, and Retreat DOY is the end of sustained presence (start of ablation),
-        
+        This function quantifies the spatial stability of sea ice presence over time by comparing the
+        area of persistent ice coverage to the total area where ice is ever present. It returns a single
+        index value representing the ratio of consistently persistent ice to all intermittently
+        present ice across the hemisphere.
+
         Parameters
         ----------
-        da : xr.DataArray
-            Time series for a single year (daily resolution).
-        window : int
-            Smoothing window for Savitzky-Golay filter.
-        polyorder : int
-            Polynomial order for smoothing.
-        min_onset_doy : int
-            Minimum DOY to search for onset.
-        max_retreat_doy : int
-            Maximum DOY to search for retreat.
+        ice_prstnc : xarray.DataArray
+            Time-varying persistence of ice presence (0/1 or probability).
+        A : xarray.DataArray
+            Grid cell area (e.g., `TAREA`) on the same spatial grid.
+        persistence : float, optional
+            Minimum persistence threshold to define "persistent" ice (default is 0.8).
 
         Returns
         -------
-        (onset_doy, retreat_doy, duration_days)
-            Tuple of day-of-year values (int) and duration (int), or (None, None, None)
-        """
-        from scipy.signal import savgol_filter
-        if da.time.size < window:
-            return None, None, None
-        y   = da.values
-        doy = da["time"].dt.dayofyear.values
-        dy_dt = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=1)
-        # --- Onset detection (first sustained positive trend) ---
-        onset_candidates = np.where((dy_dt > 0) & (doy >= min_onset_doy))[0]
-        if onset_candidates.size == 0:
-            return None, None, None
-        onset_idx = onset_candidates[0]
-        onset_doy = doy[onset_idx]
-        # --- Retreat detection (first sustained negative trend after peak) ---
-        peak_idx = np.argmax(y)
-        retreat_candidates = np.where((dy_dt < 0) & (np.arange(len(y)) > peak_idx) & (doy <= max_retreat_doy))[0]
-        if retreat_candidates.size == 0:
-            return onset_doy, None, None
-        retreat_idx = retreat_candidates[-1]
-        retreat_doy = doy[retreat_idx]
-        # Handle wraparound (e.g., retreat in next year)
-        duration = retreat_doy - onset_doy if retreat_doy > onset_doy else (365 - onset_doy + retreat_doy)
-        return onset_doy, retreat_doy, duration
-
-    def compute_retreat_via_inflection(self, da, window=15, polyorder=2, min_retreat_doy=240):
-        """
-        Estimate the day of sea ice retreat based on the latest inflection point in a time series.
-
-        This method uses the second derivative of a smoothed time series to identify the last significant
-        inflection point indicating retreat (change from decelerating to accelerating melt) during the melt season.
-        The signal is smoothed using a Savitzky–Golay filter.
-
-        Parameters
-        ----------
-        da : xarray.DataArray
-            A 1D time series of sea ice area (or similar metric) with a `time` coordinate.
-        window : int, optional
-            Window length (in days) for the Savitzky–Golay filter. Must be an odd integer.
-            Default is 15.
-        polyorder : int, optional
-            Polynomial order used in the Savitzky–Golay filter. Default is 2.
-        min_retreat_doy : int, optional
-            Minimum day-of-year (DOY) to begin searching for inflection points. Default is 240 (~end of August).
-
-        Returns
-        -------
-        int or None
-            Day-of-year (DOY) of the last negative inflection point (i.e., where curvature becomes negative),
-            indicating sea ice retreat. Returns `None` if no such inflection point is found after `min_retreat_doy`.
+        dict; containing a single scalar value:
+            - 'persistence_stability_index': float; ratio of persistent ice area to total ice footprint.
 
         Notes
         -----
-        - Inflection points are defined where the second derivative (`d²y/dt²`) becomes negative.
-        - This method assumes the time series is sufficiently smooth and uniformly spaced in time.
-        - The last inflection point after `min_retreat_doy` is returned as the estimated retreat day.
-        - No output is returned if no qualifying inflection points are found.
+        - The persistent footprint is the summed area of cells with mean persistence >= threshold.
+        - The total footprint includes all cells with nonzero presence over time.
+        - Both areas are computed over the provided grid cell area `A`.
+        - The result is computed using Dask for efficient parallel execution.
+        - Requires that the input arrays are aligned and dimensionally compatible.
         """
-        from scipy.signal import savgol_filter
-        y           = da.values
-        doy         = da["time"].dt.dayofyear.values
-        d2y_dt2     = savgol_filter(y, window_length=window, polyorder=polyorder, deriv=2)
-        inflections = np.where((d2y_dt2 < 0) & (doy >= min_retreat_doy))[0]
-        if inflections.size == 0:
-            return None
-        return doy[inflections[-1]]
+        self.logger.info("Computing Hemispheric Stability Index: (persistent_footprint / total_footprint)")
+        ice_prstnc = ice_prstnc.load()
+        if 'time' in A.dims:
+            A = A.isel(time=0).drop_vars('time')
+        prstnc_mask     = ice_prstnc >= persistence      
+        always_mask     = ice_prstnc > 0                 
+        prstnc_A        = (A.where(prstnc_mask)).sum(dim=self.CICE_dict["spatial_dims"])
+        ttl_A           = (A.where(always_mask)).sum(dim=self.CICE_dict["spatial_dims"])
+        prstnc_A, ttl_A = dask.compute(prstnc_A, ttl_A)
+        psi             = (prstnc_A / ttl_A) if ttl_A > 0 else np.nan
+        return {"persistence_stability_index": psi}
 
-    def compute_seasonal_statistics(self, da, 
-                                    growth_range        = (71 , 273),
-                                    retreat_early_range = (273, 330),
-                                    retreat_late_range1 = (331, 365),
-                                    retreat_late_range2 = (1  , 71)  ):
+    def persistence_ice_distance_mean_max(self, ice_prstnc, persistence_min=0.8):
         """
-        Compute seasonal growth, retreat, and timing statistics for a sea ice metric (e.g., SIA, FIA, SIV, FIV).
+        Estimate how far sea ice (e.g., fast or pack ice) extends from the coast.
 
-        This method loops over all years in the provided time series and calculates:
-        - Minimum and maximum values and their day-of-year (DOY)
-        - Growth rate during the ice advance season
-        - Retreat rate, split into early (spring) and late (autumn–next year) seasons
-        - Overall retreat rate (from both early and late phases)
-        - Duration of the seasonal ice cycle (onset to retreat)
-        - DOY of growth onset (based on derivative)
-        - DOY of retreat (based on inflection analysis)
+        This function calculates the mean and maximum distance of persistent sea ice presence
+        from the coastline using a Euclidean distance transform. Rather than assuming constant
+        grid spacing, it leverages the native grid cell area (`TAREA`) to estimate physical
+        distances in kilometers. Grid cells are included if their ice persistence exceeds
+        `persistence_min`.
 
         Parameters
         ----------
-        da : xarray.DataArray
-            Time series of a sea ice variable (must have a 'time' coordinate). Should be continuous and span multiple years.
-        growth_range : tuple of int, optional
-            Day-of-year (DOY) range used to compute the seasonal **growth** rate. Default is (71, 273), i.e. mid-March to late-September.
-        retreat_early_range : tuple of int, optional
-            DOY range for computing **early melt/retreat** rate (e.g., spring melt). Default is (273, 330).
-        retreat_late_range1 : tuple of int, optional
-            DOY range for the **late melt** phase in the current year (e.g., late December). Default is (331, 365).
-        retreat_late_range2 : tuple of int, optional
-            DOY range for the **late melt** phase in the following year (e.g., January). Default is (1, 71).
-
-        Returns
-        -------
-        dict
-            Dictionary of summary statistics, including:
-            - "Maximum Mean", "Maximum Std"
-            - "Minimum Mean", "Minimum Std"
-            - "Growth Mean", "Growth Std"
-            - "retreat Mean", "retreat Std"
-            - "retreat Early Mean", "retreat Early Std"
-            - "retreat Late Mean", "retreat Late Std"
-            - "Duration-days Mean", "Duration-days std"
-            - "DOY Min Mean", "DOY Min Std"
-            - "DOY Max Mean", "DOY Max Std"
-            - "DOY Onset Mean", "DOY Onset Std" (if detectable)
-
-        Notes
-        -----
-        - Only non-leap years are included in the analysis to maintain consistent DOY ranges.
-        - The first year is excluded to ensure late-season comparisons can access next year's data.
-        - Growth and retreat rates are computed as the slope (Δvalue / Δdays) × 1e6 for clearer units (e.g., 10⁶ km²/day).
-        - Retreat DOY is detected using the inflection point of a smoothed curve (via `compute_retreat_via_inflection`).
-        - Onset DOY is computed from the maximum positive slope in early-season growth (via `detect_onset_via_derivative`).
-        - Retreat duration handles wrap-around years (e.g., onset in September, retreat in March).
-
-        See Also
-        --------
-        - self.compute_retreat_via_inflection : Detects retreat date via curvature analysis
-        - self.detect_onset_via_derivative    : Detects growth onset via slope analysis
-        """
-        da                  = da.sel(time=~da["time"].dt.is_leap_year)
-        da                  = da.sel(time=da["time"].dt.year > da["time"].dt.year.min())
-        maximums            = []
-        minimums            = []
-        growth_rates        = []
-        retreat_rates       = []
-        retreat_early_rates = []
-        retreat_late_rates  = []
-        min_doys            = []
-        max_doys            = []
-        onset_doys          = []
-        duration_days       = []
-        for year in np.unique(da.time.dt.year):
-            this_year = da.sel(time=da.time.dt.year == year).compute()
-            maximums.append(this_year.max().values)
-            minimums.append(this_year.min().values)
-            time_min  = this_year["time"].values[this_year.argmin("time").values]
-            time_max  = this_year["time"].values[this_year.argmax("time").values]
-            min_doys.append(pd.to_datetime(time_min).dayofyear)
-            max_doys.append(pd.to_datetime(time_max).dayofyear)
-            onset_doy   = self.detect_onset_via_derivative(this_year)
-            retreat_doy = self.compute_retreat_via_inflection(this_year)
-            duration_days.append(retreat_doy - onset_doy if retreat_doy > onset_doy else (365 - onset_doy + retreat_doy))
-            if onset_doy:
-                onset_doys.append(onset_doy)          
-            grow = this_year.sel(time=((this_year.time.dt.dayofyear >= growth_range[0]) & (this_year.time.dt.dayofyear <= growth_range[1])))
-            if grow.time.size >= 2:
-                days  = (grow.time - grow.time[0]) / np.timedelta64(1, 'D')
-                slope = np.polyfit(days, grow.values.flatten(), 1)[0]
-                growth_rates.append(slope * 1e6)
-            early = this_year.sel(time=((this_year.time.dt.dayofyear >= retreat_early_range[0]) & (this_year.time.dt.dayofyear <= retreat_early_range[1])))
-            if early.time.size >= 2:
-                days  = (early.time - early.time[0]) / np.timedelta64(1, 'D')
-                slope = np.polyfit(days, early.values.flatten(), 1)[0]
-                retreat_early_rates.append(slope * 1e6)
-            fall      = this_year.sel(time=this_year.time.dt.dayofyear >= retreat_late_range1[0])
-            next_year = da.sel(time=da.time.dt.year == (year + 1))
-            spring    = next_year.sel(time=next_year.time.dt.dayofyear <= retreat_late_range2[1])
-            late      = xr.concat([fall, spring], dim="time")
-            if late.time.size >= 2:
-                days  = (late.time - late.time[0]) / np.timedelta64(1, 'D')
-                slope = np.polyfit(days, late.values.flatten(), 1)[0]
-                retreat_late_rates.append(slope * 1e6)
-            if early.time.size >= 1 and late.time.size >= 1:
-                decay = xr.concat([early, late], dim="time")
-                if decay.time.size >= 2:
-                    days  = (decay.time - decay.time[0]) / np.timedelta64(1, 'D')
-                    slope = np.polyfit(days, decay.values.flatten(), 1)[0]
-                    rate  = slope * 1e6
-                    if rate > 0:
-                        rate *= -1
-                    retreat_rates.append(rate)
-        return {"Maximum Mean"       : np.mean(maximums),
-                "Maximum Std"        : np.std(maximums),
-                "Minimum Mean"       : np.mean(minimums),
-                "Minimum Std"        : np.std(minimums),
-                "Growth Mean"        : np.mean(growth_rates),
-                "Growth Std"         : np.std(growth_rates),
-                "retreat Mean"       : np.mean(retreat_rates),
-                "retreat Std"        : np.std(retreat_rates),
-                "retreat Early Mean" : np.mean(retreat_early_rates),
-                "retreat Early Std"  : np.std(retreat_early_rates),
-                "retreat Late Mean"  : np.mean(retreat_late_rates),
-                "retreat Late Std"   : np.std(retreat_late_rates),
-                "Duration-days Mean" : np.mean(duration_days),
-                "Duration-days std"  : np.std(duration_days),
-                "DOY Min Mean"       : np.mean(min_doys),
-                "DOY Min Std"        : np.std(min_doys),
-                "DOY Max Mean"       : np.mean(max_doys),
-                "DOY Max Std"        : np.std(max_doys),
-                "DOY Onset Mean"     : np.mean(onset_doys) if onset_doys else None,
-                "DOY Onset Std"      : np.std(onset_doys)  if onset_doys else None}
-
-    # STABILITY METRICS
-    def compute_fip_spatial_stats(self, FIP):
-        """
-        Compute spatial mean and standard deviation of Fast Ice Persistence (FIP).
-
-        This method calculates the mean and standard deviation of FIP values over a spatial domain,
-        ignoring any NaN values (i.e., outside the coastline or invalid grid cells).
-
-        Parameters
-        ----------
-        FIP : xarray.DataArray
-            A 2D (or broadcastable) array of fast ice persistence values ranging from 0 to 1,
-            where each cell represents the fraction of time with fast ice presence over a given period.
-
-        Returns
-        -------
-        dict
-            Dictionary containing:
-            - 'FIP_spatial_mean' : float
-                Mean FIP across valid spatial cells.
-            - 'FIP_spatial_std' : float
-                Standard deviation of FIP across valid spatial cells.
-
-        Notes
-        -----
-        - NaNs are excluded from all statistics using `xarray.where()`.
-        - Intended to summarize spatial characteristics of fast ice persistence across the domain.
-        """
-        valid = FIP.where(~np.isnan(FIP))
-        return {'FIP_spatial_mean' : float(valid.mean()),
-                'FIP_spatial_std'  : float(valid.std())}
-
-    def compute_cellwise_stability(self, FI_mask):
-        """
-        Compute cellwise fast ice stability as the fraction of time fast ice is present.
-
-        This method calculates, for each grid cell, the proportion of time steps where fast ice is detected,
-        using a boolean mask over time.
-
-        Parameters
-        ----------
-        FI_mask : xarray.DataArray
-            A boolean DataArray of shape (time, nj, ni), where True indicates presence of fast ice
-            and False/NaN indicates absence.
-
-        Returns
-        -------
-        xarray.DataArray
-            A 2D field (nj, ni) of fractional fast ice stability, where each value represents the
-            fraction of time that fast ice was present.
-
-        Notes
-        -----
-        - Assumes the 'time' dimension exists and is the first dimension.
-        - This metric can be interpreted as the temporal persistence of fast ice at each location.
-        """
-        total = FI_mask.sizes['time']
-        return FI_mask.sum(dim='time') / total
-
-    def compute_stability_index(self, persistent_FIA, total_FIA):
-        """
-        Compute the fast ice stability index as the ratio of persistent to total fast ice area.
-
-        This index quantifies the stability of fast ice by comparing the area of long-lived (persistent)
-        fast ice to the total fast ice area over the same period.
-
-        Parameters
-        ----------
-        persistent_FIA : float
-            Area (in consistent units, e.g., km²) of fast ice that is persistent across the full season
-            or meets a defined persistence threshold.
-        total_FIA : float
-            Total fast ice area (in same units) accumulated or detected over the season.
-
-        Returns
-        -------
-        float
-            Stability index, defined as persistent_FIA / total_FIA.
-
-        Notes
-        -----
-        - Returns NaN or inf if `total_FIA` is zero.
-        - Values close to 1 indicate stable fast ice with little seasonal turnover,
-          whereas values near 0 indicate transient or unstable ice conditions.
-        """
-        return persistent_FIA / total_FIA if total_FIA > 0 else np.nan
-
-    def compute_fast_ice_distance_extent(self, FI_mask, grid_dx_km=9.8):
-        """
-        Compute the mean and maximum distance of fast ice from the coastline.
-
-        This method estimates how far fast ice extends from the coast by computing the
-        Euclidean distance of each grid cell to the nearest coastal cell (defined as the
-        boundary between land and ocean). It then computes statistics on those distances,
-        weighted by the mean presence of fast ice.
-
-        Parameters
-        ----------
-        FI_mask : xarray.DataArray
-            Boolean mask of fast ice presence (shape: time × nj × ni), where True indicates fast ice.
-        grid_dx_km : float, optional
-            Approximate horizontal grid spacing in kilometers (default is 9.8 km for ~0.25° Antarctic grid).
+        ice_prstnc : xarray.DataArray
+            Time-averaged presence of sea ice (e.g., fast ice mask mean over time).
+        persistence_min : float, optional
+            Minimum persistence threshold to include a grid cell in the analysis (default is 0.5).
 
         Returns
         -------
         dict
             Dictionary containing:
-            - 'FI_mean_dist_ext' : float
-                Mean distance (km) of fast ice presence from the coastline.
-            - 'FI_max_dist_ext' : float
-                Maximum distance (km) of fast ice from the coastline.
+            - 'persistence_mean_dist' : float
+                Mean distance (km) from coastline for cells with persistent ice.
+            - 'persistence_max_dist' : float
+                Maximum such distance (km).
 
         Notes
         -----
-        - The coastline is computed from the land mask in the model's `kmt` field.
-        - A morphological dilation is used to identify coastal boundary cells.
-        - Distance is computed using a 2D Euclidean distance transform.
-        - Fast ice extent is summarized from the time-mean of the mask (`FI_mask.mean(dim="time") > 0.5`).
-        - Results are reported in kilometers.
-        - Requires `self.P_KMT_mod` and `self.P_KMT_org` to point to NetCDF files with a `kmt` variable.
+        - Requires the B-grid (`self.G_t`) to be loaded with `kmt_mod` and `area` fields.
+        - Automatically reloads the B-grid with hemisphere slicing if needed.
+        - Identifies coastal ocean grid cells using binary dilation.
+        - Uses `TAREA` (in m^2) to derive an approximate local grid spacing.
         """
-        if self.use_gi:
-            P_kmt = self.P_KMT_mod
-        else:
-            P_kmt = self.P_KMT_org
-        kmt             = xr.open_dataset(P_kmt)['kmt']
-        kmt             = kmt.isel(nj=self.hemisphere_dict['nj_slice']).values
-        land_mask       = (kmt == 0)
-        sea_mask        = ~land_mask
-        coast_mask      = sea_mask & binary_dilation(land_mask)
-        coast_distances = distance_transform_edt(~coast_mask) * grid_dx_km
-        TLAT = FI_mask.TLAT
-        TLON = FI_mask.TLON
-        if TLAT.ndim == 3:
-            TLAT = TLAT.isel(time=0)
-        if TLON.ndim == 3:
-            TLON = TLON.isel(time=0)
-        coast_dist_da   = xr.DataArray(data   = coast_distances,
-                                       dims   = ('nj', 'ni'),
-                                       coords = {'nj'   : FI_mask.nj,
-                                                 'ni'   : FI_mask.ni,
-                                                 'TLAT' : (('nj','ni'), TLAT.values),
-                                                 'TLON' : (('nj','ni'), TLON.values)})
-        fi_mask_time_mean = FI_mask.mean(dim="time") > 0.5
-        fast_ice_dists    = coast_dist_da.where(fi_mask_time_mean)
-        mean_dist         = float(fast_ice_dists.mean().values)
-        max_dist          = float(fast_ice_dists.max().values)
-        return {'FI_mean_dist_ext' : mean_dist,
-                'FI_max_dist_ext'  : max_dist}
+        from scipy.ndimage import distance_transform_edt, binary_dilation
+        spat_dims = self.CICE_dict["spatial_dims"]
+        self.logger.info("Computing persistence distance statistics mean & max")
+        ice_prstnc = ice_prstnc.load()
+        # Ensure bgrid is loaded and check for shape match
+        if not getattr(self, "bgrid_loaded", False):
+            self.load_bgrid(slice_hem=True)
+        kmt = self.G_t['kmt_mod'].values
+        if kmt.shape != tuple(ice_prstnc.sizes[dim] for dim in spat_dims):
+            kmt = None
+            self.logger.warning("    grid shape mismatch detected: reloading bgrid with slice_hem=True")
+            self.load_bgrid(slice_hem=True)
+            kmt = self.G_t['kmt_mod'].values
+        land_mask   = (kmt == 0)
+        sea_mask    = ~land_mask
+        cst_mask    = sea_mask & binary_dilation(land_mask)
+        dist_idx    = distance_transform_edt(~cst_mask)
+        tarea       = self.G_t['area'].values
+        grid_dx_km  = np.sqrt(tarea) / 1000.0
+        cst_dist_km = dist_idx * grid_dx_km
+        dist_da     = xr.DataArray(data   = cst_dist_km,
+                                   dims   = spat_dims,
+                                   coords = {dim: ice_prstnc[dim] for dim in spat_dims},
+                                   name   = "distance_to_coast")
+        self.logger.info(f"    applying persistence minimum filter {persistence_min} to ice persistence data array")
+        prstnc_filt = (ice_prstnc >= persistence_min)
+        self.logger.info("   comptuing distances...")
+        ice_dists   = dist_da.where(prstnc_filt).compute()
+        mean_dist   = ice_dists.mean().values
+        max_dist    = ice_dists.max().values
+        return {f'persistence_mean_distance': mean_dist,
+                f'persistence_max_distance': max_dist}
 
     # INTER-COMPARISONS
-    def compute_skill_statistics(self, model, obs, dropna=True):
+    @staticmethod
+    def _skill_stats(x, y):
+        from sklearn.metrics import mean_squared_error, mean_absolute_error
+        from scipy.stats     import pearsonr
+        valid = (~np.isnan(x)) & (~np.isnan(y))
+        x, y  = x[valid], y[valid]
+        return {"Bias"     : np.mean(x - y),
+                "RMSE"     : np.sqrt(mean_squared_error(y, x)),
+                "MAE"      : mean_absolute_error(y, x),
+                "Corr"     : pearsonr(x, y)[0],
+                "SD_Model" : np.std(x),
+                "SD_Obs"   : np.std(y)}
+        
+    def compute_skill_statistics(self, mod, obs, min_points=100):
         """
         Compute statistical skill metrics between model and observational time series.
-
-        This method compares two aligned 1D time series and returns standard evaluation metrics
-        including bias, RMSE, MAE, correlation, and standard deviations.
+        If time alignment fails and `climatology_if_mismatch` is True, computes climatological
+        skill instead (e.g., using day-of-year climatologies).
 
         Parameters
         ----------
-        model : xarray.DataArray or np.ndarray
-            Time series of modelled values.
-        obs : xarray.DataArray or np.ndarray
-            Time series of observed values (must be aligned with model).
-        dropna : bool, optional
-            Whether to drop NaN values prior to computing statistics. Default is True.
+        mod : xarray.DataArray; Time series of modelled values.
+        obs : xarray.DataArray; Time series of observed values (must be aligned with model, or climatology is used).
 
         Returns
         -------
-        dict
-            Dictionary of metrics including:
-            - "Bias"     : Mean(model - obs)
-            - "RMSE"     : Root Mean Squared Error
-            - "MAE"      : Mean Absolute Error
-            - "Corr"     : Pearson correlation coefficient
-            - "SD_Model" : Standard deviation of model
-            - "SD_Obs"   : Standard deviation of observations
-
-        Notes
-        -----
-        - Time alignment is ensured using `np.intersect1d()` on time coordinates if xarray is used.
-        - If `dropna=True`, only valid (non-NaN) pairs are used in the statistics.
-        - RMSE captures total error magnitude, while MAE gives average absolute error.
-        - Pearson correlation (`Corr`) quantifies phase agreement.
-        - The method assumes that input arrays represent the same variable over the same time span.
-
-        See Also
-        --------
-        - sklearn.metrics.mean_squared_error
-        - sklearn.metrics.mean_absolute_error
-        - scipy.stats.pearsonr
+        dict; Dictionary of skill metrics.
         """
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
-        from scipy.stats import pearsonr        
-        t_xsect = np.intersect1d(model.time.values, obs.time.values)
-        model   = model.sel(time=t_xsect)
-        obs     = obs.sel(time=t_xsect)        
-        if isinstance(model, xr.DataArray):
-            model = model.values
-        if isinstance(obs, xr.DataArray):
-            obs = obs.values
-        if dropna:
-            valid = (~np.isnan(model)) & (~np.isnan(obs))
-            model = model[valid]
-            obs = obs[valid]
-        bias     = np.mean(model - obs)
-        rmse     = np.sqrt(mean_squared_error(obs, model))
-        mae      = mean_absolute_error(obs, model)
-        corr, _  = pearsonr(model, obs)
-        sd_model = np.std(model)
-        sd_obs   = np.std(obs)
-        return {"Bias"    : bias,
-                "RMSE"    : rmse,
-                "MAE"     : mae,
-                "Corr"    : corr,
-                "SD_Model": sd_model,
-                "SD_Obs"  : sd_obs,}
+        if hasattr(mod, 'time') and hasattr(obs, 'time'):
+            dt_mod  = mod.time.values
+            dt_obs  = obs.time.values
+            dt_xsct = np.intersect1d(dt_mod, dt_obs)
+            if len(dt_xsct) > min_points:
+                self.logger.warning(f"more than {min_points} date-times intersected, therefore do stats on time series")
+                mod_data = mod.sel(time=dt_xsct).values
+                obs_data = obs.sel(time=dt_xsct).values
+                return self._skill_stats(mod_data, obs_data)
+            else:
+                self.logger.warning("date-time mismatch detected — falling back to climatology comparison.")
+                mod_grp  = mod.groupby('time.dayofyear')#.persist()
+                mod_clim = mod_grp.mean('time')#.compute()
+                obs_grp  = obs.groupby('time.dayofyear')#.persist()
+                obs_clim = obs_grp.mean('time')#.compute()
+                doy_mod  = mod_clim.dayofyear.values
+                doy_obs  = obs_clim.dayofyear.values
+                doy_xsct = np.intersect1d(doy_mod, doy_obs)
+                mod_data = mod_clim.sel(dayofyear=doy_xsct).values
+                obs_data = obs_clim.sel(dayofyear=doy_xsct).values
+                return self._skill_stats(mod_data, obs_data)
+        self.logger.warning("Time dimension not found or could not align. Returning empty stats.")
+        return {"Bias"    : np.nan,
+                "RMSE"    : np.nan,
+                "MAE"     : np.nan,
+                "Corr"    : np.nan,
+                "SD_Model": np.nan,
+                "SD_Obs"  : np.nan,}
+

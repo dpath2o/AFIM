@@ -4,8 +4,6 @@ import pandas             as pd
 import xarray             as xr
 import matplotlib.pyplot  as plt
 from pathlib              import Path
-import warnings
-warnings.filterwarnings("ignore", message="Sending large graph of size", category=UserWarning, module="distributed.client")
 
 def convert_stats_dict_to_xarray(stats_dict):
     sim_names = list(stats_dict.keys())
@@ -48,9 +46,9 @@ def main():
     SI_retreat_days2              = (1,60)
     PI_stats                      = {}
     FI_stats                      = {}
-    sim_names                     = ["gi-max","gi-mid","gi-nil","gi-nil-def","ndte-max","ndte-min","re-evp-off",'ndte-max-re-off'
-                                    "Cstar-max","Cstar-min","Pstar-max","Pstar-min","elps-ext","elps-min","elps-mid","elps-max",
-                                    "ktens-ext","ktens-max","ktens-min","ktens-nil","ry93","AOM2-ERA5"]
+    sim_names                     = ["gi-max","gi-mid","gi-nil","gi-nil-def","ndte-max","ndte-min","re-evp-off",'ndte-max-re-off',
+                                     "Cstar-max","Cstar-min","Pstar-max","Pstar-min","elps-ext","elps-min","elps-mid","elps-max",
+                                     "ktens-ext","ktens-max","ktens-min","ktens-nil","ry93","AOM2-ERA5"]
     G_CMEMS                       = xr.open_dataset("/g/data/gv90/da1339/grids/GLORYS/CMEMS_0p25_grid.nc").rename_dims({'x':'longitude','y':'latitude'})
     CMEMS_SI                      = xr.open_mfdataset("/g/data/gv90/da1339/SeaIce/CMEMS/0p25/daily/199*_CMEMS_org.nc")
     G_CMEMS_SO                    = G_CMEMS.isel(latitude=slice(0,340))
@@ -82,13 +80,11 @@ def main():
         PI_stats[sim]['SIA_season'] = SI_tools.compute_seasonal_statistics(PI_stats[sim]['SIA'], 
                                                                         growth_range        = SI_growth_days,
                                                                         retreat_early_range = SI_retreat_days1,
-                                                                        retreat_late_range1 = SI_retreat_days1,
-                                                                        retreat_late_range2 = SI_retreat_days2)
+                                                                        retreat_late_range  = (SI_retreat_days1,SI_retreat_days2))
         PI_stats[sim]['SIV_season'] = SI_tools.compute_seasonal_statistics(PI_stats[sim]['SIV'], 
                                                                         growth_range        = SI_growth_days,
                                                                         retreat_early_range = SI_retreat_days1,
-                                                                        retreat_late_range1 = SI_retreat_days1,
-                                                                        retreat_late_range2 = SI_retreat_days2)
+                                                                        retreat_late_range  = (SI_retreat_days1,SI_retreat_days2))
         PI_stats[sim]['SIA_skills'] = SI_tools.compute_skill_statistics(PI_stats[sim]['SIA'], PI_stats['NSIDC']['SIA'])
         FI_bool                     = SI_tools.boolean_fast_ice( FId['FI_mask'] )
         aice_bool                   = CICE_SO['aice'].where(FI_bool)
@@ -103,8 +99,7 @@ def main():
         FI_stats[sim]['FIA_season'] = SI_tools.compute_seasonal_statistics(FI_stats[sim]['FIA'], 
                                                                         growth_range        = SI_growth_days,
                                                                         retreat_early_range = SI_retreat_days1,
-                                                                        retreat_late_range1 = SI_retreat_days1,
-                                                                        retreat_late_range2 = SI_retreat_days2)
+                                                                        retreat_late_range1 = (SI_retreat_days1,SI_retreat_days2))
         FI_stats[sim]['FIV_season'] = SI_tools.compute_seasonal_statistics(FI_stats[sim]['FIV'], 
                                                                         growth_range        = SI_growth_days,
                                                                         retreat_early_range = SI_retreat_days1,

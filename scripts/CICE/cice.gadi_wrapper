@@ -1,7 +1,42 @@
 #!/bin/bash
 
+choose_block_size() {
+    local ncpus=$1
+    local grid_nx=$2
+    local grid_ny=$3
+
+    # Candidate configurations: (block_x, block_y, max_blocks)
+    local candidates=(
+        "20 20 10"
+        "30 30 10"
+        "30 30 5"
+        "36 45 4"
+        "45 36 3"
+        "60 60 3"
+        "72 72 2"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        read bx by maxb <<< "$candidate"
+        nx_tiles=$(( (grid_nx + bx - 1) / bx ))
+        ny_tiles=$(( (grid_ny + by - 1) / by ))
+        total_tiles=$(( nx_tiles * ny_tiles * maxb ))
+
+        if (( ncpus <= total_tiles )); then
+            echo "Using BLOCK_SIZE_X=$bx, BLOCK_SIZE_Y=$by, MAX_BLOCKS=$maxb"
+            export BLOCK_SIZE_X=$bx
+            export BLOCK_SIZE_Y=$by
+            export MAX_BLOCKS=$maxb
+            return 0
+        fi
+    done
+
+    echo "ERROR: No block size config supports $ncpus ranks for ${grid_nx}×${grid_ny} grid."
+    exit 1
+}
+
 USER_NAME="da1339"
-MIN_RETRY_MINUTES=180
+MIN_RETRY_MINUTES=120
 RETRY_FREQUENCY_MINUTES=10
 
 # === Default values ===
@@ -15,6 +50,9 @@ DRYRUN=false
 ICE_IN="ice_in"
 START_YEAR=1993
 END_YEAR=1999
+RESTART_MODE=false
+GRID_NX=1440
+GRID_NY=1080
 
 # === CICE namelist defaults ===
 FYEAR_INIT=1993
@@ -25,12 +63,14 @@ USE_RESTART_TIME=".false."
 KMT_FILE="/g/data/gv90/da1339/grounded_icebergs/MyThin_db/kmt_mod_thinned-0p75_v1p50_iter0.nc"
 KDYN=1
 NDTE=240
-REVISED_EVP=".true."
+REVISED_EVP=".false."
 KTENS=0.2
 E_YIELDCURVE=1.2
 E_PLASTICPOT=1.2
 PSTAR=27500
 CSTAR=20
+PROCESSOR_SHAPE="square-ice"
+DISTRIBUTION_TYPE="rake"
 
 # === Help Function ===
 show_help() {
@@ -92,7 +132,7 @@ while [[ $# -gt 0 ]]; do
         -w|--wallhours) WALLHRS="$2"; shift 2;;
         -m|--mem) MEM="$2"; shift 2;;
         -d|--dryrun) DRYRUN=true; shift;;
-        --restart) RUNTYPE="continue"; USE_RESTART_TIME=".true."; shift;;
+        --restart) RUNTYPE="continue"; USE_RESTART_TIME=".true."; RESTART_MODE=true; shift;;
         --fyear_init) FYEAR_INIT="$2"; shift 2;;
         --npt_unit) NPT_UNIT="$2"; shift 2;;
         --npt) NPT="$2"; shift 2;;
@@ -104,6 +144,9 @@ while [[ $# -gt 0 ]]; do
         --e_g) E_PLASTICPOT="$2"; shift 2;;
         --Pstar) PSTAR="$2"; shift 2;;
         --Cstar) CSTAR="$2"; shift 2;;
+        --revised_evp) REVISED_EVP=true; shift;;
+        --processor_shape) PROCESSOR_SHAPE="$2"; shift 2;;
+        --distribution_type) DISTRIBUTION_TYPE="$2"; shift 2;;
         --start) START_YEAR="$2"; shift 2;;
         --end) END_YEAR="$2"; shift 2;;
         -S|--sim_name) SIM_NAME="$2"; shift 2;;
@@ -115,12 +158,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$PROJECT" ]]; then
-    echo "❌ Error: --project is required."
+    echo "ERROR: --project is required."
     show_help
     exit 1
 fi
 if [[ -z "$SIM_NAME" ]]; then
-    echo "❌ Error: --sim_name is required."
+    echo "ERROR: --sim_name is required."
     show_help
     exit 1
 fi
@@ -128,38 +171,33 @@ if [[ -z "$ARCHIVE_DIR" ]]; then
     ARCHIVE_DIR="/g/data/${PROJECT}/${USER_NAME}/afim_ouput/${SIM_NAME}"
 fi
 
-echo "========== CICE Wrapper Input Summary =========="
-echo "PROJECT       = $PROJECT"
-echo "NCPUS         = $NCPUS"
-echo "QUEUE         = $QUEUE"
-echo "RUNNUM        = $RUNNUM"
-echo "WALLHRS       = $WALLHRS"
-echo "MEM           = $MEM"
-echo "DRYRUN        = $DRYRUN"
-echo "ICE_IN        = $ICE_IN"
-echo "START_YEAR    = $START_YEAR"
-echo "END_YEAR      = $END_YEAR"
-echo "SIM_NAME      = $SIM_NAME"
-echo "USER_NAME     = $USER_NAME"
-echo "ARCHIVE_DIR   = $ARCHIVE_DIR"
-echo "FYEAR_INIT    = $FYEAR_INIT"
-echo "NPT_UNIT      = $NPT_UNIT"
-echo "NPT           = $NPT"
-echo "KMT_FILE      = $KMT_FILE"
-echo "KDYN          = $KDYN"
-echo "NDTE          = $NDTE"
-echo "REVISED_EVP   = $REVISED_EVP"
-echo "KTENS         = $KTENS"
-echo "E_YIELDCURVE  = $E_YIELDCURVE"
-echo "E_PLASTICPOT  = $E_PLASTICPOT"
-echo "PSTAR         = $PSTAR"
-echo "CSTAR         = $CSTAR"
-echo "================================================"
+ICE_RUNDIR=$(awk '/setenv ICE_RUNDIR/ {print $3}' cice.settings)
+if [[ -z "$ICE_RUNDIR" ]]; then
+    echo "ERROR: Failed to extract ICE_RUNDIR from cice.settings"
+    exit 1
+else
+    echo "CICE RUN DIR set to: ${ICE_RUNDIR}"
+fi
 
 if [[ ! -f "$ICE_IN" ]]; then
-    echo "❌ ERROR: ice_in file '$ICE_IN' not found."
+    echo "ERROR: ice_in file '$ICE_IN' not found."
     exit 1
 fi
+
+choose_block_size "$NCPUS" "$GRID_NX" "$GRID_NY"
+
+# === Tile Estimation and Sanity Check ===
+NX_TILES=$(( (GRID_NX + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X ))
+NY_TILES=$(( (GRID_NY + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y ))
+TOTAL_TILES=$(( NX_TILES * NY_TILES * MAX_BLOCKS ))
+
+echo "Estimated number of MPI tiles: $TOTAL_TILES"
+
+if (( NCPUS > TOTAL_TILES )); then
+    echo "⚠️ Reducing NCPUS from $NCPUS to $TOTAL_TILES to prevent tile overflow."
+    NCPUS=$TOTAL_TILES
+fi
+
 echo "Performing fixed (not year dependent) ./ice_in edits..."
 sed -i \
     -e "s/^[[:space:]]*nprocs.*/    nprocs = $NCPUS/" \
@@ -195,7 +233,6 @@ END {
     if (!seen_npt)  print "    npt = " npt
 }
 ' "$ICE_IN" > ice_in.tmp
-
 if [[ $? -ne 0 ]]; then
     echo "❌ ERROR: awk command failed while editing ice_in. Aborting."
     exit 1
@@ -203,13 +240,31 @@ else
     mv ice_in.tmp "$ICE_IN"
     echo "✅ awk edit applied and ice_in updated."
 fi
-ICE_RUNDIR=$(awk '/setenv ICE_RUNDIR/ {print $3}' cice.settings)
-if [[ -z "$ICE_RUNDIR" ]]; then
-    echo "❌ ERROR: Failed to extract ICE_RUNDIR from cice.settings"
-    exit 1
+
+# === Append domain_nml updates in sed ===
+sed -i \
+    -e "s/^[[:space:]]*block_size_x.*/    block_size_x = $BLOCK_SIZE_X/" \
+    -e "s/^[[:space:]]*block_size_y.*/    block_size_y = $BLOCK_SIZE_Y/" \
+    -e "s/^[[:space:]]*max_blocks.*/      max_blocks = $MAX_BLOCKS/" \
+    "$ICE_IN"
+# === Update processor_shape ===
+if grep -q '^[[:space:]]*processor_shape' "$ICE_IN"; then
+    sed -i -e "s/^[[:space:]]*processor_shape.*/    processor_shape = '$PROCESSOR_SHAPE'/" "$ICE_IN"
 else
-    echo "✅ CICE RUN DIR set to: ${ICE_RUNDIR}"
+    echo "    processor_shape = '$PROCESSOR_SHAPE'" >> "$ICE_IN"
 fi
+# === Update processor_shape ===
+if grep -q '^[[:space:]]*distribution_type' "$ICE_IN"; then
+    sed -i -e "s/^[[:space:]]*distribution_type.*/    distribution_type = '$DISTRIBUTION_TYPE'/" "$ICE_IN"
+else
+    echo "    distribution_type = '$DISTRIBUTION_TYPE'" >> "$ICE_IN"
+fi
+
+# === Ensure oceanmixed_file matches fyear_init ===
+echo "Updating oceanmixed_file to match fyear_init = $YEAR ..."
+sed -i \
+    -e "s/^[[:space:]]*oceanmixed_file.*/    oceanmixed_file = 'ORAS_${YEAR}.nc'/" \
+    "$ICE_IN"
 
 # === Adjust loop only if --restart ===
 if [[ "$RESTART_MODE" == true ]]; then
@@ -227,6 +282,39 @@ fi
 
 # === Simulation Loop (dynamic while) ===
 YEAR=$START_YEAR
+
+echo "========== CICE Wrapper Input Summary =========="
+echo "PROJECT       = $PROJECT"
+echo "NCPUS         = $NCPUS"
+echo "QUEUE         = $QUEUE"
+echo "RUNNUM        = $RUNNUM"
+echo "WALLHRS       = $WALLHRS"
+echo "MEM           = $MEM"
+echo "DRYRUN        = $DRYRUN"
+echo "ICE_IN        = $ICE_IN"
+echo "START_YEAR    = $START_YEAR"
+echo "END_YEAR      = $END_YEAR"
+echo "SIM_NAME      = $SIM_NAME"
+echo "USER_NAME     = $USER_NAME"
+echo "ARCHIVE_DIR   = $ARCHIVE_DIR"
+echo "FYEAR_INIT    = $FYEAR_INIT"
+echo "OCEAN_FILE    = ORAS_${YEAR}.nc"
+echo "NPT_UNIT      = $NPT_UNIT"
+echo "NPT           = $NPT"
+echo "KMT_FILE      = $KMT_FILE"
+echo "KDYN          = $KDYN"
+echo "NDTE          = $NDTE"
+echo "REVISED_EVP   = $REVISED_EVP"
+echo "KTENS         = $KTENS"
+echo "E_YIELDCURVE  = $E_YIELDCURVE"
+echo "E_PLASTICPOT  = $E_PLASTICPOT"
+echo "PSTAR         = $PSTAR"
+echo "CSTAR         = $CSTAR"
+echo "BLOCK_SIZE_X  = $BLOCK_SIZE_X"
+echo "BLOCK_SIZE_Y  = $BLOCK_SIZE_Y"
+echo "MAX_BLOCKS    = $MAX_BLOCKS"
+echo "================================================"
+
 while (( YEAR <= END_YEAR )); do
     echo ""
     echo "🧊 Editing $ICE_IN for year $YEAR ..."

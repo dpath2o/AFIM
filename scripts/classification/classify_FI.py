@@ -1,8 +1,10 @@
 import argparse
+import xarray as xr
+from pathlib  import Path
 from datetime import datetime, timedelta
 import sys
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
-from sea_ice_toolbox import SeaIceToolbox
+from sea_ice_toolbox import SeaIceToolbox, SeaIceToolboxManager
 
 def run_loop(sim_name,
              ispd_thresh          = None,
@@ -16,27 +18,40 @@ def run_loop(sim_name,
              roll_period          = None,
              overwrite_zarr       = False,
              delete_original_iceh = False):
-    dt_start = datetime.strptime(start_date, "%Y-%m-%d")
-    dt_end   = datetime.strptime(end_date, "%Y-%m-%d")
-    SI_tools = SeaIceToolbox(P_json   = json_path,
-                             P_log    = log_file,
-                             dt0_str  = dt_start,
-                             dtN_str  = dt_end,
-                             sim_name = sim_name)
-    # Always do this step
+    SI_tool_mgr = SeaIceToolboxManager(P_log=log_file)
+    ispd_thresh = float(ispd_thresh)
+    SI_tools    = SI_tool_mgr.get_toolbox(P_json      = json_path,
+                                          dt0_str     = start_date,
+                                          dtN_str     = end_date,
+                                          sim_name    = sim_name,
+                                          ispd_thresh = ispd_thresh,
+                                          ivec_type   = ivec_type,)
     SI_tools.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
-    if not daily and not rolling:
-        SI_tools.logger.info("Only monthly Zarr creation requested — exiting.")
-        return
-    if daily:
-        DS_raw = SI_tools.process_daily_cice(ispd_thresh=ispd_thresh,
-                                            ivec_type=ivec_type,
-                                            overwrite_zarr_group=overwrite_zarr)
-    if rolling:
-        DS_roll = SI_tools.process_rolling_cice(mean_period=roll_period,
-                                               ispd_thresh=ispd_thresh,
-                                               ivec_type=ivec_type,
-                                               overwrite_zarr_group=overwrite_zarr)
+    SI_tools.define_datetime_vars()
+    for yr0_str,yrN_str in zip(SI_tools.yr0_strs,SI_tools.yrN_strs):
+        yr_str = f"{yr0_str[:4]}"
+        SI_tools.logger.info(f"looping over each month in year {yr_str}")
+        FI_mo      = []
+        FI_roll_mo = []
+        FI_bin_mo  = []
+        for mo0_str, moN_str in zip(SI_tools.mo0_strs, SI_tools.moN_strs):
+            FI_raw,FI_bin,FI_roll = SI_tools.classify_fast_ice(dt0_str=mo0_str, dtN_str=moN_str, enable_rolling_output=True)
+            FI_mo.append(FI_raw)
+            FI_bin_mo.append(FI_bin)
+            FI_roll_mo.append(FI_roll)
+        SI_tools.logger.info("concatenating monthly datasets into yearly")
+        FI_yr       = xr.concat(FI_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
+        FI_bin_yr   = xr.concat(FI_bin_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
+        FI_roll_yr  = xr.concat(FI_roll_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
+        P_zarr      = Path(SI_tools.D_ispd_thresh, "FI_BT.zarr")
+        P_zarr_bin  = Path(SI_tools.D_ispd_thresh, "FI_BT_bin.zarr")
+        P_zarr_roll = Path(SI_tools.D_ispd_thresh, "FI_BT_roll.zarr")
+        SI_tools.logger.info(f"writing zarr to disk {P_zarr}")
+        FI_yr.to_zarr(P_zarr, group=yr_str, mode="w", consolidated=False)
+        SI_tools.logger.info(f"writing zarr to disk {P_zarr_bin}")
+        FI_bin_yr.to_zarr(P_zarr_bin, group=yr_str, mode="w", consolidated=False)
+        SI_tools.logger.info(f"writing zarr to disk {P_zarr_roll}")
+        FI_roll_yr.to_zarr(P_zarr_roll, group=yr_str, mode="w", consolidated=False)
     SI_tools.client.close()
 
 if __name__ == "__main__":

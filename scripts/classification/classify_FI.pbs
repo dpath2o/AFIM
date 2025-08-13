@@ -1,16 +1,16 @@
 #!/bin/bash
-#PBS -l walltime=1:00:00
+#PBS -l walltime=2:00:00
 #PBS -l mem=190GB
 #PBS -l ncpus=28
-#PBS -l jobfs=1GB
-#PBS -l storage=gdata/gv90+gdata/hh5+gdata/ik11+gdata/jk72
+#PBS -l jobfs=2GB
+#PBS -l storage=gdata/gv90+gdata/xp65+gdata/ik11+gdata/jk72
 #PBS -l wd
-#PBS -P jk72
-#PBS -q normal
-module use /g/data/hh5/public/modules
-module load conda/analysis3-24.07
+#PBS -P gv90
+#PBS -q normalbw
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
 cd ~/AFIM/src/AFIM/scripts/classification/
-echo "📆 Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, ivec_type=${IVEC_TYPE:-ALL}"
+echo "Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, ivec_type=${IVEC_TYPE:-ALL}"
 F_log=/g/data/gv90/da1339/logs/classification/${SIM_NAME}/${START_DATE}_${END_DATE}_${ISPD_THRESH}_procees_fast_ice.log
 mkdir -p "$(dirname "$F_log")"
 CMD=(python3 classify_FI.py "$SIM_NAME" \
@@ -23,5 +23,5 @@ CMD=(python3 classify_FI.py "$SIM_NAME" \
 [ "${DAILY}" = true ] && CMD+=(--daily)
 [ "${OVERWRITE_ZARR}" = true ] && CMD+=(--overwrite_zarr)
 [ "${DELETE_ORIGINAL_ICEH}" = true ] && CMD+=(--delete_original_iceh)
-echo "📆 Running: ${CMD[*]}"
+echo "Running: ${CMD[*]}"
 "${CMD[@]}"

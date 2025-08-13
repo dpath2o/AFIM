@@ -17,8 +17,7 @@ class SeaIceIcebergs:
         Compute the grounded iceberg mask and coordinates from the difference
         between original and modified KMT arrays. Store in self.G_t.
         """
-        if not self.bgrid_loaded:
-            self.load_bgrid()
+        self.load_bgrid()
         kmt_mod = self.G_t['kmt_mod'].data
         kmt_org = self.G_t['kmt_org'].data
         lat     = self.G_t['lat'].data
@@ -26,7 +25,7 @@ class SeaIceIcebergs:
         area    = self.G_t['area'].data
         # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
         diff_mask           = (kmt_org == 1) & (kmt_mod == 0)
-        self.G_t['GI_mask'] = (('nj', 'ni'), diff_mask)
+        self.G_t['GI_mask'] = (self.CICE_dict["spatial_dims"], diff_mask)
         # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
         nj_idx, ni_idx = np.where(diff_mask)
         ni_idx_shifted = ni_idx - 1
@@ -61,8 +60,7 @@ class SeaIceIcebergs:
             Total grounded iceberg area in m^2 if region is None.
             Dictionary of region-specific grounded iceberg areas otherwise.
         '''
-        if not self.modified_landmask_aligned:
-            self.align_modified_landmask()
+        self.align_modified_landmask()
         area = self.G_t['area'].values
         mask = self.G_t['GI_mask']
         lon  = self.G_t['lon'].values

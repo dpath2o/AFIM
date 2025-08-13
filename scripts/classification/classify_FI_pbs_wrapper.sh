@@ -73,10 +73,9 @@ if { [[ "$ROLLING" == true ]] || [[ "$DAILY" == true ]]; } && [[ -z "$ISPD_THRES
     exit 1
 fi
 
-
 # --- Default ISPD types if none specified ---
 if [ ${#ISPD_TYPE_LIST[@]} -eq 0 ]; then
-    IVEC_TYPE_LIST=("B" "Ta" "Tx" "BT")
+    IVEC_TYPE_LIST=("BT") #"B" "Ta" "Tx"
 fi
 
 # Validate start and end date

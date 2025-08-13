@@ -5,6 +5,7 @@ import geopandas         as gpd
 import numpy             as np
 import matplotlib.pyplot as plt
 import matplotlib.dates  as mdates
+from tqdm                import tqdm
 from PIL                 import Image
 from pathlib             import Path
 from datetime            import datetime
@@ -108,7 +109,7 @@ class SeaIcePlotter:
         """
         return xr.open_dataset(self.config['pygmt_dict']["P_IBCSO_bath"]).bath
 
-    def prepare_data_for_pygmt_plot(self, da, lon_coord_name=None, lat_coord_name=None, diff_plot=False):
+    def prepare_data_for_pygmt_plot(self, da, bcoords=False, diff_plot=False):
         """
         Prepare gridded data for PyGMT scatter-style plotting by flattening and masking arrays.
 
@@ -121,10 +122,6 @@ class SeaIcePlotter:
         da : xarray.DataArray
             Input data array containing 2D or 3D fields (typically persistence or difference maps).
             Must contain latitude and longitude coordinates.
-        lon_coord_name : str, optional
-            Name of the longitude coordinate in `da`. Defaults to `self.pygmt_dict['lon_coord_name']`.
-        lat_coord_name : str, optional
-            Name of the latitude coordinate in `da`. Defaults to `self.pygmt_dict['lat_coord_name']`.
         diff_plot : bool, default=False
             If True, relaxes the value filter to allow valid difference values in range [-1, 1].
             If False, restricts to strictly positive values (e.g., valid FIP from 0 to 1).
@@ -136,8 +133,6 @@ class SeaIcePlotter:
             - 'data'  : 1D array of filtered values to be plotted
             - 'lon'   : 1D array of longitudes (same shape as 'data')
             - 'lat'   : 1D array of latitudes  (same shape as 'data')
-            - 'lon2d' : Full 2D longitude array from the original grid
-            - 'lat2d' : Full 2D latitude array from the original grid
 
         Notes
         -----
@@ -153,35 +148,31 @@ class SeaIcePlotter:
         - pygmt.makecpt     : For setting the colormap before plotting
         - self.plot_FIA_FIP_faceted : Calls this method when plotting FIP panels
         """
-        lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict['lon_coord_name']
-        lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict['lat_coord_name']
-        data_dict      = {}
-        data2d         = np.asarray(da.data).astype(float)
-        lon2d          = da[lon_coord_name].data
-        lat2d          = da[lat_coord_name].data
+        data_dict = {}
+        self.load_bgrid(slice_hem=True)
+        if bcoords:
+            lon2d = self.G_u['lon'].values
+            lat2d = self.G_u['lat'].values
+        else:
+            lon2d = self.G_t['lon'].values
+            lat2d = self.G_t['lat'].values
+        data2d  = np.asarray(da.data).astype('float32')
         if diff_plot:
             mask = (data2d >= -1) & (data2d <= 1) & np.isfinite(data2d)
         else:
-            mask = (data2d > 0) & np.isfinite(data2d)
+            mask = np.isfinite(data2d)# & (data2d > 0)
         data_dict['data']  = data2d[mask].ravel()
         data_dict['lon']   = lon2d[mask].ravel()
         data_dict['lat']   = lat2d[mask].ravel()
-        data_dict['lon2d'] = lon2d
-        data_dict['lat2d'] = lat2d
         return data_dict
 
-    def load_GI_lon_lats(self, data_dict):
+    def load_GI_lon_lats(self):
         """
         Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
 
         This method identifies cells where the landmask has been modified to add grounded icebergs
         (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
         landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
-
-        Parameters
-        ----------
-        data_dict : dict
-            Dictionary containing 'lon2d' and 'lat2d' 2D arrays (e.g., from `prepare_data_for_pygmt_plot`).
 
         Returns
         -------
@@ -196,12 +187,11 @@ class SeaIcePlotter:
         - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
         - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
         """
+        self.load_bgrid(slice_hem=True)
         GI_loc_dict        = {}
-        kmt_mod            = xr.open_dataset(self.P_KMT_mod).isel(nj=self.hemisphere_dict['nj_slice']).kmt.data
-        kmt_org            = xr.open_dataset(self.P_KMT_org).isel(nj=self.hemisphere_dict['nj_slice']).kmt.data
-        GI_mask            = (kmt_org == 1) & (kmt_mod == 0)
-        GI_loc_dict['lon'] = data_dict['lon2d'][GI_mask].ravel()
-        GI_loc_dict['lat'] = data_dict['lat2d'][GI_mask].ravel()
+        GI_mask            = (self.G_t['kmt_org'] == 1) & (self.G_t['kmt_mod']== 0)
+        GI_loc_dict['lon'] = self.G_t['lon'][GI_mask].ravel()
+        GI_loc_dict['lat'] = self.G_t['lat'][GI_mask].ravel()
         return GI_loc_dict
 
     def create_cbar_frame(self, series, label, units=None, extend_cbar=False, max_ann_steps=10):
@@ -289,8 +279,8 @@ class SeaIcePlotter:
 
         Notes
         -----
-        - If the computed center falls outside the intended range (e.g., due to dateline wrapping),
-          the method rotates the meridian 180° to better align the figure.
+        - If the computed center falls outside the intended range (e.g., due to dateline wrapping), 
+            the method rotates the meridian 180° to better align the figure.
         - The result is saved to `self.plot_meridian_center` for reuse.
         - Used in PyGMT stereographic projections like `'S{lon}/-90/30c'`.
 
@@ -318,196 +308,330 @@ class SeaIcePlotter:
         #print(f"meridian center computed as {center:.2f}°")
         self.plot_meridian_center = center
         return center
-        
-    def plot_FIA_FIP_faceted(self, FIA_dict, FIP_DA,
-                              sim_name       = None,
-                              dt_range_str   = None,
-                              P_png          = None,
-                              enable_FIA     = True,
-                              enable_FIP     = True,
-                              plot_GI        = False,
-                              GI_fill_color  = "red",
-                              GI_sq_size     = 0.05,
-                              diff_plot      = False,
-                              FIA_ylim       = (0,1000),
-                              roll_days      = 0,
-                              lon_coord_name = None,
-                              lat_coord_name = None,
-                              cmap           = None,
-                              series         = None,
-                              cbar_frame     = None,
-                              overwrite_fig  = None,
-                              show_fig       = None):
-        """
-        Generate a composite figure showing seasonal fast ice area climatology (FIA) and fast ice persistence (FIP) maps.
 
-        This method produces a multi-panel PyGMT figure containing:
-        - A top panel showing the daily climatology of modeled and observed FIA across a full seasonal cycle.
-        - Lower panels showing faceted FIP maps by Antarctic sector using symbol plots or difference plots.
-        - Optional overlays of grounded iceberg locations.
+    def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name):
+        """
+        Generate summary statistics (mean, std, min, max) and their locations within a geographic region.
+
+        This helper function extracts the portion of a 2D `xarray.DataArray` that falls within a given 
+        geographic bounding box, computes spatial statistics on valid (non-NaN) values, and formats 
+        the results for annotation in PyGMT plots.
 
         Parameters
         ----------
-        FIA_dict : dict of xarray.DataArray or Dataset
-            Dictionary containing fast ice area time series from one or more simulations or methods. Keys define line labels.
-        FIP_DA : xarray.DataArray
-            2D map of fast ice persistence (0–1), typically from seasonal averaging over time.
-        sim_name : str, optional
-            Simulation name used for labeling and figure output. Defaults to `self.sim_name`.
-        dt_range_str : str, optional
-            String describing the date range (e.g., "1993–1999") for filename or annotation. Auto-handled if None.
-        P_png : pathlib.Path, optional
-            Path to save the PNG figure. If not provided, figure is not saved.
-        enable_FIA : bool, default=True
-            Whether to plot the FIA climatology time series panel.
-        enable_FIP : bool, default=True
-            Whether to plot FIP spatial map panels.
-        plot_GI : bool, default=False
-            Whether to overlay grounded iceberg regions on the map panels.
-        GI_fill_color : str, default="red"
-            Color to use for grounded iceberg overlay.
-        GI_sq_size : float, default=0.05
-            Size of the circle or square marker used to plot grounded iceberg locations (in cm).
-        diff_plot : bool, default=False
-            If True, plot differences between model and observational FIA rather than raw values.
-        FIA_ylim : tuple of float, default=(100, 1000)
-            Y-axis range for the FIA climatology subplot (in 1000 km²).
-        roll_days : int, optional
-            Rolling window applied before plotting (currently unused but included for extensibility).
-        lon_coord_name : str, optional
-            Name of longitude coordinate in FIP_DA. If None, inferred.
-        lat_coord_name : str, optional
-            Name of latitude coordinate in FIP_DA. If None, inferred.
-        cmap : str or PyGMT colormap, optional
-            Color palette table (CPT) used for the FIP map. Defaults to `self.pygmt_dict["FIP_CPT"]`.
-        series : list, optional
-            Range and increment for color scaling (e.g., [0.01, 1.0, 0.01]).
-        cbar_frame : list of str, optional
-            List defining colorbar annotations. Default includes axis labels for FIP units.
-        overwrite_fig : bool, optional
-            If True, overwrite existing PNG if `P_png` exists. Defaults to `self.ow_fig`.
-        show_fig : bool, optional
-            If True, show the PyGMT figure interactively. Defaults to `self.show_fig`.
+        da : xarray.DataArray
+            2D gridded data array (e.g., fast ice persistence) with latitude and longitude coordinates.
+        region : list or tuple of float
+            Bounding box for the region in the form [lon_min, lon_max, lat_min, lat_max].
+        lon_coord_name : str
+            Name of the longitude coordinate in `da` (e.g., 'TLON').
+        lat_coord_name : str
+            Name of the latitude coordinate in `da` (e.g., 'TLAT').
 
         Returns
         -------
-        None
-            This method creates and saves/shows a figure but does not return an object.
+        list of str
+            Formatted text lines with:
+            - Mean
+            - Standard deviation
+            - Data extent (number of valid grid cells)
+            - Minimum value and its lat/lon location
+            - Maximum value and its lat/lon location
 
         Notes
         -----
-        - FIA panel shows observed AF2020 climatology as dashed blue line, and modeled climatologies as filled bands (min–max) and solid mean lines.
-        - If `diff_plot=True`, plots the difference between model mean and AF2020 climatology.
-        - FIP panels are faceted by Antarctic regions as defined in `self.Ant_2sectors`, using small symbol plots.
-        - Grounded iceberg data is loaded via `load_GI_lon_lats()` if enabled.
-        - All PyGMT styling options are drawn from `self.pygmt_dict` for consistency across figures.
-        - A helper text file is generated (`xannots.txt`) to customize month-based x-axis ticks.
+        - Longitude and latitude slices are derived using `np.searchsorted`, assuming monotonic grid coordinates.
+        - Only finite (non-NaN) values are included in statistics.
+        - Output is intended to be used directly in `fig.text()` or `fig.legend()` in PyGMT plotting routines.
 
-        See Also
+        Examples
         --------
-        - self.load_AF2020_FIA_summary
-        - self.prepare_data_for_pygmt_plot
-        - self.load_GI_lon_lats
-        - self.Ant_2sectors
+        >>> stats = self.generate_regional_annotation_stats(FIP_DA, region=[0, 90, -75, -60], lon_coord_name='TLON', lat_coord_name='TLAT')
+        >>> for line in stats:
+        >>>     print(line)
+        Mean: 0.73
+        Std: 0.18
+        Extent: 1246
+        Min:  0.02 at (-68.41, 23.65)
+        Max: 1.00 at (-66.82, 45.12)
         """
-        sim_name     = sim_name      if sim_name      is not None else self.sim_name
-        show_fig     = show_fig      if show_fig      is not None else self.show_fig
-        ow_fig       = overwrite_fig if overwrite_fig is not None else self.ow_fig
-        cmap         = cmap          if cmap          is not None else self.pygmt_dict.get("FIP_CPT")
-        series       = series        if series        is not None else [0.01, 1.0, 0.01]
-        cbar_frame   = cbar_frame    if cbar_frame    is not None else ["x+lFast Ice Persistence", "y+l1/100"]
-        AF2020_CSV   = self.load_AF2020_FIA_summary( start=self.dt0_str, end=self.dtN_str )
-        obs_FIA      = AF2020_CSV['FIA_clim_repeat'].sel(region='circumpolar')
-        xticks       = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 360]
-        month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Dec"]
-        xannot_path  = Path("xannots.txt")
-        xannot_lines = [f"{tick}\tig\t{label}" for tick, label in zip(xticks, month_labels)]
-        xannot_path.write_text("\n".join(xannot_lines) + "\n")
-        default_line_colors = ["orange", "green", "blue", "red", "magenta", "cyan"]
+        # Get the latitude and longitude coordinates (TLAT, TLON)
+        da_lats    = da[lat_coord_name].values
+        da_lons    = da[lon_coord_name].values
+        lon_min_ni = np.searchsorted(da_lons[0, :], region[0])
+        lon_max_ni = np.searchsorted(da_lons[0, :], region[1])        
+        lat_min_nj = np.searchsorted(da_lats[:, 0], region[2])
+        lat_max_nj = np.searchsorted(da_lats[:, 0], region[3])
+        da_sliced  = da.isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        lon_sliced = da[lon_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        lat_sliced = da[lat_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
+        # Get the data, latitudes, and longitudes
+        data       = da_sliced.values.flatten()
+        lat        = lat_sliced.values.flatten()
+        lon        = lon_sliced.values.flatten()
+        valid_mask = ~np.isnan(data)
+        data_valid = data[valid_mask]
+        lat_valid  = lat[valid_mask]
+        lon_valid  = lon[valid_mask]
+        # Calculate statistics
+        spatial_mean   = np.mean(data_valid)
+        spatial_std    = np.std(data_valid)
+        spatial_extent = len(data_valid)
+        data_min       = np.min(data_valid)
+        data_max       = np.max(data_valid)
+        # Get min/max locations (lat, lon)
+        min_index    = np.argmin(data_valid)
+        max_index    = np.argmax(data_valid)
+        min_location = (lat_valid[min_index], lon_valid[min_index])
+        max_location = (lat_valid[max_index], lon_valid[max_index])
+        # Format text to display
+        text  = [f"Mean: {spatial_mean:.2f}", f"Std: {spatial_std:.2f}", f"Extent: {spatial_extent}"]
+        text += [f"Min:  {data_min:.2f} at {min_location}", f"Max: {data_max:.2f} at {max_location}"]
+        return text
+
+    def extract_min_max_dates(self, ts_dict, keys2plot=None, primary_key='FIA', time_coord='time'):
+        """
+        Extract the minimum and maximum datetime values from time series data.
+
+        This method scans through a dictionary of time series objects (either xarray.DataArrays,
+        xarray.Datasets, or nested dictionaries containing a DataArray under `primary_key`),
+        and returns the earliest and latest valid time values found across all selected entries.
+
+        Parameters
+        ----------
+        ts_dict : dict
+            A dictionary where each value is either:
+            - an xarray.DataArray with a `time_coord` coordinate, or
+            - a dictionary containing a DataArray under the key `primary_key`.
+            Keys typically represent simulation or experiment identifiers.
+
+        keys2plot : list of str, optional
+            If provided, restricts the operation to keys within this list.
+            Keys not in `keys2plot` will be skipped.
+
+        primary_key : str, default 'FIA'
+            The key to use when accessing nested dictionaries within `ts_dict`.
+            Ignored if the value is already a DataArray or Dataset.
+
+        time_coord : str, default 'time'
+            The name of the time coordinate to extract from each DataArray.
+
+        Returns
+        -------
+        tmin : pandas.Timestamp
+            The earliest datetime found across all valid time series.
+
+        tmax : pandas.Timestamp
+            The latest datetime found across all valid time series.
+
+        Notes
+        -----
+        - Entries in `ts_dict` with missing or malformed time coordinates are skipped.
+        - The key "AF2020" is always excluded.
+        - If no valid entries remain after filtering, a warning is logged and `None` is returned.
+
+        """
+        df_dts = []
+        for dict_key, data in ts_dict.items():
+            if (keys2plot is not None and dict_key not in keys2plot) or (dict_key == "AF2020"):
+                continue
+            self.logger.info(f"{dict_key} simulation will be included in {self._method_name()}()")
+            # Handle both nested dict and direct DataArray
+            if isinstance(data, dict) and primary_key in data:
+                da = data[primary_key]
+            else:
+                da = data  # assume data is already a DataArray
+            df_dt = pd.DataFrame({"time": pd.to_datetime(da[time_coord].values)})
+            df_dts.append(df_dt)
+        if not df_dts:
+            self.logger.warning("No data to plot after filtering with keys2plot.")
+            return
+        df_all = pd.concat(df_dts, ignore_index=True).dropna()
+        all_times = df_all["time"]
+        return all_times.min(), all_times.max()
+
+    def pygmt_fastice_panel(self,
+                            fast_ice_variable : str   = "FIA",   # "FIA"|"fia" or "FIT"|"fit" or "FIS|fis"
+                            ice_class         : str   = None,    # "FI_BT" ... see SeaIceToolbox for more help
+                            class_type        : str   = "bin",   # 'bin', 'roll' or None
+                            sim_name          : str   = None,
+                            roll_days         : int   = 0,
+                            # Generic (can be overridden)
+                            fig_width         : str   = None,
+                            fig_height        : str   = None,
+                            ylim              : tuple = None,
+                            frame_bndy        : str   = None,
+                            yaxis_pri         : str   = None,
+                            xaxis_pri         : str   = "a1Of15Dg",
+                            leg_pos           : str   = None,
+                            leg_box           : str   = "+gwhite+p.5p",
+                            spat_var_style    : str   = None,
+                            GI_plot_style     : str   = "c0.05c",
+                            GI_fill_color     : str   = "red",
+                            plot_GI           : bool  = False,
+                            min_max_trans_val : int   = 80,
+                            yshift_top        : str   = None,
+                            yshift_bot        : str   = None,
+                            bottom_frame_bndy : str   = "WSne",
+                            bottom_yaxis      : str   = None,
+                            bottom_xaxis      : str   = None,
+                            land_clr          : str   = 'gray',
+                            water_clr         : str   = "white",
+                            coast_pen         : str   = "1/0.5p,gray30",
+                            cbar_pos          : str   = None,
+                            lon_coord_name    : str   = None,
+                            lat_coord_name    : str   = None,
+                            cmap              : str   = None,
+                            series            : list  = None,
+                            cbar_frame        : str   = None,
+                            ANT_IS_pen        : str   = "0.2p,gray",
+                            ANT_IS_color      : str   = "lightgray",
+                            font_annot_pri    : str   = "24p,Times-Roman",
+                            font_annot_sec    : str   = "16p,Times-Roman",
+                            font_lab          : str   = "22p,Times-Bold",
+                            line_pen         : str   = "2p",
+                            grid_pen_pri      : str   = ".5p",
+                            grid_pen_sec      : str   = ".25p",
+                            fmt_geo_map       : str   = "D:mm",
+                            P_png             : str   = None,
+                            save_fig          : bool  = None,
+                            overwrite_fig     : bool  = None,
+                            show_fig          : bool  = None):
+        """
+        Unified PyGMT fast-ice panel plotter.
+
+        Set `fast_ice_variable` to:
+            - "FIA" (or "fia")  -> plots FIA time series + FIP maps
+            - "FIT" (or "fit")  -> plots FIT time series + FIHI maps
+
+        Everything else (loading, styling, legends, grounded iceberg overlay, etc.)
+        follows the same code path with variable-specific defaults injected via
+        a small configuration dictionary.
+
+        The rest of the arguments let you override those defaults if you need to.
+        """
+        var = fast_ice_variable.lower()
+        if var not in ("fia", "fit", "fis", "fimar", "fimvr", "fitar", "fitvr"):
+            raise ValueError(f"`fast_ice_variable` must be one of ['FIA','FIT','FIS','FIMAR','FIMVR','FITAR','FITVR']; got {fast_ice_variable}")
+        # -------------------------------------------------------------------------
+        # Per-variable defaults (you can push more things in here if you like)
+        # -------------------------------------------------------------------------
+        cfg = self.pygmt_FI_panel[var]
+        # -------------------------------------------------------------------------
+        # Resolve user overrides or fall back to defaults
+        # -------------------------------------------------------------------------
+        sim_name       = sim_name       if sim_name       is not None else self.sim_name
+        ice_class      = ice_class      if ice_class      is not None else self.ice_class
+        show_fig       = show_fig       if show_fig       is not None else self.show_fig
+        save_fig       = save_fig       if save_fig       is not None else self.save_fig
+        ow_fig         = overwrite_fig  if overwrite_fig  is not None else self.ow_fig
+        frame_bndy     = frame_bndy     if frame_bndy     is not None else "WS"
+        fig_width      = fig_width      if fig_width      is not None else "30c"
+        fig_height     = fig_height     if fig_height     is not None else "25c"
+        spat_var_style = spat_var_style if spat_var_style is not None else "s0.2c"
+        yshift_top     = yshift_top     if yshift_top     is not None else "-6.25c"
+        yshift_bot     = yshift_bot     if yshift_bot     is not None else "-10.5c"
+        bottom_yaxis   = bottom_yaxis   if bottom_yaxis   is not None else "a5f1g"
+        bottom_xaxis   = bottom_xaxis   if bottom_xaxis   is not None else "a30f10g"
+        cbar_pos       = cbar_pos       if cbar_pos       is not None else "JBC+w25c/1c+mc+h"
+        ylim           = ylim           if ylim           is not None else cfg["panel_ylim"]
+        yaxis_pri      = yaxis_pri      if yaxis_pri      is not None else cfg["yaxis_pri"]
+        leg_pos        = leg_pos        if leg_pos        is not None else cfg["leg_pos"]
+        cbar_frame     = cbar_frame     if cbar_frame     is not None else cfg["cbar_frame"]
+        cmap           = cmap           if cmap           is not None else cfg["cmap"]
+        series         = series         if series         is not None else cfg["series"]
+        # -------------------------------------------------------------------------
+        # Paths / loads
+        # -------------------------------------------------------------------------
+        ANT_IS      = self.load_ice_shelves()
+        ice_classes = [ice_class, f"{ice_class}_roll", f"{ice_class}_bin"]
+        ts_dict     = {}
+        if var=='fia':
+            ts_dict["AF2020"] = xr.open_dataset(self.AF_FI_dict['P_AF2020_FIA'])["AF2020"]
+        for iclass in ice_classes:
+            P_mets          = Path(self.D_ispd_thresh, f"{iclass}_mets.zarr")
+            ts_dict[iclass] = xr.open_dataset(P_mets)[cfg["top_name"]]
+        tmin, tmax = self.extract_min_max_dates(ts_dict)
+        # prioritise binary-days classification, then rolling-mean
+        P_spat = Path(self.D_ispd_thresh, f"{ice_class}_{class_type}_mets.zarr") if class_type is not None else Path(self.D_ispd_thresh, f"{ice_class}_mets.zarr")
+        try:
+            da_spat = xr.open_dataset(P_spat)[cfg["bottom_name"]]
+        except Exception:
+            raise KeyError(f"could not load {P_spat}: {e}")
+        df_spat = self.prepare_data_for_pygmt_plot(da_spat)
+        if plot_GI:
+            plot_GI_dict = self.load_GI_lon_lats()
+        # -------------------------------------------------------------------------
+        # Plot
+        # -------------------------------------------------------------------------
+        plot_region     = [f"{self.leap_year}-01-01", f"{self.leap_year}-12-31", ylim[0], ylim[1]]
+        plot_projection = f"X{fig_width}/{fig_height}"
+        frame           = [frame_bndy, f"px{xaxis_pri}", f"py{yaxis_pri}"]
         fig = pygmt.Figure()
-        pygmt.config(FORMAT_GEO_MAP = "ddd.x",
-                     MAP_GRID_PEN   = "0p,white")
-        if diff_plot:
-            yaxis_lab = f"ya10f+lFast Ice Area Difference (obs-sim; 1000 km\u00b2)"
-        else:
-            yaxis_lab = f"ya50f+lFast Ice Area (1000 km\u00b2)"
-        fig.basemap(region     = [1, 360, FIA_ylim[0], FIA_ylim[1]],
-                    projection = "X30c/15c",
-                    **{"frame" : [f"sxc{xannot_path}",
-                                  f"ya100f+lFast Ice Area (1000 km\u00b2)",
-                                  "WSne"]})
-        if enable_FIA:
-            for i, (name, da) in enumerate(FIA_dict.items()):
-                if isinstance(da, xr.Dataset):
-                    da = da.to_array().squeeze()
-                da         = da.load()
-                df         = pd.DataFrame({"time": pd.to_datetime(da["time"].values),
-                                           "area": da.values})
-                df["doy"]  = df["time"].dt.dayofyear
-                df["year"] = df["time"].dt.year
-                grouped    = df.groupby("doy")["area"]
-                area_min   = grouped.min()
-                area_max   = grouped.max()
-                area_mean  = grouped.mean()
-                if i == 0 and not diff_plot:
-                    obs_df        = pd.DataFrame({"time": pd.to_datetime(obs_FIA["time"].values),
-                                                  "area": obs_FIA.values})
-                    obs_df["doy"] = obs_df["time"].dt.dayofyear
-                    fig.plot(x=obs_df["doy"], y=obs_df["area"], pen="1.5p,blue,--", label="AF2020 Climatology (2000–2018)")
-                if name in self.plot_ice_area_dict:
-                    leg_lab    = self.plot_ice_area_dict[name]["label"].format(min_win=self.bool_min_days, win=self.bool_window)
-                    line_color = self.plot_ice_area_dict[name]["color"]
+        with pygmt.config(FONT_ANNOT_PRIMARY      = font_annot_pri,
+                          FONT_ANNOT_SECONDARY    = font_annot_sec,
+                          FONT_LABEL              = font_lab,
+                          MAP_GRID_PEN_PRIMARY    = grid_pen_pri,
+                          MAP_GRID_PEN_SECONDARY  = grid_pen_sec,
+                          FORMAT_GEO_MAP          = fmt_geo_map,
+                          FORMAT_DATE_MAP         = "o",
+                          FORMAT_TIME_PRIMARY_MAP = "Abbreviated"):
+            # ---- time-series top panel ----
+            fig.basemap(region=plot_region, projection=plot_projection, **{"frame": frame})
+            for k, da in ts_dict.items():
+                if hasattr(self, "pygmt_FIA_dict") and k in self.pygmt_FIA_dict:
+                    leg_lab    = self.pygmt_FIA_dict[k]["label"]
+                    line_pen   = self.pygmt_FIA_dict[k]["line_pen"]
+                    line_color = self.pygmt_FIA_dict[k]["line_color"]
                 else:
-                    leg_lab    = name
-                    line_color = default_line_colors[i % len(default_line_colors)]
-                if diff_plot:
-                    obs_interp     = np.interp(area_mean.index, obs_df["doy"], obs_df["area"])
-                    area_mean_diff = obs_interp - area_mean.values
-                    fig.plot(x     = area_mean.index,
-                             y     = area_mean_diff,
-                             pen   = f"2p,{line_color}",
-                             label = f"{leg_lab} diff")
-                else:
-                    fig.plot(x            = np.concatenate([area_min.index, area_max.index[::-1]]),
-                             y            = np.concatenate([area_min.values, area_max.values[::-1]]),
-                             fill         = f"{line_color}@70",
-                             close        = True,
-                             transparency = 60)
-                    fig.plot(x     = area_mean.index,
-                             y     = area_mean.values,
-                             pen   = f"2p,{line_color}",
-                             label = f"{leg_lab} climatology")
-            fig.legend(position="JTL+jTL+o0.2c", box="+gwhite+p.5p")
-        if enable_FIP:
-            fig.shift_origin(yshift="-6c")
-            ANT_IS         = self.load_ice_shelves()
-            plot_data_dict = self.prepare_data_for_pygmt_plot(FIP_DA, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
-            if plot_GI:
-                plot_GI_dict = self.load_GI_lon_lats(plot_data_dict)
+                    leg_lab, line_pen, line_color = k, "1.5p", "black"
+                clim = self.compute_doy_climatology(da)
+                fig.plot(x            = np.concatenate([clim["min"].index, clim["max"].index[::-1]]),
+                         y            = np.concatenate([clim["min"].values, clim["max"].values[::-1]]),
+                         fill         = f"{line_color}@{min_max_trans_val}",
+                         close        = True,
+                         transparency = min_max_trans_val)
+                fig.plot(x     = clim["mean"].index,
+                         y     = clim["mean"].values,
+                         pen   = f"{line_pen},{line_color}",
+                         label = leg_lab)
+            fig.legend(position=leg_pos, box=leg_box)
+            # ---- bottom panel(s) ----
+            fig.shift_origin(yshift=yshift_top)
             pygmt.makecpt(cmap=cmap, series=series)
             for i, (reg_name, reg_vals) in enumerate(self.Ant_2sectors.items()):
-                region     = reg_vals['plot_region']
-                projection = reg_vals['projection'].format(fig_width=30)
-                if i>0:
-                    fig.shift_origin(yshift="-10.25c")
-                fig.basemap(region=region, projection=projection, frame=['xa10g10f','ya5g5f'])
-                fig.coast(land='gray', water='white', shorelines="1/0.5p,gray30")
-                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style="s0.2c", cmap=True)
+                b_region     = reg_vals["plot_region"]
+                b_projection = reg_vals["projection"].format(fig_width=fig_width)
+                if i > 0:
+                    fig.shift_origin(yshift=yshift_bot)
+                fig.basemap(region     = b_region,
+                            projection = b_projection,
+                            frame      = [f"x{bottom_xaxis}", f"y{bottom_yaxis}"])
+                fig.coast(land=land_clr, water=water_clr, shorelines=coast_pen)
+                fig.plot(x     = df_spat["lon"],
+                         y     = df_spat["lat"],
+                         fill  = df_spat["data"],
+                         style = spat_var_style,
+                         cmap  = True)
                 if plot_GI:
-                    fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
-                fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
-            fig.colorbar(position="JBC+w20c/1c+mc+h", frame=cbar_frame)
-        if P_png:
-            if not P_png.exists():
-                P_png.parent.mkdir(parents=True, exist_ok=True)
-                fig.savefig(P_png)  
-                self.logger.info(f"Saved figure to {P_png}")
+                    fig.plot(x     = plot_GI_dict["lon"],
+                             y     = plot_GI_dict["lat"],
+                             fill  = GI_fill_color,
+                             style = GI_plot_style)
+                fig.plot(data=ANT_IS, pen=ANT_IS_pen, fill=ANT_IS_color)
+            fig.colorbar(position=cbar_pos, frame=cbar_frame)
+        # -------------------------------------------------------------------------
+        # Save / Show
+        # -------------------------------------------------------------------------
+        if save_fig:
+            F_png = f"{cfg['top_name']}_{cfg['bottom_name']}_{sim_name}_ispd_thresh{self.ispd_thresh_str}_{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"
+            P_png = P_png if P_png is not None else Path(self.D_graph, sim_name, F_png)
+            P_png.parent.mkdir(parents=True, exist_ok=True)
+            if not P_png.exists() or ow_fig:
+                fig.savefig(P_png, dpi=300)
+                self.logger.info(f"saved figure to {P_png}")
             else:
-                if ow_fig:
-                    fig.savefig(P_png)  
-                    self.logger.info(f"Saved figure to {P_png}")
-                else:
-                    self.logger.info(f"{P_png} already exists and not overwriting")
+                self.logger.info(f"{P_png} already exists and not overwriting")
         if show_fig:
             fig.show()
         pygmt.clib.Session.__exit__
@@ -669,7 +793,7 @@ class SeaIcePlotter:
             ANT_IS = self.load_ice_shelves()
         if plot_bathymetry:
             SO_BATH = self.load_IBCSO_bath()
-        plot_data_dict = self.prepare_data_for_pygmt_plot(da, lon_coord_name=lon_coord_name, lat_coord_name=lat_coord_name, diff_plot=diff_plot)
+        plot_data_dict = self.prepare_data_for_pygmt_plot(da, diff_plot=diff_plot)
         required_keys = ['lon', 'lat', 'data']
         try:
             if not isinstance(plot_data_dict, dict):
@@ -791,421 +915,184 @@ class SeaIcePlotter:
                 fig.show()
             pygmt.clib.Session.__exit__
 
-    def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name):
+    def _smooth_df_time(self, df: pd.DataFrame, window, center=True, min_periods=1):
         """
-        Generate summary statistics (mean, std, min, max) and their locations within a geographic region.
-
-        This helper function extracts the portion of a 2D `xarray.DataArray` that falls within a given 
-        geographic bounding box, computes spatial statistics on valid (non-NaN) values, and formats 
-        the results for annotation in PyGMT plots.
-
-        Parameters
-        ----------
-        da : xarray.DataArray
-            2D gridded data array (e.g., fast ice persistence) with latitude and longitude coordinates.
-        region : list or tuple of float
-            Bounding box for the region in the form [lon_min, lon_max, lat_min, lat_max].
-        lon_coord_name : str
-            Name of the longitude coordinate in `da` (e.g., 'TLON').
-        lat_coord_name : str
-            Name of the latitude coordinate in `da` (e.g., 'TLAT').
-
-        Returns
-        -------
-        list of str
-            Formatted text lines with:
-            - Mean
-            - Standard deviation
-            - Data extent (number of valid grid cells)
-            - Minimum value and its lat/lon location
-            - Maximum value and its lat/lon location
-
-        Notes
-        -----
-        - Longitude and latitude slices are derived using `np.searchsorted`, assuming monotonic grid coordinates.
-        - Only finite (non-NaN) values are included in statistics.
-        - Output is intended to be used directly in `fig.text()` or `fig.legend()` in PyGMT plotting routines.
-
-        Examples
-        --------
-        >>> stats = self.generate_regional_annotation_stats(FIP_DA, region=[0, 90, -75, -60], lon_coord_name='TLON', lat_coord_name='TLAT')
-        >>> for line in stats:
-        >>>     print(line)
-        Mean: 0.73
-        Std: 0.18
-        Extent: 1246
-        Min:  0.02 at (-68.41, 23.65)
-        Max: 1.00 at (-66.82, 45.12)
+        Smooth a time series in df with columns ['time','data'].
+        'window' can be an int (# of samples) or a time offset string like '15D'.
+        Returns a new df with smoothed 'data'.
         """
-        # Get the latitude and longitude coordinates (TLAT, TLON)
-        da_lats    = da[lat_coord_name].values
-        da_lons    = da[lon_coord_name].values
-        lon_min_ni = np.searchsorted(da_lons[0, :], region[0])
-        lon_max_ni = np.searchsorted(da_lons[0, :], region[1])        
-        lat_min_nj = np.searchsorted(da_lats[:, 0], region[2])
-        lat_max_nj = np.searchsorted(da_lats[:, 0], region[3])
-        da_sliced  = da.isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        lon_sliced = da[lon_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        lat_sliced = da[lat_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        # Get the data, latitudes, and longitudes
-        data       = da_sliced.values.flatten()
-        lat        = lat_sliced.values.flatten()
-        lon        = lon_sliced.values.flatten()
-        valid_mask = ~np.isnan(data)
-        data_valid = data[valid_mask]
-        lat_valid  = lat[valid_mask]
-        lon_valid  = lon[valid_mask]
-        # Calculate statistics
-        spatial_mean   = np.mean(data_valid)
-        spatial_std    = np.std(data_valid)
-        spatial_extent = len(data_valid)
-        data_min       = np.min(data_valid)
-        data_max       = np.max(data_valid)
-        # Get min/max locations (lat, lon)
-        min_index    = np.argmin(data_valid)
-        max_index    = np.argmax(data_valid)
-        min_location = (lat_valid[min_index], lon_valid[min_index])
-        max_location = (lat_valid[max_index], lon_valid[max_index])
-        # Format text to display
-        text  = [f"Mean: {spatial_mean:.2f}", f"Std: {spatial_std:.2f}", f"Extent: {spatial_extent}"]
-        text += [f"Min:  {data_min:.2f} at {min_location}", f"Max: {data_max:.2f} at {max_location}"]
-        return text
+        if window is None:
+            return df
+        s = df.set_index("time")["data"]
+        # Pandas rolling supports both integer and time-based windows on a DatetimeIndex
+        s_sm = s.rolling(window=window, center=center, min_periods=min_periods).mean()
+        out = df.copy()
+        out["data"] = s_sm.values
+        return out
 
-    def plot_monthly_ice_metric_by_year(self, area_dict,
-                                        ice_type         = "FIA",
-                                        roll_days        = 0,
-                                        ylim             = None,
-                                        figsize          = (18, 10),
-                                        tit_str          = None,
-                                        P_png            = None,
-                                        tick_fontsize    = 12,
-                                        label_fontsize   = 14,
-                                        title_fontsize   = 18,
-                                        legend_fontsize  = 12,
-                                        plot_annotations = False):
+    def pygmt_timeseries(self, ts_dict,
+                        comp_name    : str   = "test",
+                        primary_key  : str   = "FIA",
+                        smooth       : str|int|None = None,   # NEW: e.g., 15, "15D"
+                        clim_smooth  : int|None = None, 
+                        climatology  : bool  = False,
+                        ylabel       : str   = "@[Fast Ice Area (1\\times10^3 km^2)@[",
+                        ylim         : tuple = [0,1000],
+                        yaxis_pri    : int   = None,
+                        ytick_pri    : int   = 100,
+                        ytick_sec    : int   = 50,
+                        projection   : str   = None,
+                        fig_width    : str   = None,
+                        fig_height   : str   = None,
+                        xaxis_pri    : str   = None,
+                        xaxis_sec    : str   = None,
+                        frame_bndy   : str   = "WS",
+                        legend_pos   : str   = None,
+                        legend_box   : str   = "+gwhite+p0.5p",
+                        fmt_dt_pri   : str   = None,
+                        fmt_dt_sec   : str   = None,
+                        fmt_dt_map   : str   = None,
+                        fnt_type     : str   = "Helvetica",
+                        fnt_wght_lab : str   = "20p",
+                        fnt_wght_ax  : str   = "18p",
+                        line_pen    : str    = "1p",
+                        grid_wght_pri: str   = ".25p",
+                        grid_wght_sec: str   = ".1p",
+                        P_png        : str   = None,
+                        time_coord   : str   = "time",
+                        keys2plot    : list  = None,
+                        save_fig     : bool  = None,
+                        show_fig     : bool  = None):
         """
-        Plot monthly climatology of an ice area or volume metric by year and simulation.
-
-        This method produces a seasonal line plot of a sea ice metric (e.g., FIA, SIA, FIV) 
-        for multiple simulations or observational datasets. It computes daily climatologies 
-        across years and shows min/max shading and mean lines. Optional annotations mark 
-        annual maxima and minima.
-
-        Parameters
-        ----------
-        area_dict : dict of xarray.DataArray
-            Dictionary of time series datasets keyed by source name (e.g., model or obs name).
-            Each entry must include a 'time' coordinate.
-        ice_type : str, default="FIA"
-            Type of ice metric to plot. Options include:
-            - "FIA": Fast Ice Area (10³ km²)
-            - "FIV": Fast Ice Volume (km³)
-            - "SIA": Sea Ice Area (10⁶ km²)
-            - "SIV": Sea Ice Volume (10⁶ km³)
-        roll_days : int, default=0
-            Number of days for centered rolling mean smoothing. Set to 0 to disable smoothing.
-        ylim : tuple of float, optional
-            Y-axis limits (e.g., `(100, 800)`). Defaults vary by `ice_type`.
-        figsize : tuple of float, default=(18, 10)
-            Figure size in inches.
-        tit_str : str, optional
-            Title to display above the plot.
-        P_png : pathlib.Path, optional
-            File path to save the figure (PNG). Saved only if `self.save_fig` is True.
-        tick_fontsize : int, default=12
-            Font size for x/y ticks.
-        label_fontsize : int, default=14
-            Font size for axis labels.
-        title_fontsize : int, default=18
-            Font size for the plot title.
-        legend_fontsize : int, default=12
-            Font size for the legend.
-        plot_annotations : bool, default=False
-            If True, adds max/min DOY labels and markers for each simulation.
-
-        Returns
-        -------
-        None
-            A Matplotlib figure is shown and optionally saved.
-
-        Notes
-        -----
-        - For each dataset, the function groups daily values by DOY across all years (except the first year),
-          computes mean/min/max, and plots them with fill and line styles.
-        - Observational climatologies ("AF2020db_cli", "NSIDC") are treated separately and drawn as dashed lines.
-        - When `plot_annotations=True`, the DOY of annual maxima and minima is printed and plotted.
-        - The x-axis is labeled with month names, and the y-axis label depends on the `ice_type`.
-
-        Examples
-        --------
-        >>> self.plot_monthly_ice_metric_by_year(FIA_dict, ice_type="FIA", roll_days=15, tit_str="Fast Ice Area Climatology")
-        >>> self.plot_monthly_ice_metric_by_year(SIA_dict, ice_type="SIA", plot_annotations=True)
-
-        See Also
-        --------
-        - self.plot_ice_area_dict : Internal dictionary for line labels and colors by ice type
-        - pd.DataFrame.groupby : Used to compute daily climatologies
-        """
-        plt.figure(figsize=figsize, constrained_layout=True)
-        cmap         = plt.get_cmap("tab10")
-        month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        xticks       = [1,32,62,92,122,152,182,212,242,272,302,332]
-        self.plot_ice_area_dict = {"FI_BT": {"label": "daily ice-speed mask", "color": "black"},
-                                   "FI_BT_bool": {"label": "Binary-days (6 of 7) ice-speed mask", "color": "orange"},
-                                   "FI_BT_roll": {"label": "15-day-avg ice-speed mask", "color": "green"},}
-        # Y-axis labels and defaults
-        ice_type = ice_type.upper()
-        ylabels = {"SIA": "Sea Ice Area (10⁶ km²)",
-                   "SIV": "Sea Ice Volume (10⁶ km³)",
-                   "FIA": "Fast Ice Area (10³ km²)",
-                   "FIV": "Fast Ice Volume (km³)"}
-        if ylim is None:
-            ylim_defaults = {"SIA": (0, 20), "FIA": (100, 800)}
-            ylim = ylim_defaults.get(ice_type, None)
-        sim_annots = []
-        sim_annot_colors = []
-        for i, (name, da) in enumerate(area_dict.items()):
-            if isinstance(da, xr.Dataset):
-                da = da.to_array().squeeze()
-            if name == "AF2020db_cli" and ice_type == "FIA":
-                doy = da["doy"].values
-                values = da.values
-                plt.plot(doy, values, label="AF2020 Climatology (2000–2018)", linestyle="--", color="blue", linewidth=1.5)
-                if plot_annotations:
-                    max_doy, min_doy = doy[np.argmax(values)], doy[np.argmin(values)]
-                    plt.plot(max_doy, values[np.argmax(values)], "b^")
-                    plt.plot(min_doy, values[np.argmin(values)], "bv")
-                    sim_annots += [f"AF2020 Max: {values[np.argmax(values)]:.1f} @ DOY {max_doy}", f"AF2020 Min: {values[np.argmin(values)]:.1f} @ DOY {min_doy}"]
-                    sim_annot_colors += ["blue"] * 2
-                continue
-            if name == "NSIDC" and ice_type == "SIA":
-                time = pd.to_datetime(da["time"].values)
-                area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
-                df = pd.DataFrame({"area": area}, index=time)
-                df["doy"] = df.index.dayofyear
-                clim_mean = df.groupby("doy")["area"].mean()
-                plt.plot(clim_mean.index, clim_mean.values, label="NSIDC Climatology", linestyle="--", color="black", linewidth=1.5)
-                if plot_annotations:
-                    max_doy, min_doy = clim_mean.idxmax(), clim_mean.idxmin()
-                    plt.plot(max_doy, clim_mean[max_doy], "k^")
-                    plt.plot(min_doy, clim_mean[min_doy], "kv")
-                    sim_annots += [f"NSIDC Max: {clim_mean[max_doy]:.1f} @ DOY {max_doy}", f"NSIDC Min: {clim_mean[min_doy]:.1f} @ DOY {min_doy}"]
-                    sim_annot_colors += ["black"] * 2
-                continue  
-            time = pd.to_datetime(da["time"].values)
-            area = da.rolling(time=roll_days, center=True, min_periods=1).mean().values if roll_days >= 1 else da.values
-            df = pd.DataFrame({"area": area}, index=time)
-            df["doy"] = df.index.dayofyear
-            df["year"] = df.index.year
-            df = df[df["year"] > df["year"].min()]  # drop first year
-            grouped = df.groupby("doy")["area"]
-            area_min, area_max, area_mean = grouped.min(), grouped.max(), grouped.mean()
-            style = self.plot_ice_area_dict.get(name, {"label": name, "color": cmap(i)})
-            plt.fill_between(area_min.index, area_min, area_max, alpha=0.2, color=style["color"], label=f"{style['label']} min/max range")
-            plt.plot(area_mean.index, area_mean, color=style["color"], linewidth=2, label=f"{style['label']} climatology")
-            if plot_annotations:
-                max_doy, min_doy = area_mean.idxmax(), area_mean.idxmin()
-                plt.plot(max_doy, area_mean[max_doy], marker="^", color=style["color"])
-                plt.plot(min_doy, area_mean[min_doy], marker="v", color=style["color"])
-                sim_annots += [f"{name} Max: {area_mean[max_doy]:.1f} @ DOY {max_doy}", f"{name} Min: {area_mean[min_doy]:.1f} @ DOY {min_doy}"]
-                sim_annot_colors += [style["color"]] * 2
-        plt.xticks(xticks, labels=month_labels, fontsize=tick_fontsize)
-        plt.yticks(fontsize=tick_fontsize)
-        plt.xlim(1, 366)    
-        if ylim: plt.ylim(ylim)
-        plt.ylabel(ylabels.get(ice_type, "Ice Metric"), fontsize=label_fontsize)
-        plt.xlabel("Month", fontsize=label_fontsize)
-        if tit_str:
-            plt.title(tit_str, fontsize=title_fontsize)
-        plt.grid(axis="y", linestyle="--", alpha=0.5)
-        plt.legend(loc="upper left", fontsize=legend_fontsize)
-        if sim_annots and plot_annotations:
-            ax = plt.gca()
-            for i, (text, color) in enumerate(zip(sim_annots, sim_annot_colors)):
-                ax.text(0.78, 0.02 + i * 0.03, text, transform=ax.transAxes, fontsize=11, va='bottom', ha='center', color=color)
-        if P_png and self.save_fig:
-            plt.savefig(P_png, dpi=100)
-            print(f"📏 Saved plot to {P_png}")
-
-    def plot_timeseries(self, ts_dict,
-                        primary_key : str = "FIA",
-                        roll_days : int   = None,
-                        tit_str   : str   = None,
-                        ylim      : tuple = None,
-                        ylabel    : str   = "Fast Ice Area (1000-km²)",
-                        ytick_inc : int   = 100,
-                        xlabel    : str   = "Date",
-                        xtick_inc : int   = 1,
-                        P_png     : str   = None,
-                        fig_width : str   = "30c",
-                        fig_height: str   = "5c",
-                        legend_pos: str   = "JBL+jBL+w30c",
-                        legend_box: str   = "+gwhite+p0.5p",
-                        pen_weight: str   = "1p",
-                        time_coord: str   = "time",
-                        keys2plot : list  = None,
-                        show_fig  : bool  = None):
-        """
-        Plot one or more time series using PyGMT.
+        Plot time series of a primary variable (e.g., FIA) for a set of simulations or observations.
 
         Parameters
         ----------
         ts_dict : dict
-            Dictionary of {label: xarray.DataArray or Dataset}. Each value must have a 'time' coordinate.
-        roll_days : int, optional
-            Number of days for centered rolling average. If None or < 3, no smoothing is applied.
-        tit_str : str, optional
-            Title for the plot.
-        ylim : tuple, optional
-            Y-axis limits (ymin, ymax). Inferred from data if None.
+            Dictionary of xarray DataArrays keyed by simulation or dataset name.
+        comp_name : str
+            Name for the comparison (used in figure title and filename).
+        primary_key : str
+            Key used to extract the variable from each dataset (except 'AF2020').
+        climatology : bool
+            If True, plot daily climatology with fill and mean lines.
+        ylim : tuple or None
+            Y-axis limits. If None, inferred from data with 5% padding.
         ylabel : str
-            Y-axis label.
+            Label for the Y-axis.
         ytick_inc : int
-            Interval for y-axis ticks.
-        xlabel : str
-            X-axis label.
-        xtick_inc : int
-            Interval (in months or years) for x-axis ticks.
-        P_png : str, optional
-            Path to save PNG output. If None, figure is not saved.
-        fig_width : str
-            Width of the figure for PyGMT (e.g., "15c").
-        fig_height : str
-            Height of the figure for PyGMT (e.g., "5c").
-        legend_pos : str
-            PyGMT legend position string (e.g., "JTR+jTR+o0.2c").
+            Interval between Y-axis ticks.
+        xaxis_pri, xaxis_sec : str
+            GMT frame settings for primary and secondary axes (when climatology is False).
+        P_png : str or None
+            Optional full path to save figure. If None, default filename is constructed.
         legend_box : str
-            PyGMT legend box style string.
-        pen_weight : str
-            Pen thickness for the lines (e.g., "1p", "2p").
+            GMT legend box styling.
+        line_pen : str
+            Line thickness for plotted time series.
         time_coord : str
-            Name of the time coordinate in each xarray object.
-        keys2plot : list, optional
-            Subset of keys in ts_dict to plot. If None, all keys are used.
-        show_fig : bool, optional
-            If True, show the figure interactively. Defaults to self.show_fig.
-
-        Returns
-        -------
-        fig : pygmt.Figure
-            The generated PyGMT figure.
+            Name of time coordinate in each DataArray.
+        keys2plot : list or None
+            If provided, only datasets with keys in this list are plotted.
+        show_fig : bool or None
+            If True, show figure interactively. Defaults to self.show_fig.
         """
-        show_fig = show_fig if show_fig is not None else self.show_fig
-        dfs = []
-        for i,(dict_key,data) in enumerate(ts_dict.items()):
-            if dict_key=='AF2020':
-                da = data
-            else:
-                da = data[primary_key]
-            df         = pd.DataFrame({"time": pd.to_datetime(da["time"].values), 
-                                        "data": da.values})
-            dfs.append(df)
-        df_all = pd.concat(dfs, ignore_index=True).dropna()
-        all_times = df_all["time"]
-        tmin, tmax = all_times.min(), all_times.max()
-        # Auto y-limits with padding
-        if ylim is None:
-            ymin = df_all["data"].min()
-            ymax = df_all["data"].max()
-            pad = 0.05 * (ymax - ymin)
-            ylim = [round(ymin - pad, 2), round(ymax + pad, 2)]
-        region = [tmin.strftime("%Y-%m-%d"), tmax.strftime("%Y-%m-%d"), ylim[0], ylim[1]]
+        show_fig   = show_fig   if show_fig   is not None else self.show_fig
+        save_fig   = save_fig   if save_fig   is not None else self.save_fig
+        fmt_dt_pri = fmt_dt_pri if fmt_dt_pri is not None else "Character"
+        fmt_dt_sec = fmt_dt_sec if fmt_dt_sec is not None else "Abbreviated"
+        fmt_dt_map = fmt_dt_map if fmt_dt_map is not None else "o"
+        # need to get out the maximum times for plot boundaries
+        tmin, tmax = self.extract_min_max_dates(ts_dict, keys2plot=keys2plot, primary_key=primary_key, time_coord=time_coord)
+        # there are differences in the projection and x-axis for the two types of figures
+        if climatology:
+            fake_year  = 1996
+            fig_width  = fig_width  if fig_width  is not None else "20c"
+            fig_height = fig_height if fig_height is not None else "15c"
+            xaxis_sec  = xaxis_sec  if xaxis_sec  is not None else None
+            xaxis_pri  = xaxis_pri  if xaxis_pri  is not None else "a1Og"
+            region     = [f"{fake_year}-01-01", f"{fake_year}-12-31", ylim[0], ylim[1]]
+        else:
+            fig_width  = fig_width  if fig_width  is not None else "50c"
+            fig_height = fig_height if fig_height is not None else "15c"
+            xaxis_pri  = xaxis_pri  if xaxis_pri  is not None else "a2Of30Dg30D"
+            xaxis_sec  = xaxis_sec  if xaxis_sec  is not None else "a1Y"
+            region     = [tmin.strftime("%Y-%m-%d"), tmax.strftime("%Y-%m-%d"), ylim[0], ylim[1]]
+        # define the projection and frame of the figure
+        legend_pos = legend_pos if legend_pos is not None else f"JTL+jTL+o0.2c+w{fig_width}"
         projection = f"X{fig_width}/{fig_height}"
-        frame = ["pxa3Of1o","sxa1Y",f"pya{ytick_inc}f50+l{ylabel}","WSnew"]
-        # PyGMT settings
+        yaxis_pri  = yaxis_pri if yaxis_pri is not None else f"a{ytick_pri}gf{ytick_sec}+l{ylabel}"
+        if xaxis_sec is not None:
+            frame = [frame_bndy, f"sx{xaxis_sec}", f"px{xaxis_pri}", f"py{yaxis_pri}"]
+        else:
+            frame = [frame_bndy, f"px{xaxis_pri}", f"py{yaxis_pri}"]
+        # make sure the figure has the same configuration by wrapping it in a with condition
         fig = pygmt.Figure()
-        fig.basemap(region=region, projection=projection, frame=frame)
-        with pygmt.config(MAP_FRAME_TYPE          = "plain",
-                     FONT_TITLE              = "18p,Helvetica-Bold",
-                     FONT_LABEL              = "14p,Helvetica",
-                     FONT_ANNOT_PRIMARY      = "20p,Helvetica",
-                     MAP_TICK_LENGTH_PRIMARY = "0.1c",
-                     FORMAT_DATE_MAP         = "o",
-                     FORMAT_TIME_PRIMARY_MAP = "Character"):
-            for i,(dict_key,data) in enumerate(ts_dict.items()):
-                if dict_key=='AF2020':
-                    da = data
+        with pygmt.config(FONT_LABEL                = f"{fnt_wght_lab},{fnt_type}",
+                          FONT                      = f"{fnt_wght_ax},{fnt_type}",
+                          MAP_GRID_PEN_PRIMARY      = grid_wght_pri,
+                          MAP_GRID_PEN_SECONDARY    = grid_wght_sec,
+                          #MAP_TICK_LENGTH_PRIMARY = "0.1c",
+                          FORMAT_TIME_PRIMARY_MAP   = fmt_dt_pri,
+                          FORMAT_TIME_SECONDARY_MAP = fmt_dt_sec,
+                          FORMAT_DATE_MAP           = fmt_dt_map):
+            fig.basemap(projection=projection, region=region, frame=frame)
+            # loop over each key in the dictionary and if keys2plot is defined only plot those dictionaries
+            cnt=0
+            for i, (dict_key, data) in enumerate(ts_dict.items()):
+                line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
+                leg_lab    = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
+                da = data[primary_key]
+                self.logger.info(f"pulling out data array for {dict_key} and putting into dataframe")
+                self.logger.info(f"legend label: {leg_lab}")
+                self.logger.info(f"line color  : {line_color}")
+                df = pd.DataFrame({"time": pd.to_datetime(da[time_coord].values), "data": da.values})
+                if climatology:
+                    clim = self.compute_doy_climatology(da)
+                    mean_x = clim['mean'].index
+                    mean_y = clim['mean'].values
+                    if clim_smooth is not None and clim_smooth > 1:
+                        mean_y = (pd.Series(mean_y, index=mean_x)
+                                    .rolling(window=clim_smooth, center=True, min_periods=1)
+                                    .mean()
+                                    .values)
+                    fig.plot(x            = np.concatenate([clim['min'].index, clim['max'].index[::-1]]),
+                             y            = np.concatenate([clim['min'].values, clim['max'].values[::-1]]),
+                             fill         = f"{line_color}@80",
+                             close        = True,
+                             transparency = 80)
+                    fig.plot(x     = mean_x,
+                             y     = mean_y.values,
+                             pen   = f"{line_pen},{line_color}",
+                             label = leg_lab)
                 else:
-                    da = data[primary_key]
-                df         = pd.DataFrame({"time": pd.to_datetime(da["time"].values), 
-                                           "data": da.values})
-                color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
-                if i==0:
-                    leg_lab = f"{dict_key}+N{len(ts_dict.keys())}"
-                else:
-                    leg_lab = f"{dict_key}"
-                fig.plot(x=df["time"], y=df["data"], pen=f"{pen_weight},{color}", label=leg_lab)
-        fig.legend(position=legend_pos, box=legend_box)
-        if P_png and self.save_fig:
-            fig.savefig(P_png, dpi=600)
-            print(f"📏 Saved plot to {P_png}")
+                # Repeat AF2020 across the full date range if needed
+                    if (dict_key=='AF2020') and primary_key=="FIA":
+                        t_start, t_end = tmin.normalize(), tmax.normalize()
+                        full_range = pd.date_range(t_start, t_end, freq='D')
+                        # Build a repeated time series using day-of-year as lookup
+                        df["doy"] = df["time"].dt.dayofyear
+                        #print(df)
+                        #clim_lookup = df.set_index("doy")["data"]
+                        clim_lookup = df.groupby("doy")["data"].mean()
+                        repeated_df = pd.DataFrame({"time": full_range})
+                        repeated_df["doy"] = repeated_df["time"].dt.dayofyear
+                        #print(repeated_df)
+                        repeated_df["data"] = repeated_df["doy"].map(clim_lookup)
+                        repeated_df = _smooth_df_time(repeated_df, window=smooth)
+                        fig.plot(x=repeated_df["time"], y=repeated_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
+                    else:
+                        df_sm = _smooth_df_time(df, window=smooth)
+                        fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)                
+            fig.legend(position=legend_pos, box=legend_box)
+        if save_fig:
+            F_png = f"{primary_key}_{comp_name}_{'climatology_' if climatology else ''}{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"
+            P_png = P_png if P_png is not None else Path(self.D_graph, "timeseries", F_png)
+            fig.savefig(P_png, dpi=300)
+            self.logger.info(f"saved figure to {P_png}")
         if show_fig:
             fig.show()
         pygmt.clib.Session.__exit__
-
-    def plot_timeseries_groupby_doy(self, ts_dict,
-                                    primary_key : str = "FIA",
-                                    roll_days   : int   = None,
-                                    tit_str     : str   = None,
-                                    ylim        : tuple = None,
-                                    ylabel      : str   = "Fast Ice Area (1000-km²)",
-                                    ytick_inc   : int   = 100,
-                                    xlabel      : str   = "Date",
-                                    xtick_inc   : int   = 1,
-                                    P_png       : str   = None,
-                                    fig_width   : str   = "30c",
-                                    fig_height  : str   = "10c",
-                                    legend_pos  : str   = "JBR+jBR+o0.2c",
-                                    pen_weight  : str   = "1p",
-                                    time_coord  : str   = "time",
-                                    keys2plot   : list  = None,
-                                    show_fig    : bool  = None):
-        """
-        """
-        dfs = []
-        fake_year = 1996
-        region = [f"{fake_year}-01-01", f"{fake_year}-12-31", 0, 1000]
-        projection = f"X{fig_width}/{fig_height}"
-        frame = ["WS", "pxa1O", f"sy+l{ylabel}"]#, "pya1+ucm"]  "sxa1Of30D",
-        fig = pygmt.Figure()
-        with pygmt.config(MAP_FRAME_TYPE          = "plain",
-                          FONT_TITLE              = "18p,Helvetica-Bold",
-                          FONT_LABEL              = "20p,Helvetica",
-                          FONT_ANNOT_PRIMARY      = "20p,Helvetica",
-                          MAP_TICK_LENGTH_PRIMARY = "0.1c",
-                          FORMAT_DATE_MAP         = "o",
-                          FORMAT_DATE_OUT         = "o",
-                          FORMAT_TIME_PRIMARY_MAP = "a"):
-            fig.basemap(projection=projection, region=region, frame=frame)
-            for i,(dict_key,data) in enumerate(ts_dict.items()):
-                if dict_key=='AF2020':
-                    da = data
-                else:
-                    da = data[primary_key]
-                df         = pd.DataFrame({"time": pd.to_datetime(da["time"].values), 
-                                        "data": da.values})
-                df["doy"]  = df["time"].dt.dayofyear
-                df["year"] = df["time"].dt.year
-                doy_grp    = df.groupby("doy")["data"]
-                clim_min   = doy_grp.min()
-                clim_max   = doy_grp.max()
-                clim_mean  = doy_grp.mean()
-                # Convert DOY index to datetime for use with pygmt
-                clim_min.index  = pd.to_datetime(clim_min.index - 1, unit="D", origin=pd.Timestamp(f"{fake_year}-01-01"))
-                clim_max.index  = pd.to_datetime(clim_max.index - 1, unit="D", origin=pd.Timestamp(f"{fake_year}-01-01"))
-                clim_mean.index = pd.to_datetime(clim_mean.index - 1, unit="D", origin=pd.Timestamp(f"{fake_year}-01-01"))
-                line_color      = self.plot_var_dict.get(dict_key,{}).get("line_clr",{})#def_colors[i % len(def_colors])
-                fig.plot(x           = np.concatenate([clim_min.index, clim_max.index[::-1]]),
-                        y            = np.concatenate([clim_min.values, clim_max.values[::-1]]),
-                        fill         = f"{line_color}@80",
-                        close        = True,
-                        transparency = 60,)
-                fig.plot(x     = clim_mean.index,
-                        y     = clim_mean.values,
-                        pen   = f"2p,{line_color}",
-                        label = f"{dict_key}")
-        fig.legend(position=legend_pos, box=True)
-        fig.show()
 
     def plot_taylor(self, stats_dict, out_path):
         fig = plt.figure(figsize=(6, 6))
