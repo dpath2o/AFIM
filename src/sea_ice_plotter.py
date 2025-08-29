@@ -109,61 +109,51 @@ class SeaIcePlotter:
         """
         return xr.open_dataset(self.config['pygmt_dict']["P_IBCSO_bath"]).bath
 
-    def prepare_data_for_pygmt_plot(self, da, bcoords=False, diff_plot=False):
+    def prepare_data_for_pygmt_plot(self, da, bcoords=False, tcoords=True,
+                                    lon_coord_name=None, lat_coord_name=None,
+                                    diff_plot=False):
         """
-        Prepare gridded data for PyGMT scatter-style plotting by flattening and masking arrays.
-
-        This method extracts 2D arrays of longitude, latitude, and data values from an input
-        `xarray.DataArray`, applies appropriate masking, and returns flattened arrays suitable
-        for `pygmt.Figure.plot(..., style="s0.2c", ...)`.
-
-        Parameters
-        ----------
-        da : xarray.DataArray
-            Input data array containing 2D or 3D fields (typically persistence or difference maps).
-            Must contain latitude and longitude coordinates.
-        diff_plot : bool, default=False
-            If True, relaxes the value filter to allow valid difference values in range [-1, 1].
-            If False, restricts to strictly positive values (e.g., valid FIP from 0 to 1).
-
-        Returns
-        -------
-        dict
-            Dictionary containing:
-            - 'data'  : 1D array of filtered values to be plotted
-            - 'lon'   : 1D array of longitudes (same shape as 'data')
-            - 'lat'   : 1D array of latitudes  (same shape as 'data')
-
-        Notes
-        -----
-        - Masking ensures only finite, valid values are plotted:
-            * `diff_plot=True` accepts values between -1 and 1 (inclusive)
-            * `diff_plot=False` accepts strictly positive values
-        - This function is designed for `pygmt.Figure.plot()` with `style="s..."` scatter symbols,
-          not for gridded plotting methods like `pygmt.Figure.grdimage()`.
-
-        See Also
-        --------
-        - pygmt.Figure.plot : Used to plot flattened (x, y, value) tuples
-        - pygmt.makecpt     : For setting the colormap before plotting
-        - self.plot_FIA_FIP_faceted : Calls this method when plotting FIP panels
+        Prepare gridded data for PyGMT plotting.
+        
+        Priority:
+        1. If lon_coord_name and lat_coord_name are provided -> use them
+        2. Else, use bcoords/tcoords (cannot both be True)
         """
         data_dict = {}
         self.load_bgrid(slice_hem=True)
-        if bcoords:
-            lon2d = self.G_u['lon'].values
-            lat2d = self.G_u['lat'].values
+        self.logger.info("preparing the data for plotting")
+
+        # Determine which coordinates to use
+        use_own_coords = lon_coord_name is not None or lat_coord_name is not None
+
+        if use_own_coords:
+            if lon_coord_name is None or lat_coord_name is None:
+                raise ValueError("Both lon_coord_name and lat_coord_name must be provided if using own coordinates")
+            self.logger.info(f"   using own coordinates: {lon_coord_name}, {lat_coord_name}")
+            lon2d, lat2d = np.meshgrid(da[lon_coord_name], da[lat_coord_name])
         else:
-            lon2d = self.G_t['lon'].values
-            lat2d = self.G_t['lat'].values
-        data2d  = np.asarray(da.data).astype('float32')
+            if bcoords and tcoords:
+                raise ValueError("Cannot set both bcoords and tcoords to True")
+            if bcoords:
+                self.logger.info("   using B-grid coordinates")
+                lon2d = self.G_u['lon'].values
+                lat2d = self.G_u['lat'].values
+            elif tcoords:
+                self.logger.info("   using T-grid coordinates")
+                lon2d = self.G_t['lon'].values
+                lat2d = self.G_t['lat'].values
+            else:
+                raise ValueError("Must specify either bcoords, tcoords, or provide explicit coordinates")
+
+        data2d = np.asarray(da.data).astype('float32')
         if diff_plot:
             mask = (data2d >= -1) & (data2d <= 1) & np.isfinite(data2d)
         else:
-            mask = np.isfinite(data2d)# & (data2d > 0)
-        data_dict['data']  = data2d[mask].ravel()
-        data_dict['lon']   = lon2d[mask].ravel()
-        data_dict['lat']   = lat2d[mask].ravel()
+            mask = np.isfinite(data2d)
+
+        data_dict['data'] = data2d[mask].ravel()
+        data_dict['lon']  = lon2d[mask].ravel()
+        data_dict['lat']  = lat2d[mask].ravel()
         return data_dict
 
     def load_GI_lon_lats(self):
@@ -654,6 +644,8 @@ class SeaIcePlotter:
                                cbar_position  = None,
                                lon_coord_name = None,
                                lat_coord_name = None,
+                               use_bcoords    = False,
+                               use_tcoords    = False,
                                fig_size       = None,
                                var_sq_size    = 0.2,
                                GI_sq_size     = 0.1,
@@ -776,8 +768,8 @@ class SeaIcePlotter:
         show_fig    = show_fig      if show_fig      is not None else self.show_fig
         ow_fig      = overwrite_fig if overwrite_fig is not None else self.ow_fig
         time_stamp  = time_stamp    if time_stamp    is not None else self.dt0_str
-        lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict.get("lon_coord_name", "TLON")
-        lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict.get("lat_coord_name", "TLAT")
+        #lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict.get("lon_coord_name", "TLON")
+        #lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict.get("lat_coord_name", "TLAT")
         cmap        = cmap          if cmap          is not None else self.plot_var_dict[var_name]['cmap']
         series      = series        if series        is not None else self.plot_var_dict[var_name]['series']
         reverse     = reverse       if reverse       is not None else self.plot_var_dict[var_name]['reverse']
@@ -793,7 +785,26 @@ class SeaIcePlotter:
             ANT_IS = self.load_ice_shelves()
         if plot_bathymetry:
             SO_BATH = self.load_IBCSO_bath()
-        plot_data_dict = self.prepare_data_for_pygmt_plot(da, diff_plot=diff_plot)
+        if lon_coord_name is not None or lat_coord_name is not None:
+            plot_data_dict = self.prepare_data_for_pygmt_plot(
+                da,
+                bcoords=False,
+                tcoords=False,
+                lon_coord_name=lon_coord_name,
+                lat_coord_name=lat_coord_name,
+                diff_plot=diff_plot
+            )
+        else:
+            if use_bcoords and use_tcoords:
+                raise ValueError("Cannot set both use_bcoords and use_tcoords to True")
+            plot_data_dict = self.prepare_data_for_pygmt_plot(
+                da,
+                bcoords=use_bcoords,
+                tcoords=use_tcoords,
+                lon_coord_name=None,
+                lat_coord_name=None,
+                diff_plot=diff_plot
+            )
         required_keys = ['lon', 'lat', 'data']
         try:
             if not isinstance(plot_data_dict, dict):
@@ -1062,7 +1073,7 @@ class SeaIcePlotter:
                              close        = True,
                              transparency = 80)
                     fig.plot(x     = mean_x,
-                             y     = mean_y.values,
+                             y     = mean_y,
                              pen   = f"{line_pen},{line_color}",
                              label = leg_lab)
                 else:
@@ -1079,10 +1090,10 @@ class SeaIcePlotter:
                         repeated_df["doy"] = repeated_df["time"].dt.dayofyear
                         #print(repeated_df)
                         repeated_df["data"] = repeated_df["doy"].map(clim_lookup)
-                        repeated_df = _smooth_df_time(repeated_df, window=smooth)
+                        repeated_df = self._smooth_df_time(repeated_df, window=smooth)
                         fig.plot(x=repeated_df["time"], y=repeated_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
                     else:
-                        df_sm = _smooth_df_time(df, window=smooth)
+                        df_sm = self._smooth_df_time(df, window=smooth)
                         fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)                
             fig.legend(position=legend_pos, box=legend_box)
         if save_fig:

@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -l walltime=06:00:00
+#PBS -l mem=120GB
+#PBS -l ncpus=28
+#PBS -j oe
+#PBS -q normal
+#PBS -P gv90
+#PBS -l storage=gdata/xp65+gdata/gv90+gdata/jk72
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+YEAR=${YEAR:-2000}           # default if not passed
+SIM_NAME=${SIM_NAME:-"elps-min"}
+GRID_RES=${GRID_RES:-0.2}
+SRCH_RDS=${SRCH_RDS:-20}
+XESMF=${XESMF:-"false"}     # default to false
+# Use environment variables
+echo "processing year = ${YEAR}"
+echo "simulation name = ${SIM_NAME}"
+echo "grid resolution = ${GRID_RES}"
+if [ "${XESMF,,}" = "true" ]; then
+    echo "using xesmf"
+    python3 ~/AFIM/src/AFIM/scripts/metrics/FI_diff.py ${YEAR} --sim_name ${SIM_NAME} --grid_res ${GRID_RES} --xesmf
+else
+    echo "search radius   = ${SRCH_RDS}"
+    python3 ~/AFIM/src/AFIM/scripts/metrics/FI_diff.py ${YEAR} --sim_name ${SIM_NAME} --grid_res ${GRID_RES} --search_radius ${SRCH_RDS} 
+fi
+
+

@@ -6,10 +6,21 @@
 #PBS -l mem=10GB
 #PBS -l jobfs=1GB
 #PBS -l storage=scratch/jk72+gdata/jk72+gdata/xp65+gdata/gv90+scratch/gv90
-#PBS -N download_CCI_SIT
-#PBS -o $PBS_JOBFS/download_CCI_SIT.out
-#PBS -e $PBS_JOBFS/download_CCI_SIT.err
+#PBS -N download_AWI_SIT
+#PBS -o download_AWI_SIT.out
+#PBS -e download_AWI_SIT.err
 module use /g/data/xp65/public/modules
 module load conda/analysis3-25.05
-cd ~/AFIM/scripts
-python download_CCI_SIT.py
+cd ~/AFIM/src/AFIM/scripts/downloading
+# PBS env
+export FTP_USER=anonymous
+export FTP_PASS=daniel.atwater@utas.edu.au
+# Mirror everything under v4p0 to ~/seaice
+export REMOTE_BASE=/sea_ice/projects/cci/crdp/v4p0
+export REMOTE_ROOT=/sea_ice/projects/cci/crdp/v4p0
+export LOCAL_ROOT=$HOME/seaice
+# Filters (optional); if you want *all* files, set INCLUDE_GLOBS="*"
+export INCLUDE_GLOBS="*.nc"
+# Start with passive; if you see LIST timeouts for some subdirs, set to 0
+export PASSIVE_MODE=1
+python download_CCI_SIT.py --year-min 2010 --year-max 2025

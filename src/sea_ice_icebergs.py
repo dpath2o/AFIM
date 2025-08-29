@@ -21,7 +21,7 @@ class SeaIceIcebergs:
         kmt_mod = self.G_t['kmt_mod'].data
         kmt_org = self.G_t['kmt_org'].data
         lat     = self.G_t['lat'].data
-        lon     = self.G_t['lon'].data
+        lon     = self.normalise_longitudes(self.G_t['lon'].values, "-180-180")
         area    = self.G_t['area'].data
         # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
         diff_mask           = (kmt_org == 1) & (kmt_mod == 0)
@@ -44,7 +44,7 @@ class SeaIceIcebergs:
         self.modified_landmask_aligned = True
         return self.G_t
 
-    def compute_grounded_iceberg_area(self, region=None):
+    def compute_grounded_iceberg_area(self, region=None, scale=1e6):
         '''
         Compute grounded iceberg area from modified KMT relative to original KMT.
 
@@ -63,20 +63,28 @@ class SeaIceIcebergs:
         self.align_modified_landmask()
         area = self.G_t['area'].values
         mask = self.G_t['GI_mask']
-        lon  = self.G_t['lon'].values
+        lon  = self.normalise_longitudes(self.G_t['lon'].values, "-180-180")
         lat  = self.G_t['lat'].values
+        self.logger.info(f"GI-area_calc: grid (G_t) lon min: {lon.min()}")
+        self.logger.info(f"GI-area_calc: grid (G_t) lon max: {lon.max()}")
+        self.logger.info(f"GI-area_calc: grid (G_t) lat min: {lat.min()}")
+        self.logger.info(f"GI-area_calc: grid (G_t) lat max: {lat.max()}")
         total_area = 0
         if region is not None:
             area_dict = {}
             for reg_name, reg_cfg in region.items():
-                lon_min, lon_max, lat_min, lat_max = reg_cfg['ext']
-                region_mask                        = ( (lon >= lon_min) &
-                                                       (lon <= lon_max) &
-                                                       (lat >= lat_min) &
-                                                       (lat <= lat_max) )
-                total                              = np.sum(area[mask & region_mask])
-                area_dict[reg_name]                = total
-            self.G_t['GI_regional_area']           = area_dict
+                lon_min, lon_max, lat_min, lat_max = reg_cfg['plot_region']
+                self.logger.info(f"GI-area_calc: region {reg_name} lon min: {lon_min}")
+                self.logger.info(f"GI-area_calc: region {reg_name} lon max: {lon_max}")
+                self.logger.info(f"GI-area_calc: region {reg_name} lat min: {lat_min}")
+                self.logger.info(f"GI-area_calc: region {reg_name} lat max: {lat_max}")
+                region_mask         = ( (lon >= lon_min) &
+                                        (lon <= lon_max) &
+                                        (lat >= lat_min) &
+                                        (lat <= lat_max) )
+                area_dict[reg_name] = np.sum(area[mask & region_mask])/scale #DEFAULT: m^2 to km^2
+                self.logger.info(f"GI-area_calc: region {reg_name} total GI-area {area_dict[reg_name]:0.2f} km^2")
+            #self.G_t['GI_regional_area']           = area_dict
             return area_dict
         else:
             total_area                = np.sum(area[mask])

@@ -357,7 +357,8 @@ class SeaIceMetrics:
                                     spatial_dim_names         = None,
                                     sic_threshold             = None,
                                     add_grounded_iceberg_area = None,
-                                    grounded_iceberg_area     = None):
+                                    grounded_iceberg_area     = None,
+                                    region                    = None):
         """
         Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally 
         including the grounded iceberg area (GI_total_area).
@@ -408,7 +409,10 @@ class SeaIceMetrics:
         sic_threshold             = sic_threshold             if sic_threshold             is not None else self.icon_thresh
         spatial_dim_names         = spatial_dim_names         if spatial_dim_names         is not None else self.CICE_dict['spatial_dims']
         ice_area_scale            = ice_area_scale            if ice_area_scale            is not None else self.FIC_scale
-        self.logger.info("Computing Ice **AREA** for Hemisphere")
+        if region is not None:
+            self.logger.info(f"Computing Ice **AREA** for {region} ")
+        else:
+            self.logger.info("Computing Ice **AREA** for Hemisphere")
         self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
                           f"  • Spatial dimension names           : {spatial_dim_names}\n"
                           f"  • Ice area scaling factor           : {ice_area_scale:.2e} (to convert m² → km² or other units)\n"

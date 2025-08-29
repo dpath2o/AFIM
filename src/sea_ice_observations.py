@@ -49,7 +49,7 @@ class SeaIceObservations:
         for dt_ in date_range:
             f_version = next( (ver for ver, d in reversed(f_vers_parsed) if dt_ >= d), f_vers_parsed[0][0] )
             F_        = f_fmt.format(freq = freq_str,
-                                     hem  = self.hemisphere_abbreviation.lower(),
+                                     hem  = self.hemisphere_dict['abbreviation'].lower(),
                                      date = dt_.strftime('%Y%m%d'),
                                      ver  = f_version)
             P_        = Path(D_local,F_)
@@ -251,7 +251,7 @@ class SeaIceObservations:
         matched.coords["time"] = model.time  # Align with model time
         return matched
 
-    def build_AF2020_grid_corners(lat_c, lon_c):
+    def build_AF2020_grid_corners(self, lat_c, lon_c):
         """
         Construct (ny+1, nx+1) corner arrays from center lat/lon arrays.
         Assumes a regular 2D rectilinear grid in EPSG:3412 projection.
@@ -286,9 +286,9 @@ class SeaIceObservations:
         lon_c         = FI_obs.longitude
         lat_b, lon_b  = self.build_AF2020_grid_corners(lat_c.values, lon_c.values)
         G_obs         = xr.Dataset({"lat"   : (("Y", "X"), lat_c),
-                            "lon"   : (("Y", "X"), lon_c),
-                            "lat_b" : (("Y_b", "X_b"), lat_b),
-                            "lon_b" : (("Y_b", "X_b"), lon_b)})
+                                    "lon"   : (("Y", "X"), lon_c),
+                                    "lat_b" : (("Y_b", "X_b"), lat_b),
+                                    "lon_b" : (("Y_b", "X_b"), lon_b)})
         G_t           = self.define_cice_grid(grid_type='t', mask=False, build_grid_corners=True)
         P_weights     = self.AF_FI_dict["AF_reG_weights"]
         reuse_weights = os.path.exists(P_weights)

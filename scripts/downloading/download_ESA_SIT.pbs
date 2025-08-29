@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -N download_ESA_SIT
+#PBS -P gv90
+#PBS -q copyq
+#PBS -l walltime=10:00:00
+#PBS -l ncpus=1
+#PBS -l mem=6GB
+#PBS -l storage=scratch/jk72+gdata/jk72+gdata/xp65+gdata/gv90+scratch/gv90
+#PBS -o download_ESA_SIT.out
+#PBS -e download_ESA_SIT.err
+set -euo pipefail
+umask 002
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+cd ~/AFIM/src/AFIM/scripts/downloading
+# -------- optional overrides (or pass as CLI flags to the python script) --------
+export DLOC=${DLOC:-/g/data/gv90/da1339/SeaIce/ESA/CCI}
+export BASE_URL=${BASE_URL:-https://dap.ceda.ac.uk/neodc/esacci/sea_ice/data/sea_ice_thickness}
+# Comma-separated lists (case-insensitive): L2P,L3C; cryosat2,envisat; nh,sh
+export LEVELS=${LEVELS:-L2P,L3C}
+export SENSORS=${SENSORS:-envisat,cryosat2}
+export HEMS=${HEMS:-nh,sh}
+# Year filters (inclusive); leave blank to use sensor defaults
+export YEAR_MIN=${YEAR_MIN:-}
+export YEAR_MAX=${YEAR_MAX:-}
+# Networking
+export RATE_SEC=${RATE_SEC:-0.5}     # polite delay between requests
+export TIMEOUT=${TIMEOUT:-30}        # seconds
+export RETRIES=${RETRIES:-3}
+python download_ESA_SIT.py \
+  --dest        "$DLOC" \
+  --base-url    "$BASE_URL" \
+  --levels      "$LEVELS" \
+  --sensors     "$SENSORS" \
+  --hems        "$HEMS" \
+  ${YEAR_MIN:+--year-min "$YEAR_MIN"} \
+  ${YEAR_MAX:+--year-max "$YEAR_MAX"} \
+  --rate-sec    "$RATE_SEC" \
+  --timeout     "$TIMEOUT" \
+  --retries     "$RETRIES"

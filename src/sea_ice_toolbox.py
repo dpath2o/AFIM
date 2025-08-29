@@ -18,6 +18,7 @@ from sea_ice_plotter        import SeaIcePlotter
 from sea_ice_icebergs       import SeaIceIcebergs
 from sea_ice_observations   import SeaIceObservations
 from sea_ice_ACCESS         import SeaIceACCESS
+from sea_ice_regridder      import SeaIceRegridder
 
 __all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
 
@@ -28,7 +29,7 @@ class SeaIceToolboxManager:
         if SeaIceToolboxManager._shared_client is None:
             self.client = SeaIceToolboxManager.get_shared_dask_client(threads_per_worker=1, memory_limit="7GB")
     @staticmethod
-    def get_shared_dask_client(threads_per_worker=1, memory_limit="7GB"):
+    def get_shared_dask_client(threads_per_worker=1, memory_limit="90GB"):
         if SeaIceToolboxManager._shared_client is None:
             SeaIceToolboxManager._shared_client = Client(threads_per_worker=threads_per_worker, memory_limit=memory_limit)
         return SeaIceToolboxManager._shared_client
@@ -50,7 +51,8 @@ class SeaIceToolboxManager:
                 logger.removeHandler(handler)
                 print(f"Closed log file handler: {handler.baseFilename}")
 
-class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIcebergs, SeaIceObservations, SeaIceACCESS):
+class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, 
+                    SeaIceIcebergs, SeaIceObservations, SeaIceACCESS, SeaIceRegridder):
     """
     Unified toolbox for processing and analysing Antarctic sea ice from CICE simulations
     as part of the Antarctic Fast Ice Model (AFIM) workflow.
@@ -501,33 +503,53 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
     def slice_hemisphere(self, var):
         """
         Slice the input data according to the currently defined hemisphere.
-
-        Parameters
-        ----------
-        var : dict, xarray.Dataset, or xarray.DataArray
-            Input data to slice along the hemisphere-defined index range. Must include the dimension name
-            defined in `self.CICE_dict["y_dim"]`, typically 'nj'.
-
-        Returns
-        -------
-        Same type as input
-            Data with `self.hemisphere_dict['nj_slice']` applied along the specified spatial dimension.
-
-        Raises
-        ------
-        ValueError
-            If the input type is unsupported.
+        Applies `self.hemisphere_dict['nj_slice']` on cell-center rows (nj),
+        and an expanded slice (+1 at the stop) on corner rows (nj_b), if present.
         """
-        y_dim    = self.CICE_dict["y_dim"]
-        nj_slice = self.hemisphere_dict['nj_slice']
+        y_dim    = self.CICE_dict["y_dim"]          # typically 'nj'
+        nj_slice = self.hemisphere_dict['nj_slice'] # expected to be a slice
+        def _expand_bounds_slice(slc, nb_len):
+            """
+            For a given slice on nj (length nb_len-1), return a slice for nj_b (length nb_len)
+            that includes the extra boundary row at the stop.
+            """
+            if not isinstance(slc, slice):
+                raise TypeError(f"hemisphere nj_slice must be a Python slice, got {type(slc)}")
+            start = 0 if slc.start is None else slc.start
+            # For nj, stop is exclusive. For nj_b we need to include the boundary row after stop-1.
+            stop_nj   = nb_len - 1  # last valid nj index is nb_len-2; exclusive stop defaults to nb_len-1
+            stop = stop_nj if slc.stop is None else slc.stop
+            step = slc.step
+            # Expand by +1 at the stop, clipped to nb_len
+            stop_b = min(stop + 1, nb_len)
+            return slice(start, stop_b, step)
+        def _indexers_for(obj):
+            idx = {}
+            dims = getattr(obj, "dims", {})
+            if y_dim in dims:
+                idx[y_dim] = nj_slice
+            if "nj_b" in dims:
+                nb_len = obj.sizes["nj_b"]
+                idx["nj_b"] = _expand_bounds_slice(nj_slice, nb_len)
+            return idx
         if isinstance(var, dict):
-            sliced = {k: v.isel({y_dim: nj_slice}) for k, v in var.items()}
+            out = {}
+            for k, v in var.items():
+                if isinstance(v, (xr.Dataset, xr.DataArray)):
+                    idx = _indexers_for(v)
+                    out[k] = v.isel(idx) if idx else v
+                else:
+                    out[k] = v
+            self.logger.info(f"Hemisphere slice applied on dict members where dims matched ('{y_dim}' and/or 'nj_b').")
+            return out
         elif isinstance(var, (xr.Dataset, xr.DataArray)):
-            sliced = var.isel({y_dim: nj_slice})
+            idx = _indexers_for(var)
+            sliced = var.isel(idx) if idx else var
+            which = " & ".join([d for d in (y_dim, "nj_b") if d in idx]) or "none"
+            self.logger.info(f"Hemisphere slice applied on dims: {which}.")
+            return sliced
         else:
             raise ValueError(f"Unsupported input type: {type(var)}. Must be dict, Dataset, or DataArray.")
-        self.logger.info(f"Hemisphere slice applied on '{y_dim}' for {type(var).__name__}.")
-        return sliced
 
     def define_iceh_dirs(self, D_sim=None, iceh_freq=None):
         D_sim              = D_sim     or self.D_sim
@@ -708,8 +730,33 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
             return var.isel(time=0)
         return var
 
-    def normalise_longitudes(self,lon):
-        return ((lon + 360) % 360) - 180
+    def normalise_longitudes(self, lon, to="0-360", eps=1e-12):
+        """
+        Wrap longitudes to either [0, 360) or (-180, 180].
+        Works with numpy arrays, scalars, and xarray objects.
+        """
+        # First get [0, 360)
+        lon_wrapped = ((lon % 360) + 360) % 360  # safe for negatives, NaNs pass through
+
+        if to == "0-360":
+            # Collapse values extremely close to 360 back to 0
+            if isinstance(lon_wrapped, xr.DataArray):
+                lon_wrapped = xr.where(np.isclose(lon_wrapped, 360.0, atol=eps), 0.0, lon_wrapped)
+            else:
+                lon_wrapped = np.where(np.isclose(lon_wrapped, 360.0, atol=eps), 0.0, lon_wrapped)
+            return lon_wrapped
+
+        elif to == "-180-180":
+            lon_180 = ((lon_wrapped + 180.0) % 360.0) - 180.0  # -> (-180, 180]
+            # Prefer [-180, 180) by mapping exactly 180 to -180
+            if isinstance(lon_180, xr.DataArray):
+                lon_180 = xr.where(np.isclose(lon_180, 180.0, atol=eps), -180.0, lon_180)
+            else:
+                lon_180 = np.where(np.isclose(lon_180, 180.0, atol=eps), -180.0, lon_180)
+            return lon_180
+
+        else:
+            raise ValueError("to must be '0-360' or '-180-180'")
 
     def build_grid_corners(self, lat_rads, lon_rads, grid_res=0.25, source_in_radians=True):
         if source_in_radians:
@@ -738,8 +785,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         lon_b                = self.normalise_longitudes(lon_b)
         return lon_b, lat_b
 
-    def define_cice_grid(self, grid_type='t', mask=False, build_grid_corners=False):
-        std_dim_names = ("nj", "ni")
+    def define_cice_grid(self, grid_type='t', mask=False, build_grid_corners=False, slice_hem=False):
+        std_dim_names = self.CICE_dict['spatial_dims']
         G             = xr.open_dataset(self.CICE_dict["P_G"])
         lon_rads      = G[f"{grid_type}lon"].values
         lat_rads      = G[f"{grid_type}lat"].values
@@ -762,7 +809,10 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
         if mask:
             mask_data = xr.open_dataset(self.P_KMT_mod if self.use_gi else self.P_KMT_org).kmt.values
             data_vars["mask"] = (std_dim_names, mask_data)
-        return xr.Dataset(data_vars=data_vars, coords=coords)
+        ds = xr.Dataset(data_vars=data_vars, coords=coords)
+        if slice_hem:
+            ds = self.slice_hemisphere(ds)
+        return ds
 
     def load_bgrid(self, slice_hem=False):
         """
@@ -1027,6 +1077,53 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, SeaIceIc
                                   spacing       = grid_res,
                                   region        = region,
                                   search_radius = search_radius)
+
+    def compute_sector_FIA(self, FI_mask, area_grid, sector_defs, GI_area=False):
+        if GI_area:
+            self.compute_grounded_iceberg_area()
+            GI_ttl_area = self.compute_grounded_iceberg_area() / 1e6
+            self.logger.info(f"adding {GI_ttl_area} to ice area computation")
+        else:
+            GI_ttl_area = 0
+        sector_names = list(sector_defs.keys())
+        fia_values   = []
+        for sec_name in sector_names:
+            lon_min, lon_max, lat_min, lat_max = sector_defs[sec_name]["geo_region"]
+            sec_mask = FI_mask.where(
+                (area_grid.lon >= lon_min) & (area_grid.lon <= lon_max) &
+                (area_grid.lat >= lat_min) & (area_grid.lat <= lat_max)
+            )
+            # Compute total area for the sector
+            tmp = (sec_mask * area_grid).sum(skipna=True)
+            # Convert to Python scalar robustly
+            if hasattr(tmp, "compute"):   # Dask array
+                fia_val = float(tmp.compute())
+            else:                          # NumPy scalar or array
+                fia_val = tmp.item() if hasattr(tmp, "item") else float(tmp)
+            fia_values.append(fia_val)
+        FIA_da  = xr.DataArray(fia_values, dims=["sector"], coords={"sector": sector_names})
+        FIA_tot = sum(fia_values) + GI_ttl_area
+        return FIA_da, FIA_tot
+        
+    def compute_regular_grid_area(self, da):
+        R   = 6371000.0  # Earth radius in meters
+        lat = np.deg2rad(da['lat'].values)
+        lon = np.deg2rad(da['lon'].values)
+        # Latitude edges
+        lat_edges       = np.zeros(len(lat)+1)
+        lat_edges[1:-1] = (lat[:-1] + lat[1:]) / 2
+        lat_edges[0]    = lat[0] - (lat[1]-lat[0])/2
+        lat_edges[-1]   = lat[-1] + (lat[-1]-lat[-2])/2
+        # Longitude spacing
+        dlon = lon[1] - lon[0]
+        # 1D cell area per latitude
+        dA_lat = (R**2) * dlon * (np.sin(lat_edges[1:]) - np.sin(lat_edges[:-1]))
+        # Broadcast to 2D
+        area_2d = np.tile(dA_lat[:, np.newaxis], (1, len(lon)))
+        # Convert to km^2
+        area_2d /= 1e6
+        area_da = xr.DataArray(area_2d, dims=("lat","lon"), coords={"lat":da['lat'], "lon":da['lon']})
+        return area_da
 
     def reapply_landmask(self, DS, apply_unmodified=False):
         """
