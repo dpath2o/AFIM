@@ -41,7 +41,7 @@ from typing import Optional, List
 FTP_HOST     = "ftp.awi.de"
 REMOTE_BASE_DEF = "/sea_ice/projects/cci/crdp/v4p0"
 # If REMOTE_ROOT not provided, we default it to REMOTE_BASE
-LOCAL_DEF    = os.path.expanduser("~/seaice/AWI/monthly")
+LOCAL_DEF    = os.path.expanduser("~/seaice/AWI")
 
 MAX_RETRIES  = 5
 TIMEOUT_SEC  = 180

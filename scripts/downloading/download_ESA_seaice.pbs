@@ -1,13 +1,13 @@
 #!/bin/bash
-#PBS -N download_ESA_SIT
+#PBS -N download_ESA_seaice
 #PBS -P gv90
 #PBS -q copyq
 #PBS -l walltime=10:00:00
 #PBS -l ncpus=1
 #PBS -l mem=6GB
 #PBS -l storage=scratch/jk72+gdata/jk72+gdata/xp65+gdata/gv90+scratch/gv90
-#PBS -o download_ESA_SIT.out
-#PBS -e download_ESA_SIT.err
+#PBS -o download_ESA_seaice.out
+#PBS -e download_ESA_seaice.err
 set -euo pipefail
 umask 002
 module use /g/data/xp65/public/modules
@@ -27,7 +27,7 @@ export YEAR_MAX=${YEAR_MAX:-}
 export RATE_SEC=${RATE_SEC:-0.5}     # polite delay between requests
 export TIMEOUT=${TIMEOUT:-30}        # seconds
 export RETRIES=${RETRIES:-3}
-python download_ESA_SIT.py \
+python download_ESA_seaice.py \
   --dest        "$DLOC" \
   --base-url    "$BASE_URL" \
   --levels      "$LEVELS" \

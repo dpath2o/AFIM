@@ -1,10 +1,12 @@
-import json, os, shutil, time, logging
-import xarray as xr
-import pandas as pd
-import numpy  as np
-import xesmf  as xe
-from pathlib import Path
-from datetime import datetime, timedelta
+from __future__ import annotations
+import json, os, shutil, time, logging, re
+import xarray   as xr
+import pandas   as pd
+import numpy    as np
+import xesmf    as xe
+from pathlib    import Path
+from datetime   import datetime, timedelta
+from typing     import Iterable, List, Optional, Tuple
 
 class SeaIceObservations:
 
@@ -315,8 +317,248 @@ class SeaIceObservations:
         return ds_out
 
     ####################################################################################################
-    ##                                              ESA CCI         
+    ##                                          CCI SIT         
     ####################################################################################################
+    def _norm_list(self, x: Optional[Iterable[str]]) -> Optional[List[str]]:
+        if x is None: return None
+        out = [str(s).strip() for s in x if s and str(s).strip()]
+        return out or None
+
+    def _days_in_month(self, y: int, m: int) -> int:
+        if m in (1,3,5,7,8,10,12): return 31
+        if m in (4,6,9,11): return 30
+        return 29 if ((y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)) else 28
+
+    def _month_overlap(self, y: int, m: int, t0: pd.Timestamp, t1: pd.Timestamp) -> bool:
+        first = pd.Timestamp(year=y, month=m, day=1, tz="UTC")
+        last  = pd.Timestamp(year=y, month=m, day=self._days_in_month(y,m), tz="UTC")
+        return not (last < t0 or first > t1)
+
+    def _parse_yyyymmdd(self, name: str) -> Optional[pd.Timestamp]:
+        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)", name)
+        if not m: return None
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return pd.Timestamp(year=y, month=mo, day=d, tz="UTC")
+        except Exception:
+            return None
+
+    def _parse_yyyymm(self, name: str) -> Optional[Tuple[int,int]]:
+        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(?!\d)", name)
+        if not m: return None
+        return int(m.group(1)), int(m.group(2))
+
+    def build_sea_ice_satellite_paths(self,
+                                      dt0_str      : str,
+                                      dtN_str      : str,
+                                      hemisphere   : Optional[str] = None,
+                                      institutions : Optional[Iterable[str]] = ("ESA","AWI"),
+                                      sensors      : Optional[Iterable[str]] = None,          # ["cryosat2","envisat","sentinel3a","sentinel3b"]
+                                      levels       : Optional[Iterable[str]] = None,          # ESA: ["L2P","L3C"]; AWI: ["l2p_release","l3cp_release"]
+                                      versions     : Optional[Iterable[str]] = None,          # ESA only; and only "v2.0" or "v3.0"
+                                      root_esa     : Optional[str] = None, 
+                                      root_awi     : Optional[str] = None) -> List[Path]:
+        """
+        Build a de-duplicated, time-filtered list of NetCDF files for satellite sea-ice
+        products across ESA and/or AWI directory layouts.
+
+        Time filtering:
+            - Returns files whose date/month lies within the closed interval
+            [dt0_str, dtN_str], interpreted in UTC.
+            - Daily products (e.g., ESA L2P) are filtered by date parsed from the filename
+            (YYYYMMDD). Monthly products (e.g., ESA L3C or AWI monthly layout) are
+            filtered by overlap between the (year, month) and [dt0, dtN].
+
+        Supported directory patterns (walked automatically):
+            ESA “flat” layout:
+                <root_esa>/<L2P|L3C>/<sensor>/<hemisphere>/*.nc
+                (hemisphere directory may be 'NH'/'SH' or lowercase)
+                - L2P: filenames contain YYYYMMDD
+                - L3C: filenames often contain YYYYMM
+
+            ESA versioned layout:
+                <root_esa>/<L2P|L3C>/<sensor>/<version>/<HEMISPHERE>/<YYYY>/<MM>/*.nc
+                (HEMISPHERE can be 'NH'/'SH' or lowercase; <MM> subdirs may be absent)
+
+            AWI release layout:
+                <root_awi>/<l2p_release|l3cp_release>/<hemisphere>/<sensor>/<YYYY>[/<MM>]/*.nc
+
+        Parameters
+        ----------
+        dt0_str, dtN_str
+            Start and end of the desired time window (inclusive). Any pandas-parsable
+            string is accepted (e.g., "2002-01-01", "2012-12-31"). Interpreted as UTC.
+        hemisphere
+            Hemisphere selector. If None, uses `self.hemisphere_dict['abbreviation']`.
+            Case is normalized; both 'sh'/'nh' and 'SH'/'NH' are supported in dir scans.
+        institutions
+            Iterable of institutions to include (case-insensitive). Valid values include
+            "ESA" and/or "AWI". If None or empty, both are searched.
+        sensors
+            Optional iterable of sensor names to filter (case-insensitive, matched to
+            directory names under the institution layout).
+        levels
+            Optional iterable of level strings. ESA: "L2P", "L3C".
+            AWI: "l2p_release", "l3cp_release". If "l2p"/"l3c" are provided for AWI
+            they are mapped to "l2p_release"/"l3cp_release".
+        versions
+            ESA only: one or more version directory names (e.g., "v2.0", "v3.0").
+            Case-insensitive. Ignored for AWI.
+        root_esa, root_awi
+            Root directories for ESA and AWI datasets.
+
+        Returns
+        -------
+        List[Path]
+            Sorted unique list of file paths within the requested time window that
+            satisfy the filters.
+
+        Notes
+        -----
+        - Filename parsing assumes dates follow YYYYMMDD (daily) or YYYYMM (monthly)
+        within 2000–2099. Files without such tokens are kept only when they live in
+        a year/month directory that overlaps [dt0, dtN].
+        - If `institutions` is None or empty, both ESA and AWI are scanned.
+        - All timestamps are treated as UTC to avoid tz-comparison issues.
+
+        Examples
+        --------
+        >>> paths = self.build_sea_ice_satellite_paths(
+        ...     "2002-01-01", "2002-12-31",
+        ...     hemisphere="sh",
+        ...     institutions=["ESA", "AWI"],
+        ...     sensors=["cryosat2", "envisat"],
+        ...     levels=["L2P","L3C","l2p_release"]
+        ... )
+        >>> len(paths), paths[:3]
+        """
+        dt0_str = dt0_str if dt0_str is not None else self.dt0_str
+        dtN_str = dtN_str if dtN_str is not None else self.dtN_str
+        t0 = pd.Timestamp(dt0_str, tz="UTC")
+        t1 = pd.Timestamp(dtN_str, tz="UTC")
+        if t1 < t0:
+            raise ValueError("dtN_str date must be >= dt0_str date")
+        hem = hemisphere if hemisphere is not None else self.hemisphere_dict["abbreviation"]
+        hem_upper = str(hem).upper()
+        hem_lower = str(hem).lower()
+        hem_dirs_esa = [hem_upper, hem_lower]  # try both cases for ESA
+        root_esa = root_esa if root_esa is not None else self.Sea_Ice_Obs_dict['ESA-CCI']
+        root_awi = root_awi if root_awi is not None else self.Sea_Ice_Obs_dict['AWI']
+        root_esa = Path(root_esa)
+        root_awi = Path(root_awi)
+        # filters (case-normalized)
+        insts = set(s.upper() for s in (self._norm_list(institutions) or []))
+        sensor_set = set(s.lower() for s in (self._norm_list(sensors) or [])) if sensors else None
+        version_set = set(v.lower() for v in (self._norm_list(versions) or [])) if versions else None
+        level_set = set(l.lower() for l in (self._norm_list(levels) or [])) if levels else None
+        out: List[Path] = []
+        # ---------------- ESA ----------------
+        if not insts or "ESA" in insts:
+            esa_levels = ["L2P", "L3C"] if not level_set else ([L.upper() for L in level_set if L.upper() in ("L2P", "L3C")] or ["L2P", "L3C"])
+            for L in esa_levels:
+                Ldir = Path(root_esa,L)
+                if not Ldir.exists():
+                    continue
+                # <root>/<L>/<sensor>/...
+                for sdir in sorted(p for p in Ldir.iterdir() if p.is_dir()):
+                    sensor = sdir.name.lower()
+                    if sensor_set and sensor not in sensor_set:
+                        continue
+                    # A) flat: .../L2P|L3C/<sensor>/<hem>/*.nc   (hem 'nh'/'sh' any case)
+                    for hem_dir in hem_dirs_esa:
+                        flat_dir = Path(sdir,hem_dir)
+                        if flat_dir.exists():
+                            for fp in flat_dir.glob("*.nc"):
+                                if L == "L2P":
+                                    ts = self._parse_yyyymmdd(fp.name)
+                                    if ts is None or ts < t0 or ts > t1:
+                                        continue
+                                else:  # L3C
+                                    ym = self._parse_yyyymm(fp.name)
+                                    if ym and not self._month_overlap(ym[0], ym[1], t0, t1):
+                                        continue
+                                out.append(fp)
+                    # B) versioned: .../L2P|L3C/<sensor>/<ver>/<HEM>/YYYY/MM/*.nc
+                    for vdir in sorted(p for p in sdir.iterdir() if p.is_dir()):
+                        vname = vdir.name.lower()
+                        # skip if this 'vdir' is actually the hemisphere dir from flat layout
+                        if vname in {"nh", "sh"}:
+                            continue
+                        if version_set and vname not in version_set:
+                            continue
+                        for hem_dir in hem_dirs_esa:
+                            hdir = Path(vdir,hem_dir)
+                            if not hdir.exists():
+                                continue
+                            for ydir in sorted(hdir.glob("[12][0-9][0-9][0-9]")):
+                                y = int(ydir.name)
+                                mdirs = list(sorted(ydir.glob("[01][0-9]")))
+                                if mdirs:
+                                    for mdir in mdirs:
+                                        m = int(mdir.name)
+                                        if not self._month_overlap(y, m, t0, t1):
+                                            continue
+                                        for fp in sorted(mdir.glob("*.nc")):
+                                            if L == "L2P":
+                                                ts = self._parse_yyyymmdd(fp.name)
+                                                if ts is None or ts < t0 or ts > t1:
+                                                    continue
+                                            out.append(fp)
+                                else:
+                                    for fp in sorted(ydir.glob("*.nc")):
+                                        if L == "L2P":
+                                            ts = self._parse_yyyymmdd(fp.name)
+                                            if ts is None or ts < t0 or ts > t1:
+                                                continue
+                                        else:
+                                            ym = self._parse_yyyymm(fp.name)
+                                            if ym and not self._month_overlap(ym[0], ym[1], t0, t1):
+                                                continue
+                                        out.append(fp)
+        # ---------------- AWI ----------------
+        if not insts or "AWI" in insts:
+            if not level_set:
+                awi_levels: List[str] = ["l2p_release", "l3cp_release"]
+            else:
+                # map friendly ESA-like inputs to AWI release names
+                canonical = []
+                for L in level_set:
+                    l = L.lower()
+                    if l in ("l2p_release", "l3cp_release"):
+                        canonical.append(l)
+                    elif l == "l2p":
+                        canonical.append("l2p_release")
+                    elif l == "l3c":
+                        canonical.append("l3cp_release")
+                awi_levels = sorted(set(canonical)) or ["l2p_release", "l3cp_release"]
+            LHEM = hem_lower  # AWI uses lower-case hemisphere dirs
+            for Lraw in awi_levels:
+                Ldir = Path(root_awi,Lraw,LHEM)
+                if not Ldir.exists():
+                    continue
+                for sdir in sorted(p for p in Ldir.iterdir() if p.is_dir()):
+                    sensor = sdir.name.lower()
+                    if sensor_set and sensor not in sensor_set:
+                        continue
+                    for ydir in sorted(sdir.glob("[12][0-9][0-9][0-9]")):
+                        y = int(ydir.name)
+                        mdirs = list(sorted(ydir.glob("[01][0-9]")))
+                        if mdirs:
+                            for mdir in mdirs:
+                                m = int(mdir.name)
+                                if not self._month_overlap(y, m, t0, t1):
+                                    continue
+                                out.extend(sorted(mdir.glob("*.nc")))
+                        else:
+                            # year-only dir; filter by yyyymm in filenames when available
+                            for fp in sorted(ydir.glob("*.nc")):
+                                ym = self._parse_yyyymm(fp.name)
+                                if ym and not self._month_overlap(ym[0], ym[1], t0, t1):
+                                    continue
+                                out.append(fp)
+        # de-dup & sort
+        return sorted(set(out))
+        
     def bin_esa_thickness_to_cice_grid(self, ESA_CCI, region=None):
         from scipy.stats import binned_statistic_2d
         from tqdm import tqdm

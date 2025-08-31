@@ -18,9 +18,9 @@ export FTP_PASS=daniel.atwater@utas.edu.au
 # Mirror everything under v4p0 to ~/seaice
 export REMOTE_BASE=/sea_ice/projects/cci/crdp/v4p0
 export REMOTE_ROOT=/sea_ice/projects/cci/crdp/v4p0
-export LOCAL_ROOT=$HOME/seaice
+export LOCAL_ROOT=$HOME/seaice/AWI
 # Filters (optional); if you want *all* files, set INCLUDE_GLOBS="*"
 export INCLUDE_GLOBS="*.nc"
 # Start with passive; if you see LIST timeouts for some subdirs, set to 0
 export PASSIVE_MODE=1
-python download_CCI_SIT.py --year-min 2010 --year-max 2025
+python download_AWI_SIT.py --year-min 2010 --year-max 2025
