@@ -7,6 +7,7 @@ import xesmf    as xe
 from pathlib    import Path
 from datetime   import datetime, timedelta
 from typing     import Iterable, List, Optional, Tuple
+from pyresample import geometry, kd_tree
 
 class SeaIceObservations:
 
