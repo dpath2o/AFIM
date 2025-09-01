@@ -17,14 +17,14 @@ cd ~/AFIM/src/AFIM/scripts/downloading
 export DLOC=${DLOC:-/g/data/gv90/da1339/SeaIce/ESA/CCI}
 export BASE_URL=${BASE_URL:-https://dap.ceda.ac.uk/neodc/esacci/sea_ice/data/sea_ice_thickness}
 # Comma-separated lists (case-insensitive): L2P,L3C; cryosat2,envisat; nh,sh
-export LEVELS=${LEVELS:-L2P,L3C}
+export LEVELS=${LEVELS:-L3C,L2P}
 export SENSORS=${SENSORS:-envisat,cryosat2}
 export HEMS=${HEMS:-nh,sh}
 # Year filters (inclusive); leave blank to use sensor defaults
 export YEAR_MIN=${YEAR_MIN:-}
 export YEAR_MAX=${YEAR_MAX:-}
 # Networking
-export RATE_SEC=${RATE_SEC:-0.5}     # polite delay between requests
+export RATE_SEC=${RATE_SEC:-1}     # polite delay between requests
 export TIMEOUT=${TIMEOUT:-30}        # seconds
 export RETRIES=${RETRIES:-3}
 python download_ESA_seaice.py \

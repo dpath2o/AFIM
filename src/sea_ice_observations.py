@@ -559,42 +559,547 @@ class SeaIceObservations:
                                 out.append(fp)
         # de-dup & sort
         return sorted(set(out))
-        
-    def bin_esa_thickness_to_cice_grid(self, ESA_CCI, region=None):
-        from scipy.stats import binned_statistic_2d
-        from tqdm import tqdm
-        x_edges = np.linspace(CICE_SO['TLON'].min().item(), CICE_SO['TLON'].max().item(), CICE_SO['TLON'].shape[1] + 1)
-        y_edges = np.linspace(CICE_SO['TLAT'].min().item(), CICE_SO['TLAT'].max().item(), CICE_SO['TLAT'].shape[0] + 1)
-        unique_days = np.unique(ESA_CCI['time'].dt.floor('D').values)
-        sit_list = []
-        sigma_list = []
-        time_list = []
-        for day in tqdm(unique_days, desc="Binning ESA CCI by day"):
-            ESA_day = ESA_CCI.where(ESA_CCI['time'].dt.floor('D') == day, drop=True)
-            lon = ESA_day.lon.values
-            lat = ESA_day.lat.values
-            sit = ESA_day.sea_ice_thickness.values
-            sit_sigma = ESA_day.sea_ice_thickness_uncertainty.values
-            mask = np.isfinite(lon) & np.isfinite(lat) & np.isfinite(sit) & np.isfinite(sit_sigma)
-            lon = lon[mask]
-            lat = lat[mask]
-            sit = sit[mask]
-            sit_sigma = sit_sigma[mask]
-            binned_sit, _, _, _ = binned_statistic_2d(lon, lat, sit, statistic="mean", bins=[x_edges, y_edges])
-            binned_sigma, _, _, _ = binned_statistic_2d(lon, lat, sit_sigma, statistic="mean", bins=[x_edges, y_edges])
-            sit_list.append(binned_sit.T[None, ...])
-            sigma_list.append(binned_sigma.T[None, ...])
-            time_list.append(np.datetime64(day))
-        ESA_sit_reG = xr.DataArray(data   = np.concatenate(sit_list, axis=0),
-                                   dims   = ("time", "nj", "ni"),
-                                   coords = {"time": time_list,
-                                             "TLON": (("nj", "ni"), CICE_SO.TLON.values),
-                                             "TLAT": (("nj", "ni"), CICE_SO.TLAT.values)},
-                                   name   = "ESA_sit")
-        ESA_sit_sigma_reG = xr.DataArray(data   = np.concatenate(sigma_list, axis=0),
-                                         dims   = ("time", "nj", "ni"),
-                                         coords = {"time": time_list,
-                                                   "TLON": (("nj", "ni"), CICE_SO.TLON.values),
-                                                   "TLAT": (("nj", "ni"), CICE_SO.TLAT.values)},
-                                        name    = "ESA_sit_sigma")
-        return xr.Dataset({"ESA_sit": ESA_sit_reG, "ESA_sit_sigma": ESA_sit_sigma_reG})
+
+    # ------------------------- map grids (LAEA/EASE-like) ------------------------- #
+    def _match_lon_range(self, lon_1d: np.ndarray, grid_lon_2d: np.ndarray) -> np.ndarray:
+        """Map swath longitudes to the same wrap as the target grid."""
+        gmin, gmax = np.nanmin(grid_lon_2d), np.nanmax(grid_lon_2d)
+        grid_is_180 = (gmin >= -180.0) and (gmax <= 180.0)
+        lon_a = ((lon_1d + 180.0) % 360.0) - 180.0   # [-180, 180)
+        lon_b = lon_1d % 360.0                       # [0, 360)
+        lon_b[lon_b < 0] += 360.0
+        # pick the representation whose range best matches the grid
+        if grid_is_180:
+            return lon_a
+        else:
+            return lon_b
+
+    def _get_first(self, ds: xr.Dataset, names) -> Optional[xr.DataArray]:
+        for n in names:
+            if n in ds.variables:
+                return ds[n]
+            if n in ds.coords:
+                return ds.coords[n]
+        return None
+
+    @staticmethod
+    def laea_area_def(
+        hem: str,
+        nx: int,
+        ny: int,
+        dx_km: float,
+        lon0: float = 0.0,
+    ):
+        """
+        Build a Lambert Azimuthal Equal-Area grid centered on the pole.
+
+        Parameters
+        ----------
+        hem : {'sh','nh'}
+            Hemisphere.
+        nx, ny : int
+            Grid shape (x, y).
+        dx_km : float
+            Grid spacing in kilometers (projected meters).
+        lon0 : float, default 0.0
+            Central longitude (°E). ESA products commonly use 0.
+
+        Returns
+        -------
+        pyresample.geometry.AreaDefinition
+        """
+        if geometry is None:
+            raise ImportError("pyresample is required: `pip install pyresample`")
+        hem = str(hem).lower()
+        lat0 = -90.0 if hem == "sh" else 90.0
+        proj_id = f"laea_{hem}_{int(dx_km)}km_{nx}x{ny}"
+        proj_dict = {
+            "proj": "laea",
+            "lat_0": lat0,
+            "lon_0": lon0,
+            "a": 6378137.0,
+            "b": 6356752.314245,
+            "units": "m",
+            "no_defs": True,
+        }
+        # extent centered on the pole
+        half_w = (nx * dx_km * 1000.0) / 2.0
+        half_h = (ny * dx_km * 1000.0) / 2.0
+        area_extent = (-half_w, -half_h, half_w, half_h)
+        area_id = proj_id
+        description = f"LAEA {hem.upper()} {dx_km}km {nx}x{ny} lon0={lon0}"
+        return geometry.AreaDefinition(area_id, description, proj_id, proj_dict, nx, ny, area_extent)
+
+    @staticmethod
+    def ease2_sh_50km():
+        """Convenience grid roughly matching AWI SH L3C (216×216 @ ~50 km, lon0=0)."""
+        return SeaIceObservations.laea_area_def("sh", nx=216, ny=216, dx_km=50.0, lon0=0.0)
+
+    @staticmethod
+    def ease2_nh_25km():
+        """Convenience grid for NH (432×432 @ ~25 km, lon0=0)."""
+        return SeaIceObservations.laea_area_def("nh", nx=432, ny=432, dx_km=25.0, lon0=0.0)
+
+    # ------------------------- file path indexing & QA helpers ------------------------- #
+    def index_satellite_paths(self, paths: Iterable[Path]) -> pd.DataFrame:
+        """
+        Build a tidy index of satellite files with parsed dates for QA/QC and selection.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns:
+              - path: Path
+              - kind: {"daily","monthly","unknown"}
+              - date: UTC Timestamp (daily) or first-of-month (monthly) or NaT
+              - year, month, day: ints or None
+        """
+        rows = []
+        for p in map(Path, paths):
+            name = p.name
+            ts = self._parse_yyyymmdd(name)
+            if ts is not None:
+                rows.append({"path": p, "kind": "daily",
+                             "date": ts, "year": ts.year, "month": ts.month, "day": ts.day})
+                continue
+            ym = self._parse_yyyymm(name)
+            if ym:
+                y, m = ym
+                rows.append({"path": p, "kind": "monthly",
+                             "date": pd.Timestamp(year=y, month=m, day=1, tz="UTC"),
+                             "year": y, "month": m, "day": None})
+            else:
+                rows.append({"path": p, "kind": "unknown",
+                             "date": pd.NaT, "year": None, "month": None, "day": None})
+        df = pd.DataFrame(rows)
+        # Stable sort so 'first'/'last' are deterministic
+        df = df.sort_values(
+            by=["kind", "date", "year", "month", "day", "path"],
+            na_position="last",
+            kind="mergesort"
+        ).reset_index(drop=True)
+        return df
+
+    def dedup_daily_one_file_per_day(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
+        """
+        From an indexed DataFrame (see index_satellite_paths), select one file per day.
+
+        Parameters
+        ----------
+        df : DataFrame
+            Output of `index_satellite_paths`.
+        prefer : {"first","last"}, default "last"
+            If multiple files map to the same day, choose the first/last after sorting.
+
+        Returns
+        -------
+        DataFrame
+            Subset of `df` with kind == "daily" and unique 'date'.
+        """
+        dfd = df[df["kind"] == "daily"].copy()
+        if dfd.empty:
+            return dfd
+        dfd = dfd.sort_values(["date", "path"])
+        pick = {"first": "first", "last": "last"}[prefer]
+        dfd = dfd.groupby("date", as_index=False, sort=True).agg(pick)
+        return dfd
+
+    # ------------------------- resampling core (private) ------------------------- #
+    def _l2p_weights(
+        self,
+        index_array,                 # masked or ndarray; shape (k,n_out) OR (n_out,k)
+        dist_array,                  # masked or ndarray; same shape/orientation
+        valid_input_index,           # (Nvalid_in,)
+        valid_output_index,          # (n_out,) ints OR bool mask of length ny*nx
+        swath_SIT,                   # (Nswath,)
+        swath_unc,                   # (Nswath,)
+        out_shape: Tuple[int, int],  # (ny, nx)
+        roi_m: float,
+        sigma_m: Optional[float] = None,
+    ):
+        ny, nx = out_shape
+
+        # reduce sources to KD-tree's valid input subset
+        src_s = np.asarray(swath_SIT, dtype=np.float64)[valid_input_index]
+        src_u = np.asarray(swath_unc, dtype=np.float64)[valid_input_index]
+
+        # normalise valid_output_index → integer flat indices
+        voi = np.asarray(valid_output_index)
+        out_idx = np.flatnonzero(voi) if voi.dtype == bool else voi.astype(np.int64, copy=False)
+        n_out_expected = out_idx.size
+
+        # fill masked arrays to ndarrays + build "exists" mask
+        idx = np.ma.filled(index_array, 0).astype(np.int64, copy=False)
+        dst = np.ma.filled(dist_array,  np.inf).astype(np.float64, copy=False)
+        neigh_exists = ~np.ma.getmaskarray(index_array)
+
+        # orient to (k, n_out) i.e. neighbours along axis 0
+        if idx.shape[1] == n_out_expected:
+            pass
+        elif idx.shape[0] == n_out_expected:
+            idx, dst, neigh_exists = idx.T, dst.T, neigh_exists.T
+        else:
+            raise ValueError(f"Neighbour array shape {idx.shape} incompatible with n_out={n_out_expected}")
+
+        k, n_out = idx.shape
+        if n_out != n_out_expected:
+            raise ValueError(f"Internal n_out mismatch: {n_out} vs {n_out_expected}")
+
+        # gather neighbour values from reduced swath
+        v_s = np.take(src_s, idx, mode="clip")    # (k, n_out)
+        v_u = np.take(src_u, idx, mode="clip")    # (k, n_out)
+
+        # validity
+        within_roi = np.isfinite(dst) & (dst <= roi_m)
+        val_ok = neigh_exists & within_roi & np.isfinite(v_s) & np.isfinite(v_u)
+
+        # weights
+        if sigma_m is None:
+            w = np.where(val_ok, 1.0, 0.0)
+        else:
+            w = np.where(val_ok, np.exp(-(dst**2) / (2.0 * sigma_m**2)), 0.0)
+
+        # reductions along neighbour axis
+        wsum   = w.sum(axis=0)
+        sitnum = (w * v_s).sum(axis=0)
+        umean  = (w * v_u).sum(axis=0)
+        senum  = ((w**2) * (v_u**2)).sum(axis=0)
+        n_cnt  = val_ok.sum(axis=0).astype("int32")
+
+        sit_mean = np.divide(sitnum, wsum, out=np.full_like(wsum, np.nan, dtype=float), where=wsum>0)
+        u_mean  = np.divide(umean,  wsum, out=np.full_like(wsum,  np.nan, dtype=float), where=wsum>0)
+        se_mean = np.divide(np.sqrt(senum), wsum, out=np.full_like(wsum, np.nan, dtype=float), where=wsum>0)
+
+        # scatter back to flat arrays
+        nflat = ny * nx
+        SIT_flat     = np.full(nflat, np.nan, dtype="float32")
+        SIT_unc_flat = np.full(nflat, np.nan, dtype="float32")
+        U_cell_flat  = np.full(nflat, np.nan, dtype="float32")
+        N_cell_flat  = np.zeros(nflat, dtype="int32")
+
+        SIT_flat[out_idx]     = sit_mean.astype("float32", copy=False)
+        SIT_unc_flat[out_idx] = se_mean.astype("float32", copy=False)
+        U_cell_flat[out_idx]  = u_mean.astype("float32", copy=False)
+        N_cell_flat[out_idx]  = n_cnt
+
+        return (
+            SIT_flat.reshape(ny, nx),
+            SIT_unc_flat.reshape(ny, nx),
+            U_cell_flat.reshape(ny, nx),
+            N_cell_flat.reshape(ny, nx),
+        )
+
+    # ------------------------- main driver ------------------------- #
+    def l2p_to_daily_grid_pyresample(
+        self,
+        paths: List[Path],
+        hem: Optional[str] = None,
+        area_def=None,
+        roi_km: float = 75.0,
+        neighbours: int = 16,
+        epsilon: float = 0.0,
+        gaussian_sigma_km: Optional[float] = None,
+        lat_cut: Optional[float] = None,
+        time_at_noon: bool = True,
+    ) -> xr.Dataset:
+        """
+        Resample ESA/AWI **L2P swath** files to a **daily gridded** product on an
+        equal-area polar grid using pyresample nearest-neighbour sets.
+
+        The algorithm:
+        1) Group all valid swath samples by UTC day (per file) using `time` variable.
+        2) For each day:
+           - Build a SwathDefinition from lon/lat points.
+           - Use `pyresample.kd_tree.get_neighbour_info` to find up to `neighbours`
+             candidates within `roi_km` of each grid cell.
+           - Combine neighbour SIT & uncertainty with uniform or Gaussian weights.
+        3) Assemble (time, y, x) arrays and compute hemispheric daily means with
+           cos(latitude) weights.
+
+        Parameters
+        ----------
+        paths : list of Path
+            L2P NetCDF files. Each must include variables:
+            `sea_ice_thickness`, `sea_ice_thickness_uncertainty`, `lon`, `lat`, `time`.
+        hem : {'sh','nh'}, optional
+            Hemisphere. Defaults to `self.hemisphere_dict['abbreviation']` when present,
+            else 'sh'.
+        area_def : pyresample.geometry.AreaDefinition, optional
+            Target equal-area grid. If None, uses `ease2_sh_50km()` for SH or
+            `ease2_nh_25km()` for NH.
+        roi_km : float, default 75.0
+            Radius of influence for neighbour search (kilometres).
+        neighbours : int, default 16
+            Max neighbours per grid cell from KD-tree.
+        epsilon : float, default 0.0
+            Search tolerance passed to pyresample (trade accuracy vs. speed).
+        gaussian_sigma_km : float or None, default None
+            If set, apply Gaussian weights with this sigma (km); otherwise uniform.
+        lat_cut : float or None, default None
+            Optional extra swath mask: for SH keep `lat <= lat_cut`; for NH keep
+            `lat >= lat_cut`. Useful for excluding marginal seas.
+        time_at_noon : bool, default True
+            If True, time coordinate is day+12:00Z; else midnight.
+
+        Returns
+        -------
+        xarray.Dataset
+            Dimensions: time, y, x
+            Coordinates: lon(y,x), lat(y,x), time
+            Data variables:
+                SIT(time,y,x)       [m]
+                SIT_unc(time,y,x)   [m] propagated standard error
+                u_cell(time,y,x)    [m] per-cell uncertainty mean (neighbour-weighted)
+                n_cell(time,y,x)    [#] count of contributing neighbours per cell
+                SIT_hem(time)       [m] hemispheric mean
+                SIT_hem_unc(time)   [m] propagated SE for hemispheric mean
+                SIT_hem_u(time)     [m] hemispheric mean of per-cell uncertainty
+                SIT_hem_n(time)     [#] total contributing neighbours (sum over grid)
+
+        Notes
+        -----
+        - Hemispheric means use cos(lat) weights on the target grid after resampling.
+        - Propagated SE follows: sqrt(sum(w^2 * se^2)) / sum(w).
+        - Files missing required variables are skipped (warning).
+        """
+        if geometry is None or kd_tree is None:
+            raise ImportError("pyresample is required: `pip install pyresample`")
+        if not paths:
+            raise ValueError("No L2P paths provided")
+
+        hem = (hem or self.hemisphere_dict.get("abbreviation", "sh")).lower()
+
+        if area_def is None:
+            area_def = self.ease2_sh_50km() if hem == "sh" else self.ease2_nh_25km()
+
+        # grid lon/lat for metadata & hemispheric weights
+        lons2d, lats2d = area_def.get_lonlats()
+        ny, nx = area_def.shape
+
+        # collect swath samples by UTC day
+        by_day: Dict[pd.Timestamp, Dict[str, List[np.ndarray]]] = {}
+        for fp in sorted(map(Path, paths)):
+            try:
+                with xr.open_dataset(fp, decode_times=True, chunks={}) as ds:
+                    required = ("sea_ice_thickness", "sea_ice_thickness_uncertainty", "lon", "lat", "time")
+                    if not all(v in ds.variables for v in required):
+                        # skip quietly if this file is not SIT L2P
+                        continue
+                    sit_da = self._get_first(ds, ["sea_ice_thickness", "SIT", "sit"])
+                    unc_da = self._get_first(ds, ["sea_ice_thickness_uncertainty", "SIT_unc", "uncertainty"])
+                    lon_da = self._get_first(ds, ["lon", "longitude"])
+                    lat_da = self._get_first(ds, ["lat", "latitude"])
+                    tim_da = self._get_first(ds, ["time", "acquisition_time"])
+                    if any(v is None for v in (sit_da, unc_da, lon_da, lat_da, tim_da)):
+                        # Skip quietly if not an SIT L2P file
+                        continue
+                    sit = sit_da.values.astype("float64", copy=False)
+                    unc = unc_da.values.astype("float64", copy=False)
+                    lon = lon_da.values.astype("float64", copy=False)
+                    lon = self._match_lon_range(lon, lons2d)
+                    lat = lat_da.values.astype("float64", copy=False)
+                    tt  = pd.to_datetime(tim_da.values)
+            except Exception:
+                # unreadable file: skip
+                continue
+
+            valid = np.isfinite(sit) & np.isfinite(unc) & np.isfinite(lon) & np.isfinite(lat)
+            if lat_cut is not None:
+                valid &= (lat <= lat_cut) if hem == "sh" else (lat >= lat_cut)
+            if not np.any(valid):
+                self.logger.info(f"[skip] {fp.name}: finite(sit)={np.isfinite(sit).sum()} "
+                                 f"finite(lon)={np.isfinite(lon).sum()} finite(lat)={np.isfinite(lat).sum()}")
+                continue
+
+            sit, unc, lon, lat, tt = sit[valid], unc[valid], lon[valid], lat[valid], tt[valid]
+            days = pd.to_datetime(tt.floor("D").to_numpy())
+
+            for d in np.unique(days):
+                sel = (days == d)
+                if not np.any(sel):
+                    continue
+                dkey = pd.Timestamp(d, tz="UTC")
+                rec = by_day.setdefault(dkey, dict(sit=[], unc=[], lon=[], lat=[]))
+                rec["sit"].append(sit[sel])
+                rec["unc"].append(unc[sel])
+                rec["lon"].append(lon[sel])
+                rec["lat"].append(lat[sel])
+
+        # empty output if nothing usable
+        if not by_day:
+            return xr.Dataset(
+                coords=dict(
+                    time=("time", np.array([], dtype="datetime64[ns]")),
+                    y=("y", np.arange(ny, dtype=int)),
+                    x=("x", np.arange(nx, dtype=int)),
+                    lon=(("y","x"), lons2d),
+                    lat=(("y","x"), lats2d),
+                )
+            )
+
+        roi_m = roi_km * 1000.0
+        sigma_m = None if gaussian_sigma_km is None else gaussian_sigma_km * 1000.0
+
+        # allocate outputs
+        days_sorted = sorted(by_day.keys())
+        T = len(days_sorted)
+        SIT     = np.full((T, ny, nx), np.nan, dtype="float32")
+        SIT_unc = np.full((T, ny, nx), np.nan, dtype="float32")
+        U_cell  = np.full((T, ny, nx), np.nan, dtype="float32")
+        N_cell  = np.zeros((T, ny, nx), dtype="int32")
+
+        # time coordinate
+        if time_at_noon:
+            tcoord = [pd.Timestamp(d.date()).tz_localize("UTC") + pd.Timedelta(hours=12) for d in days_sorted]
+        else:
+            tcoord = [pd.Timestamp(d.date()).tz_localize("UTC") for d in days_sorted]
+        tcoord = pd.to_datetime(tcoord).tz_localize(None).to_numpy()
+
+        # resample per day
+        for it, d in enumerate(days_sorted):
+            s = np.concatenate(by_day[d]["sit"])
+            u = np.concatenate(by_day[d]["unc"])
+            lo = np.concatenate(by_day[d]["lon"])
+            la = np.concatenate(by_day[d]["lat"])
+
+            swath = geometry.SwathDefinition(lons=lo, lats=la)
+
+            valid_in_idx, valid_out_idx, index_array, dist_array = kd_tree.get_neighbour_info(
+                source_geo_def=swath,
+                target_geo_def=area_def,
+                radius_of_influence=roi_m,
+                neighbours=neighbours,
+                epsilon=epsilon,
+            )
+            if getattr(valid_out_idx, "size", 0) == 0:
+                continue
+
+            sit2d, se2d, u2d, n2d = self._l2p_weights(
+                index_array=index_array,
+                dist_array=dist_array,
+                valid_input_index=valid_in_idx,
+                valid_output_index=valid_out_idx,
+                swath_SIT=s,
+                swath_unc=u,
+                out_shape=(ny, nx),
+                roi_m=roi_m,
+                sigma_m=sigma_m,
+            )
+            SIT[it,:,:]     = sit2d
+            SIT_unc[it,:,:] = se2d
+            U_cell[it,:,:]  = u2d
+            N_cell[it,:,:]  = n2d
+
+        # hemispheric daily aggregates with cos(lat) weights
+        W = np.cos(np.deg2rad(lats2d)).astype("float64")          # (y,x)
+        valid = np.isfinite(SIT) & np.isfinite(W)[None, :, :]
+        S  = np.where(valid, SIT,     0.0).astype("float64", copy=False)
+        U  = np.where(valid, SIT_unc, 0.0).astype("float64", copy=False)
+        Uc = np.where(valid, U_cell,  0.0).astype("float64", copy=False)
+        W3 = W[None, :, :]
+
+        wsum    = (W3 * valid).sum(axis=(1, 2))                   # (time,)
+        sit_num = (S  * W3).sum(axis=(1, 2))
+        ume_num = (Uc * W3).sum(axis=(1, 2))
+        se_num  = ((W3**2) * (U**2)).sum(axis=(1, 2))
+
+        SIT_hem     = sit_num / np.where(wsum > 0, wsum, np.nan)
+        SIT_hem_u   = ume_num / np.where(wsum > 0, wsum, np.nan)
+        SIT_hem_unc = np.sqrt(se_num) / np.where(wsum > 0, wsum, np.nan)
+        SIT_hem_n   = N_cell.sum(axis=(1, 2)).astype("int32")
+
+        ds = xr.Dataset(
+            data_vars=dict(
+                SIT=(("time","y","x"), SIT),
+                SIT_unc=(("time","y","x"), SIT_unc),
+                u_cell=(("time","y","x"), U_cell),
+                n_cell=(("time","y","x"), N_cell),
+                SIT_hem=(("time",), SIT_hem.astype("float32")),
+                SIT_hem_unc=(("time",), SIT_hem_unc.astype("float32")),
+                SIT_hem_u=(("time",), SIT_hem_u.astype("float32")),
+                SIT_hem_n=(("time",), SIT_hem_n),
+            ),
+            coords=dict(
+                time=("time", tcoord),
+                y=("y", np.arange(ny, dtype=int)),
+                x=("x", np.arange(nx, dtype=int)),
+                lon=(("y","x"), lons2d.astype("float64")),
+                lat=(("y","x"), lats2d.astype("float64")),
+            ),
+            attrs=dict(
+                note="L2P swath resampled to target grid via pyresample neighbour info; "
+                     "Gaussian weighting if gaussian_sigma_km set; SE propagated as sqrt(sum(w^2 u^2))/sum(w).",
+            ),
+        )
+        ds["SIT"].attrs.update(dict(standard_name="sea_ice_thickness", units="m"))
+        ds["SIT_unc"].attrs.update(dict(standard_name="sea_ice_thickness standard_error", units="m"))
+        return ds
+
+    # ------------------------- one-call convenience ------------------------- #
+    def make_daily_gridded_SIT(
+        self,
+        dt0_str: str,
+        dtN_str: str,
+        hemisphere: Optional[str] = None,
+        institutions: Optional[Iterable[str]] = ("ESA", "AWI"),
+        sensors: Optional[Iterable[str]] = None,
+        levels: Optional[Iterable[str]] = None,
+        versions: Optional[Iterable[str]] = None,
+        root_esa: Optional[Path] = None,
+        root_awi: Optional[Path] = None,
+        roi_km: float = 75.0,
+        neighbours: int = 16,
+        epsilon: float = 0.0,
+        gaussian_sigma_km: Optional[float] = None,
+        lat_cut: Optional[float] = None,
+        time_at_noon: bool = True,
+        prefer: str = "last",
+        area_def=None,
+    ) -> xr.Dataset:
+        """
+        Build a daily gridded SIT dataset for a time window in one call.
+
+        This:
+        1) Uses `build_sea_ice_satellite_paths(...)` to find L2P files in [dt0, dtN].
+        2) Indexes & de-duplicates to one file per day (configurable).
+        3) Calls `l2p_to_daily_grid_pyresample(...)` to produce (time,y,x) fields
+           plus hemispheric daily series.
+
+        Returns
+        -------
+        xarray.Dataset
+            See `l2p_to_daily_grid_pyresample` for structure.
+        """
+        # prefer configured roots if not supplied
+        if root_esa is None:
+            root_esa = globals().get("ROOT_ESA_DEF", None)
+        if root_awi is None:
+            root_awi = globals().get("ROOT_AWI_DEF", None)
+
+        paths = self.build_sea_ice_satellite_paths(
+            dt0_str=dt0_str,
+            dtN_str=dtN_str,
+            hemisphere=hemisphere,
+            institutions=institutions,
+            sensors=sensors,
+            levels=levels,
+            versions=versions,
+            root_esa=root_esa,
+            root_awi=root_awi,
+        )
+
+        df = self.index_satellite_paths(paths)
+        df_daily = self.dedup_daily_one_file_per_day(df, prefer=prefer)
+        daily_paths = df_daily["path"].tolist()
+
+        return self.l2p_to_daily_grid_pyresample(
+            paths=daily_paths,
+            hem=hemisphere,
+            area_def=area_def,
+            roi_km=roi_km,
+            neighbours=neighbours,
+            epsilon=epsilon,
+            gaussian_sigma_km=gaussian_sigma_km,
+            lat_cut=lat_cut,
+            time_at_noon=time_at_noon,
+        )
