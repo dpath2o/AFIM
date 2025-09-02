@@ -251,19 +251,27 @@ def main():
         if lpth.exists():
             n_skip += 1
             continue
-        # HEAD to confirm presence and size (fast fail if missing)
+        # HEAD to confirm presence and size.  Some servers may reject HEAD
+        # requests (e.g. with 403/405).  In that case, fall back to attempting
+        # the GET anyway so that we do not incorrectly mark the file as
+        # missing.  If the subsequent GET fails we will count it as missing.
         clen = head_request(url, timeout=args.timeout)
         if clen is None:
-            n_missing += 1
-            continue
+            # n_missing += 1
+            # continue
+            log(f"[WARN] HEAD failed for {url}; attempting GET anyway")
         n_try += 1
         if args.dry_run:
             log(f"[DRY] would fetch {url} -> {lpth}")
             time.sleep(args.rate_sec)
             continue
+        # ok = get_with_resume(url, lpth, clen, timeout=args.timeout, retries=args.retries, rate_sec=args.rate_sec)
+        # if ok: n_ok += 1
         ok = get_with_resume(url, lpth, clen, timeout=args.timeout, retries=args.retries, rate_sec=args.rate_sec)
-        if ok: n_ok += 1
-
+        if ok:
+            n_ok += 1
+        else:
+            n_missing += 1
     log(f"Summary: tried={n_try}, ok={n_ok}, skipped={n_skip}, missing={n_missing}")
     if n_ok == 0 and n_try > 0:
         sys.exit(2)
