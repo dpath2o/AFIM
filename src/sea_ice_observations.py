@@ -583,13 +583,11 @@ class SeaIceObservations:
         return None
 
     @staticmethod
-    def laea_area_def(
-        hem: str,
-        nx: int,
-        ny: int,
-        dx_km: float,
-        lon0: float = 0.0,
-    ):
+    def laea_area_def(hem   : str,
+                      nx    : int,
+                      ny    : int,
+                      dx_km : float,
+                      lon0  : float = 0.0):
         """
         Build a Lambert Azimuthal Equal-Area grid centered on the pole.
 
@@ -610,23 +608,21 @@ class SeaIceObservations:
         """
         if geometry is None:
             raise ImportError("pyresample is required: `pip install pyresample`")
-        hem = str(hem).lower()
-        lat0 = -90.0 if hem == "sh" else 90.0
-        proj_id = f"laea_{hem}_{int(dx_km)}km_{nx}x{ny}"
-        proj_dict = {
-            "proj": "laea",
-            "lat_0": lat0,
-            "lon_0": lon0,
-            "a": 6378137.0,
-            "b": 6356752.314245,
-            "units": "m",
-            "no_defs": True,
-        }
+        hem       = str(hem).lower()
+        lat0      = -90.0 if hem == "sh" else 90.0
+        proj_id   = f"laea_{hem}_{int(dx_km)}km_{nx}x{ny}"
+        proj_dict = {"proj"    : "laea",
+                     "lat_0"   : lat0,
+                     "lon_0"   : lon0,
+                     "a"       : 6378137.0,
+                     "b"       : 6356752.314245,
+                     "units"   : "m",
+                     "no_defs" : True}
         # extent centered on the pole
-        half_w = (nx * dx_km * 1000.0) / 2.0
-        half_h = (ny * dx_km * 1000.0) / 2.0
+        half_w      = (nx * dx_km * 1000.0) / 2.0
+        half_h      = (ny * dx_km * 1000.0) / 2.0
         area_extent = (-half_w, -half_h, half_w, half_h)
-        area_id = proj_id
+        area_id     = proj_id
         description = f"LAEA {hem.upper()} {dx_km}km {nx}x{ny} lon0={lon0}"
         return geometry.AreaDefinition(area_id, description, proj_id, proj_dict, nx, ny, area_extent)
 
@@ -673,11 +669,9 @@ class SeaIceObservations:
                              "date": pd.NaT, "year": None, "month": None, "day": None})
         df = pd.DataFrame(rows)
         # Stable sort so 'first'/'last' are deterministic
-        df = df.sort_values(
-            by=["kind", "date", "year", "month", "day", "path"],
-            na_position="last",
-            kind="mergesort"
-        ).reset_index(drop=True)
+        df = df.sort_values(by          = ["kind", "date", "year", "month", "day", "path"],
+                            na_position = "last",
+                            kind        = "mergesort").reset_index(drop=True)
         return df
 
     def dedup_daily_one_file_per_day(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
@@ -699,40 +693,34 @@ class SeaIceObservations:
         dfd = df[df["kind"] == "daily"].copy()
         if dfd.empty:
             return dfd
-        dfd = dfd.sort_values(["date", "path"])
+        dfd  = dfd.sort_values(["date", "path"])
         pick = {"first": "first", "last": "last"}[prefer]
-        dfd = dfd.groupby("date", as_index=False, sort=True).agg(pick)
+        dfd  = dfd.groupby("date", as_index=False, sort=True).agg(pick)
         return dfd
 
-    # ------------------------- resampling core (private) ------------------------- #
-    def _l2p_weights(
-        self,
-        index_array,                 # masked or ndarray; shape (k,n_out) OR (n_out,k)
-        dist_array,                  # masked or ndarray; same shape/orientation
-        valid_input_index,           # (Nvalid_in,)
-        valid_output_index,          # (n_out,) ints OR bool mask of length ny*nx
-        swath_SIT,                   # (Nswath,)
-        swath_unc,                   # (Nswath,)
-        out_shape: Tuple[int, int],  # (ny, nx)
-        roi_m: float,
-        sigma_m: Optional[float] = None,
-    ):
+    # ------------------------- LEVEL 2 (DAILY UN-GRIDDED) ------------------------- #
+    def _l2p_weights(self,
+                     index_array,                 # masked or ndarray; shape (k,n_out) OR (n_out,k)
+                     dist_array,                  # masked or ndarray; same shape/orientation
+                     valid_input_index,           # (Nvalid_in,)
+                     valid_output_index,          # (n_out,) ints OR bool mask of length ny*nx
+                     swath_SIT,                   # (Nswath,)
+                     swath_unc,                   # (Nswath,)
+                     out_shape : Tuple[int, int],  # (ny, nx)
+                     roi_m     : float,
+                     sigma_m   : Optional[float] = None):
         ny, nx = out_shape
-
         # reduce sources to KD-tree's valid input subset
         src_s = np.asarray(swath_SIT, dtype=np.float64)[valid_input_index]
         src_u = np.asarray(swath_unc, dtype=np.float64)[valid_input_index]
-
         # normalise valid_output_index → integer flat indices
-        voi = np.asarray(valid_output_index)
-        out_idx = np.flatnonzero(voi) if voi.dtype == bool else voi.astype(np.int64, copy=False)
+        voi            = np.asarray(valid_output_index)
+        out_idx        = np.flatnonzero(voi) if voi.dtype == bool else voi.astype(np.int64, copy=False)
         n_out_expected = out_idx.size
-
         # fill masked arrays to ndarrays + build "exists" mask
-        idx = np.ma.filled(index_array, 0).astype(np.int64, copy=False)
-        dst = np.ma.filled(dist_array,  np.inf).astype(np.float64, copy=False)
+        idx          = np.ma.filled(index_array, 0).astype(np.int64, copy=False)
+        dst          = np.ma.filled(dist_array,  np.inf).astype(np.float64, copy=False)
         neigh_exists = ~np.ma.getmaskarray(index_array)
-
         # orient to (k, n_out) i.e. neighbours along axis 0
         if idx.shape[1] == n_out_expected:
             pass
@@ -740,69 +728,56 @@ class SeaIceObservations:
             idx, dst, neigh_exists = idx.T, dst.T, neigh_exists.T
         else:
             raise ValueError(f"Neighbour array shape {idx.shape} incompatible with n_out={n_out_expected}")
-
         k, n_out = idx.shape
         if n_out != n_out_expected:
             raise ValueError(f"Internal n_out mismatch: {n_out} vs {n_out_expected}")
-
         # gather neighbour values from reduced swath
         v_s = np.take(src_s, idx, mode="clip")    # (k, n_out)
         v_u = np.take(src_u, idx, mode="clip")    # (k, n_out)
-
         # validity
         within_roi = np.isfinite(dst) & (dst <= roi_m)
-        val_ok = neigh_exists & within_roi & np.isfinite(v_s) & np.isfinite(v_u)
-
+        val_ok     = neigh_exists & within_roi & np.isfinite(v_s) & np.isfinite(v_u)
         # weights
         if sigma_m is None:
             w = np.where(val_ok, 1.0, 0.0)
         else:
             w = np.where(val_ok, np.exp(-(dst**2) / (2.0 * sigma_m**2)), 0.0)
-
         # reductions along neighbour axis
-        wsum   = w.sum(axis=0)
-        sitnum = (w * v_s).sum(axis=0)
-        umean  = (w * v_u).sum(axis=0)
-        senum  = ((w**2) * (v_u**2)).sum(axis=0)
-        n_cnt  = val_ok.sum(axis=0).astype("int32")
-
+        wsum     = w.sum(axis=0)
+        sitnum   = (w * v_s).sum(axis=0)
+        umean    = (w * v_u).sum(axis=0)
+        senum    = ((w**2) * (v_u**2)).sum(axis=0)
+        n_cnt    = val_ok.sum(axis=0).astype("int32")
         sit_mean = np.divide(sitnum, wsum, out=np.full_like(wsum, np.nan, dtype=float), where=wsum>0)
-        u_mean  = np.divide(umean,  wsum, out=np.full_like(wsum,  np.nan, dtype=float), where=wsum>0)
-        se_mean = np.divide(np.sqrt(senum), wsum, out=np.full_like(wsum, np.nan, dtype=float), where=wsum>0)
-
+        u_mean   = np.divide(umean,  wsum, out=np.full_like(wsum,  np.nan, dtype=float), where=wsum>0)
+        se_mean  = np.divide(np.sqrt(senum), wsum, out=np.full_like(wsum, np.nan, dtype=float), where=wsum>0)
         # scatter back to flat arrays
-        nflat = ny * nx
+        nflat        = ny * nx
         SIT_flat     = np.full(nflat, np.nan, dtype="float32")
         SIT_unc_flat = np.full(nflat, np.nan, dtype="float32")
         U_cell_flat  = np.full(nflat, np.nan, dtype="float32")
         N_cell_flat  = np.zeros(nflat, dtype="int32")
-
         SIT_flat[out_idx]     = sit_mean.astype("float32", copy=False)
         SIT_unc_flat[out_idx] = se_mean.astype("float32", copy=False)
         U_cell_flat[out_idx]  = u_mean.astype("float32", copy=False)
         N_cell_flat[out_idx]  = n_cnt
-
-        return (
-            SIT_flat.reshape(ny, nx),
-            SIT_unc_flat.reshape(ny, nx),
-            U_cell_flat.reshape(ny, nx),
-            N_cell_flat.reshape(ny, nx),
-        )
+        return (SIT_flat.reshape(ny, nx),
+                SIT_unc_flat.reshape(ny, nx),
+                U_cell_flat.reshape(ny, nx),
+                N_cell_flat.reshape(ny, nx))
 
     # ------------------------- main driver ------------------------- #
-    def l2p_to_daily_grid_pyresample(
-        self,
-        paths: List[Path],
-        hem: Optional[str] = None,
-        area_def=None,
-        roi_km: float = 75.0,
-        neighbours: int = 16,
-        epsilon: float = 0.0,
-        gaussian_sigma_km: Optional[float] = None,
-        lat_cut: Optional[float] = None,
-        time_at_noon: bool = True,
-    ) -> xr.Dataset:
-        """
+    def l2p_to_daily_grid_pyresample(self,
+                                     paths             : List[Path],
+                                     hem               : Optional[str] = None,
+                                     area_def = None,
+                                     roi_km            : float = 75.0,
+                                     neighbours        : int = 16,
+                                     epsilon           : float = 0.0,
+                                     gaussian_sigma_km : Optional[float] = None,
+                                     lat_cut           : Optional[float] = None,
+                                     time_at_noon      : bool = True) -> xr.Dataset:
+        """     
         Resample ESA/AWI **L2P swath** files to a **daily gridded** product on an
         equal-area polar grid using pyresample nearest-neighbour sets.
 
@@ -866,16 +841,12 @@ class SeaIceObservations:
             raise ImportError("pyresample is required: `pip install pyresample`")
         if not paths:
             raise ValueError("No L2P paths provided")
-
         hem = (hem or self.hemisphere_dict.get("abbreviation", "sh")).lower()
-
         if area_def is None:
             area_def = self.ease2_sh_50km() if hem == "sh" else self.ease2_nh_25km()
-
         # grid lon/lat for metadata & hemispheric weights
         lons2d, lats2d = area_def.get_lonlats()
         ny, nx = area_def.shape
-
         # collect swath samples by UTC day
         by_day: Dict[pd.Timestamp, Dict[str, List[np.ndarray]]] = {}
         for fp in sorted(map(Path, paths)):
@@ -902,7 +873,6 @@ class SeaIceObservations:
             except Exception:
                 # unreadable file: skip
                 continue
-
             valid = np.isfinite(sit) & np.isfinite(unc) & np.isfinite(lon) & np.isfinite(lat)
             if lat_cut is not None:
                 valid &= (lat <= lat_cut) if hem == "sh" else (lat >= lat_cut)
@@ -910,10 +880,8 @@ class SeaIceObservations:
                 self.logger.info(f"[skip] {fp.name}: finite(sit)={np.isfinite(sit).sum()} "
                                  f"finite(lon)={np.isfinite(lon).sum()} finite(lat)={np.isfinite(lat).sum()}")
                 continue
-
             sit, unc, lon, lat, tt = sit[valid], unc[valid], lon[valid], lat[valid], tt[valid]
             days = pd.to_datetime(tt.floor("D").to_numpy())
-
             for d in np.unique(days):
                 sel = (days == d)
                 if not np.any(sel):
@@ -924,113 +892,86 @@ class SeaIceObservations:
                 rec["unc"].append(unc[sel])
                 rec["lon"].append(lon[sel])
                 rec["lat"].append(lat[sel])
-
         # empty output if nothing usable
         if not by_day:
             return xr.Dataset(
-                coords=dict(
-                    time=("time", np.array([], dtype="datetime64[ns]")),
-                    y=("y", np.arange(ny, dtype=int)),
-                    x=("x", np.arange(nx, dtype=int)),
-                    lon=(("y","x"), lons2d),
-                    lat=(("y","x"), lats2d),
-                )
-            )
-
+                coords=dict(time = ("time", np.array([], dtype="datetime64[ns]")),
+                            y    = ("y", np.arange(ny, dtype=int)),
+                            x    = ("x", np.arange(nx, dtype=int)),
+                            lon  = (("y","x"), lons2d),
+                            lat  = (("y","x"), lats2d)))
         roi_m = roi_km * 1000.0
         sigma_m = None if gaussian_sigma_km is None else gaussian_sigma_km * 1000.0
-
         # allocate outputs
         days_sorted = sorted(by_day.keys())
-        T = len(days_sorted)
-        SIT     = np.full((T, ny, nx), np.nan, dtype="float32")
-        SIT_unc = np.full((T, ny, nx), np.nan, dtype="float32")
-        U_cell  = np.full((T, ny, nx), np.nan, dtype="float32")
-        N_cell  = np.zeros((T, ny, nx), dtype="int32")
-
+        T           = len(days_sorted)
+        SIT         = np.full((T, ny, nx), np.nan, dtype="float32")
+        SIT_unc     = np.full((T, ny, nx), np.nan, dtype="float32")
+        U_cell      = np.full((T, ny, nx), np.nan, dtype="float32")
+        N_cell      = np.zeros((T, ny, nx), dtype="int32")
         # time coordinate
         if time_at_noon:
             tcoord = [pd.Timestamp(d.date()).tz_localize("UTC") + pd.Timedelta(hours=12) for d in days_sorted]
         else:
             tcoord = [pd.Timestamp(d.date()).tz_localize("UTC") for d in days_sorted]
         tcoord = pd.to_datetime(tcoord).tz_localize(None).to_numpy()
-
         # resample per day
         for it, d in enumerate(days_sorted):
-            s = np.concatenate(by_day[d]["sit"])
-            u = np.concatenate(by_day[d]["unc"])
-            lo = np.concatenate(by_day[d]["lon"])
-            la = np.concatenate(by_day[d]["lat"])
-
+            s     = np.concatenate(by_day[d]["sit"])
+            u     = np.concatenate(by_day[d]["unc"])
+            lo    = np.concatenate(by_day[d]["lon"])
+            la    = np.concatenate(by_day[d]["lat"])
             swath = geometry.SwathDefinition(lons=lo, lats=la)
-
-            valid_in_idx, valid_out_idx, index_array, dist_array = kd_tree.get_neighbour_info(
-                source_geo_def=swath,
-                target_geo_def=area_def,
-                radius_of_influence=roi_m,
-                neighbours=neighbours,
-                epsilon=epsilon,
-            )
+            valid_in_idx, valid_out_idx, index_array, dist_array = kd_tree.get_neighbour_info(source_geo_def      = swath,
+                                                                                              target_geo_def      = area_def,
+                                                                                              radius_of_influence = roi_m,
+                                                                                              neighbours          = neighbours,
+                                                                                              epsilon             = epsilon)
             if getattr(valid_out_idx, "size", 0) == 0:
                 continue
-
-            sit2d, se2d, u2d, n2d = self._l2p_weights(
-                index_array=index_array,
-                dist_array=dist_array,
-                valid_input_index=valid_in_idx,
-                valid_output_index=valid_out_idx,
-                swath_SIT=s,
-                swath_unc=u,
-                out_shape=(ny, nx),
-                roi_m=roi_m,
-                sigma_m=sigma_m,
-            )
+            sit2d, se2d, u2d, n2d = self._l2p_weights(index_array        = index_array,
+                                                      dist_array         = dist_array,
+                                                      valid_input_index  = valid_in_idx,
+                                                      valid_output_index = valid_out_idx,
+                                                      swath_SIT          = s,
+                                                      swath_unc          = u,
+                                                      out_shape          = (ny, nx),
+                                                      roi_m              = roi_m,
+                                                      sigma_m            = sigma_m)
             SIT[it,:,:]     = sit2d
             SIT_unc[it,:,:] = se2d
             U_cell[it,:,:]  = u2d
             N_cell[it,:,:]  = n2d
-
         # hemispheric daily aggregates with cos(lat) weights
-        W = np.cos(np.deg2rad(lats2d)).astype("float64")          # (y,x)
-        valid = np.isfinite(SIT) & np.isfinite(W)[None, :, :]
-        S  = np.where(valid, SIT,     0.0).astype("float64", copy=False)
-        U  = np.where(valid, SIT_unc, 0.0).astype("float64", copy=False)
-        Uc = np.where(valid, U_cell,  0.0).astype("float64", copy=False)
-        W3 = W[None, :, :]
-
+        W       = np.cos(np.deg2rad(lats2d)).astype("float64")          # (y,x)
+        valid   = np.isfinite(SIT) & np.isfinite(W)[None, :, :]
+        S       = np.where(valid, SIT,     0.0).astype("float64", copy=False)
+        U       = np.where(valid, SIT_unc, 0.0).astype("float64", copy=False)
+        Uc      = np.where(valid, U_cell,  0.0).astype("float64", copy=False)
+        W3      = W[None, :, :]
         wsum    = (W3 * valid).sum(axis=(1, 2))                   # (time,)
         sit_num = (S  * W3).sum(axis=(1, 2))
         ume_num = (Uc * W3).sum(axis=(1, 2))
         se_num  = ((W3**2) * (U**2)).sum(axis=(1, 2))
-
         SIT_hem     = sit_num / np.where(wsum > 0, wsum, np.nan)
         SIT_hem_u   = ume_num / np.where(wsum > 0, wsum, np.nan)
         SIT_hem_unc = np.sqrt(se_num) / np.where(wsum > 0, wsum, np.nan)
         SIT_hem_n   = N_cell.sum(axis=(1, 2)).astype("int32")
-
-        ds = xr.Dataset(
-            data_vars=dict(
-                SIT=(("time","y","x"), SIT),
-                SIT_unc=(("time","y","x"), SIT_unc),
-                u_cell=(("time","y","x"), U_cell),
-                n_cell=(("time","y","x"), N_cell),
-                SIT_hem=(("time",), SIT_hem.astype("float32")),
-                SIT_hem_unc=(("time",), SIT_hem_unc.astype("float32")),
-                SIT_hem_u=(("time",), SIT_hem_u.astype("float32")),
-                SIT_hem_n=(("time",), SIT_hem_n),
-            ),
-            coords=dict(
-                time=("time", tcoord),
-                y=("y", np.arange(ny, dtype=int)),
-                x=("x", np.arange(nx, dtype=int)),
-                lon=(("y","x"), lons2d.astype("float64")),
-                lat=(("y","x"), lats2d.astype("float64")),
-            ),
-            attrs=dict(
-                note="L2P swath resampled to target grid via pyresample neighbour info; "
-                     "Gaussian weighting if gaussian_sigma_km set; SE propagated as sqrt(sum(w^2 u^2))/sum(w).",
-            ),
-        )
+        ds = xr.Dataset(data_vars = dict(SIT         = (("time","y","x"), SIT),
+                                         SIT_unc     = (("time","y","x"), SIT_unc),
+                                         u_cell      = (("time","y","x"), U_cell),
+                                         n_cell      = (("time","y","x"), N_cell),
+                                         SIT_hem     = (("time",), SIT_hem.astype("float32")),
+                                         SIT_hem_unc = (("time",), SIT_hem_unc.astype("float32")),
+                                         SIT_hem_u   = (("time",), SIT_hem_u.astype("float32")),
+                                         SIT_hem_n   = (("time",), SIT_hem_n),),
+                        coords = dict(time = ("time", tcoord),
+                                      y    = ("y", np.arange(ny, dtype=int)),
+                                      x    = ("x", np.arange(nx, dtype=int)),
+                                      lon  = (("y","x"), lons2d.astype("float64")),
+                                      lat  = (("y","x"), lats2d.astype("float64"))),
+                        attrs = dict(note = "L2P swath resampled to target grid via pyresample neighbour info; "
+                                            "Gaussian weighting if gaussian_sigma_km set; SE propagated as sqrt(sum(w^2 u^2))/sum(w)."))
         ds["SIT"].attrs.update(dict(standard_name="sea_ice_thickness", units="m"))
         ds["SIT_unc"].attrs.update(dict(standard_name="sea_ice_thickness standard_error", units="m"))
         return ds
@@ -1073,7 +1014,6 @@ class SeaIceObservations:
             root_esa = globals().get("ROOT_ESA_DEF", None)
         if root_awi is None:
             root_awi = globals().get("ROOT_AWI_DEF", None)
-
         paths = self.build_sea_ice_satellite_paths(dt0_str      = dt0_str,
                                                    dtN_str      = dtN_str,
                                                    hemisphere   = hemisphere,
@@ -1083,23 +1023,20 @@ class SeaIceObservations:
                                                    versions     = versions,
                                                    root_esa     = root_esa,
                                                    root_awi     = root_awi)
-
-        df = self.index_satellite_paths(paths)
-        df_daily = self.dedup_daily_one_file_per_day(df, prefer=prefer)
+        df          = self.index_satellite_paths(paths)
+        df_daily    = self.dedup_daily_one_file_per_day(df, prefer=prefer)
         daily_paths = df_daily["path"].tolist()
+        return self.l2p_to_daily_grid_pyresample(paths             = daily_paths,
+                                                 hem               = hemisphere,
+                                                 area_def          = area_def,
+                                                 roi_km            = roi_km,
+                                                 neighbours        = neighbours,
+                                                 epsilon           = epsilon,
+                                                 gaussian_sigma_km = gaussian_sigma_km,
+                                                 lat_cut           = lat_cut,
+                                                 time_at_noon      = time_at_noon)
 
-        return self.l2p_to_daily_grid_pyresample(
-            paths=daily_paths,
-            hem=hemisphere,
-            area_def=area_def,
-            roi_km=roi_km,
-            neighbours=neighbours,
-            epsilon=epsilon,
-            gaussian_sigma_km=gaussian_sigma_km,
-            lat_cut=lat_cut,
-            time_at_noon=time_at_noon,
-        )
-
+    # ------------------------- LEVEL 3 (MONTLY GRIDDED) ------------------------- #
     def dedup_monthly_one_file_per_month(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
         """
         From an indexed DataFrame (see index_satellite_paths), select one file per month.
@@ -1127,17 +1064,15 @@ class SeaIceObservations:
         dfm = dfm.groupby(["year","month"], as_index=False, sort=True).agg(pick)
         return dfm
 
-    def l3c_paths_to_monthly_grid(
-        self,
-        paths: list[Path],
-        hem: str | None = None,
-        sic_thresh_percent: float | None = 15.0,
-        mask_strategy: str = "none",    # {"none","quality","status","both"}
-        include_snow: bool = True,
-        include_flags: bool = True,
-        min_obs: int = 1,               # if an "n_observations" variable exists
-        time_midpoint: bool = True,     # use mid-point of time_bnds when available
-    ) -> xr.Dataset:
+    def l3c_paths_to_monthly_grid(self,
+                                  paths              : list[Path],
+                                  hem                : str   | None = None,
+                                  sic_thresh_percent : float | None = 15.0,
+                                  mask_strategy      : str  = "none",    # {"none","quality","status","both"}
+                                  include_snow       : bool = True,
+                                  include_flags      : bool = True,
+                                  min_obs            : int  = 1,               # if an "n_observations" variable exists
+                                  time_midpoint      : bool = True) -> xr.Dataset:
         """
         Assemble ESA L3C / AWI l3cp_release files (already on LAEA grids) into a
         single (time, y, x) dataset with hemispheric monthly means.
@@ -1186,33 +1121,26 @@ class SeaIceObservations:
         """
         if not paths:
             raise ValueError("No L3 paths provided")
-
         hem = (hem or self.hemisphere_dict.get("abbreviation", "sh")).lower()
-
         # Store per-file outputs here then concat along time at the end
         out_list: list[xr.Dataset] = []
         lat_template = None
         lon_template = None
-
         for fp in sorted(map(Path, paths)):
             try:
                 ds = xr.open_dataset(fp, decode_times=True)
             except Exception:
                 continue
-
             # Flexible getters
             def G(names):
                 return self._get_first(ds, names)
-
             # Dim normalization (yc/xc or y/x)
             ydim = "yc" if "yc" in ds.dims else ("y" if "y" in ds.dims else None)
             xdim = "xc" if "xc" in ds.dims else ("x" if "x" in ds.dims else None)
             if ydim is None or xdim is None:
                 ds.close()
                 continue
-
             ds_work = ds.rename({ydim: "y", xdim: "x"})
-
             # Coordinates
             lat2d = G(["lat"])
             lon2d = G(["lon"])
@@ -1222,7 +1150,6 @@ class SeaIceObservations:
             # Persist a lat/lon template (assumed constant across files)
             lat_template = lat2d.values if lat_template is None else lat_template
             lon_template = lon2d.values if lon_template is None else lon_template
-
             # Variables of interest
             SIT   = G(["sea_ice_thickness", "SIT", "sit"])
             SIT_U = G(["sea_ice_thickness_uncertainty", "SIT_unc", "sit_unc", "uncertainty"])
@@ -1233,17 +1160,14 @@ class SeaIceObservations:
             SF    = G(["status_flag"])
             RC    = G(["region_code"])
             NOBS  = G(["n_observations", "num_observations", "count"])
-
             # Required: SIT & SIT_U at least
             if SIT is None or SIT_U is None:
                 ds.close(); continue
-
             # Time coordinate (often size 1 per file, but robust to >1)
             time = G(["time"])
             tbnd = G(["time_bnds", "time_bounds"])
             if time is None:
                 ds.close(); continue
-
             tvals = pd.to_datetime(time.values)
             if tvals.ndim == 0:
                 tvals = tvals[None]
@@ -1255,33 +1179,28 @@ class SeaIceObservations:
                 except Exception:
                     # fall back to time center
                     pass
-
             # Build a mask
             base_mask = np.isfinite(SIT) & np.isfinite(SIT_U) & np.isfinite(lat2d) & np.isfinite(lon2d)
             if SIC is not None and sic_thresh_percent is not None:
                 base_mask &= np.isfinite(SIC) & (SIC >= float(sic_thresh_percent))
             if NOBS is not None and isinstance(min_obs, (int, float)) and min_obs > 1:
                 base_mask &= (NOBS >= int(min_obs))
-
             if mask_strategy in ("quality", "both") and QF is not None:
                 base_mask &= (QF == 0)
             if mask_strategy in ("status", "both") and SF is not None:
                 base_mask &= (SF == 0)
             mask_strategy = (mask_strategy or "none").lower()
-
             # Ensure 3D shape: (time, y, x)
             def _as3(da):
                 v = da.transpose(..., "yc", "xc").values
                 if v.ndim == 2:
                     v = v[None, ...]
                 return v
-
             sit3  = _as3(SIT)
             sunc3 = _as3(SIT_U)
             mask3 = base_mask
             if mask3.ndim == 2:
                 mask3 = mask3[None, ...]
-
             if SIC is not None:
                 sic3 = _as3(SIC)
             if SD is not None and include_snow:
@@ -1294,51 +1213,32 @@ class SeaIceObservations:
                 sf3 = _as3(SF)
             if RC is not None and include_flags:
                 rc3 = _as3(RC)
-
             # Apply mask: keep NaNs outside valid cells
             S  = np.where(mask3, sit3,  np.nan).astype("float32", copy=False)
             U  = np.where(mask3, sunc3, np.nan).astype("float32", copy=False)
-
             if SIC is not None:
                 SICv = np.where(mask3, sic3, np.nan).astype("float32", copy=False)
             if SD is not None and include_snow:
                 SDv  = np.where(mask3, sd3,  np.nan).astype("float32", copy=False)
             if SDU is not None and include_snow:
                 SDUv = np.where(mask3, sdu3, np.nan).astype("float32", copy=False)
-
             # Hemispheric weighting
-            # W2 = np.cos(np.deg2rad(lat2d.values)).astype("float64")
-            # W3 = W2[None, :, :]
-            # valid = np.isfinite(S)
-            # wsum    = (W3 * valid).sum(axis=(1, 2))
-            # sit_num = (np.where(valid, S, 0.0)  * W3).sum(axis=(1, 2))
-            # u_num   = (np.where(valid, U, 0.0)  * W3).sum(axis=(1, 2))
-            # se_num  = ((W3**2) * np.where(valid, U, 0.0)**2).sum(axis=(1, 2))
-
-            # SIT_hem     = sit_num / np.where(wsum > 0, wsum, np.nan)
-            # SIT_hem_u   = u_num   / np.where(wsum > 0, wsum, np.nan)
-            # SIT_hem_unc = np.sqrt(se_num) / np.where(wsum > 0, wsum, np.nan)
-            # SIT_hem_n   = valid.sum(axis=(1, 2)).astype("int32")
-            W2 = np.cos(np.deg2rad(lat2d.values)).astype("float64")
-            W3 = W2[None, :, :]
-            valid = np.isfinite(S)
-
+            W2      = np.cos(np.deg2rad(lat2d.values)).astype("float64")
+            W3      = W2[None, :, :]
+            valid   = np.isfinite(S)
             wsum    = (W3 * valid).sum(axis=(1, 2))
             sit_num = (np.where(valid, S, 0.0)  * W3).sum(axis=(1, 2))
             u_num   = (np.where(valid, U, 0.0)  * W3).sum(axis=(1, 2))
             se_num  = ((W3**2) * np.where(valid, U, 0.0)**2).sum(axis=(1, 2))
-
             SIT_hem     = sit_num / np.where(wsum > 0, wsum, np.nan)
             SIT_hem_u   = u_num   / np.where(wsum > 0, wsum, np.nan)
             SIT_hem_unc = np.sqrt(se_num) / np.where(wsum > 0, wsum, np.nan)
             SIT_hem_n   = valid.sum(axis=(1, 2)).astype("int32")
-
             # ---- NEW: concentration-weighted hemispheric mean (SIC weights) ----
             SIT_wgt     = np.full((S.shape[0],), np.nan, dtype="float64")
             SIT_wgt_u   = np.full((S.shape[0],), np.nan, dtype="float64")
             SIT_wgt_unc = np.full((S.shape[0],), np.nan, dtype="float64")
             SIT_wgt_n   = np.zeros((S.shape[0],), dtype="int32")
-
             if SIC is not None:
                 # Convert SIC to fraction [0..1] for correct uncertainty propagation.
                 sic_units = (SIC.attrs.get("units","") or "").lower()
@@ -1350,68 +1250,42 @@ class SeaIceObservations:
                     vmax = np.nanmax(sic3_raw)
                     Wsic = (sic3_raw / 100.0) if np.isfinite(vmax) and vmax > 1.5 else sic3_raw
                     Wsic = Wsic.astype("float64")
-
                 # Honor the same base mask used for S/U (keeps SIC >= thresh, flags, etc.)
                 # mask3 is (time,y,x); if it's 2D, lift it to 3D
                 m3 = mask3
                 if getattr(m3, "ndim", 2) == 2:
                     m3 = m3[None, ...]
                 Wsic = np.where(m3, Wsic, np.nan)
-
                 # Weighted mean thickness DOES NOT require uncertainty to be finite
                 v_sit = np.isfinite(S) & np.isfinite(Wsic) & (Wsic > 0)
                 wsum  = (np.where(v_sit, Wsic, 0.0)).sum(axis=(1, 2))
                 num   = (np.where(v_sit, S * Wsic, 0.0)).sum(axis=(1, 2))
-
                 SIT_wgt   = num / np.where(wsum > 0, wsum, np.nan)
                 SIT_wgt_n = v_sit.sum(axis=(1, 2)).astype("int32")
-
                 # For the uncertainty aggregates, only use pixels where uncertainty is finite
                 v_u      = v_sit & np.isfinite(U)
                 wsum_u   = (np.where(v_u, Wsic, 0.0)).sum(axis=(1, 2))
                 num_u    = (np.where(v_u, U * Wsic, 0.0)).sum(axis=(1, 2))
                 se_num_u = ((np.where(v_u, Wsic, 0.0) ** 2) * (np.where(v_u, U, 0.0) ** 2)).sum(axis=(1, 2))
-
                 SIT_wgt_u   = num_u / np.where(wsum_u > 0, wsum_u, np.nan)
                 SIT_wgt_unc = np.sqrt(se_num_u) / np.where(wsum_u > 0, wsum_u, np.nan)
-
-                # Valid where SIT, SIT_unc and weights are finite and weight > 0
-                # v_w = np.isfinite(S) & np.isfinite(U) & np.isfinite(Wsic) & (Wsic > 0)
-
-                # # Weighted means
-                # wsum_sic   = (np.where(v_w, Wsic, 0.0)).sum(axis=(1, 2))
-                # sit_num_s  = (np.where(v_w, S,   0.0) * Wsic).sum(axis=(1, 2))
-                # u_num_s    = (np.where(v_w, U,   0.0) * Wsic).sum(axis=(1, 2))
-                # se_num_s   = ((Wsic**2) * np.where(v_w, U, 0.0)**2).sum(axis=(1, 2))
-
-                # SIT_wgt     = sit_num_s / np.where(wsum_sic > 0, wsum_sic, np.nan)
-                # SIT_wgt_u   = u_num_s   / np.where(wsum_sic > 0, wsum_sic, np.nan)
-                # SIT_wgt_unc = np.sqrt(se_num_s) / np.where(wsum_sic > 0, wsum_sic, np.nan)
-                # SIT_wgt_n   = v_w.sum(axis=(1, 2)).astype("int32")
-
             # Assemble per-file dataset (time may be >1)
             T = S.shape[0]
-            ds_out = xr.Dataset(
-                data_vars=dict(
-                    SIT=(("time","y","x"), S),
-                    SIT_unc=(("time","y","x"), U),
-                    SIT_hem=(("time",), SIT_hem.astype("float32")),
-                    SIT_hem_unc=(("time",), SIT_hem_unc.astype("float32")),
-                    SIT_hem_u=(("time",), SIT_hem_u.astype("float32")),
-                    SIT_hem_n=(("time",), SIT_hem_n),
-                    SIT_wgt=(("time",), SIT_wgt.astype("float32")),
-                    SIT_wgt_unc=(("time",), SIT_wgt_unc.astype("float32")),
-                    SIT_wgt_u=(("time",), SIT_wgt_u.astype("float32")),
-                    SIT_wgt_n=(("time",), SIT_wgt_n),
-                ),
-                coords=dict(
-                    time=("time", pd.to_datetime(tvals).tz_localize(None).to_numpy()),
-                    y=("y", np.arange(lat2d.sizes["yc"], dtype=int)),
-                    x=("x", np.arange(lat2d.sizes["xc"], dtype=int)),
-                    lon=(("y","x"), lon2d.values.astype("float64")),
-                    lat=(("y","x"), lat2d.values.astype("float64")),
-                ),
-            )
+            ds_out = xr.Dataset(data_vars = dict(SIT         = (("time","y","x"), S),
+                                                 SIT_unc     = (("time","y","x"), U),
+                                                 SIT_hem     = (("time",), SIT_hem.astype("float32")),
+                                                 SIT_hem_unc = (("time",), SIT_hem_unc.astype("float32")),
+                                                 SIT_hem_u   = (("time",), SIT_hem_u.astype("float32")),
+                                                 SIT_hem_n   = (("time",), SIT_hem_n),
+                                                 SIT_wgt     = (("time",), SIT_wgt.astype("float32")),
+                                                 SIT_wgt_unc = (("time",), SIT_wgt_unc.astype("float32")),
+                                                 SIT_wgt_u   = (("time",), SIT_wgt_u.astype("float32")),
+                                                 SIT_wgt_n   = (("time",), SIT_wgt_n)),
+                                coords = dict(time = ("time", pd.to_datetime(tvals).tz_localize(None).to_numpy()),
+                                              y    = ("y", np.arange(lat2d.sizes["yc"], dtype=int)),
+                                              x    = ("x", np.arange(lat2d.sizes["xc"], dtype=int)),
+                                              lon  = (("y","x"), lon2d.values.astype("float64")),
+                                              lat  = (("y","x"), lat2d.values.astype("float64"))))
             if SIC is not None:
                 ds_out["SIC"] = (("time","y","x"), SICv)
                 ds_out["SIC"].attrs.update(dict(standard_name="sea_ice_area_fraction", units="percent"))
@@ -1427,47 +1301,38 @@ class SeaIceObservations:
                 ds_out["status_flag"] = (("time","y","x"), sf3.astype("int8"))
             if include_flags and RC is not None:
                 ds_out["region_code"] = (("time","y","x"), rc3.astype("int8"))
-
             out_list.append(ds_out)
             ds.close()
-
         if not out_list:
             # Empty shell with lat/lon if we managed to see one file’s coords
-            return xr.Dataset(
-                coords=dict(
-                    time=("time", np.array([], dtype="datetime64[ns]")),
-                    y=("y", np.arange(lat_template.shape[0], dtype=int) if lat_template is not None else np.array([], dtype=int)),
-                    x=("x", np.arange(lat_template.shape[1], dtype=int) if lat_template is not None else np.array([], dtype=int)),
-                    lon=(("y","x"), lon_template if lon_template is not None else np.zeros((0,0))),
-                    lat=(("y","x"), lat_template if lat_template is not None else np.zeros((0,0))),
-                )
-            )
-
+            return xr.Dataset(coords = dict(time = ("time", np.array([], dtype="datetime64[ns]")),
+                                            y    = ("y", np.arange(lat_template.shape[0], dtype=int) if lat_template is not None else np.array([], dtype=int)),
+                                            x    = ("x", np.arange(lat_template.shape[1], dtype=int) if lat_template is not None else np.array([], dtype=int)),
+                                            lon  = (("y","x"), lon_template if lon_template is not None else np.zeros((0,0))),
+                                            lat  = (("y","x"), lat_template if lat_template is not None else np.zeros((0,0))),))
         ds_all = xr.concat(out_list, dim="time").sortby("time")
         ds_all["SIT"].attrs.update(dict(standard_name="sea_ice_thickness", units="m"))
         ds_all["SIT_unc"].attrs.update(dict(standard_name="sea_ice_thickness standard_error", units="m"))
         ds_all.attrs.update(dict(note="Assembled L3 (ESA L3C / AWI l3cp_release) monthly grids with optional QC & SIC threshold; hemispheric means use cos(lat) weights."))
         return ds_all
 
-    def make_monthly_gridded_SIT_L3(
-        self,
-        dt0_str: str,
-        dtN_str: str,
-        hemisphere: str | None = None,
-        institutions: Iterable[str] | None = ("ESA","AWI"),
-        sensors: Iterable[str] | None = None,
-        levels: Iterable[str] | None = ("L3C","l3cp_release"),
-        versions: Iterable[str] | None = None,
-        root_esa: Path | None = None,
-        root_awi: Path | None = None,
-        prefer: str = "last",
-        sic_thresh_percent: float | None = 15.0,
-        mask_strategy: str = "none",         # {"none","quality","status","both"}
-        include_snow: bool = True,
-        include_flags: bool = True,
-        min_obs: int = 1,
-        time_midpoint: bool = True,
-    ) -> xr.Dataset:
+    def make_monthly_gridded_SIT_L3(self,
+                                    dt0_str            : str,
+                                    dtN_str            : str,
+                                    hemisphere         : str | None = None,
+                                    institutions       : Iterable[str] | None = ("ESA","AWI"),
+                                    sensors            : Iterable[str] | None = None,
+                                    levels             : Iterable[str] | None = ("L3C","l3cp_release"),
+                                    versions           : Iterable[str] | None = None,
+                                    root_esa           : Path | None = None,
+                                    root_awi           : Path | None = None,
+                                    prefer             : str = "last",
+                                    sic_thresh_percent : float | None = 15.0,
+                                    mask_strategy      : str = "none",         # {"none","quality","status","both"}
+                                    include_snow       : bool = True,
+                                    include_flags      : bool = True,
+                                    min_obs            : int = 1,
+                                    time_midpoint      : bool = True,) -> xr.Dataset:
         """
         Build a monthly gridded SIT dataset from L3 products (ESA L3C / AWI l3cp_release)
         in one call. Mirrors the L2P one-call driver but skips resampling.
@@ -1482,31 +1347,24 @@ class SeaIceObservations:
             root_esa = globals().get("ROOT_ESA_DEF", None)
         if root_awi is None:
             root_awi = globals().get("ROOT_AWI_DEF", None)
-
-        paths = self.build_sea_ice_satellite_paths(
-            dt0_str=dt0_str,
-            dtN_str=dtN_str,
-            hemisphere=hemisphere,
-            institutions=institutions,
-            sensors=sensors,
-            levels=levels,
-            versions=versions,
-            root_esa=root_esa,
-            root_awi=root_awi,
-        )
-
+        paths = self.build_sea_ice_satellite_paths(dt0_str      = dt0_str,
+                                                   dtN_str      = dtN_str,
+                                                   hemisphere   = hemisphere,
+                                                   institutions = institutions,
+                                                   sensors      = sensors,
+                                                   levels       = levels,
+                                                   versions     = versions,
+                                                   root_esa     = root_esa,
+                                                   root_awi     = root_awi)
         # QA & dedup to one per month
-        df = self.index_satellite_paths(paths)
+        df    = self.index_satellite_paths(paths)
         df_mo = self.dedup_monthly_one_file_per_month(df, prefer=prefer)
-        monthly_paths = df_mo["path"].tolist()
-
-        return self.l3c_paths_to_monthly_grid(
-            paths=monthly_paths,
-            hem=hemisphere,
-            sic_thresh_percent=sic_thresh_percent,
-            mask_strategy=mask_strategy,
-            include_snow=include_snow,
-            include_flags=include_flags,
-            min_obs=min_obs,
-            time_midpoint=time_midpoint,
-        )
+        P_mos = df_mo["path"].tolist()
+        return self.l3c_paths_to_monthly_grid(paths              = P_mos,
+                                              hem                = hemisphere,
+                                              sic_thresh_percent = sic_thresh_percent,
+                                              mask_strategy      = mask_strategy,
+                                              include_snow       = include_snow,
+                                              include_flags      = include_flags,
+                                              min_obs            = min_obs,
+                                              time_midpoint      = time_midpoint)
