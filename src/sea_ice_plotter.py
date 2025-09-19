@@ -457,7 +457,7 @@ class SeaIcePlotter:
                             leg_box           : str   = "+gwhite+p.5p",
                             spat_var_style    : str   = None,
                             GI_plot_style     : str   = "c0.05c",
-                            GI_fill_color     : str   = "red",
+                            GI_fill_color     : str   = "#BA561A",
                             plot_GI           : bool  = False,
                             min_max_trans_val : int   = 80,
                             yshift_top        : str   = None,
@@ -465,17 +465,17 @@ class SeaIcePlotter:
                             bottom_frame_bndy : str   = "WSne",
                             bottom_yaxis      : str   = None,
                             bottom_xaxis      : str   = None,
-                            land_clr          : str   = 'gray',
-                            water_clr         : str   = "white",
-                            coast_pen         : str   = "1/0.5p,gray30",
+                            land_clr          : str   = '#D1DDE0',
+                            water_clr         : str   = "#EDF2F5",
+                            coast_pen         : str   = "1/0.5p,black",
                             cbar_pos          : str   = None,
                             lon_coord_name    : str   = None,
                             lat_coord_name    : str   = None,
                             cmap              : str   = None,
                             series            : list  = None,
                             cbar_frame        : str   = None,
-                            ANT_IS_pen        : str   = "0.2p,gray",
-                            ANT_IS_color      : str   = "lightgray",
+                            ANT_IS_pen        : str   = "0.2p,black",
+                            ANT_IS_color      : str   = "#C1CED6",
                             font_annot_pri    : str   = "24p,Times-Roman",
                             font_annot_sec    : str   = "16p,Times-Roman",
                             font_lab          : str   = "22p,Times-Bold",
@@ -597,7 +597,7 @@ class SeaIcePlotter:
                 fig.basemap(region     = b_region,
                             projection = b_projection,
                             frame      = [f"x{bottom_xaxis}", f"y{bottom_yaxis}"])
-                fig.coast(land=land_clr, water=water_clr, shorelines=coast_pen)
+                fig.coast(water=water_clr)
                 fig.plot(x     = df_spat["lon"],
                          y     = df_spat["lat"],
                          fill  = df_spat["data"],
@@ -608,11 +608,11 @@ class SeaIcePlotter:
                              y     = plot_GI_dict["lat"],
                              fill  = GI_fill_color,
                              style = GI_plot_style)
+                fig.coast(land=land_clr, shorelines=coast_pen)
                 fig.plot(data=ANT_IS, pen=ANT_IS_pen, fill=ANT_IS_color)
+                
             fig.colorbar(position=cbar_pos, frame=cbar_frame)
-        # -------------------------------------------------------------------------
         # Save / Show
-        # -------------------------------------------------------------------------
         if save_fig:
             F_png = f"{cfg['top_name']}_{cfg['bottom_name']}_{sim_name}_ispd_thresh{self.ispd_thresh_str}_{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"
             P_png = P_png if P_png is not None else Path(self.D_graph, sim_name, F_png)
@@ -926,6 +926,201 @@ class SeaIcePlotter:
                 fig.show()
             pygmt.clib.Session.__exit__
 
+    def pygmt_2D_data_prep(self, da,
+                           x_coord_name = None,
+                           y_coord_name = None,
+                           region       = None,
+                           extra_mask   = None,
+                           mask_zero    = None):
+        da2 = da.squeeze(drop=True)
+        if da2.ndim != 2:
+            raise ValueError(f"Expected 2-D data after squeeze; got dims {da2.dims}")
+        x_name = x_coord_name or SI_tools.CICE_dict["lon_coord_name"]
+        y_name = y_coord_name or SI_tools.CICE_dict["lat_coord_name"]
+        xcoord = da2.coords[x_name]
+        ycoord = da2.coords[y_name]
+        if xcoord.ndim == 1 and ycoord.ndim == 1:
+            X2D, Y2D = np.meshgrid(xcoord.values, ycoord.values, indexing="xy")
+        elif xcoord.ndim == 2 and ycoord.ndim == 2:
+            if xcoord.dims != da2.dims or ycoord.dims != da2.dims:
+                da2 = da2.transpose(*xcoord.dims)
+            X2D, Y2D = np.asarray(xcoord.values), np.asarray(ycoord.values)
+        else:
+            raise ValueError("Mixed coord dimensionality.")
+        Z2D = np.asarray(da2.values)
+        # --- decide zero-masking automatically if not specified ---
+        if mask_zero is None:
+            name = (da2.name or "").lower()
+            fv = str(da2.attrs.get("flag_values", "")).strip()
+            is_categorical = ("diff_cat" in name) or (fv in {"0 1 2", "0,1,2"})
+            mask_zero = not is_categorical
+        mask = np.isfinite(Z2D)
+        if mask_zero:
+            mask &= ~np.isclose(Z2D, 0.0, atol=1e-8)
+        if region is not None:
+            xmin, xmax, ymin, ymax = region
+            mask &= (X2D >= xmin) & (X2D <= xmax) & (Y2D >= ymin) & (Y2D <= ymax)
+        if extra_mask is not None:
+            em = np.asarray(extra_mask(da2))
+            if em.shape != Z2D.shape:
+                raise ValueError("extra_mask shape mismatch")
+            mask &= em
+        x = X2D[mask]
+        y = Y2D[mask]
+        z = Z2D[mask]
+        return np.column_stack([x, y, z])
+
+    def pygmt_FIP_figure(self, plot_data,
+                        show_fig      = False,
+                        P_png         = None,
+                        region        = [0, 360, -90, -62],
+                        projection    = "S0.0/-90.0/50/20c",
+                        cmap          = "/g/data/gv90/da1339/GRAPHICAL/CPTs/AF2020_YlGnBu.cpt",
+                        reverse       = False,
+                        series        = [0, 1],
+                        cbar_pos      = "JBC+w15c/1c+mc+h",
+                        cbar_frame    = ["xa0.1f0.05+lFast Ice Persistence"],
+                        basemap_frame = ["af", f"+tAF2020-reG 2000-2018"],
+                        land_color    = "#666666",
+                        water_color   = "#BABCDE",
+                        G_pt_color    = "#FF8903",
+                        G_pt_marker   = "c",       # circle; for squares use "s"
+                        G_pt_size     = "0.05",    # point size (string, no unit)
+                        G_pt_unit     = "c",       # "c" for cm
+                        shoreline_pen = "1/0.25p",
+                        plot_GI         = False,
+                        GI_color        = "#E349D0",
+                        GI_marker       = "s",
+                        GI_size         = "0.01",
+                        GI_pt_unit      = "c",
+                        plot_bathymetry = False,
+                        # --- extras to help with DataArray inputs / categorical plotting ---
+                        var_name      = None,        # e.g., "diff_cat" to trigger categorical mode
+                        lat_coord_name = "lat",
+                        lon_coord_name = "lon",
+                        cat_cmap       = "hawaii",
+                        cat_labels    = ("union", "model dominate", "observation alone"),
+                        cat_series    = (0, 1, 2),   # codes that match cat_labels order
+                        cat_cbar_frame = None, #["+lDifference category"],
+                        # NEW:
+                        weight_da=None,                 # xr.DataArray matching plot_data shape (optional)
+                        weight_to_transparency=True):    # map weight∈[0,1] -> transparency∈[100,0]):
+        """
+        Plot FIP fields with PyGMT. If `var_name` contains 'diff_cat', uses a categorical CPT
+        with codes 0,1,2 => agreement, simulation, observation.
+
+        plot_data:
+        - xr.DataArray with 2-D 'lat' and 'lon' coords, or
+        - pd.DataFrame with columns ['longitude','latitude','z'].
+        """
+        # Prep GI overlay / bathy
+        if plot_GI:
+            SI_tools.load_bgrid(slice_hem=True)
+            GI_mask = (SI_tools.G_t["kmt_org"] == 1) & (SI_tools.G_t["kmt_mod"] == 0)
+            GI_lon  = SI_tools.normalise_longitudes(SI_tools.G_t["lon"].where(GI_mask.astype('float32')), "0-360").values.ravel()
+            GI_lat  = SI_tools.G_t["lat"].where(GI_mask.astype('float32')).values.ravel()
+        if plot_bathymetry:
+            SO_BATH = SI_tools.load_IBCSO_bath()
+        # Convert input to a plotting table
+        if isinstance(plot_data, xr.DataArray):
+            da = plot_data
+            # Use provided var_name if given, else fall back to DataArray.name
+            if var_name is None and hasattr(da, "name") and da.name is not None:
+                var_name = da.name
+            lat = da[lat_coord_name].values.ravel()
+            lon = da[lon_coord_name].values.ravel()
+            val = da.values.ravel()
+            valid = np.isfinite(val)
+            df = pd.DataFrame( {"longitude": lon[valid], "latitude": lat[valid], "z": val[valid]})
+        elif isinstance(plot_data, pd.DataFrame):
+            df = plot_data.copy()
+        else:
+            raise TypeError("plot_data must be an xarray.DataArray or a pandas.DataFrame")
+        # Build the figure + base
+        fig = pygmt.Figure()
+        with pygmt.config(FONT_TITLE           = "22p,Bookman-Demi",
+                          FONT_ANNOT_PRIMARY   = "16p,NewCenturySchlbk-Roman",
+                          FONT_ANNOT_SECONDARY = "16p,NewCenturySchlbk-Bold",
+                          FONT_LABEL           = "16p,NewCenturySchlbk-Bold",
+                          COLOR_FOREGROUND     = "black",):
+            fig.basemap(region=region, projection=projection, frame=basemap_frame)
+            if plot_bathymetry:
+                fig.grdimage(grid=SO_BATH, cmap="geo")
+            else:
+                fig.coast(region=region, projection=projection, land=land_color, water=water_color)
+            # Categorical vs continuous color mapping
+            is_categorical = (var_name is not None) and ("diff_cat" in var_name.lower())
+            if is_categorical:
+                df["z"] = df["z"].astype(int)
+                # categorical CPT + legend
+                codes = np.unique(df["z"].to_numpy())
+                zmin, zmax = int(codes.min()), int(codes.max())
+                if zmax <= zmin:
+                    zmax = zmin + 1
+                pygmt.makecpt(cmap        = cat_cmap or "categorical",
+                              series      = [zmin, zmax, 1],             # e.g., 0..2 step 1
+                              color_model = "+c" + ",".join(cat_labels)) # e.g., "agreement,simulation,observation"
+                if (weight_da is not None) and weight_to_transparency:
+                    # Align weight with the same mask used to build df
+                    if isinstance(plot_data, xr.DataArray):
+                        z_full = plot_data.values.ravel()
+                        valid  = np.isfinite(z_full)
+                        w_full = weight_da.squeeze(drop=True).values.ravel()
+                        wv     = w_full[valid]
+                    else:
+                        # If caller passed a DataFrame, require a 'weight' column
+                        if "weight" not in df.columns:
+                            raise ValueError("With DataFrame input, include a 'weight' column for opacity weighting.")
+                        wv = df["weight"].to_numpy()
+                    # Drop fully transparent points (weight<=0)
+                    keep = wv > 0
+                    if not np.all(keep):
+                        df = df.loc[keep].reset_index(drop=True)
+                        wv = wv[keep]
+                    # Bin weights → a few opacity levels (scalar transparency per batch)
+                    # Bins in weight-space; 4 bins is a good balance of speed and fidelity
+                    w_edges = np.array([0.00, 0.25, 0.50, 0.75, 1.01])
+                    bin_idx = np.digitize(wv, w_edges) - 1  # 0..3
+                    df["_bin"] = bin_idx
+                    # Representative transparency for each bin (tau = (1 - w_center)*100)
+                    tau_for_bin = np.array([87.5, 62.5, 37.5, 12.5], dtype=float)
+                    # Draw by category then by opacity bin (keeps CPT colors + avoids overlap artifacts)
+                    for k in sorted(codes):
+                        sel_k = (df["z"].to_numpy() == int(k))
+                        if not np.any(sel_k):
+                            continue
+                        for b in range(len(tau_for_bin)):
+                            sel = sel_k & (df["_bin"].to_numpy() == b)
+                            if not np.any(sel):
+                                continue
+                            fig.plot(data         = df.loc[sel],
+                                     style        = f"{G_pt_marker}{G_pt_size}{G_pt_unit}",
+                                     cmap         = True,
+                                     transparency = float(tau_for_bin[b]))   # <-- SCALAR, not array
+                    # Clean up helper column
+                    df.drop(columns=["_bin"], inplace=True)
+                else:
+                    # No weighting: single draw
+                    fig.plot(data  = df,
+                             style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}",
+                             cmap  = True)
+                fig.colorbar(position=cbar_pos, frame=cat_cbar_frame)
+            else:
+                # Continuous CPT (default behavior)
+                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
+                fig.plot(data  = df,
+                         style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}",
+                         cmap  = True)
+                fig.colorbar(position=cbar_pos, frame=cbar_frame)
+            if plot_GI:
+                fig.plot(x=GI_lon, y=GI_lat, fill=GI_color, style=f"{GI_marker}{GI_size}{GI_pt_unit}")
+            fig.coast(region=region, projection=projection, shorelines=shoreline_pen)
+        if P_png:
+            fig.savefig(P_png)
+        if show_fig:
+            fig.show()
+        return fig
+
     def _smooth_df_time(self, df: pd.DataFrame, window, center=True, min_periods=1):
         """
         Smooth a time series in df with columns ['time','data'].
@@ -941,39 +1136,58 @@ class SeaIcePlotter:
         out["data"] = s_sm.values
         return out
 
+    def _repeat_doy_over_range(self, df_time_data, full_range, time_coord="time"):
+        src         = df_time_data.copy()
+        src["doy"]  = src[time_coord].dt.dayofyear
+        clim_lookup = src.groupby("doy")["data"].mean()  # index = 1..365 or 366
+        rep         = pd.DataFrame({"time": full_range})
+        rep["doy"]  = rep["time"].dt.dayofyear
+        # handle leap day: if 366 not in lookup, remap DOY=366 -> 365
+        if 366 not in clim_lookup.index:
+            rep["doy_eff"] = rep["doy"].where(rep["doy"] != 366, 365)
+        else:
+            rep["doy_eff"] = rep["doy"]
+        rep["rep"] = rep["doy_eff"].map(clim_lookup)
+        return rep[["time", "rep"]]
+
     def pygmt_timeseries(self, ts_dict,
-                        comp_name    : str   = "test",
-                        primary_key  : str   = "FIA",
-                        smooth       : str|int|None = None,   # NEW: e.g., 15, "15D"
-                        clim_smooth  : int|None = None, 
-                        climatology  : bool  = False,
-                        ylabel       : str   = "@[Fast Ice Area (1\\times10^3 km^2)@[",
-                        ylim         : tuple = [0,1000],
-                        yaxis_pri    : int   = None,
-                        ytick_pri    : int   = 100,
-                        ytick_sec    : int   = 50,
-                        projection   : str   = None,
-                        fig_width    : str   = None,
-                        fig_height   : str   = None,
-                        xaxis_pri    : str   = None,
-                        xaxis_sec    : str   = None,
-                        frame_bndy   : str   = "WS",
-                        legend_pos   : str   = None,
-                        legend_box   : str   = "+gwhite+p0.5p",
-                        fmt_dt_pri   : str   = None,
-                        fmt_dt_sec   : str   = None,
-                        fmt_dt_map   : str   = None,
-                        fnt_type     : str   = "Helvetica",
-                        fnt_wght_lab : str   = "20p",
-                        fnt_wght_ax  : str   = "18p",
-                        line_pen    : str    = "1p",
-                        grid_wght_pri: str   = ".25p",
-                        grid_wght_sec: str   = ".1p",
-                        P_png        : str   = None,
-                        time_coord   : str   = "time",
-                        keys2plot    : list  = None,
-                        save_fig     : bool  = None,
-                        show_fig     : bool  = None):
+                        comp_name        : str   = "test",
+                        primary_key      : str   = "FIA",
+                        smooth           : str|int | None = None,   # NEW: e.g., 15, "15D"
+                        clim_smooth      : int | None = None, 
+                        climatology      : bool  = False,
+                        ylabel           : str   = "@[Fast Ice Area (1\\times10^3 km^2)@[",
+                        ylim             : tuple = [0,1000],
+                        yaxis_pri        : int   = None,
+                        ytick_pri        : int   = 100,
+                        ytick_sec        : int   = 50,
+                        projection       : str   = None,
+                        fig_width        : str   = None,
+                        fig_height       : str   = None,
+                        xaxis_pri        : str   = None,
+                        xaxis_sec        : str   = None,
+                        frame_bndy       : str   = "WS",
+                        legend_pos       : str   = None,
+                        legend_box       : str   = "+gwhite+p0.5p",
+                        fmt_dt_pri       : str   = None,
+                        fmt_dt_sec       : str   = None,
+                        fmt_dt_map       : str   = None,
+                        fnt_type         : str   = "Helvetica",
+                        fnt_wght_lab     : str   = "20p",
+                        fnt_wght_ax      : str   = "18p",
+                        line_pen         : str    = "1p",
+                        grid_wght_pri    : str   = ".25p",
+                        grid_wght_sec    : str   = ".1p",
+                        P_png            : str   = None,
+                        time_coord       : str   = "time",
+                        time_coord_alt   : str   = "date",
+                        keys2plot        : list  = None,
+                        repeat_keys      : list[str] | None = None,
+                        repeat_policy    : str  = "inside_others",      # "inside_others" | "outside_others" | "fill_gaps" | "always"
+                        repeat_ref_keys  : list[str] | None = None,  # which keys define the "others" window; default: all except current
+                        clip_x_axis      : bool  = False,
+                        save_fig         : bool  = None,
+                        show_fig         : bool  = None):
         """
         Plot time series of a primary variable (e.g., FIA) for a set of simulations or observations.
 
@@ -1007,6 +1221,21 @@ class SeaIcePlotter:
             If provided, only datasets with keys in this list are plotted.
         show_fig : bool or None
             If True, show figure interactively. Defaults to self.show_fig.
+        repeat_keys : list[str] or None
+            Keys in `ts_dict` to plot as a repeated day-of-year climatology when
+            `climatology=False`.
+        repeat_policy : {"outside_others","fill_gaps","always"}
+            - "outside_others": keep original values where *other* series exist in time,
+            but replace values outside that union with day-of-year climatology of
+            the nominated series (good for fair comparison).
+            - "fill_gaps": use climatology only where the nominated series has no data,
+            keep original where it does.
+            - "always": ignore original values and plot the repeated climatology across
+            the full x-range.
+        repeat_ref_keys : list[str] or None
+            If provided, these keys define the "others" time span for the
+            "outside_others" policy. By default, it's all plotted series except the
+            current one.
         """
         show_fig   = show_fig   if show_fig   is not None else self.show_fig
         save_fig   = save_fig   if save_fig   is not None else self.save_fig
@@ -1015,6 +1244,32 @@ class SeaIcePlotter:
         fmt_dt_map = fmt_dt_map if fmt_dt_map is not None else "o"
         # need to get out the maximum times for plot boundaries
         tmin, tmax = self.extract_min_max_dates(ts_dict, keys2plot=keys2plot, primary_key=primary_key, time_coord=time_coord)
+        # --- normalize new params ---
+        if isinstance(repeat_keys, (str, bytes)):
+            repeat_keys = [repeat_keys]
+        repeat_keys = set(repeat_keys or [])
+        if isinstance(repeat_ref_keys, (str, bytes)):
+            repeat_ref_keys = [repeat_ref_keys]
+        x_start, x_end = tmin, tmax
+        if (not climatology) and clip_x_axis and repeat_keys:
+            # reference keys = all plotted except the repeated ones, unless user specified
+            if repeat_ref_keys:
+                ref_keys = set(repeat_ref_keys)
+            else:
+                ref_keys = {k for k in ts_dict.keys()
+                            if (keys2plot is None or k in (keys2plot or []))
+                            and k not in repeat_keys}
+
+            other_mins, other_maxs = [], []
+            for k in ref_keys:
+                da2 = ts_dict[k][primary_key]
+                tt2 = pd.to_datetime(da2[time_coord].values)
+                if len(tt2) > 0:
+                    other_mins.append(tt2.min()); other_maxs.append(tt2.max())
+
+            if other_mins:  # only override if we actually have refs
+                x_start = pd.to_datetime(min(other_mins)).normalize()
+                x_end   = pd.to_datetime(max(other_maxs)).normalize()
         # there are differences in the projection and x-axis for the two types of figures
         if climatology:
             fake_year  = 1996
@@ -1028,7 +1283,7 @@ class SeaIcePlotter:
             fig_height = fig_height if fig_height is not None else "15c"
             xaxis_pri  = xaxis_pri  if xaxis_pri  is not None else "a2Of30Dg30D"
             xaxis_sec  = xaxis_sec  if xaxis_sec  is not None else "a1Y"
-            region     = [tmin.strftime("%Y-%m-%d"), tmax.strftime("%Y-%m-%d"), ylim[0], ylim[1]]
+            region     = [x_start.strftime("%Y-%m-%d"), x_end.strftime("%Y-%m-%d"), ylim[0], ylim[1]]
         # define the projection and frame of the figure
         legend_pos = legend_pos if legend_pos is not None else f"JTL+jTL+o0.2c+w{fig_width}"
         projection = f"X{fig_width}/{fig_height}"
@@ -1043,7 +1298,6 @@ class SeaIcePlotter:
                           FONT                      = f"{fnt_wght_ax},{fnt_type}",
                           MAP_GRID_PEN_PRIMARY      = grid_wght_pri,
                           MAP_GRID_PEN_SECONDARY    = grid_wght_sec,
-                          #MAP_TICK_LENGTH_PRIMARY = "0.1c",
                           FORMAT_TIME_PRIMARY_MAP   = fmt_dt_pri,
                           FORMAT_TIME_SECONDARY_MAP = fmt_dt_sec,
                           FORMAT_DATE_MAP           = fmt_dt_map):
@@ -1057,9 +1311,15 @@ class SeaIcePlotter:
                 self.logger.info(f"pulling out data array for {dict_key} and putting into dataframe")
                 self.logger.info(f"legend label: {leg_lab}")
                 self.logger.info(f"line color  : {line_color}")
-                df = pd.DataFrame({"time": pd.to_datetime(da[time_coord].values), "data": da.values})
+                if dict_key=="AF2020" and primary_key=="FIA":
+                    df = pd.DataFrame({"time": pd.to_datetime(da[time_coord_alt].values), "data": da.values})
+                else:
+                    df = pd.DataFrame({"time": pd.to_datetime(da[time_coord].values), "data": da.values})
                 if climatology:
-                    clim = self.compute_doy_climatology(da)
+                    if dict_key=="AF2020" and primary_key=="FIA":
+                        clim = self.compute_doy_climatology(da, time_coord=time_coord_alt)
+                    else:
+                        clim = self.compute_doy_climatology(da)
                     mean_x = clim['mean'].index
                     mean_y = clim['mean'].values
                     if clim_smooth is not None and clim_smooth > 1:
@@ -1078,23 +1338,87 @@ class SeaIcePlotter:
                              label = leg_lab)
                 else:
                 # Repeat AF2020 across the full date range if needed
-                    if (dict_key=='AF2020') and primary_key=="FIA":
+                    # if (dict_key=='AF2020') and primary_key=="FIA":
+                    #     t_start, t_end = tmin.normalize(), tmax.normalize()
+                    #     full_range = pd.date_range(t_start, t_end, freq='D')
+                    #     # Build a repeated time series using day-of-year as lookup
+                    #     df["doy"] = df["time"].dt.dayofyear
+                    #     #print(df)
+                    #     #clim_lookup = df.set_index("doy")["data"]
+                    #     clim_lookup = df.groupby("doy")["data"].mean()
+                    #     repeated_df = pd.DataFrame({"time": full_range})
+                    #     repeated_df["doy"] = repeated_df["time"].dt.dayofyear
+                    #     #print(repeated_df)
+                    #     repeated_df["data"] = repeated_df["doy"].map(clim_lookup)
+                    #     repeated_df = self._smooth_df_time(repeated_df, window=smooth)
+                    #     fig.plot(x=repeated_df["time"], y=repeated_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
+                    # else:
+                    #     df_sm = self._smooth_df_time(df, window=smooth)
+                    #     fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)            
+                    if dict_key in repeat_keys:
+                        # target x-range (union for figure)
                         t_start, t_end = tmin.normalize(), tmax.normalize()
-                        full_range = pd.date_range(t_start, t_end, freq='D')
-                        # Build a repeated time series using day-of-year as lookup
-                        df["doy"] = df["time"].dt.dayofyear
-                        #print(df)
-                        #clim_lookup = df.set_index("doy")["data"]
-                        clim_lookup = df.groupby("doy")["data"].mean()
-                        repeated_df = pd.DataFrame({"time": full_range})
-                        repeated_df["doy"] = repeated_df["time"].dt.dayofyear
-                        #print(repeated_df)
-                        repeated_df["data"] = repeated_df["doy"].map(clim_lookup)
-                        repeated_df = self._smooth_df_time(repeated_df, window=smooth)
-                        fig.plot(x=repeated_df["time"], y=repeated_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
+                        full_range = pd.date_range(t_start, t_end, freq="D")
+
+                        # repeated climatology over the full range
+                        rep_df = self._repeat_doy_over_range(df, full_range)  # cols: time, rep
+
+                        # original reindexed over full range
+                        base = pd.DataFrame({"time": full_range}).merge(df.rename(columns={"data": "orig"}), on="time", how="left")
+                        mix = base.merge(rep_df, on="time", how="left")
+                        if repeat_policy == "always":
+                            out_df = mix[["time", "rep"]].rename(columns={"rep": "data"})
+                        elif repeat_policy == "fill_gaps":
+                            mix["data"] = mix["orig"].fillna(mix["rep"])
+                            out_df = mix[["time", "data"]]
+                        elif repeat_policy in ("outside_others", "inside_others"):
+                            # Determine the "others" window
+                            if repeat_ref_keys is not None:
+                                ref_keys = set(repeat_ref_keys)
+                            else:
+                                ref_keys = set(k for k in ts_dict.keys()
+                                            if k != dict_key and (keys2plot is None or k in keys2plot))
+
+                            if len(ref_keys) == 0:
+                                # no refs -> behave like fill_gaps (but still allow inside_others to clip nothing)
+                                mix["data"] = mix["orig"].fillna(mix["rep"])
+                                if repeat_policy == "inside_others":
+                                    mix.loc[:, "data"] = np.nan  # nothing to show if no reference window
+                                out_df = mix[["time", "data"]]
+                            else:
+                                # compute min/max over "others"
+                                other_mins, other_maxs = [], []
+                                for k in ref_keys:
+                                    d2 = ts_dict[k][primary_key]
+                                    tt = pd.to_datetime(d2[time_coord].values)
+                                    if len(tt) > 0:
+                                        other_mins.append(tt.min()); other_maxs.append(tt.max())
+                                other_min = pd.to_datetime(min(other_mins)).normalize()
+                                other_max = pd.to_datetime(max(other_maxs)).normalize()
+
+                                inside = (mix["time"] >= other_min) & (mix["time"] <= other_max)
+                                # inside the others’ window: use original where present, else repeated
+                                mix.loc[inside, "data"] = mix.loc[inside, "orig"].fillna(mix.loc[inside, "rep"])
+
+                                if repeat_policy == "inside_others":
+                                    # outside -> hide (clip)
+                                    mix.loc[~inside, "data"] = np.nan
+                                else:
+                                    # outside -> use repeated climatology
+                                    mix.loc[~inside, "data"] = mix.loc[~inside, "rep"]
+
+                                out_df = mix[["time", "data"]]
+
+                        else:
+                            raise ValueError(f"Unknown repeat_policy: {repeat_policy}")
+
+                        # optional smoothing after composition
+                        out_df = self._smooth_df_time(out_df, window=smooth)
+                        fig.plot(x=out_df["time"], y=out_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
                     else:
                         df_sm = self._smooth_df_time(df, window=smooth)
-                        fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)                
+                        fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
+    
             fig.legend(position=legend_pos, box=legend_box)
         if save_fig:
             F_png = f"{primary_key}_{comp_name}_{'climatology_' if climatology else ''}{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"

@@ -1,0 +1,75 @@
+#!/bin/bash
+#PBS -P gv90
+#PBS -q normalbw
+#PBS -l ncpus=16,mem=64GB,walltime=10:00:00,jobfs=30GB
+#PBS -l storage=scratch/gv90+gdata/gv90+gdata/xp65+gdata/ik11+gdata/jk72
+#PBS -N fi_methods_comp
+#PBS -J 7-20
+#PBS -r y
+#PBS -o fi_methods_comp.$PBS_JOBID.out
+#PBS -e fi_methods_comp.$PBS_JOBID.err
+#PBS -m ae
+
+set -euo pipefail
+
+module purge
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_MAX_THREADS=1
+
+# --- Paths (define scratch base explicitly; avoid $SCRATCH) ---
+PROJECT_CODE="gv90"                              # keep in sync with #PBS -P
+SCRATCH_BASE="/scratch/${PROJECT_CODE}/${USER}"  # define even if $SCRATCH is unset
+mkdir -p "${SCRATCH_BASE}"
+
+# Workspace for partial CSVs
+export OUTDIR="${SCRATCH_BASE}/afim/methods_comp/elps-min"
+mkdir -p "${OUTDIR}"
+
+# Dask temp
+IDX="${PBS_ARRAY_INDEX:-merge}"  # safe default if not an array task
+export DASK_TEMPORARY_DIRECTORY="${SCRATCH_BASE}/dask-tmp/${PBS_JOBID}_${IDX}"
+mkdir -p "${DASK_TEMPORARY_DIRECTORY}"
+
+PY_SCRIPT="${HOME}/AFIM/src/AFIM/scripts/classification/FI_classify_methods_comparison.py"
+
+SIM="elps-min"
+DT0="1994-01-01"
+DTN="2023-12-31"
+ISPDT="5e-4"
+
+echo "[$(date)] Host=${HOSTNAME} Job=${PBS_JOBID} ArrayIndex=${PBS_ARRAY_INDEX:-NA}"
+echo "OUTDIR=${OUTDIR}"
+echo "DASK_TEMPORARY_DIRECTORY=${DASK_TEMPORARY_DIRECTORY}"
+
+# MERGE mode composes final LaTeX+PNG after array completes (submit with: -v MERGE=1)
+if [[ "${MERGE:-0}" == "1" ]]; then
+  python -u "${PY_SCRIPT}" \
+    --sim-name "${SIM}" \
+    --dt0 "${DT0}" \
+    --dtN "${DTN}" \
+    --ispd "${ISPDT}" \
+    --out-dir "${OUTDIR}" \
+    --merge-only
+  echo "[$(date)] Merge step complete."
+  exit 0
+fi
+
+# Array mode: one window per sub-job (7..20)
+WIN="${PBS_ARRAY_INDEX:?PBS_ARRAY_INDEX not set; submit with -J 7-20 (or a sub-range)}"
+CNT_SPAN=3  # cnt=win, win-1, win-2
+
+echo "[$(date)] Starting window=${WIN} (cnt span=${CNT_SPAN})"
+python -u "${PY_SCRIPT}" \
+  --sim-name "${SIM}" \
+  --dt0 "${DT0}" \
+  --dtN "${DTN}" \
+  --ispd "${ISPDT}" \
+  --win "${WIN}" \
+  --cnt-span "${CNT_SPAN}" \
+  --out-dir "${OUTDIR}"
+echo "[$(date)] Window ${WIN} done."

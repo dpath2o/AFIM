@@ -255,7 +255,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.leap_year          = self.config.get("leap_year"         , 1996)
         self.CICE_dict          = self.config.get("CICE_dict"         , {})
         self.GI_dict            = self.config.get('GI_dict'           , {})
-        self.NSIDC_dict         = self.config.get('NSIDC_dict'        , {}) 
+        self.NSIDC_dict         = self.config.get('NSIDC_dict'        , {})
+        self.BAS_dict           = self.config.get('BAS_dict'          , {}) 
         self.AF_FI_dict         = self.config.get("AF_FI_dict"        , {})
         self.Sea_Ice_Obs_dict   = self.config.get("Sea_Ice_Obs_dict"  , {})
         self.AOM2_dict          = self.config.get("AOM2_dict"         , {})
@@ -315,7 +316,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             self.GI_thin             = self.sim_config.get('GI_thin_fact')
             self.GI_version          = self.sim_config.get('GI_version')
             self.GI_iteration        = self.sim_config.get("GI_iter")
-            if self.GI_thin>0:
+            if self.GI_thin is not None:
                 self.use_gi    = True
                 GI_thin_str    = f"{self.GI_thin:0.2f}".replace('.', 'p')
                 GI_vers_str    = f"{self.GI_version:0.2f}".replace('.', 'p')
@@ -350,23 +351,19 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(log_level)
         self.logger.propagate = False
-
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
         # === Remove any old file handlers pointing to other files ===
         if logfile:
             for h in list(self.logger.handlers):
                 if isinstance(h, logging.FileHandler):
                     self.logger.removeHandler(h)
                     h.close()
-
         # === Add stream handler if none exists ===
         if not any(isinstance(h, logging.StreamHandler) for h in self.logger.handlers):
             ch = logging.StreamHandler()
             ch.setFormatter(formatter)
             ch.setLevel(log_level)
             self.logger.addHandler(ch)
-
         # === Add (new) file handler ===
         if logfile:
             fh = logging.FileHandler(logfile, mode='a')  # always attach new one
@@ -374,7 +371,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             fh.setLevel(log_level)
             self.logger.addHandler(fh)
             self.logger.info(f"log file connected: {logfile}")
-
 
     def _method_name(self):
         import inspect
@@ -737,7 +733,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         """
         # First get [0, 360)
         lon_wrapped = ((lon % 360) + 360) % 360  # safe for negatives, NaNs pass through
-
         if to == "0-360":
             # Collapse values extremely close to 360 back to 0
             if isinstance(lon_wrapped, xr.DataArray):
@@ -745,7 +740,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             else:
                 lon_wrapped = np.where(np.isclose(lon_wrapped, 360.0, atol=eps), 0.0, lon_wrapped)
             return lon_wrapped
-
         elif to == "-180-180":
             lon_180 = ((lon_wrapped + 180.0) % 360.0) - 180.0  # -> (-180, 180]
             # Prefer [-180, 180) by mapping exactly 180 to -180
@@ -754,7 +748,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             else:
                 lon_180 = np.where(np.isclose(lon_180, 180.0, atol=eps), -180.0, lon_180)
             return lon_180
-
         else:
             raise ValueError("to must be '0-360' or '-180-180'")
 
@@ -1480,18 +1473,18 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         return ds_all
 
     def load_classified_ice(self,
-                            sim_name=None,
-                            bin_days=True,
-                            roll_mean=False,
-                            ispd_thresh=None,
-                            ice_type=None,
-                            ivec_type=None,
-                            variables=None,
-                            dt0_str=None,
-                            dtN_str=None,
-                            D_zarr=None,
-                            chunks=None,
-                            persist=False):
+                            sim_name    : str   = None,
+                            bin_days    : bool  = True,
+                            roll_mean   : bool  = False,
+                            ispd_thresh : float = None,
+                            ice_type    : str   = None,
+                            ivec_type   : str   = None,
+                            variables   : list  = None,
+                            dt0_str     : str   = None,
+                            dtN_str     : str   = None,
+                            D_zarr      : str   = None,
+                            chunks      : dict  = None,
+                            persist     : bool  = False):
         def drop_duplicate_coords(ds, dim="ni"):
             if dim in ds.coords:
                 _, index = np.unique(ds[dim], return_index=True)

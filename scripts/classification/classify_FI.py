@@ -20,12 +20,12 @@ def run_loop(sim_name,
              delete_original_iceh = False):
     SI_tool_mgr = SeaIceToolboxManager(P_log=log_file)
     ispd_thresh = float(ispd_thresh)
-    SI_tools    = SI_tool_mgr.get_toolbox(P_json      = json_path,
-                                          dt0_str     = start_date,
-                                          dtN_str     = end_date,
-                                          sim_name    = sim_name,
-                                          ispd_thresh = ispd_thresh,
-                                          ivec_type   = ivec_type,)
+    SI_tools    = SI_tool_mgr.get_toolbox(P_json              = json_path,
+                                          dt0_str             = start_date,
+                                          dtN_str             = end_date,
+                                          sim_name            = sim_name,
+                                          ice_speed_threshold = ispd_thresh,
+                                          ice_vector_type     = ivec_type)
     SI_tools.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
     SI_tools.define_datetime_vars()
     for yr0_str,yrN_str in zip(SI_tools.yr0_strs,SI_tools.yrN_strs):

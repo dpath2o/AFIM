@@ -121,6 +121,20 @@ class SeaIceMetrics:
                 del ds[var].encoding['chunks']
         return ds.chunk(None)
 
+    def fast_ice_metrics_data_dict(self, FI_mask, FI_data, A):
+        """
+        Utility function to create the dictionary for each FI type (dy, rl, bn).
+        """
+        return {"FI_mask"  : FI_mask,
+                'aice'     : FI_data['aice'],
+                'hi'       : FI_data['hi'],
+                'strength' : FI_data['strength'],
+                'dvidtt'   : FI_data['dvidtt'],
+                'dvidtd'   : FI_data['dvidtd'],
+                'daidtt'   : FI_data['daidtt'],
+                'daidtd'   : FI_data['daidtd'],
+                'tarea'    : A}
+
     def compute_sea_ice_metrics(self, da_dict,
                                 ice_type       = None,
                                 dt0_str        = None,
@@ -231,7 +245,7 @@ class SeaIceMetrics:
             IA_seasonal = {}
         # --- Persistence Statistics ---
         try:
-            IP_stab = self.persistence_stability_index(IP, A)
+            IP_stab = self.persistence_stability_index(I_mask, A)
         except Exception as e:
             self.logger.warning(f"persistence_stability_index failed: {e}")
             IP_stab = {}
@@ -273,7 +287,7 @@ class SeaIceMetrics:
         ice_type    = ice_type       if ice_type    is not None else self.ice_type
         ispd_thresh = ispd_thresh    if ispd_thresh is not None else self.ispd_thresh
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        D_mets      = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}", "metrics")
+        D_mets      = Path(self.D_zarr, f"ispd_thresh_{ispd_thresh_str}")
         P_mets      = Path(D_mets, f"{ice_type}_{spatial_grid_type}_mets.zarr") if spatial_grid_type is not None else Path(D_mets, f"{ice_type}_mets.zarr")
         return xr.open_dataset(P_mets)
 
@@ -814,7 +828,9 @@ class SeaIceMetrics:
         return summary
 
     # PERSISTENCE METRICS
-    def persistence_stability_index(self, ice_prstnc, A, persistence = 0.8):
+    def persistence_stability_index(self, I_mask, A,
+                                    persistence = 0.8,
+                                    winter_months=(5,6,7,8,9,10)):
         """
         Compute the Hemispheric Persistence Stability Index.
 
@@ -849,79 +865,160 @@ class SeaIceMetrics:
         ice_prstnc = ice_prstnc.load()
         if 'time' in A.dims:
             A = A.isel(time=0).drop_vars('time')
-        prstnc_mask     = ice_prstnc >= persistence      
-        always_mask     = ice_prstnc > 0                 
+        winter_prstnc   = I_mask["time"].dt.month.isin(list(months))
+        prstnc_mask     = winter_prstnc >= persistence      
+        always_mask     = winter_prstnc > 0                 
         prstnc_A        = (A.where(prstnc_mask)).sum(dim=self.CICE_dict["spatial_dims"])
         ttl_A           = (A.where(always_mask)).sum(dim=self.CICE_dict["spatial_dims"])
         prstnc_A, ttl_A = dask.compute(prstnc_A, ttl_A)
         psi             = (prstnc_A / ttl_A) if ttl_A > 0 else np.nan
         return {"persistence_stability_index": psi}
 
-    def persistence_ice_distance_mean_max(self, ice_prstnc, persistence_min=0.8):
+    def _prepare_BAS_coast(self,
+                           path_coast_shape  : str   =  None,
+                           crs_out           : str   = "EPSG:3031",
+                           target_spacing_km : float = 1.0):
         """
-        Estimate how far sea ice (e.g., fast or pack ice) extends from the coast.
+        Load BAS high-res coastline polygons and build a KD-Tree of densified coastline points in a metric CRS (default EPSG:3031).
+        Caches results on `self` to avoid repeated work.
 
-        This function calculates the mean and maximum distance of persistent sea ice presence
-        from the coastline using a Euclidean distance transform. Rather than assuming constant
-        grid spacing, it leverages the native grid cell area (`TAREA`) to estimate physical
-        distances in kilometers. Grid cells are included if their ice persistence exceeds
-        `persistence_min`.
+        source: https://add-catalogue.data.bas.ac.uk/records/9b4fab56-4999-4fe1-b17f-1466e41151c4.html
 
         Parameters
         ----------
-        ice_prstnc : xarray.DataArray
-            Time-averaged presence of sea ice (e.g., fast ice mask mean over time).
-        persistence_min : float, optional
-            Minimum persistence threshold to include a grid cell in the analysis (default is 0.5).
+        shp_path : str
+            Path to the polygon shapefile (e.g., ".../add_coastline_high_res_polygon_v7_9.shp").
+        crs_out : str
+            Target projected CRS for metric distances (e.g., EPSG:3031).
+        target_spacing_km : float
+            Approx spacing along the coastline (km) for densification.
 
-        Returns
-        -------
-        dict
-            Dictionary containing:
-            - 'persistence_mean_dist' : float
-                Mean distance (km) from coastline for cells with persistent ice.
-            - 'persistence_max_dist' : float
-                Maximum such distance (km).
-
-        Notes
-        -----
-        - Requires the B-grid (`self.G_t`) to be loaded with `kmt_mod` and `area` fields.
-        - Automatically reloads the B-grid with hemisphere slicing if needed.
-        - Identifies coastal ocean grid cells using binary dilation.
-        - Uses `TAREA` (in m^2) to derive an approximate local grid spacing.
+        Sets
+        ----
+        self._coast_kdtree  : scipy.spatial.cKDTree instance in projected coords
+        self._coast_xy_proj : (x_coast, y_coast) ndarray tuple (meters)
+        self._coast_crs     : str of the projected CRS
         """
-        from scipy.ndimage import distance_transform_edt, binary_dilation
+        import geopandas      as gpd
+        from scipy.spatial    import cKDTree
+        from shapely.geometry import LineString, Polygon, MultiPolygon
+        from shapely.ops      import unary_union
+        P_shp = path_coast_shape if path_coast_shape is not None else self.BAS_dict["P_Ant_Cstln"]
+        self.logger.info(f"Loading coastline polygons: {P_shp}")
+        gdf = gpd.read_file(P_shp)
+        # Reproject to metric CRS (EPSG:3031 by default)
+        if gdf.crs is None:
+            self.logger.warning("Input CRS is None; assuming EPSG:4326 (lon/lat).")
+            gdf = gdf.set_crs("EPSG:4326", allow_override=True)
+        gdf = gdf.to_crs(crs_out)
+        # Merge polygons to avoid duplicate edges (optional but helpful)
+        self.logger.info("Merging polygons and extracting boundaries...")
+        geom = unary_union(gdf.geometry.values)  # MultiPolygon | Polygon
+        if isinstance(geom, Polygon):
+            polygons = [geom]
+        elif isinstance(geom, MultiPolygon):
+            polygons = list(geom.geoms)
+        else:
+            # In case the file already has lines, just take them
+            polygons = []
+        # Convert polygon exteriors to lines (ignore interiors/holes for coastline)
+        lines = []
+        for poly in polygons:
+            try:
+                lines.append(LineString(poly.exterior.coords))
+            except Exception:
+                pass
+        # If there are already line features in the shapefile, add them too
+        lines.extend([g for g in gdf.geometry.values if g.geom_type.lower().endswith("linestring")])
+        if not lines:
+            raise ValueError("No coastline linework could be derived from the polygons/lines in the shapefile.")
+        # Densify lines at ~target spacing
+        spacing_m = max(100.0, float(target_spacing_km) * 1000.0)  # clip at >=100 m
+        pts_x, pts_y = [], []
+        for ln in lines:
+            try:
+                length = ln.length
+                if not np.isfinite(length) or length <= 0:
+                    continue
+                n = max(2, int(np.ceil(length / spacing_m)) + 1)
+                # sample [0,1] along the line
+                for f in np.linspace(0.0, 1.0, n):
+                    p = ln.interpolate(f, normalized=True)
+                    xy = p.coords[0]
+                    pts_x.append(xy[0])
+                    pts_y.append(xy[1])
+            except Exception:
+                continue
+        x_coast = np.asarray(pts_x, dtype=float)
+        y_coast = np.asarray(pts_y, dtype=float)
+        if x_coast.size == 0:
+            raise RuntimeError("Coastline densification produced zero points.")
+        self.logger.info(f"Built coastline point set: {x_coast.size:,} pts @ ~{target_spacing_km} km spacing.")
+        kdt = cKDTree(np.column_stack([x_coast, y_coast]))
+        # Cache
+        self._coast_kdtree  = kdt
+        self._coast_xy_proj = (x_coast, y_coast)
+        self._coast_crs     = crs_out
+
+    def persistence_ice_distance_mean_max(self, ice_prstnc,
+                                          persistence_min  : float = 0.8,
+                                          path_coast_shape : str = None,
+                                          crs_out          : str = "EPSG:3031"):
+        """
+        Mean/max distance from the USNIC/ADD coastline for persistent fast ice.
+        Uses a densified coastline KD-Tree in a metric CRS (default EPSG:3031).
+
+        Assumes `ice_prstnc` is a persistence field in [0..1] computed from a
+        binary fast-ice mask over the austral-winter window (e.g., May–Oct).
+        """
+        from pyproj import Transformer
+        P_shp = path_coast_shape if path_coast_shape is not None else self.BAS_dict["P_Ant_Cstln"]
+        # Ensure grid and shapes
         spat_dims = self.CICE_dict["spatial_dims"]
-        self.logger.info("Computing persistence distance statistics mean & max")
+        self.logger.info("Computing persistence distance (USNIC coastline KD-Tree)")
         ice_prstnc = ice_prstnc.load()
-        # Ensure bgrid is loaded and check for shape match
         if not getattr(self, "bgrid_loaded", False):
             self.load_bgrid(slice_hem=True)
-        kmt = self.G_t['kmt_mod'].values
-        if kmt.shape != tuple(ice_prstnc.sizes[dim] for dim in spat_dims):
-            kmt = None
-            self.logger.warning("    grid shape mismatch detected: reloading bgrid with slice_hem=True")
+        Gt = self.G_t
+        # Lon/lat names (adjust if your b-grid uses different ones)
+        lon_name = 'TLON' if 'TLON' in Gt else ('lon' if 'lon' in Gt else None)
+        lat_name = 'TLAT' if 'TLAT' in Gt else ('lat' if 'lat' in Gt else None)
+        if lon_name is None or lat_name is None:
+            raise KeyError("Could not find lon/lat fields (TLON/TLAT or lon/lat) in self.G_t.")
+        # Shape check
+        grid_shape = tuple(ice_prstnc.sizes[d] for d in spat_dims)
+        if grid_shape != Gt[lon_name].shape:
+            self.logger.warning("Grid mismatch detected; reloading b-grid with slice_hem=True")
             self.load_bgrid(slice_hem=True)
-            kmt = self.G_t['kmt_mod'].values
-        land_mask   = (kmt == 0)
-        sea_mask    = ~land_mask
-        cst_mask    = sea_mask & binary_dilation(land_mask)
-        dist_idx    = distance_transform_edt(~cst_mask)
-        tarea       = self.G_t['area'].values
-        grid_dx_km  = np.sqrt(tarea) / 1000.0
-        cst_dist_km = dist_idx * grid_dx_km
-        dist_da     = xr.DataArray(data   = cst_dist_km,
-                                   dims   = spat_dims,
-                                   coords = {dim: ice_prstnc[dim] for dim in spat_dims},
-                                   name   = "distance_to_coast")
-        self.logger.info(f"    applying persistence minimum filter {persistence_min} to ice persistence data array")
-        prstnc_filt = (ice_prstnc >= persistence_min)
-        self.logger.info("   comptuing distances...")
-        ice_dists   = dist_da.where(prstnc_filt).compute()
-        mean_dist   = ice_dists.mean().values
-        max_dist    = ice_dists.max().values
-        return {f'persistence_mean_distance': mean_dist,
-                f'persistence_max_distance': max_dist}
+            Gt = self.G_t
+            if tuple(ice_prstnc.sizes[d] for d in spat_dims) != Gt[lon_name].shape:
+                raise ValueError("ice_prstnc and grid coordinate shapes still mismatch after reload.")
+        # Prepare coastline KD-Tree once
+        need_kdtree = (not hasattr(self, "_coast_kdtree")) or (getattr(self, "_coast_crs", None) != crs_out)
+        if need_kdtree:
+            self._prepare_BAS_coast(P_shp, crs_out=crs_out, target_spacing_km=1.0)
+        # Persistent FI mask
+        prst = (ice_prstnc >= float(persistence_min)).values
+        if not np.any(prst):
+            self.logger.warning("No persistent fast-ice cells found at this threshold.")
+            return {"persistence_mean_distance": np.nan,
+                    "persistence_max_distance":  np.nan}
+        # Project grid cell centres to metric CRS
+        lon = np.asarray(Gt[lon_name].values)
+        lat = np.asarray(Gt[lat_name].values)
+        transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
+        x_all, y_all = transformer.transform(lon, lat)
+        # Query KD-Tree for all persistent cells
+        iy, ix = np.where(prst)  # spat_dims order matters: (nj, ni)
+        x_p = x_all[iy, ix]
+        y_p = y_all[iy, ix]
+        if x_p.size == 0:
+            return {"persistence_mean_distance": np.nan,
+                    "persistence_max_distance":  np.nan}
+        d_m, _ = self._coast_kdtree.query(np.column_stack([x_p, y_p]), k=1)
+        d_km   = d_m / 1000.0
+        return {"persistence_mean_distance": float(np.nanmean(d_km)),
+                "persistence_max_distance":  float(np.nanmax(d_km))}
 
     # INTER-COMPARISONS
     @staticmethod

@@ -317,6 +317,383 @@ class SeaIceObservations:
         ds_out.to_zarr(P_zarr, mode="w", consolidated=True)
         return ds_out
 
+    def define_FIP_diff_names(self, 
+                     AF2020            = False,
+                     variable_name     = None,
+                     lon_coord_name    = None,
+                     lat_coord_name    = None,
+                     time_coord_name   = None,
+                     spatial_dim_names = None,
+                     thresh_val        = None):
+        name_space        = {}
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        if AF2020:
+            name_var   = variable_name   if variable_name   is not None else self.AF_FI_dict["variable_name"]
+            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.AF_FI_dict["lat_coord_name"]
+            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.AF_FI_dict["lon_coord_name"]
+            name_dt    = time_coord_name if time_coord_name is not None else self.AF_FI_dict["time_coord_name"]
+            thresh_val = thresh_val      if thresh_val      is not None else self.AF_FI_dict["threshold_value"]
+        else:    
+            name_var   = variable_name   if variable_name   is not None else "aice"
+            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.CICE_dict["tcoord_names"][1]
+            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.CICE_dict["tcoord_names"][0]
+            name_dt    = time_coord_name if time_coord_name is not None else self.CICE_dict["time_dim"]
+            thresh_val = thresh_val      if thresh_val      is not None else self.icon_thresh
+        return {'spatial_dims': spatial_dim_names,
+                'time_dim'    : name_dt,
+                'variable'    : name_var,
+                'latitude'    : name_lat,
+                'longitude'   : name_lon,
+                'thresh_val'  : thresh_val}
+
+    def define_fast_ice_coordinates(self, ds,
+                                    AF2020            = False,
+                                    variable_name     = None,
+                                    lon_coord_name    = None,
+                                    lat_coord_name    = None,
+                                    time_coord_name   = None,
+                                    spatial_dim_names = None,
+                                    thresh_val        = None):
+        names = self.define_FIP_diff_names(AF2020            = AF2020,
+                                           variable_name     = variable_name,
+                                           lon_coord_name    = lon_coord_name,
+                                           lat_coord_name    = lat_coord_name,
+                                           time_coord_name   = time_coord_name,
+                                           spatial_dim_names = spatial_dim_names,
+                                           thresh_val        = thresh_val)
+        if "time" in ds[names['latitude']].dims:
+            lat = ds[names['latitude']].isel(time=0).values
+        else:
+            lat = ds[names['latitude']].values
+        if "time" in ds[names['longitude']].dims:
+            lon = ds[names['longitude']].isel(time=0).values
+        else:
+            lon = ds[names['longitude']].values
+        dt = ds[names['time_dim']].values
+        return {'datetimes'  : dt,
+                'latitudes'  : lat,
+                'longitudes' : lon,
+                'names'      : names}
+
+    def define_fast_ice_mask_da(self, ds,
+                                AF2020            = False,
+                                variable_name     = None,
+                                lon_coord_name    = None,
+                                lat_coord_name    = None,
+                                time_coord_name   = None,
+                                spatial_dim_names = None,
+                                thresh_val        = None):
+        coords  = self.define_fast_ice_coordinates(ds,
+                                                    AF2020            = AF2020,
+                                                    variable_name     = variable_name,
+                                                    lon_coord_name    = lon_coord_name,
+                                                    lat_coord_name    = lat_coord_name,
+                                                    time_coord_name   = time_coord_name,
+                                                    spatial_dim_names = spatial_dim_names,
+                                                    thresh_val        = thresh_val)
+        FI_mask = xr.where(ds[coords['names']['variable']] >= coords['names']['thresh_val'], 1.0, 0.0)
+        return xr.DataArray(FI_mask,
+                            dims   = self.CICE_dict['three_dims'],
+                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], coords['latitudes']),
+                                      self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], coords['longitudes']),
+                                      self.CICE_dict['time_dim']       : (self.CICE_dict['time_dim']    , coords['datetimes'])})
+    
+    def define_regular_G(self, grid_res,
+                         region            = [0,360,-90,0],
+                         spatial_dim_names = ("nj","ni")):
+        lon_min, lon_max, lat_min, lat_max = region
+        lon_regular = np.arange(lon_min, lon_max + grid_res, grid_res)
+        lat_regular = np.arange(lat_min, lat_max + grid_res, grid_res)
+        LON, LAT    = np.meshgrid(lon_regular,lat_regular)
+        return xr.Dataset({self.CICE_dict['lon_coord_name'] : (spatial_dim_names, LON),
+                           self.CICE_dict['lat_coord_name'] : (spatial_dim_names, LAT)})
+
+    def define_reG_regular_weights(self, da,
+                                    G_res             = 0.15,
+                                    region            = [0,360,-90,0],
+                                    AF2020            = False,
+                                    variable_name     = None,
+                                    lon_coord_name    = None,
+                                    lat_coord_name    = None,
+                                    time_coord_name   = None,
+                                    spatial_dim_names = None,
+                                    reG_method        = "bilinear",
+                                    periodic          = False,
+                                    reuse_weights     = True,
+                                    P_weights         = None):
+        coords  = self.define_fast_ice_coordinates(da,
+                                                    AF2020            = AF2020,
+                                                    variable_name     = variable_name,
+                                                    lon_coord_name    = lon_coord_name,
+                                                    lat_coord_name    = lat_coord_name,
+                                                    time_coord_name   = time_coord_name,
+                                                    spatial_dim_names = spatial_dim_names)
+        if AF2020: 
+            P_weights = P_weights if P_weights is not None else self.AF_FI_dict["P_reG_reg_weights"]
+        else:
+            P_weights = P_weights if P_weights is not None else self.CICE_dict["P_reG_reg_weights"]
+        G_src = xr.Dataset({self.CICE_dict['lat_coord_name'] : (coords['names']['spatial_dims'], coords['latitudes']),
+                            self.CICE_dict['lon_coord_name'] : (coords['names']['spatial_dims'], coords['longitudes'])})
+        G_dst = self.define_regular_G(G_res, region=region, spatial_dim_names=coords['names']['spatial_dims'])
+        return xe.Regridder(G_src, G_dst,
+                            method            = reG_method,
+                            periodic          = periodic,
+                            ignore_degenerate = True,
+                            reuse_weights     = reuse_weights,
+                            filename          = P_weights)
+
+    def define_fast_ice_persistence_da(self, fip, reG=False):
+        if reG:
+            G_dst = self.define_regular_G(0.15, region=[0,360,-90,0], spatial_dim_names=self.CICE_dict['spatial_dims'])
+            lats  = G_dst[self.CICE_dict['lat_coord_name']].values
+            lons  = G_dst[self.CICE_dict['lon_coord_name']].values
+        else:
+            lats = fip[self.CICE_dict['lat_coord_name']].values
+            lons = fip[self.CICE_dict['lon_coord_name']].values
+        return xr.DataArray(fip.astype('float32').values,
+                            dims   = self.CICE_dict['spatial_dims'],
+                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], lats),
+                                    self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], lons)})
+
+    def compute_fip_weight(self,
+                           FIP   : xr.Dataset, 
+                           mode  : str = "max",
+                           t     : float = 0.1,
+                           gamma : float = 1.0) -> xr.DataArray:
+        """Return opacity weight in [0,1] where 0 => fully transparent, 1 => opaque."""
+        if "obs" not in FIP:
+            raise KeyError("FIP['obs'] is required")
+        obs = FIP["obs"]
+        mod = FIP.get("mod", None)
+        if mode == "max" and mod is not None:
+            cov = xr.apply_ufunc(np.maximum, obs, mod)
+        elif mode == "mean" and mod is not None:
+            cov = 0.5 * (obs + mod)
+        elif mode == "prod" and mod is not None:
+            cov = xr.apply_ufunc(np.sqrt, obs * mod)  # geometric mean
+        else:
+            cov = obs  # fall back to obs only
+        # Soft ramp: 0 below t, then linear to 1 at 1.0
+        w = (cov - t) / (1 - t)
+        w = w.clip(0, 1)
+        # Optional contrast shaping
+        if gamma != 1.0:
+            w = w ** gamma
+        w.name = "diff_weight"
+        w.attrs.update(dict(long_name="opacity weight", comment=f"weight ~ {mode}(obs,mod), threshold={t}, gamma={gamma}"))
+        return w
+
+    def to_3031_extent(self, lat2d, lon2d, buffer_m=20_000):
+        """
+        Project a swath's lat/lon to EPSG:3031 and return [xmin, ymin, xmax, ymax] (+buffer).
+        Wrap longitudes to [-180, 180) first to avoid dateline issues.
+        """
+        from pyproj import Transformer
+        lon2d       = self.normalise_longitudes(lon2d, to="-180-180")
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3031", always_xy=True)
+        x, y        = transformer.transform(lon2d.ravel(), lat2d.ravel())
+        x           = np.asarray(x)
+        y           = np.asarray(y)
+        finite      = np.isfinite(x) & np.isfinite(y)
+        xmin, xmax  = x[finite].min(), x[finite].max()
+        ymin, ymax  = y[finite].min(), y[finite].max()
+        return [xmin - buffer_m, ymin - buffer_m, xmax + buffer_m, ymax + buffer_m]
+
+    def union_extents(self, extents):
+        xs = [e[0] for e in extents] + [e[2] for e in extents]
+        ys = [e[1] for e in extents] + [e[3] for e in extents]
+        return [min(xs), min(ys), max(xs), max(ys)]
+
+    def snap_extent_to_grid(self, extent, pixel_size=5_000):
+        xmin, ymin, xmax, ymax = extent
+        xmin = np.floor(xmin / pixel_size) * pixel_size
+        ymin = np.floor(ymin / pixel_size) * pixel_size
+        xmax = np.ceil (xmax / pixel_size) * pixel_size
+        ymax = np.ceil (ymax / pixel_size) * pixel_size
+        return [xmin, ymin, xmax, ymax]
+
+    def make_area_definition(self, extent,
+                             pixel_size = 5_000,
+                             area_id    = "epsg3031_5km_union"):
+        from pyresample.geometry import AreaDefinition
+        xmin, ymin, xmax, ymax = extent
+        width                  = int(round((xmax - xmin) / pixel_size))
+        height                 = int(round((ymax - ymin) / pixel_size))
+        xmax                   = xmin + width  * pixel_size
+        ymax                   = ymin + height * pixel_size
+        return AreaDefinition(area_id     = area_id,
+                              description = "Common 5 km EPSG:3031 grid (union of inputs)",
+                              proj_id     = "epsg3031",
+                              projection  = "EPSG:3031",
+                              width       = width,
+                              height      = height,
+                              area_extent = (xmin, ymin, xmax, ymax))
+
+    def grid_coords_from_area(self, area_def, pixel_size=5_000):
+        xmin, ymin, xmax, ymax = area_def.area_extent
+        width, height          = area_def.width, area_def.height
+        x                      = xmin + (np.arange(width) + 0.5) * pixel_size
+        y                      = ymax - (np.arange(height) + 0.5) * pixel_size  # top->down (north->south)
+        return x, y
+
+    def resample_swath_to_area(self, src_da, lat2d, lon2d, area_def, 
+                               pixel_size = 5_000,
+                               radius     = 10_000,
+                               fill_value = np.nan):
+        from pyresample.geometry import SwathDefinition
+        from pyresample.kd_tree  import resample_nearest
+        """Nearest-neighbour resample a 2D swath (lat2d, lon2d) to an AreaDefinition grid."""
+        lon2d = self.normalise_longitudes(lon2d, to="-180-180")  # << key fix: wrap before building the swath
+        swath = SwathDefinition(lons=lon2d, lats=lat2d)
+        out2d = resample_nearest(source_geo_def      = swath,
+                                 data                = src_da.values,
+                                 target_geo_def      = area_def,
+                                 radius_of_influence = radius,
+                                 fill_value          = fill_value,
+                                 nprocs              = 0,            # set >0 to parallelise
+                                 reduce_data         = True)
+        x, y = self.grid_coords_from_area(area_def, pixel_size=pixel_size)
+        return xr.DataArray(out2d,
+                            dims   = ("y", "x"),
+                            coords = {"x": ("x", x, {"units": "m", "standard_name": "projection_x_coordinate"}),
+                                      "y": ("y", y, {"units": "m", "standard_name": "projection_y_coordinate"})},
+                            name   = src_da.name,
+                            attrs  = {"crs": "EPSG:3031", "grid_mapping": "spstereo", "res": float(pixel_size ), **src_da.attrs})
+
+    def _xy_to_lonlat(self, x, y):
+        from pyproj import Transformer
+        T = Transformer.from_crs(3031, 4326, always_xy=True)
+        lon, lat = T.transform(x, y)
+        return lon, lat
+
+    def add_lonlat_from_epsg3031(self, ds, 
+                                 x_name    = "x",
+                                 y_name    = "y",
+                                 wrap      = "0..360",       # or "-180..180"
+                                 out_dtype = "float32"):
+        if x_name not in ds.dims or y_name not in ds.dims:
+            raise ValueError(f"Expected dims '{y_name}', '{x_name}' in dataset.")
+        # broadcast 1-D x/y -> 2-D (y,x)
+        X2D, Y2D = xr.broadcast(ds[x_name], ds[y_name])  # shapes (y,x)
+        lon, lat = xr.apply_ufunc(self._xy_to_lonlat, X2D, Y2D,
+                                input_core_dims=[[y_name, x_name], [y_name, x_name]],
+                                output_core_dims=[[y_name, x_name], [y_name, x_name]],
+                                dask="parallelized",
+                                vectorize=False,
+                                output_dtypes=[np.float64, np.float64],)
+        # wrap longitudes & cast 
+        if wrap == "0..360":
+            lon = self.normalise_longitudes(lon, to="0-360")
+        else:
+            lon = self.normalise_longitudes(lon, to="-180-180")
+        if out_dtype:
+            lon = lon.astype(out_dtype)
+            lat = lat.astype(out_dtype)
+        # attach as coordinates (on same (y,x) dims)
+        return ds.assign_coords(lon=lon, lat=lat)
+
+    def subset_by_lonlat_box(self, da: xr.DataArray, lon_range, lat_range,
+                             lon_name = "TLON",
+                             lat_name = "TLAT",
+                             jdim     = "nj",
+                             idim     = "ni",
+                             wrap     = "-180-180",
+                             crop     = True):
+        """
+        Subset a curvilinear grid by a geographic box. Works with dask.
+        If the lon_range crosses the seam (e.g. (350, 20) in 0..360), it handles it.
+        """
+        # coords (2-D)
+        TLON = self.normalise_longitudes(da.coords[lon_name], wrap)
+        TLAT = da.coords[lat_name]
+        lon_min, lon_max = lon_range
+        lat_min, lat_max = lat_range
+        # Longitude mask (handle seam)
+        if wrap == "0-360":
+            lon_min, lon_max = lon_min % 360, lon_max % 360
+        else:
+            lon_min = ((lon_min + 180) % 360) - 180
+            lon_max = ((lon_max + 180) % 360) - 180
+        if lon_min <= lon_max:
+            mask_lon = (TLON >= lon_min) & (TLON <= lon_max)
+        else:
+            # crosses dateline / wrap seam
+            mask_lon = (TLON >= lon_min) | (TLON <= lon_max)
+        mask_lat = (TLAT >= lat_min) & (TLAT <= lat_max)
+        mask     = mask_lon & mask_lat                      # (nj, ni)
+        out = da.where(mask)                            # broadcast over time
+        if crop:
+            j_any = mask.any(dim=idim)
+            i_any = mask.any(dim=jdim)
+            j_idx = np.where(j_any.values)[0]
+            i_idx = np.where(i_any.values)[0]
+            if j_idx.size and i_idx.size:
+                j0, j1 = j_idx.min(), j_idx.max() + 1
+                i0, i1 = i_idx.min(), i_idx.max() + 1
+                out    = out.isel({jdim: slice(j0, j1), idim: slice(i0, i1)})
+        return out
+
+    def regional_fast_ice_area(self, ds: xr.Dataset,
+                                region    = (52.5, 97.5, -70.5, -64),
+                                lon_name  = "longitude",
+                                lat_name  = "latitude",
+                                area_name = "area",
+                                fast_name = "Fast_Ice_Time_series",
+                                threshold = 4,
+                                lon_wrap  = "0-360"):
+        """
+        Compute regional fast-ice area (km^2) time series from AF2020-like DS with
+        curvilinear lon/lat and a per-cell area field.
+        region = (lon_min, lon_max, lat_min, lat_max)
+        """
+        lon_min, lon_max, lat_min, lat_max = region
+        # --- 1) Use static lon/lat & area from first time slice (avoid time broadcast)
+        lon2d = ds[lon_name].isel(time=0)
+        lat2d = ds[lat_name].isel(time=0)
+        area2d = ds[area_name].isel(time=0)  # assumed m^2
+        # --- 2) Normalize longitudes to match region convention
+        def wrap(lon):
+            if lon_wrap == "0-360":
+                return ((lon % 360) + 360) % 360
+            else:
+                return ((lon + 180.0) % 360.0) - 180.0
+        lon2d = wrap(lon2d)
+        if lon_wrap == "0-360":
+            lon_min, lon_max = lon_min % 360, lon_max % 360
+        else:
+            lon_min = ((lon_min + 180) % 360) - 180
+            lon_max = ((lon_max + 180) % 360) - 180
+        # --- 3) Build region mask (handle seam-crossing gracefully)
+        if lon_min <= lon_max:
+            mask_lon = (lon2d >= lon_min) & (lon2d <= lon_max)
+        else:
+            mask_lon = (lon2d >= lon_min) | (lon2d <= lon_max)  # across seam
+        mask_lat = (lat2d >= lat_min) & (lat2d <= lat_max)
+        region_mask = mask_lon & mask_lat                      # (Y, X)
+        # --- 4) Convert area to 1000-km^2
+        area_km2 = area2d / 1e9
+        # OPTIONAL: crop to bounding indices to reduce work
+        jdim, idim = lat2d.dims  # expect ("Y","X")
+        j_any = region_mask.any(dim=idim)
+        i_any = region_mask.any(dim=jdim)
+        if bool(j_any.any()) and bool(i_any.any()):
+            j_idx = np.where(j_any.values)[0]
+            i_idx = np.where(i_any.values)[0]
+            j0, j1 = int(j_idx.min()), int(j_idx.max()) + 1
+            i0, i1 = int(i_idx.min()), int(i_idx.max()) + 1
+            region_mask = region_mask.isel({jdim: slice(j0, j1), idim: slice(i0, i1)})
+            area_km2    = area_km2.isel({jdim: slice(j0, j1), idim: slice(i0, i1)})
+        # --- 5) Fast-ice presence per time (binary), then area sum over region
+        fast = (ds[fast_name] >= threshold)
+        # align cropped mask/area to fast dims (time, Y, X)
+        region_mask3 = region_mask.broadcast_like(fast.isel(time=0))
+        area_km2_3   = area_km2.broadcast_like(fast.isel(time=0))
+        # area at each time = sum( fast * region_mask * area )
+        fia_ts = (fast.where(region_mask3) * area_km2_3).sum(dim=(jdim, idim))
+        fia_ts.name = "FIA_1e3-km2"
+        fia_ts.attrs["description"] = f"Fast-ice area (1e3-km^2) in region {region}, threshold>={threshold}"
+        return fia_ts
+
     ####################################################################################################
     ##                                          CCI SIT         
     ####################################################################################################

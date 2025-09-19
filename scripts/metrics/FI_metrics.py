@@ -6,21 +6,6 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 
-
-def create_FI_dict(FI_mask, FI_data, A):
-    """
-    Utility function to create the dictionary for each FI type (dy, rl, bn).
-    """
-    return {"FI_mask"  : FI_mask,
-            'aice'     : FI_data['aice'],
-            'hi'       : FI_data['hi'],
-            'strength' : FI_data['strength'],
-            'dvidtt'   : FI_data['dvidtt'],
-            'dvidtd'   : FI_data['dvidtd'],
-            'daidtt'   : FI_data['daidtt'],
-            'daidtd'   : FI_data['daidtd'],
-            'tarea'    : A}
-
 def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, smooth_FIA_days, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
     load_vars = ['aice','tarea','hi','strength','dvidtt','daidtt','dvidtd','daidtd']
@@ -44,9 +29,9 @@ def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, smooth_FIA_days, ove
     FI_rolly = CICE_SO.where(FI_rol)
     FI_binly = CICE_SO.where(FI_bin)
     # Create FI dictionaries for dy, rl, and bn
-    FI_dy = create_FI_dict(FI_day, FI_daily, A)
-    FI_rl = create_FI_dict(FI_rol, FI_rolly, A)
-    FI_bn = create_FI_dict(FI_bin, FI_binly, A)
+    FI_dy = SI_tools.fast_ice_metrics_data_dict(FI_day, FI_daily, A)
+    FI_rl = SI_tools.fast_ice_metrics_data_dict(FI_rol, FI_rolly, A)
+    FI_bn = SI_tools.fast_ice_metrics_data_dict(FI_bin, FI_binly, A)
     # Compute metrics for each FI type
     FI_types = [('FI_BT', FI_dy), ('FI_BT_roll', FI_rl), ('FI_BT_bin', FI_bn)]
     for prefix, FI_data in FI_types:
