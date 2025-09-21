@@ -6,8 +6,8 @@
 #PBS -N fi_methods_comp
 #PBS -J 7-20
 #PBS -r y
-#PBS -o fi_methods_comp.$PBS_JOBID.out
-#PBS -e fi_methods_comp.$PBS_JOBID.err
+#PBS -o fi_methods_comp.%J.%I.o
+#PBS -e fi_methods_comp.$J.%I.e
 #PBS -m ae
 
 set -euo pipefail

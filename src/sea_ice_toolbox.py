@@ -23,6 +23,26 @@ from sea_ice_regridder      import SeaIceRegridder
 __all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
 
 class SeaIceToolboxManager:
+    """
+    Lightweight factory for a shared Dask client and preconfigured `SeaIceToolbox`.
+
+    Parameters
+    ----------
+    P_log : str | Path
+        Path to a log file to attach to the toolbox logger.
+
+    Notes
+    -----
+    - `get_shared_dask_client()` creates a class-level client (cached) so multiple
+      toolboxes reuse the same cluster.
+    - `get_toolbox(sim_name, **kwargs)` returns a `SeaIceToolbox` bound to the
+      shared client and your log file.
+
+    See Also
+    --------
+    SeaIceToolbox
+        The main analysis class composed from SeaIce* modules.
+    """
     _shared_client = None
     def __init__(self, P_log):
         self.P_log = P_log
@@ -57,83 +77,57 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
     Unified toolbox for processing and analysing Antarctic sea ice from CICE simulations
     as part of the Antarctic Fast Ice Model (AFIM) workflow.
 
-    This superclass consolidates functionality from:
-    + SeaIceClassification : fast/pack ice masking and simulation I/O
-    + SeaIceMetrics        : computing sea ice measurements and statistics 
-    + SeaIcePlotter        : PyGMT and timeseries visualization
-    + SeaIceIcebergs       : grounded iceberg thinning/masking
-    + SeaIceObservations   : Fraser et al. (2020) and NSIDC comparisons
-    + SeaIceACCESS         : ACCESS-OM sea ice generated result; data extraction
+    Composition
+    -----------
+    - SeaIceClassification : fast/pack ice masking and simulation I/O
+    - SeaIceMetrics        : metrics and statistics
+    - SeaIcePlotter        : PyGMT maps and time series
+    - SeaIceIcebergs       : grounded iceberg thinning/masking
+    - SeaIceObservations   : Fraser et al. (2020) & NSIDC integration
+    - SeaIceACCESS         : ACCESS-OM sea-ice helpers
+    - SeaIceRegridder      : B→T regridding helpers
 
-    + Observational fast ice climatology from Fraser et al. 2020: https://doi.org/10.5194/essd-12-2987-2020
-    + NSIDC sea ice concentration data (optional, for observed pack ice comparisons)
-    + A JSON configuration file defining simulation paths and parameter settings:
-        https://github.com/dpath2o/AFIM/blob/main/src/AFIM/src/JSONs/afim_cice_analysis.json    
-
-    Core capabilities:
-    + Fast and pack ice area computation (FIA, PIA)
-    + Rolling and binary-days fast ice classification
-    + Fast ice persistence and climatological metrics (FIP)
-    + Regional map generation and timeseries analysis
-    + Zarr-based output, with optional observational overlays
-
-    External dependencies:
-    - GroundedIcebergProcessor for KMT and GI masks
-    - Fraser et al. (2020) observational fast ice climatology
-    - NSIDC daily sea ice concentration fields (v4)
-    - Configured via a user-defined JSON file
+    Key external data
+    -----------------
+    - Fraser et al. (2020) fast-ice climatology (ESSD)
+    - NSIDC daily sea-ice concentration
+    - AFIM JSON config (paths, parameters)
 
     Parameters
     ----------
-    P_json : str or Path, optional
-        Path to AFIM JSON configuration file. Defaults to project root if None.
-    sim_name : str, required
-        Simulation name (must match entry under `AFIM_out` in config).
+    P_json : str | Path, optional
+        Path to AFIM JSON configuration file (defaults to project root if None).
+    sim_name : str
+        Simulation name (must match an entry under `AFIM_out` in the config).
     dt0_str, dtN_str : str, optional
-        Analysis start and end dates (YYYY-MM-DD).
+        Analysis date bounds in `YYYY-MM-DD`.
     ice_concentration_threshold : float, optional
-        Concentration cutoff for fast ice. Default: 0.15
+        Concentration cutoff for fast ice (default 0.15).
     ice_speed_threshold : float, optional
-        Speed threshold (m/s) below which ice is considered fast. Default: 5e-4
-    ice_vector_type : str or list of str, optional
-        Valid speed types: 'ispd_B', 'ispd_Ta', 'ispd_Tx', 'ispd_BT'.
-    ice_type : str or list of str, optional
-        Ice classification scheme (e.g., 'FI_BT', 'FI_BT_bin').
+        Speed threshold (m/s) below which ice is considered fast (default 5e-4).
+    ice_vector_type : str | list[str], optional
+        Which speed field(s) to use: `'B'`, `'Ta'`, `'Tx'`, or `'BT'`.
+    ice_type : str | list[str], optional
+        Classification (“FI”, “PI”, etc.), combined later into `self.ice_class`.
     mean_period : int, optional
-        N-day rolling window for averaging (default: 15).
-    bin_window : int, optional
-        Window size for binary-days filtering (default: 7).
-    bin_min_days : int, optional
-        Minimum required fast ice days in window (default: 6).
-    extra_cice_vars : list of str, optional
-        Additional CICE variables required for output (default: config-defined).
-    hemisphere : str, optional
-        'south' or 'north'. Controls region masks, slicing.
+        N-day rolling window for speed smoothing (default 15).
+    bin_win_days, bin_min_days : int, optional
+        Binary-days window size and minimum days (defaults per config).
+    hemisphere : {'south','north'}, optional
+        Controls hemisphere slicing throughout the pipeline.
     P_log : Path, optional
-        File to write runtime logs to.
-    overwrite_zarr : bool, optional
-        Whether to overwrite any Zarr file group(s).
-    overwrite_AF2020_zarr : bool, optional
-        Whether to overwrite regridded AF2020 dataset.
-    overwrite_saved_figs : bool, optional
-        Overwrite previously saved figures.
-    save_new_figs : bool, optional
-        Whether to save new figures to disk.
-    show_figs : bool, optional
-        Whether to plot figures interactively.
+        Log file to attach to the toolbox logger.
+    overwrite_zarr / overwrite_AF2020_zarr / overwrite_saved_figs : bool, optional
+        Overwrite behaviours for outputs and figures.
+    save_new_figs, show_figs : bool, optional
+        Figure output/interactive toggles.
+    client : dask.distributed.Client, optional
+        Pre-existing Dask client. If omitted, use `SeaIceToolboxManager`.
 
-    Usage
+    Notes
     -----
-    >>> SI_tools = SeaIceToolbox(sim_name='elps-min', dt0_str='1993-01-01', dtN_str='1999-12-31')
-    >>> FI = SI_tools.process_daily_cice(ispd_thresh=5e-4)
-    >>> SI_tools.plot_ice_area(FI)
-
-    Repository:
-    https://github.com/dpath2o/AFIM
-
-    See also
-    --------
-    SeaIceModels, SeaIcePlotter, SeaIceIcebergs, SeaIceObservations
+    - The constructor normalises configuration, paths, thresholds, and date
+      bounds, then prints a short summary to the logger.
     """
     def summary(self):
         """Print a summary of key simulation setup and configuration."""
@@ -225,6 +219,78 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                  client                      = None,# dask distributed client, can be externally passed here
                  force_recompile_ice_in      = False,# reinitialise ice_in JSON file; see help self.parse_simulation_metadata()
                  **kwargs):
+        """
+        Construct the unified AFIM sea-ice toolbox for a given simulation/config.
+
+        The constructor normalises configuration from a JSON file (`P_json`) and
+        simulation metadata, sets directory paths, thresholds, and plotting/Dask
+        options, and wires up mixins (classification, metrics, plotting, icebergs,
+        observations). It also initialises hemisphere slicing and output naming.
+
+        Parameters
+        ----------
+        P_json : str or pathlib.Path, optional
+            Path to the AFIM configuration JSON. If None, uses project defaults.
+        sim_name : str, optional
+            Simulation name (must match a key under `AFIM_out` in the config).
+        dt0_str, dtN_str : str, optional
+            Inclusive analysis window in ``YYYY-MM-DD``. Defaults are pulled from
+            the config if not provided.
+        list_of_composite_grids : list[str], optional
+            Which speed components to average into a composite (`"B"`, `"Ta"`, `"Tx"`).
+            Defaults to ``['Ta','Tx']`` via config.
+        iceh_frequency : {"hourly","daily","monthly","yearly"}, optional
+            Source history cadence for CICE iceh inputs. Default from config is ``"daily"``.
+        ice_concentration_threshold : float, optional
+            Sea-ice concentration threshold used for fast-ice masking (default 0.15).
+        ice_speed_threshold : float, optional
+            Speed threshold (m/s) below which ice is treated as fast-ice. Defaults to
+            a high/“strict” threshold from config (e.g., ``5e-4``).
+        ice_vector_type : str or list[str], optional
+            Speed field(s) to use (e.g., ``"B"``, ``"Ta"``, ``"Tx"``, or composite like
+            ``"BT"``). Defaults from config.
+        ice_type : str or list[str], optional
+            Ice classification type(s) to compute (e.g., ``"FI"`` fast-ice). Defaults from config.
+        mean_period : int, optional
+            N-day rolling window length for speed smoothing (default 15 via config).
+        bin_win_days, bin_min_days : int, optional
+            Binary-days window size and required number of days (defaults from config).
+        extra_cice_vars : list[str] or bool, optional
+            Additional CICE variables to include in outputs. If True, uses the
+            config’s `cice_vars_ext`; if a list, uses that list; if None, only the
+            required minimal set is used.
+        hemisphere : {'south','north','sh','nh', ...}, optional
+            Hemisphere of interest. Various synonyms are accepted; default from config.
+        P_log : str or pathlib.Path, optional
+            Log file to attach a file handler to. If omitted, logging goes to the
+            preconfigured handlers only.
+        log_level : int or str, optional
+            Python logging level for this toolbox’s logger (e.g., ``logging.INFO``).
+        dask_memory_limit : str or int, optional
+            Memory limit to pass to a created Dask client (e.g., ``"16GB"``).
+        overwrite_zarr, overwrite_AF2020_zarr : bool, optional
+            Overwrite control flags for Zarr outputs.
+        overwrite_saved_figs : bool, optional
+            Whether to overwrite previously saved figures.
+        save_new_figs, show_figs : bool, optional
+            Figure saving and interactive display toggles.
+        delete_original_cice_iceh_nc : bool, optional
+            If True, delete original daily iceh NetCDFs after writing monthly Zarr.
+        client : dask.distributed.Client, optional
+            Reuse an existing Dask client; otherwise one may be obtained externally.
+        force_recompile_ice_in : bool, default False
+            Force regeneration/reparse of the simulation’s `ice_in` JSON metadata.
+        **kwargs
+            Extra fields are attached verbatim to `self`, allowing downstream mixins
+            to see additional tuning parameters.
+
+        Notes
+        -----
+        - Directory attributes like `self.D_sim`, `self.D_iceh`, `self.D_zarr`,
+        and metrics directories are derived from the config and `sim_name`.
+        - `self.define_hemisphere()` is called during initialisation.
+        - Mixins are initialised at the end to ensure shared attributes are in place.
+        """
         # essentially high-level administrative work:
         self.sim_name = sim_name if sim_name is not None else 'test'
         if P_json is None:
@@ -466,22 +532,21 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         """
         Initialise the hemisphere configuration for analysis.
 
-        Maps common hemisphere descriptors (e.g., 'north', 'sh', 'NH') to the 
-        internal dictionary of slicing metadata used for hemispheric subsetting. 
+        Maps common inputs (e.g. 'north', 'NH', 'sh') to the internal
+        `self.hemisphere_dict` used for slicing, and converts the configured
+        `nj_slice` tuple to a Python `slice`.
 
-        Sets the following attributes:
-        - self.hemisphere_dict: Dict containing slicing, naming, and abbreviation metadata
-        - self.hemisphere: Lowercase hemisphere string used for internal logic
-
-        Parameters
-        ----------
-        hemisphere : str
-            Hemisphere identifier (e.g., 'north', 'south', 'NH', 'sh', etc.)
+        Sets
+        ----
+        self.hemisphere_dict : dict
+            Slicing and naming metadata (includes `nj_slice` and abbreviation).
+        self.hemisphere : str
+            Canonical lowercase hemisphere name.
 
         Raises
         ------
         ValueError
-            If the input string does not match any accepted hemisphere options.
+            If the input does not match any accepted names.
         """
         key = hemisphere.lower()
         if key in ['north', 'northern', 'nh', 'n', 'no']:
@@ -496,52 +561,78 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.hemisphere = key
         self.logger.info(f"hemisphere initialised: {self.hemisphere_dict['abbreviation']}")
 
+    @staticmethod
+    def _expand_bounds_slice(slc: slice, nb_len: int) -> slice:
+        """
+        Convert a centre-row slice (length nb_len-1) to a corner-row slice (length nb_len)
+        by expanding the stop bound by +1, clipped to nb_len.
+        """
+        if not isinstance(slc, slice):
+            raise TypeError(f"hemisphere nj_slice must be a Python slice, got {type(slc)}")
+        start = 0 if slc.start is None else slc.start
+        stop_nj = nb_len - 1              # last valid nj index is nb_len-2
+        stop = stop_nj if slc.stop is None else slc.stop
+        step = slc.step
+        stop_b = min(stop + 1, nb_len)    # include boundary row at stop
+        return slice(start, stop_b, step)
+
+    @staticmethod
+    def _indexers_for(obj, y_dim: str, nj_slice: slice):
+        """
+        Build an `.isel()` indexer dict for an object with optional centre/corner dims.
+
+        - Applies `nj_slice` to `y_dim` if present.
+        - If a matching corner dim `'nj_b'` exists, expands the slice using
+          `_expand_bounds_slice()` to include the boundary row.
+        """
+        idx = {}
+        dims = getattr(obj, "dims", {})
+        if y_dim in dims:
+            idx[y_dim] = nj_slice
+        if "nj_b" in dims:
+            nb_len = obj.sizes["nj_b"]
+            idx["nj_b"] = SeaIceToolbox._expand_bounds_slice(nj_slice, nb_len)
+        return idx
+
     def slice_hemisphere(self, var):
         """
-        Slice the input data according to the currently defined hemisphere.
-        Applies `self.hemisphere_dict['nj_slice']` on cell-center rows (nj),
-        and an expanded slice (+1 at the stop) on corner rows (nj_b), if present.
+        Apply the configured hemisphere slice to a Dataset/DataArray (and corners).
+
+        Uses `self.hemisphere_dict['nj_slice']` on the cell-centre row dimension
+        (e.g., `nj`). If a matching corner dimension is present (e.g., `nj_b`),
+        expands the stop bound by +1 to include the boundary row.
+
+        Parameters
+        ----------
+        var : xr.Dataset | xr.DataArray | dict[str, xr.Dataset | xr.DataArray]
+            Object(s) to slice. Dict values are sliced if their dims match.
+
+        Returns
+        -------
+        xr.Dataset | xr.DataArray | dict
+            Sliced object of the same type as the input.
+
+        Notes
+        -----
+        - Cell-centre dimension name is taken from `self.CICE_dict["y_dim"]`.
+        - Corner dim is assumed to be `'nj_b'`. If you parameterise corners in
+          your config, adapt `_indexers_for()` accordingly.
         """
         y_dim    = self.CICE_dict["y_dim"]          # typically 'nj'
-        nj_slice = self.hemisphere_dict['nj_slice'] # expected to be a slice
-        def _expand_bounds_slice(slc, nb_len):
-            """
-            For a given slice on nj (length nb_len-1), return a slice for nj_b (length nb_len)
-            that includes the extra boundary row at the stop.
-            """
-            if not isinstance(slc, slice):
-                raise TypeError(f"hemisphere nj_slice must be a Python slice, got {type(slc)}")
-            start = 0 if slc.start is None else slc.start
-            # For nj, stop is exclusive. For nj_b we need to include the boundary row after stop-1.
-            stop_nj   = nb_len - 1  # last valid nj index is nb_len-2; exclusive stop defaults to nb_len-1
-            stop = stop_nj if slc.stop is None else slc.stop
-            step = slc.step
-            # Expand by +1 at the stop, clipped to nb_len
-            stop_b = min(stop + 1, nb_len)
-            return slice(start, stop_b, step)
-        def _indexers_for(obj):
-            idx = {}
-            dims = getattr(obj, "dims", {})
-            if y_dim in dims:
-                idx[y_dim] = nj_slice
-            if "nj_b" in dims:
-                nb_len = obj.sizes["nj_b"]
-                idx["nj_b"] = _expand_bounds_slice(nj_slice, nb_len)
-            return idx
+        nj_slice = self.hemisphere_dict['nj_slice'] # a Python slice
+        def _apply(obj):
+            idx = SeaIceToolbox._indexers_for(obj, y_dim, nj_slice)
+            return obj.isel(idx) if idx else obj
         if isinstance(var, dict):
             out = {}
             for k, v in var.items():
-                if isinstance(v, (xr.Dataset, xr.DataArray)):
-                    idx = _indexers_for(v)
-                    out[k] = v.isel(idx) if idx else v
-                else:
-                    out[k] = v
-            self.logger.info(f"Hemisphere slice applied on dict members where dims matched ('{y_dim}' and/or 'nj_b').")
+                out[k] = _apply(v) if isinstance(v, (xr.Dataset, xr.DataArray)) else v
+            which = f"{y_dim} and/or nj_b"
+            self.logger.info(f"Hemisphere slice applied on dict members where dims matched ('{which}').")
             return out
         elif isinstance(var, (xr.Dataset, xr.DataArray)):
-            idx = _indexers_for(var)
-            sliced = var.isel(idx) if idx else var
-            which = " & ".join([d for d in (y_dim, "nj_b") if d in idx]) or "none"
+            sliced = _apply(var)
+            which = " & ".join([d for d in (y_dim, "nj_b") if d in getattr(var, "dims", {})]) or "none"
             self.logger.info(f"Hemisphere slice applied on dims: {which}.")
             return sliced
         else:
@@ -584,7 +675,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             ice_type = [ice_type]
         assert all(v in self.valid_ice_types for v in ice_type), f"Invalid ice_type: {ice_type}"
         
-
     def define_ice_class_name(self, ice_type=None , ivec_type=None ):
         """
         Define the classification name string for ice type and vector component type.
@@ -614,6 +704,25 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger.info(f" self.ice_class defined as {self.ice_class}")
 
     def define_ice_speed_name(self, ivec_type=None):
+        """
+        Set the canonical name for the selected ice-speed vector type.
+
+        Parameters
+        ----------
+        ivec_type : str, optional
+            One of the valid vector types (e.g., ``"B"``, ``"Ta"``, ``"Tx"``, or
+            composites depending on your config). Defaults to ``self.ivec_type``.
+
+        Sets
+        ----
+        self.ispd_name : str
+            Name used throughout outputs/paths, formatted as ``f"ispd_{ivec_type}"``.
+
+        Raises
+        ------
+        ValueError
+            If `ivec_type` is invalid (validated by `_check_ivec_type`).
+        """
         ivec_type = ivec_type or self.ivec_type
         self._check_ivec_type(ivec_type) 
         self.ispd_name = f"ispd_{ivec_type}"
@@ -657,7 +766,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.yr0_strs = self.yrs0.strftime("%Y-%m-%d")
         self.yrN_strs = self.yrsN.strftime("%Y-%m-%d")
 
-
     def define_month_first_last_dates(self, year_month_str):
         """
         Given a 'YYYY-MM' string, return the first and last dates of that month.
@@ -677,6 +785,37 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         return m0_str, mN_str
 
     def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
+        """
+        Translate the ice speed threshold into intuitive grid-scale metrics.
+
+        Computes:
+        - meters per day at the given speed,
+        - the **median** grid-cell edge length south of `lat_thresh` on the model
+            grid (`self.CICE_dict['P_G']`),
+        - displacement as a fraction of a grid cell per day,
+        - days required to traverse a grid cell at the threshold speed.
+
+        Parameters
+        ----------
+        ispd_thresh : float, optional
+            Threshold in m/s. Defaults to ``self.ispd_thresh``.
+        lat_thresh : float, default -60
+            Latitude (degrees) used to select the polar region for the median cell size.
+
+        Returns
+        -------
+        dict
+            Summary metrics with keys:
+            ``{'ice_speed_thresh_m_per_s', 'displacement_m_per_day',
+            'median_grid_cell_length_m', 'percent_displacement_per_day',
+            'days_per_grid_cell'}``.
+
+        Notes
+        -----
+        - Uses CICE grid variables from ``self.CICE_dict['P_G']`` (radians) and
+        converts to degrees for masking.
+        - Logs a human-readable summary via `self.logger`.
+        """
         ispd_thresh  = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
         m_per_day    = ispd_thresh * 86400  # meters/day
         area_da      = xr.open_dataset( self.CICE_dict["P_G"] )['tarea']                         # [m^2]
@@ -779,6 +918,40 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         return lon_b, lat_b
 
     def define_cice_grid(self, grid_type='t', mask=False, build_grid_corners=False, slice_hem=False):
+        """
+        Build a minimal CICE grid dataset (lon/lat/area) with optional corners and mask.
+
+        Parameters
+        ----------
+        grid_type : {'t','u'}, default 't'
+            Which CICE grid to load from ``self.CICE_dict["P_G"]`` (e.g., `tlat/tlon/tarea`
+            or `ulat/ulon/uarea`). Longitudes are normalised to 0–360°.
+        mask : bool, default False
+            If True, include a landmask variable `mask` derived from either the
+            grounded-iceberg-modified mask (`self.P_KMT_mod`) when `self.use_gi` is True,
+            or the original mask (`self.P_KMT_org`) otherwise.
+        build_grid_corners : bool, default False
+            If True, compute and attach corner coordinates `lon_b`, `lat_b` (dims
+            `('nj_b','ni_b')`) using `build_grid_corners`.
+        slice_hem : bool, default False
+            If True, apply `slice_hemisphere()` to the returned dataset.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset with variables:
+            - ``area`` (m²),
+            - ``lon`` , ``lat`` (degrees),
+            - optional ``lon_b``, ``lat_b`` (degrees),
+            - optional ``mask`` (binary),
+            and coordinates ``('nj','ni')`` (and ``'nj_b','ni_b'`` if corners requested).
+
+        Notes
+        -----
+        - Dimension names come from ``self.CICE_dict['spatial_dims']`` for centres
+        and are set to ``('nj_b','ni_b')`` for corners.
+        - Set ``slice_hem=True`` if you want to stay within the configured hemisphere.
+        """
         std_dim_names = self.CICE_dict['spatial_dims']
         G             = xr.open_dataset(self.CICE_dict["P_G"])
         lon_rads      = G[f"{grid_type}lon"].values
@@ -828,78 +1001,56 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.bgrid_loaded : bool
             Flag indicating successful B-grid load.
         """
-        G = xr.open_dataset(self.CICE_dict['P_G'])
+        G       = xr.open_dataset(self.CICE_dict['P_G'])
         KMT_org = xr.open_dataset(self.P_KMT_org).kmt.data
         KMT_mod = xr.open_dataset(self.P_KMT_mod).kmt.data if self.use_gi else KMT_org
-
-        TLAT = self.radians_to_degrees(G['tlat'].data)
-        TLON = self.radians_to_degrees(G['tlon'].data)
-        ULAT = self.radians_to_degrees(G['ulat'].data)
-        ULON = self.radians_to_degrees(G['ulon'].data)
-
+        TLAT    = self.radians_to_degrees(G['tlat'].data)
+        TLON    = self.radians_to_degrees(G['tlon'].data)
+        ULAT    = self.radians_to_degrees(G['ulat'].data)
+        ULON    = self.radians_to_degrees(G['ulon'].data)
         TLON_b, TLAT_b = self.build_grid_corners(TLAT, TLON)
         ULON_b, ULAT_b = self.build_grid_corners(ULAT, ULON)
-
         T_ANGLE = self.radians_to_degrees(G['angleT'].data)
         U_ANGLE = self.radians_to_degrees(G['angle'].data)
-
-        TAREA = G['tarea'].data
-        UAREA = G['uarea'].data
-
-        j, i = TLAT.shape
-        jb, ib = j + 1, i + 1
-
+        TAREA   = G['tarea'].data
+        UAREA   = G['uarea'].data
+        j, i    = TLAT.shape
+        jb, ib  = j + 1, i + 1
         nat_dim = self.CICE_dict["spatial_dims"]  # e.g., ("nj", "ni")
         ext_dim = tuple(f"{dim}_b" for dim in nat_dim)
-
-        coords = {
-            nat_dim[0]: np.arange(j),
-            nat_dim[1]: np.arange(i),
-            ext_dim[0]: np.arange(jb),
-            ext_dim[1]: np.arange(ib),
-        }
-
-        G_t = {
-            'lat':     (nat_dim, TLAT, {'units': 'degrees'}),
-            'lat_b':   (ext_dim, TLAT_b, {'units': 'degrees'}),
-            'lon':     (nat_dim, TLON, {'units': 'degrees'}),
-            'lon_b':   (ext_dim, TLON_b, {'units': 'degrees'}),
-            'angle':   (nat_dim, T_ANGLE, {'units': 'degrees'}),
-            'area':    (nat_dim, TAREA, {'units': 'm^2'}),
-            'kmt_org': (nat_dim, KMT_org, {
-                'units': 'binary',
-                'description': '1=land, 0=ocean',
-                'long_name': 'original landmask on t-grid'}),
-            'kmt_mod': (nat_dim, KMT_mod, {
-                'units': 'binary',
-                'description': '1=land, 0=ocean',
-                'long_name': 'modified t-grid-landmask to simulate grounded icebergs'})
-        }
-
-        G_u = {
-            'lat':     (nat_dim, ULAT, {'units': 'degrees'}),
-            'lat_b':   (ext_dim, ULAT_b, {'units': 'degrees'}),
-            'lon':     (nat_dim, ULON, {'units': 'degrees'}),
-            'lon_b':   (ext_dim, ULON_b, {'units': 'degrees'}),
-            'angle':   (nat_dim, U_ANGLE, {'units': 'degrees'}),
-            'area':    (nat_dim, UAREA, {'units': 'm^2'}),
-            'kmt_org': (nat_dim, KMT_org, {
-                'units': 'binary',
-                'description': '1=land, 0=ocean',
-                'long_name': 'original landmask on t-grid'}),
-            'kmt_mod': (nat_dim, KMT_mod, {
-                'units': 'binary',
-                'description': '1=land, 0=ocean',
-                'long_name': 'modified t-grid-landmask to simulate grounded icebergs'})
-        }
-
+        coords  = {nat_dim[0]: np.arange(j),
+                   nat_dim[1]: np.arange(i),
+                   ext_dim[0]: np.arange(jb),
+                   ext_dim[1]: np.arange(ib)}
+        G_t     = {'lat'     : (nat_dim, TLAT, {'units': 'degrees'}),
+                   'lat_b'   : (ext_dim, TLAT_b, {'units': 'degrees'}),
+                   'lon'     : (nat_dim, TLON, {'units': 'degrees'}),
+                   'lon_b'   : (ext_dim, TLON_b, {'units': 'degrees'}),
+                   'angle'   : (nat_dim, T_ANGLE, {'units': 'degrees'}),
+                   'area'    : (nat_dim, TAREA, {'units': 'm^2'}),
+                   'kmt_org' : (nat_dim, KMT_org, {'units'      : 'binary',
+                                                   'description': '1=land, 0=ocean',
+                                                   'long_name'  : 'original landmask on t-grid'}),
+                   'kmt_mod' : (nat_dim, KMT_mod, {'units'      : 'binary',
+                                                   'description': '1=land, 0=ocean',
+                                                   'long_name'  : 'modified t-grid-landmask to simulate grounded icebergs'})}
+        G_u     = {'lat'     : (nat_dim, ULAT, {'units': 'degrees'}),
+                   'lat_b'   : (ext_dim, ULAT_b, {'units': 'degrees'}),
+                   'lon'     : (nat_dim, ULON, {'units': 'degrees'}),
+                   'lon_b'   : (ext_dim, ULON_b, {'units': 'degrees'}),
+                   'angle'   : (nat_dim, U_ANGLE, {'units': 'degrees'}),
+                   'area'    : (nat_dim, UAREA, {'units': 'm^2'}),
+                   'kmt_org' : (nat_dim, KMT_org, {'units': 'binary',
+                                                   'description': '1=land, 0=ocean',
+                                                   'long_name': 'original landmask on t-grid'}),
+                   'kmt_mod' : (nat_dim, KMT_mod, {'units': 'binary',
+                                                   'description': '1=land, 0=ocean',
+                                                   'long_name': 'modified t-grid-landmask to simulate grounded icebergs'})}
         self.G_t = xr.Dataset(data_vars=G_t, coords=coords)
         self.G_u = xr.Dataset(data_vars=G_u, coords=coords)
-
         if slice_hem:
             self.G_t = self.slice_hemisphere(self.G_t)
             self.G_u = self.slice_hemisphere(self.G_u)
-
         self.bgrid_loaded = True
 
     def define_reG_weights(self):
@@ -1070,35 +1221,33 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                   spacing       = grid_res,
                                   region        = region,
                                   search_radius = search_radius)
-
-    def compute_sector_FIA(self, FI_mask, area_grid, sector_defs, GI_area=False):
-        if GI_area:
-            self.compute_grounded_iceberg_area()
-            GI_ttl_area = self.compute_grounded_iceberg_area() / 1e6
-            self.logger.info(f"adding {GI_ttl_area} to ice area computation")
-        else:
-            GI_ttl_area = 0
-        sector_names = list(sector_defs.keys())
-        fia_values   = []
-        for sec_name in sector_names:
-            lon_min, lon_max, lat_min, lat_max = sector_defs[sec_name]["geo_region"]
-            sec_mask = FI_mask.where(
-                (area_grid.lon >= lon_min) & (area_grid.lon <= lon_max) &
-                (area_grid.lat >= lat_min) & (area_grid.lat <= lat_max)
-            )
-            # Compute total area for the sector
-            tmp = (sec_mask * area_grid).sum(skipna=True)
-            # Convert to Python scalar robustly
-            if hasattr(tmp, "compute"):   # Dask array
-                fia_val = float(tmp.compute())
-            else:                          # NumPy scalar or array
-                fia_val = tmp.item() if hasattr(tmp, "item") else float(tmp)
-            fia_values.append(fia_val)
-        FIA_da  = xr.DataArray(fia_values, dims=["sector"], coords={"sector": sector_names})
-        FIA_tot = sum(fia_values) + GI_ttl_area
-        return FIA_da, FIA_tot
         
     def compute_regular_grid_area(self, da):
+        """
+        Compute cell areas (km^2) for a regular lat/lon grid (1D coords).
+
+        Assumes 1D, monotonically increasing latitude and longitude coordinates with
+        uniform longitudinal spacing. Uses spherical geometry to integrate the area
+        between latitude edges for each latitude band, broadcasting across longitudes.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            Any DataArray that carries 1D coordinates named ``'lat'`` and ``'lon'``.
+            Values are not used; only the coordinates are read.
+
+        Returns
+        -------
+        xr.DataArray
+            2D area array with dims (``lat``, ``lon``) in **km²**, aligned to the
+            provided coordinate vectors.
+
+        Notes
+        -----
+        - Earth radius is fixed at 6,371,000 m.
+        - For non-uniform lon spacing or curvilinear grids, use model grid areas
+        (e.g., CICE `tarea`) rather than this helper.
+        """
         R   = 6371000.0  # Earth radius in meters
         lat = np.deg2rad(da['lat'].values)
         lon = np.deg2rad(da['lon'].values)
@@ -1208,9 +1357,40 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                        delete      = False,
                                        max_workers = 4):
         """
-        Verify that each monthly Zarr directory under a given simulation archive
-        matches all expected daily NetCDF files in date coverage and variable presence.
-        Optionally delete NetCDF files after verification.
+        Verify monthly Zarr groups against expected daily NetCDFs and optionally delete NetCDFs.
+
+        The procedure scans ``{self.D_zarr}/iceh_YYYY-MM.zarr`` directories, and for
+        each month it checks:
+        1) that the Zarr `time` coordinate covers all expected daily dates;
+        2) that Zarr contains the union of variables present in the month’s
+            remaining NetCDFs.
+
+        A log of results is appended to ``{self.D_sim}/cleanup.log``. When
+        `delete=True`, an interactive confirmation is prompted and, if accepted,
+        the verified month’s NetCDFs are removed.
+
+        Parameters
+        ----------
+        dry_run : bool, default True
+            If False, write a ``.done_YYYY-MM`` marker in the Zarr directory after
+            successful verification. When True, do not create markers.
+        delete : bool, default False
+            If True, prompt to delete verified NetCDFs after verification.
+        max_workers : int, default 4
+            Number of processes used for parallel month verification.
+
+        Returns
+        -------
+        None
+            Writes to log and may delete files on user confirmation.
+
+        Notes
+        -----
+        - Verification is parallelised with ``ProcessPoolExecutor``.
+        - Month logic expects Zarr directories named ``iceh_YYYY-MM.zarr`` and daily
+        files at ``{self.D_sim}/history/daily/iceh.YYYY-MM-DD.nc``.
+        - The verification routines are implemented as static helpers (`get_month_range`,
+        `verify_month`).
         """
         self.D_iceh_nc = Path(self.D_sim,"history","daily")
         P_clean_log    = Path(self.D_sim,"cleanup.log")
@@ -1266,6 +1446,22 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                     logf.write(entry + "\n")
 
     def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
+        """
+        List existing daily CICE iceh NetCDF files for a date range.
+
+        Parameters
+        ----------
+        D_iceh : str or pathlib.Path
+            Directory containing daily files named ``iceh.YYYY-MM-DD.nc``.
+        dt0_str, dtN_str : str
+            Inclusive date range in ``YYYY-MM-DD``.
+
+        Returns
+        -------
+        list[pathlib.Path] or None
+            Sorted list of existing files in the range. Returns ``None`` and logs
+            an info message if none are found.
+        """
         dt0 = pd.to_datetime(dt0_str)
         dtN = pd.to_datetime(dtN_str)
         files = []
@@ -1280,6 +1476,28 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         return sorted(files)
 
     def delete_original_cice(self, P_orgs, P_iceh_zarr, m_str):
+        """
+        Delete the original daily NetCDF files for a given month if the monthly Zarr exists.
+
+        Parameters
+        ----------
+        P_orgs : list[pathlib.Path]
+            Paths to the month’s daily ``iceh.YYYY-MM-DD.nc`` files.
+        P_iceh_zarr : str or pathlib.Path
+            Path to the Zarr root (e.g., ``.../iceh_daily.zarr``).
+        m_str : str
+            Month string in ``YYYY-MM`` used as the Zarr group name.
+
+        Behavior
+        --------
+        If ``{P_iceh_zarr}/.zgroup`` exists, the method attempts to delete each
+        file in `P_orgs`. Failures are logged with a warning. If the Zarr store is
+        incomplete (no ``.zgroup``), deletion is skipped with a warning.
+
+        Returns
+        -------
+        None
+        """
         if Path(P_iceh_zarr, ".zgroup").exists():
             self.logger.info(f"Deleting original NetCDF files for {m_str}")
             for f in P_orgs:
@@ -1298,6 +1516,48 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                    D_iceh          = None,
                                    overwrite       = None,
                                    delete_original = None):
+        """
+        Convert daily CICE ``iceh.YYYY-MM-DD.nc`` files into a monthly Zarr store.
+
+        For each month intersecting the requested date window, this method:
+        1) groups existing daily NetCDFs by month,
+        2) opens them with ``xarray.open_mfdataset(..., engine='scipy')``,
+        3) shifts the time coordinate **back by 1 day** (CICE writes 00:00:00 of
+        the following day for daily averages),
+        4) writes to a grouped Zarr store at ``{self.D_zarr}/iceh_daily.zarr``
+        under group ``YYYY-MM`` (consolidated metadata),
+        5) optionally deletes the original NetCDF files if the Zarr group exists.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Simulation name. Defaults to ``self.sim_name``.
+        dt0_str, dtN_str : str, optional
+            Date window (inclusive) in ``YYYY-MM-DD``. Defaults to ``self.dt0_str``
+            and ``self.dtN_str`` when omitted.
+        D_iceh : str or pathlib.Path, optional
+            Directory containing the per-day ``iceh.YYYY-MM-DD.nc`` files.
+            Defaults to ``self.D_iceh``.
+        overwrite : bool, optional
+            If False and a monthly group already exists, the group is skipped (but
+            originals may still be deleted if `delete_original` is True).
+            Defaults to ``self.overwrite_zarr_group``.
+        delete_original : bool, optional
+            If True, remove the month’s original NetCDF files **after** successful
+            Zarr write. Defaults to ``self.delete_original_cice_iceh_nc``.
+
+        Returns
+        -------
+        None
+            Writes Zarr groups and logs progress; may delete input NetCDFs.
+
+        Notes
+        -----
+        - The time shift of ``-1 day`` aligns Zarr entries with the *date of the
+        average*, not the CICE timestamp.
+        - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
+        - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
+        """
         sim_name = sim_name if sim_name is not None else self.sim_name
         dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
@@ -1425,6 +1685,31 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                     variables = None,
                     slice_hem = False):
         """
+        Open monthly Zarr groups for the requested period and concatenate in time.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Simulation name. Defaults to `self.sim_name`.
+        dt0_str, dtN_str : str, optional
+            Clamp the load to the intersection of requested and available data.
+        D_alt : str | Path, optional
+            Alternative simulation directory (overrides `self.D_sim`).
+        variables : list[str], optional
+            Subset to these variables; groups missing any are skipped with a warning.
+        slice_hem : bool, default False
+            If True, apply `slice_hemisphere()` after concatenation.
+
+        Returns
+        -------
+        xr.Dataset
+            Concatenated dataset with time cropped to `[user_dt0, user_dtN]`.
+
+        Notes
+        -----
+        - Uses conservative Dask settings for slicing and fusion to keep graphs
+          small (`split_large_chunks=True`, `chunk-size=256MiB`).
+        - Requires Zarr groups of the form `YYYY-MM`.
         """
         import dask
         sim_name = sim_name or self.sim_name
@@ -1472,6 +1757,17 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             ds_all = self.slice_hemisphere(ds_all)
         return ds_all
 
+    @staticmethod
+    def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
+        """
+        Drop duplicate coordinate values along `dim` (keeping the first occurrence).
+        Useful when concatenating yearly groups that may contain duplicated x-indices.
+        """
+        if dim in ds.coords:
+            _, index = np.unique(ds[dim], return_index=True)
+            ds = ds.isel({dim: sorted(index)})
+        return ds
+
     def load_classified_ice(self,
                             sim_name    : str   = None,
                             bin_days    : bool  = True,
@@ -1485,11 +1781,39 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                             D_zarr      : str   = None,
                             chunks      : dict  = None,
                             persist     : bool  = False):
-        def drop_duplicate_coords(ds, dim="ni"):
-            if dim in ds.coords:
-                _, index = np.unique(ds[dim], return_index=True)
-                ds = ds.isel({dim: sorted(index)})
-            return ds
+        """
+        Load classified ice products (daily, binary-day, or rolling) from yearly Zarr groups.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+        bin_days : bool, default True
+            If True, load the `_bin.zarr` product; if False and `roll_mean=True`,
+            load `_roll.zarr`; else load the daily product.
+        roll_mean : bool, default False
+        ispd_thresh : float, optional
+            Threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
+        ice_type, ivec_type : str, optional
+        variables : list[str], optional
+            Optional variable subset to select on open.
+        dt0_str, dtN_str : str, optional
+            Used only to determine which yearly groups to open.
+        D_zarr : str | Path, optional
+            Override base zarr directory.
+        chunks : dict, optional
+            Chunking to apply after concat (default `self.CICE_dict["FI_chunks"]`).
+        persist : bool, default False
+            Persist the concatenated dataset in memory.
+
+        Returns
+        -------
+        xr.Dataset
+
+        Notes
+        -----
+        - Drops duplicate `ni` coords per year before concatenation to avoid
+          index collisions along x (see `_drop_duplicate_coords()`).
+        """
         sim_name     = sim_name     or self.sim_name
         ispd_thresh  = ispd_thresh  or self.ispd_thresh
         ice_type     = ice_type     or self.ice_type
@@ -1513,7 +1837,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         for yr in years:
             try:
                 ds_yr = xr.open_zarr(zarr_store, group=str(yr), consolidated=False)
-                ds_yr = drop_duplicate_coords(ds_yr)
+                ds_yr = SeaIceToolbox._drop_duplicate_coords(ds_yr, dim="ni")
                 datasets.append(ds_yr)
             except Exception as e:
                 self.logger.warning(f"Skipping year {yr}: {e}")

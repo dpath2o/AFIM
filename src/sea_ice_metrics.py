@@ -9,111 +9,6 @@ class SeaIceMetrics:
     def __init__(self, **kwargs):
         return
 
-    def fast_ice_metrics_wrapper(self,
-                                 sim_name       = None,
-                                 dt0_str        = None,
-                                 dtN_str        = None,
-                                 ice_type       = None,
-                                 ispd_thresh    = None,
-                                 cice_vars      = None,
-                                 drop_vars      = None,
-                                 drop_coords    = None,
-                                 ice_area_scale = None,
-                                 overwrite_zarr = None,
-                                 overwrite_png  = None):
-        """
-        Compute, load, and plot fast ice metrics (FIA and FIP) for a given simulation.
-
-        This method orchestrates the full pipeline for computing fast ice area (FIA)
-        and fast ice persistence (FIP) from CICE model output, comparing them with
-        observational data, and saving output figures and Zarr files.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        dt0_str, dtN_str : str, optional
-            Start and end dates (inclusive), formatted as 'YYYY-MM-DD'.
-            Defaults to `self.dt0_str` and `self.dtN_str`.
-        ice_type : str, optional
-            Type of fast ice mask to use (e.g., 'FI_BT'). Defaults to `self.ice_type`.
-        ispd_thresh : float, optional
-            Ice speed threshold for defining fast ice (in m/s).
-        cice_vars : list of str, optional
-            CICE variables to load. Default: ['aice', 'hi', 'strength', 'tarea']
-        drop_vars, drop_coords : list of str, optional
-            Variables and coordinates to drop from loaded datasets.
-        ice_area_scale : float, optional
-            Scale factor for converting grid cell area. Default from `self.FIC_scale`.
-        overwrite_zarr, overwrite_png : bool, optional
-            If True, overwrite saved Zarr and PNG files respectively.
-
-        Output
-        ------
-        - Saves Zarr and CSV metric files.
-        - Generates faceted FIA+FIP PNG figure for three variants of ice mask.
-
-        Notes
-        -----
-        - Evaluates raw, rolling, and binary variants of the input ice type.
-        - Mask names are assumed to follow CICE convention with suffixes.
-        - See Also: `compute_sea_ice_metrics`, `plot_FIA_FIP_faceted`
-        """
-        sim_name       = sim_name or self.sim_name
-        ice_type       = ice_type or self.ice_type
-        dt0_str        = dt0_str or self.dt0_str
-        dtN_str        = dtN_str or self.dtN_str
-        ispd_thresh    = ispd_thresh    if ispd_thresh is not None else self.ispd_thresh
-        ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
-        cice_vars      = cice_vars      if cice_vars is not None else ['aice', 'hi', 'strength', 'tarea']
-        drop_vars      = drop_vars      if drop_vars is not None else self.CICE_dict["drop_vars"]
-        drop_coords    = drop_coords    if drop_coords is not None else self.CICE_dict["drop_coords"]
-        overwrite_zarr = overwrite_zarr if overwrite_zarr is not None else self.overwrite_zarr_group
-        overwrite_png  = overwrite_png  if overwrite_png is not None else self.ow_fig
-        # dependent variables
-        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        dt_range_str    = f"{dt0_str[:4]}-{dtN_str[:4]}"
-        ice_type_clean  = re.sub(r'(_roll|_bin)?(_BT|_B|_Ta|_Tx)?$', '', ice_type)
-        ice_types       = [ice_type, f"{ice_type}_roll", f"{ice_type}_bin"]
-        # loop over three ice_types
-        for i_type in ice_types:
-            P_METS    = Path(self.D_metrics, f"{i_type}_mets.zarr")
-            mask_name = f"{ice_type_clean}_mask"
-            if not P_METS.exists() or overwrite_zarr:
-                self.logger.info(f"Computing metrics: {P_METS}")
-                roll   = i_type.endswith("_roll")
-                I_mask = self.load_classified_ice(rolling     = roll,
-                                                  ice_type    = ice_type,
-                                                  ispd_thresh = ispd_thresh,
-                                                  dt0_str     = dt0_str,
-                                                  dtN_str     = dtN_str,
-                                                  variables   = mask_name)[mask_name]
-                CICE_SO = self.load_cice_zarr(slice_hem=True, variables=cice_vars)
-                if i_type.endswith("_bin") and ice_type_clean == "FI":
-                    FI_bin       = self.binary_days_fast_ice_classification(I_mask).chunk(self.CICE_dict["FI_chunks"])
-                    I            = CICE_SO.where(FI_bin)
-                    I[mask_name] = FI_bin
-                else:
-                    I = CICE_SO.where(I_mask)
-                I      = I.chunk(self.CICE_dict["FI_chunks"])
-                I_dict = {mask_name  : I_mask.persist(),
-                          'aice'     : I['aice'].drop_vars(drop_coords).persist(),
-                          'hi'       : I['hi'].drop_vars(drop_coords).persist(),
-                          'strength' : I['strength'].drop_vars(drop_coords).persist(),
-                          'dvidtt'   : I['dvidtt'].drop_vars(drop_coords).persist(),
-                          'tarea'    : CICE_SO['tarea'].isel(time=0).drop_vars(drop_coords).persist()}
-                self.compute_sea_ice_metrics(I_dict,
-                                            ice_type       = ice_type_clean,
-                                            dt0_str        = dt0_str,
-                                            dtN_str        = dtN_str,
-                                            P_mets_zarr    = P_METS,
-                                            ice_area_scale = ice_area_scale)
-        # plot fast ice area and persistence
-        self.pygmt_FIA_FIP_panel(sim_name      = sim_name,
-                                 ispd_thresh   = ispd_thresh,
-                                 overwrite_fig = overwrite_png,
-                                 plot_GI       = self.use_gi)
-
     @staticmethod
     def _clean_zarr_chunks(ds):
         for var in ds.variables:
@@ -365,6 +260,66 @@ class SeaIceMetrics:
         HI   = HI.where(mask)
         IS   = IS.where(mask)
         return (IS / HI).sum(dim=spatial_dim_names) / ice_strength_scale
+
+    def compute_sector_FIA(self, FI_mask, area_grid, sector_defs, GI_area=False):
+        """
+        Compute fast-ice area (FIA) per geographic sector and a domain total.
+
+        Parameters
+        ----------
+        FI_mask : xr.DataArray
+            Fast-ice mask (0/1 or boolean) defined on the same grid as `area_grid`.
+            May carry a time dimension; if so, the operation is applied pointwise
+            to the non-time dims (e.g., use `.isel(time=...)` beforehand for a
+            single snapshot).
+        area_grid : xr.DataArray
+            Grid-cell areas with the same spatial shape/coords as `FI_mask`
+            (e.g., CICE `tarea` in m² or a regular-grid km² array).
+        sector_defs : dict
+            Mapping ``{sector_name: {"geo_region": (lon_min, lon_max, lat_min, lat_max)}}``,
+            where bounds are in degrees and compared against `area_grid.lon/lat`.
+        GI_area : bool, default False
+            If True, include the model’s grounded-iceberg area (km²) in the total
+            FIA (domain-wide add-on). Requires GI metadata to be available.
+
+        Returns
+        -------
+        (xr.DataArray, float)
+            ``(FIA_da, FIA_total)`` where `FIA_da` holds sector areas with a
+            `'sector'` coordinate, and `FIA_total` is the scalar domain sum (same
+            units as `area_grid`, plus grounded-iceberg add-on if `GI_area`).
+
+        Notes
+        -----
+        - Sector masks are built with simple rectangular lon/lat bounds.
+        - If `area_grid` is in m², the outputs are in m² (convert if needed).
+        - Dask inputs are supported; reductions are computed safely.
+        """
+        if GI_area:
+            self.compute_grounded_iceberg_area()
+            GI_ttl_area = self.compute_grounded_iceberg_area() / 1e6
+            self.logger.info(f"adding {GI_ttl_area} to ice area computation")
+        else:
+            GI_ttl_area = 0
+        sector_names = list(sector_defs.keys())
+        fia_values   = []
+        for sec_name in sector_names:
+            lon_min, lon_max, lat_min, lat_max = sector_defs[sec_name]["geo_region"]
+            sec_mask = FI_mask.where(
+                (area_grid.lon >= lon_min) & (area_grid.lon <= lon_max) &
+                (area_grid.lat >= lat_min) & (area_grid.lat <= lat_max)
+            )
+            # Compute total area for the sector
+            tmp = (sec_mask * area_grid).sum(skipna=True)
+            # Convert to Python scalar robustly
+            if hasattr(tmp, "compute"):   # Dask array
+                fia_val = float(tmp.compute())
+            else:                          # NumPy scalar or array
+                fia_val = tmp.item() if hasattr(tmp, "item") else float(tmp)
+            fia_values.append(fia_val)
+        FIA_da  = xr.DataArray(fia_values, dims=["sector"], coords={"sector": sector_names})
+        FIA_tot = sum(fia_values) + GI_ttl_area
+        return FIA_da, FIA_tot
 
     def compute_hemisphere_ice_area(self, SIC, A,
                                     ice_area_scale            = None,

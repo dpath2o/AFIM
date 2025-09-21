@@ -209,22 +209,68 @@ def compute_for_window(win: int, cnt_span: int):
     write_partial_csv(rows, out_csv)
 
 # -------------------- main --------------------
-if args.merge_only:
-    df = read_all_partials(OUTDIR)
-    if df.empty:
-        print(f"No partial CSVs found in {OUTDIR}", file=sys.stderr)
-        sys.exit(1)
-    # LaTeX
-    latex = make_latex_table(df)
-    FINAL_TEX.write_text(latex)
-    print(f"Wrote LaTeX table to {FINAL_TEX}")
-    # Taylor diagram
-    taylor_diagram(df, FINAL_PNG)
-    print(f"Wrote Taylor diagram to {FINAL_PNG}")
-    sys.exit(0)
-# array task: one window
-if args.win is None:
-    print("No --win and not --merge-only; nothing to do.", file=sys.stderr)
-    sys.exit(2)
-compute_for_window(args.win, args.cnt_span)
-print(f"Saved partial CSV to {OUTDIR}")
+def cli():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sim-name", default="elps-min")
+    ap.add_argument("--dt0", default="1994-01-01")
+    ap.add_argument("--dtN", default="2023-12-31")
+    ap.add_argument("--ispd", type=float, default=5e-4)
+    ap.add_argument("--win", type=int, default=None)
+    ap.add_argument("--cnt-span", type=int, default=3)
+    ap.add_argument("--out-dir", type=str, default=str(Path.home() / "scratch_fallback"))  # overwritten by PBS script
+    ap.add_argument("--merge-only", action="store_true")
+    return ap.parse_args()
+
+def main():
+    global args, OUTDIR, FINAL_TEX, FINAL_PNG  # if you referenced these at module scope
+    args = cli()
+    OUTDIR = Path(args.out_dir); OUTDIR.mkdir(parents=True, exist_ok=True)
+    FINAL_TEX = Path.home() / "FI_classify_methods_comparison.tex"
+    FINAL_PNG = Path.home() / "graphical/AFIM/elps-min/TaylorDiagram_bin-day_v_roll-mean_methods.png"
+    FINAL_PNG.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.merge_only:
+        df = read_all_partials(OUTDIR)
+        if df.empty:
+            print(f"No partial CSVs found in {OUTDIR}", file=sys.stderr); sys.exit(1)
+        FINAL_TEX.write_text(make_latex_table(df))
+        taylor_diagram(df, FINAL_PNG)
+        print(f"Wrote {FINAL_TEX} and {FINAL_PNG}")
+        return
+
+    if args.win is None:
+        print("No --win and not --merge-only; nothing to do.", file=sys.stderr)
+        sys.exit(2)
+
+    compute_for_window(args.win, args.cnt_span)
+    print(f"Saved partial CSV to {OUTDIR}")
+
+if __name__ == "__main__":
+    # Make multiprocessing safer on 3.11 + Dask nanny
+    try:
+        import multiprocessing as mp
+        if mp.get_start_method(allow_none=True) != "fork":
+            mp.set_start_method("fork")
+    except Exception:
+        pass
+    main()
+# if args.merge_only:
+#     df = read_all_partials(OUTDIR)
+#     if df.empty:
+#         print(f"No partial CSVs found in {OUTDIR}", file=sys.stderr)
+#         sys.exit(1)
+#     # LaTeX
+#     latex = make_latex_table(df)
+#     FINAL_TEX.write_text(latex)
+#     print(f"Wrote LaTeX table to {FINAL_TEX}")
+#     # Taylor diagram
+#     taylor_diagram(df, FINAL_PNG)
+#     print(f"Wrote Taylor diagram to {FINAL_PNG}")
+#     sys.exit(0)
+# # array task: one window
+# if args.win is None:
+#     print("No --win and not --merge-only; nothing to do.", file=sys.stderr)
+#     sys.exit(2)
+# compute_for_window(args.win, args.cnt_span)
+# print(f"Saved partial CSV to {OUTDIR}")
