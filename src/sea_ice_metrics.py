@@ -398,7 +398,7 @@ class SeaIceMetrics:
         mask = SIC > sic_threshold
         SIC  = SIC.where(mask)
         A    = A.where(mask)
-        IA   = ((SIC * A).sum(dim=spatial_dim_names))#.chunk({'time': -1}).compute()
+        IA   = ((SIC * A).sum(dim=spatial_dim_names))
         return (IA + GI_total_area) / ice_area_scale 
 
     def compute_hemisphere_ice_volume(self, SIC, HI, A,
@@ -460,10 +460,10 @@ class SeaIceMetrics:
         else:
             GI_total_area = 0
         self.logger.debug("\n[Sea Ice Volume Computation Steps]\n"
-                        f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
-                        f"  2. Multiply SIC × thickness × area and sum over {spatial_dim_names}\n"
-                        f"  3. Add grounded iceberg area (GIA) = {GI_total_area:.2f} m²\n"
-                        f"  4. Divide by scale factor {ice_volume_scale:.2e} to convert units")
+                         f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
+                         f"  2. Multiply SIC × thickness × area and sum over {spatial_dim_names}\n"
+                         f"  3. Add grounded iceberg area (GIA) = {GI_total_area:.2f} m²\n"
+                         f"  4. Divide by scale factor {ice_volume_scale:.2e} to convert units")
         mask = SIC > sic_threshold
         HI   = HI.where(mask)
         SIC  = SIC.where(mask)
@@ -614,17 +614,17 @@ class SeaIceMetrics:
         return (float(np.mean(x)), float(np.std(x))) if len(x) else (None, None)
 
     def compute_seasonal_statistics(self, da,
-                                    stat_name : str = 'FIA',
-                                    window: int = 15,
-                                    polyorder: int = 2,
-                                    min_onset_doy: int = 50,
-                                    min_retreat_doy: int = 240,
-                                    growth_range: tuple[int, int] = (71, 273),
-                                    retreat_early_range: tuple[int, int] = (273, 330),
-                                    retreat_late_range: tuple[tuple[int, int], tuple[int, int]] = ((331, 365), (1, 71)),
-                                    scaling_factor: float = 1e6,
-                                    drop_leap_day: bool = True,
-                                    return_per_year: bool = False):
+                                    stat_name           : str = 'FIA',
+                                    window              : int = 15,
+                                    polyorder           : int = 2,
+                                    min_onset_doy       : int = 50,
+                                    min_retreat_doy     : int = 240,
+                                    growth_range        : tuple[int, int] = (71, 273),
+                                    retreat_early_range : tuple[int, int] = (273, 330),
+                                    retreat_late_range  : tuple[tuple[int, int], tuple[int, int]] = ((331, 365), (1, 71)),
+                                    scaling_factor      : float = 1e6,
+                                    drop_leap_day       : bool = True,
+                                    return_per_year     : bool = False):
         """
         Fast version that loads once, computes derivatives once per year, and uses NumPy slicing.
 
@@ -784,50 +784,74 @@ class SeaIceMetrics:
 
     # PERSISTENCE METRICS
     def persistence_stability_index(self, I_mask, A,
-                                    persistence = 0.8,
-                                    winter_months=(5,6,7,8,9,10)):
+                                    persistence_threshold: float = 0.8,
+                                    winter_months        : tuple = (5, 6, 7, 8, 9, 10),
+                                    area_scale           : float = 1e9) -> dict:
         """
-        Compute the Hemispheric Persistence Stability Index.
+        Compute FIPSI (Fast-Ice Persistence Stability Index) from a binary fast-ice mask.
 
-        This function quantifies the spatial stability of sea ice presence over time by comparing the
-        area of persistent ice coverage to the total area where ice is ever present. It returns a single
-        index value representing the ratio of consistently persistent ice to all intermittently
-        present ice across the hemisphere.
+        Definition
+        ----------
+        FIPSI = (area of grid cells whose WINTER fast-ice persistence ≥ threshold)
+                / (area of grid cells that have fast ice at least once in WINTER),
+        where persistence is the fraction of winter days (e.g., May–Oct) that a cell is fast.
 
         Parameters
         ----------
-        ice_prstnc : xarray.DataArray
-            Time-varying persistence of ice presence (0/1 or probability).
-        A : xarray.DataArray
-            Grid cell area (e.g., `TAREA`) on the same spatial grid.
-        persistence : float, optional
-            Minimum persistence threshold to define "persistent" ice (default is 0.8).
+        I_mask : xarray.DataArray or xarray.Dataset
+            Binary fast-ice mask (0/1) with a 'time' dimension; if a Dataset is given,
+            a variable named 'FI_mask' is used.
+        A : xarray.DataArray or xarray.Dataset
+            Grid-cell area on the same grid; if a Dataset is given, the first of
+            {'tarea','area','TAREA'} is used. If A has a 'time' dim, the first slice is used.
+        persistence_threshold : float, optional
+            Minimum winter persistence to classify a cell as persistent (default 0.8).
+        winter_months : tuple[int], optional
+            Months to include for the winter persistence (default May–Oct).
 
         Returns
         -------
-        dict; containing a single scalar value:
-            - 'persistence_stability_index': float; ratio of persistent ice area to total ice footprint.
+        dict:
+            {'persistence_stability_index': float,   # FIPSI in [0,1] or NaN if undefined
+             'area_persistent_winter': float,        # area of persistent winter FI (units of A)
+             'area_ever_winter': float               # area with any winter FI (units of A)}
 
         Notes
         -----
-        - The persistent footprint is the summed area of cells with mean persistence >= threshold.
-        - The total footprint includes all cells with nonzero presence over time.
-        - Both areas are computed over the provided grid cell area `A`.
-        - The result is computed using Dask for efficient parallel execution.
-        - Requires that the input arrays are aligned and dimensionally compatible.
+        • Uses the class's `spatial_dims` to sum areas.
+        • Assumes `I_mask` is truly binary (0/1). For classification outputs that are boolean, they will be cast to float internally.
+        • Designed to be Dask-friendly: only two area reductions are computed eagerly.
         """
-        self.logger.info("Computing Hemispheric Stability Index: (persistent_footprint / total_footprint)")
-        ice_prstnc = ice_prstnc.load()
-        if 'time' in A.dims:
-            A = A.isel(time=0).drop_vars('time')
-        winter_prstnc   = I_mask["time"].dt.month.isin(list(months))
-        prstnc_mask     = winter_prstnc >= persistence      
-        always_mask     = winter_prstnc > 0                 
-        prstnc_A        = (A.where(prstnc_mask)).sum(dim=self.CICE_dict["spatial_dims"])
-        ttl_A           = (A.where(always_mask)).sum(dim=self.CICE_dict["spatial_dims"])
-        prstnc_A, ttl_A = dask.compute(prstnc_A, ttl_A)
-        psi             = (prstnc_A / ttl_A) if ttl_A > 0 else np.nan
-        return {"persistence_stability_index": psi}
+        self.logger.info("Computing FIPSI: persistent-winter area / ever-winter area")
+        I_mask = self._as_da_mask(I_mask).astype("float32")
+        A      = self._as_da_area(A)
+        # Ensure A has only spatial dims
+        if "time" in A.dims:
+            A = A.isel(time=0)
+            if "time" in A.coords:
+                # safer than drop_vars which can produce a Dataset
+                A = A.drop_vars("time", errors="ignore")
+            A = A.squeeze(drop=True)
+        spat_dims = self.CICE_dict["spatial_dims"]
+        # restrict to winter months and form persistence (fraction in [0,1])
+        in_winter = I_mask["time"].dt.month.isin(list(winter_months))
+        FI_winter = I_mask.where(in_winter)
+        prstnc    = FI_winter.mean(dim="time", skipna=True)
+        # masks for footprints
+        persistent_mask = prstnc >= float(persistence_threshold)       # persistent winter FI
+        ever_mask       = FI_winter.max(dim="time", skipna=True) > 0   # ever-winter FI
+        # # area-weighted sums over spatial dims
+        prstnc_A = (A.where(persistent_mask)).sum(dim=spat_dims, skipna=True)
+        ttl_A    = (A.where(ever_mask)).sum(dim=spat_dims, skipna=True)
+        with dask.config.set(scheduler="threads"):   # or "synchronous"
+            prstnc_A = prstnc_A.compute()
+            ttl_A    = ttl_A.compute()
+        prstnc_A = self._to_float_scalar(prstnc_A)
+        ttl_A    = self._to_float_scalar(ttl_A)
+        psi      = (prstnc_A / ttl_A) if (np.isfinite(ttl_A) and ttl_A > 0.0) else np.nan
+        return {"persistence_stability_index": float(psi),
+                "area_persistent_winter"     : prstnc_A/area_scale,
+                "area_ever_winter"           : ttl_A/area_scale}
 
     def _prepare_BAS_coast(self,
                            path_coast_shape  : str   =  None,
@@ -916,9 +940,9 @@ class SeaIceMetrics:
         self._coast_crs     = crs_out
 
     def persistence_ice_distance_mean_max(self, ice_prstnc,
-                                          persistence_min  : float = 0.8,
-                                          path_coast_shape : str = None,
-                                          crs_out          : str = "EPSG:3031"):
+                                          persistence_threshold : float = 0.8,
+                                          path_coast_shape      : str = None,
+                                          crs_out               : str = "EPSG:3031"):
         """
         Mean/max distance from the USNIC/ADD coastline for persistent fast ice.
         Uses a densified coastline KD-Tree in a metric CRS (default EPSG:3031).
@@ -928,19 +952,17 @@ class SeaIceMetrics:
         """
         from pyproj import Transformer
         P_shp = path_coast_shape if path_coast_shape is not None else self.BAS_dict["P_Ant_Cstln"]
-        # Ensure grid and shapes
         spat_dims = self.CICE_dict["spatial_dims"]
         self.logger.info("Computing persistence distance (USNIC coastline KD-Tree)")
-        ice_prstnc = ice_prstnc.load()
+        with dask.config.set(scheduler="threads"):
+            ice_prstnc = ice_prstnc.compute()  # instead of .load()
         if not getattr(self, "bgrid_loaded", False):
             self.load_bgrid(slice_hem=True)
-        Gt = self.G_t
-        # Lon/lat names (adjust if your b-grid uses different ones)
+        Gt       = self.G_t
         lon_name = 'TLON' if 'TLON' in Gt else ('lon' if 'lon' in Gt else None)
         lat_name = 'TLAT' if 'TLAT' in Gt else ('lat' if 'lat' in Gt else None)
         if lon_name is None or lat_name is None:
             raise KeyError("Could not find lon/lat fields (TLON/TLAT or lon/lat) in self.G_t.")
-        # Shape check
         grid_shape = tuple(ice_prstnc.sizes[d] for d in spat_dims)
         if grid_shape != Gt[lon_name].shape:
             self.logger.warning("Grid mismatch detected; reloading b-grid with slice_hem=True")
@@ -948,30 +970,28 @@ class SeaIceMetrics:
             Gt = self.G_t
             if tuple(ice_prstnc.sizes[d] for d in spat_dims) != Gt[lon_name].shape:
                 raise ValueError("ice_prstnc and grid coordinate shapes still mismatch after reload.")
-        # Prepare coastline KD-Tree once
+        # Prepare coastline KD-tree once (unchanged)
         need_kdtree = (not hasattr(self, "_coast_kdtree")) or (getattr(self, "_coast_crs", None) != crs_out)
         if need_kdtree:
             self._prepare_BAS_coast(P_shp, crs_out=crs_out, target_spacing_km=1.0)
-        # Persistent FI mask
-        prst = (ice_prstnc >= float(persistence_min)).values
+        # Build persistent mask from fully-realized array
+        prst = (ice_prstnc >= float(persistence_threshold)).values
         if not np.any(prst):
             self.logger.warning("No persistent fast-ice cells found at this threshold.")
-            return {"persistence_mean_distance": np.nan,
-                    "persistence_max_distance":  np.nan}
-        # Project grid cell centres to metric CRS
+            return {"persistence_mean_distance": float('nan'),
+                    "persistence_max_distance":  float('nan')}
         lon = np.asarray(Gt[lon_name].values)
         lat = np.asarray(Gt[lat_name].values)
         transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
         x_all, y_all = transformer.transform(lon, lat)
-        # Query KD-Tree for all persistent cells
-        iy, ix = np.where(prst)  # spat_dims order matters: (nj, ni)
+        iy, ix = np.where(prst)  # spat_dims order (nj, ni)
         x_p = x_all[iy, ix]
         y_p = y_all[iy, ix]
         if x_p.size == 0:
-            return {"persistence_mean_distance": np.nan,
-                    "persistence_max_distance":  np.nan}
+            return {"persistence_mean_distance": float('nan'),
+                    "persistence_max_distance":  float('nan')}
         d_m, _ = self._coast_kdtree.query(np.column_stack([x_p, y_p]), k=1)
-        d_km   = d_m / 1000.0
+        d_km = d_m / 1000.0
         return {"persistence_mean_distance": float(np.nanmean(d_km)),
                 "persistence_max_distance":  float(np.nanmax(d_km))}
 
@@ -988,6 +1008,15 @@ class SeaIceMetrics:
                 "Corr"     : pearsonr(x, y)[0],
                 "SD_Model" : np.std(x),
                 "SD_Obs"   : np.std(y)}
+
+    @staticmethod
+    def _safe_load_array_to_memory(x):
+        # --- Force local computation to avoid serializing Dask HLGs to the cluster ---
+        # Keep memory light and avoid shipping graphs to distributed workers
+        try:
+            return x.astype("float32").compute(scheduler="single-threaded")
+        except Exception:
+            return x.compute(scheduler="single-threaded") if hasattr(x, "compute") else x
         
     def compute_skill_statistics(self, mod, obs, min_points=100):
         """
@@ -1004,6 +1033,8 @@ class SeaIceMetrics:
         -------
         dict; Dictionary of skill metrics.
         """
+        mod = self._safe_load_array_to_memory(mod)
+        obs = self._safe_load_array_to_memory(obs)
         if hasattr(mod, 'time') and hasattr(obs, 'time'):
             dt_mod  = mod.time.values
             dt_obs  = obs.time.values
@@ -1015,21 +1046,13 @@ class SeaIceMetrics:
                 return self._skill_stats(mod_data, obs_data)
             else:
                 self.logger.warning("date-time mismatch detected — falling back to climatology comparison.")
-                mod_grp  = mod.groupby('time.dayofyear')#.persist()
-                mod_clim = mod_grp.mean('time')#.compute()
-                obs_grp  = obs.groupby('time.dayofyear')#.persist()
-                obs_clim = obs_grp.mean('time')#.compute()
-                doy_mod  = mod_clim.dayofyear.values
-                doy_obs  = obs_clim.dayofyear.values
-                doy_xsct = np.intersect1d(doy_mod, doy_obs)
+                mod_clim = mod.groupby('time.dayofyear').mean('time')
+                obs_clim = obs.groupby('time.dayofyear').mean('time')
+                doy_xsct = np.intersect1d(mod_clim.dayofyear.values, obs_clim.dayofyear.values)
                 mod_data = mod_clim.sel(dayofyear=doy_xsct).values
                 obs_data = obs_clim.sel(dayofyear=doy_xsct).values
                 return self._skill_stats(mod_data, obs_data)
         self.logger.warning("Time dimension not found or could not align. Returning empty stats.")
-        return {"Bias"    : np.nan,
-                "RMSE"    : np.nan,
-                "MAE"     : np.nan,
-                "Corr"    : np.nan,
-                "SD_Model": np.nan,
-                "SD_Obs"  : np.nan,}
+        return {"Bias": np.nan, "RMSE": np.nan, "MAE": np.nan, "Corr": np.nan,
+                "SD_Model": np.nan, "SD_Obs": np.nan}
 

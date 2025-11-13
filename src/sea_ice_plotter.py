@@ -122,10 +122,8 @@ class SeaIcePlotter:
         data_dict = {}
         self.load_bgrid(slice_hem=True)
         self.logger.info("preparing the data for plotting")
-
         # Determine which coordinates to use
         use_own_coords = lon_coord_name is not None or lat_coord_name is not None
-
         if use_own_coords:
             if lon_coord_name is None or lat_coord_name is None:
                 raise ValueError("Both lon_coord_name and lat_coord_name must be provided if using own coordinates")
@@ -144,13 +142,11 @@ class SeaIcePlotter:
                 lat2d = self.G_t['lat'].values
             else:
                 raise ValueError("Must specify either bcoords, tcoords, or provide explicit coordinates")
-
         data2d = np.asarray(da.data).astype('float32')
         if diff_plot:
             mask = (data2d >= -1) & (data2d <= 1) & np.isfinite(data2d)
         else:
             mask = np.isfinite(data2d)
-
         data_dict['data'] = data2d[mask].ravel()
         data_dict['lon']  = lon2d[mask].ravel()
         data_dict['lat']  = lat2d[mask].ravel()
@@ -479,7 +475,7 @@ class SeaIcePlotter:
                             font_annot_pri    : str   = "24p,Times-Roman",
                             font_annot_sec    : str   = "16p,Times-Roman",
                             font_lab          : str   = "22p,Times-Bold",
-                            line_pen         : str   = "2p",
+                            line_pen         : str    = "2p",
                             grid_pen_pri      : str   = ".5p",
                             grid_pen_sec      : str   = ".25p",
                             fmt_geo_map       : str   = "D:mm",
@@ -610,7 +606,6 @@ class SeaIcePlotter:
                              style = GI_plot_style)
                 fig.coast(land=land_clr, shorelines=coast_pen)
                 fig.plot(data=ANT_IS, pen=ANT_IS_pen, fill=ANT_IS_color)
-                
             fig.colorbar(position=cbar_pos, frame=cbar_frame)
         # Save / Show
         if save_fig:
@@ -786,25 +781,21 @@ class SeaIcePlotter:
         if plot_bathymetry:
             SO_BATH = self.load_IBCSO_bath()
         if lon_coord_name is not None or lat_coord_name is not None:
-            plot_data_dict = self.prepare_data_for_pygmt_plot(
-                da,
-                bcoords=False,
-                tcoords=False,
-                lon_coord_name=lon_coord_name,
-                lat_coord_name=lat_coord_name,
-                diff_plot=diff_plot
-            )
+            plot_data_dict = self.prepare_data_for_pygmt_plot(da,
+                                                              bcoords        = False,
+                                                              tcoords        = False,
+                                                              lon_coord_name = lon_coord_name,
+                                                              lat_coord_name = lat_coord_name,
+                                                              diff_plot      = diff_plot)
         else:
             if use_bcoords and use_tcoords:
                 raise ValueError("Cannot set both use_bcoords and use_tcoords to True")
-            plot_data_dict = self.prepare_data_for_pygmt_plot(
-                da,
-                bcoords=use_bcoords,
-                tcoords=use_tcoords,
-                lon_coord_name=None,
-                lat_coord_name=None,
-                diff_plot=diff_plot
-            )
+            plot_data_dict = self.prepare_data_for_pygmt_plot(da,
+                                                              bcoords        = use_bcoords,
+                                                              tcoords        = use_tcoords,
+                                                              lon_coord_name = None,
+                                                              lat_coord_name = None,
+                                                              diff_plot      = diff_plot)
         required_keys = ['lon', 'lat', 'data']
         try:
             if not isinstance(plot_data_dict, dict):
@@ -862,54 +853,54 @@ class SeaIcePlotter:
             elif reg_name in list(self.Ant_2sectors.keys()):
                 projection = projection.format(fig_width=fig_size)
             fig = pygmt.Figure()
-            pygmt.config(FONT_TITLE         = "16p,Courier-Bold",
-                         FONT_ANNOT_PRIMARY = "14p,Helvetica",
-                         COLOR_FOREGROUND   = 'black')
-            fig.basemap(region=region, projection=projection, frame=basemap_frame)
-            if plot_bathymetry:
-                fig.grdimage(grid=SO_BATH, cmap='geo')
-            else:
-                fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30", land=land_color, water=water_color)
-            if "diff" in var_name.lower():
-                lat        = da[lat_coord_name].values.flatten()
-                lon        = da[lon_coord_name].values.flatten()
-                val        = da.values.flatten()
-                valid_mask = ~np.isnan(val)
-                lat_valid  = lat[valid_mask]
-                lon_valid  = lon[valid_mask]
-                val_valid  = val[valid_mask].astype(int)
-                label_map  = {1: "simulation", 0: "agreement", 2: "observation"}
-                labels     = [label_map[v] for v in val_valid]
-                df         = pd.DataFrame({"longitude" : lon_valid,
-                                           "latitude"  : lat_valid,
-                                           "z"         : val_valid.astype(int)})
-                pygmt.makecpt(cmap="categorical", series=[0,2,1], color_model="+cagreement,simulation,observation")
-                fig.plot(data=df, style=f"s{var_sq_size}c", cmap=True)
-            elif "mask" in var_name.lower():
-                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill='red', style=f"s{var_sq_size}c")
-            else:
-                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
-                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style=f"s{var_sq_size}c", cmap=True)           
-            if plot_bathymetry:
-                fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
-            if plot_GI:
-                fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
-            if plot_iceshelves:
-                fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
-            if add_stat_annot:
-                annot_text = self.generate_regional_annotation_stats(da, region, lon_coord_name, lat_coord_name)
-                for i, line in enumerate(annot_text):
+            with pygmt.config(FONT_TITLE         = "16p,Courier-Bold",
+                              FONT_ANNOT_PRIMARY = "14p,Helvetica",
+                              COLOR_FOREGROUND   = 'black'):
+                fig.basemap(region=region, projection=projection, frame=basemap_frame)
+                if plot_bathymetry:
+                    fig.grdimage(grid=SO_BATH, cmap='geo')
+                else:
+                    fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30", land=land_color, water=water_color)
+                if "diff" in var_name.lower():
+                    lat        = da[lat_coord_name].values.flatten()
+                    lon        = da[lon_coord_name].values.flatten()
+                    val        = da.values.flatten()
+                    valid_mask = ~np.isnan(val)
+                    lat_valid  = lat[valid_mask]
+                    lon_valid  = lon[valid_mask]
+                    val_valid  = val[valid_mask].astype(int)
+                    label_map  = {1: "simulation", 0: "agreement", 2: "observation"}
+                    labels     = [label_map[v] for v in val_valid]
+                    df         = pd.DataFrame({"longitude" : lon_valid,
+                                            "latitude"  : lat_valid,
+                                            "z"         : val_valid.astype(int)})
+                    pygmt.makecpt(cmap="categorical", series=[0,2,1], color_model="+cagreement,simulation,observation")
+                    fig.plot(data=df, style=f"s{var_sq_size}c", cmap=True)
+                elif "mask" in var_name.lower():
+                    fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill='red', style=f"s{var_sq_size}c")
+                else:
+                    pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
+                    fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['data'], style=f"s{var_sq_size}c", cmap=True)           
+                if plot_bathymetry:
+                    fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
+                if plot_GI:
+                    fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
+                if plot_iceshelves:
+                    fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
+                if add_stat_annot:
+                    annot_text = self.generate_regional_annotation_stats(da, region, lon_coord_name, lat_coord_name)
+                    for i, line in enumerate(annot_text):
+                        try:
+                            fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
+                        except pygmt.exceptions.GMTCLibError as e:
+                            self.logger.warning(f"Error in plotting anotation text {e} -- skipping annotation")
+                if "diff" in var_name.lower():
+                    fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
+                elif "mask" not in var_name.lower():
                     try:
-                        fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
+                        fig.colorbar(position=cbar_pos, frame=cbar_frame)
                     except pygmt.exceptions.GMTCLibError as e:
-                        self.logger.warning(f"Error in plotting anotation text {e} -- skipping annotation")
-            if "diff" in var_name.lower():
-                fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
-            elif "mask" not in var_name.lower():
-                try:
-                    fig.colorbar(position=cbar_pos, frame=cbar_frame)
-                except pygmt.exceptions.GMTCLibError as e:
-                    self.logger.warning(f"Error in adding colorbar: {e} — skipping colorbar.")
+                        self.logger.warning(f"Error in adding colorbar: {e} — skipping colorbar.")
             if P_png:
                 if not P_png.exists():
                     P_png.parent.mkdir(parents=True, exist_ok=True)
@@ -1186,6 +1177,9 @@ class SeaIcePlotter:
                         repeat_policy    : str  = "inside_others",      # "inside_others" | "outside_others" | "fill_gaps" | "always"
                         repeat_ref_keys  : list[str] | None = None,  # which keys define the "others" window; default: all except current
                         clip_x_axis      : bool  = False,
+                        zero_line        : bool  = False,
+                        zero_line_level  : float = 0.0,
+                        zero_line_pen    : str   = "2p,black",
                         save_fig         : bool  = None,
                         show_fig         : bool  = None):
         """
@@ -1336,33 +1330,13 @@ class SeaIcePlotter:
                              y     = mean_y,
                              pen   = f"{line_pen},{line_color}",
                              label = leg_lab)
-                else:
-                # Repeat AF2020 across the full date range if needed
-                    # if (dict_key=='AF2020') and primary_key=="FIA":
-                    #     t_start, t_end = tmin.normalize(), tmax.normalize()
-                    #     full_range = pd.date_range(t_start, t_end, freq='D')
-                    #     # Build a repeated time series using day-of-year as lookup
-                    #     df["doy"] = df["time"].dt.dayofyear
-                    #     #print(df)
-                    #     #clim_lookup = df.set_index("doy")["data"]
-                    #     clim_lookup = df.groupby("doy")["data"].mean()
-                    #     repeated_df = pd.DataFrame({"time": full_range})
-                    #     repeated_df["doy"] = repeated_df["time"].dt.dayofyear
-                    #     #print(repeated_df)
-                    #     repeated_df["data"] = repeated_df["doy"].map(clim_lookup)
-                    #     repeated_df = self._smooth_df_time(repeated_df, window=smooth)
-                    #     fig.plot(x=repeated_df["time"], y=repeated_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
-                    # else:
-                    #     df_sm = self._smooth_df_time(df, window=smooth)
-                    #     fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)            
+                else:       
                     if dict_key in repeat_keys:
                         # target x-range (union for figure)
                         t_start, t_end = tmin.normalize(), tmax.normalize()
                         full_range = pd.date_range(t_start, t_end, freq="D")
-
                         # repeated climatology over the full range
                         rep_df = self._repeat_doy_over_range(df, full_range)  # cols: time, rep
-
                         # original reindexed over full range
                         base = pd.DataFrame({"time": full_range}).merge(df.rename(columns={"data": "orig"}), on="time", how="left")
                         mix = base.merge(rep_df, on="time", how="left")
@@ -1378,7 +1352,6 @@ class SeaIcePlotter:
                             else:
                                 ref_keys = set(k for k in ts_dict.keys()
                                             if k != dict_key and (keys2plot is None or k in keys2plot))
-
                             if len(ref_keys) == 0:
                                 # no refs -> behave like fill_gaps (but still allow inside_others to clip nothing)
                                 mix["data"] = mix["orig"].fillna(mix["rep"])
@@ -1395,30 +1368,30 @@ class SeaIcePlotter:
                                         other_mins.append(tt.min()); other_maxs.append(tt.max())
                                 other_min = pd.to_datetime(min(other_mins)).normalize()
                                 other_max = pd.to_datetime(max(other_maxs)).normalize()
-
                                 inside = (mix["time"] >= other_min) & (mix["time"] <= other_max)
                                 # inside the others’ window: use original where present, else repeated
                                 mix.loc[inside, "data"] = mix.loc[inside, "orig"].fillna(mix.loc[inside, "rep"])
-
                                 if repeat_policy == "inside_others":
                                     # outside -> hide (clip)
                                     mix.loc[~inside, "data"] = np.nan
                                 else:
                                     # outside -> use repeated climatology
                                     mix.loc[~inside, "data"] = mix.loc[~inside, "rep"]
-
                                 out_df = mix[["time", "data"]]
-
                         else:
                             raise ValueError(f"Unknown repeat_policy: {repeat_policy}")
-
                         # optional smoothing after composition
                         out_df = self._smooth_df_time(out_df, window=smooth)
                         fig.plot(x=out_df["time"], y=out_df["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
                     else:
                         df_sm = self._smooth_df_time(df, window=smooth)
                         fig.plot(x=df_sm["time"], y=df_sm["data"], pen=f"{line_pen},{line_color}", label=leg_lab)
-    
+            if zero_line:
+                y0 = float(zero_line_level)
+                y_min, y_max = ylim
+                if (y_min <= y0 <= y_max):
+                    x0, x1 = region[0], region[1]
+                    fig.plot(x=[x0, x1], y=[y0, y0], pen=zero_line_pen)
             fig.legend(position=legend_pos, box=legend_box)
         if save_fig:
             F_png = f"{primary_key}_{comp_name}_{'climatology_' if climatology else ''}{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"

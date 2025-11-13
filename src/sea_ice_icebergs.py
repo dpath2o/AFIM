@@ -84,7 +84,6 @@ class SeaIceIcebergs:
                                         (lat <= lat_max) )
                 area_dict[reg_name] = np.sum(area[mask & region_mask])/scale #DEFAULT: m^2 to km^2
                 self.logger.info(f"GI-area_calc: region {reg_name} total GI-area {area_dict[reg_name]:0.2f} km^2")
-            #self.G_t['GI_regional_area']           = area_dict
             return area_dict
         else:
             total_area                = np.sum(area[mask])

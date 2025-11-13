@@ -1,0 +1,17 @@
+#!/bin/bash
+#PBS -N reG-ORAS
+#PBS -P gv90
+#PBS -q hugemembw
+#PBS -l walltime=24:00:00
+#PBS -l ncpus=12
+#PBS -l mem=900GB
+#PBS -l storage=gdata/xp65+gdata/gv90
+#PBS -l wd
+#PBS -m abe
+#PBS -M daniel.atwater@utas.edu.au
+#PBS -o reG-ORAS.out
+#PBS -e reG-ORAS.err
+module purge
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+python reG_ORAS.py
