@@ -35,7 +35,7 @@ def run_loop(sim_name,
         FI_roll_mo = []
         FI_bin_mo  = []
         for mo0_str, moN_str in zip(SI_tools.mo0_strs, SI_tools.moN_strs):
-            FI_raw,FI_bin,FI_roll = SI_tools.classify_fast_ice(dt0_str=mo0_str, dtN_str=moN_str, enable_rolling_output=True)
+            FI_raw,FI_bin,FI_roll,_ = SI_tools.classify_fast_ice(dt0_str=mo0_str, dtN_str=moN_str, enable_rolling_output=True)
             FI_mo.append(FI_raw)
             FI_bin_mo.append(FI_bin)
             FI_roll_mo.append(FI_roll)

@@ -89,32 +89,35 @@ class SeaIceClassification:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def _rolling_mean(self, 
-                      np_mag      : np.ndarray,
-                      mean_period : int = None) -> np.ndarray:
+    def _rolling_mean(self, mag, mean_period: int | None = None):
         """
-        Apply a centered 1-D uniform (boxcar) filter along the time axis.
-
-        Parameters
-        ----------
-        np_mag : np.ndarray
-            Array of shape (time, y, x) containing speed magnitudes on a common grid.
-        mean_period : int, optional
-            Window length in days. Defaults to `self.mean_period`.
-
-        Returns
-        -------
-        np.ndarray
-            Array with the same shape as `np_mag`, boxcar-smoothed along axis 0.
-
-        Notes
-        -----
-        Uses `scipy.ndimage.uniform_filter1d(..., mode="nearest")`, which is
-        approximately centered. For odd window sizes, alignment is symmetric.
+        Centered rolling mean along time.
+        - If `mag` is an xarray.DataArray, keep coords/dims and use xarray rolling (Dask-parallel).
+        - If `mag` is a NumPy array, fall back to scipy.uniform_filter1d.
         """
-        mean_period = mean_period if mean_period is not None else self.mean_period 
-        from scipy.ndimage import uniform_filter1d
-        return uniform_filter1d(np_mag, size=mean_period, axis=0, mode="nearest")
+        mean_period = int(mean_period or self.mean_period)
+
+        if isinstance(mag, xr.DataArray):
+            time_dim = self.CICE_dict["time_dim"]
+            # ensure time chunks aren't larger than the window (helps parallel rolling)
+            tlen = mag.sizes.get(time_dim, 0)
+            if tlen > 0:
+                tch = max(8, min(mean_period, tlen))
+                if mag.chunks is None or mag.chunksizes[time_dim][0] > tch:
+                    mag = mag.chunk({time_dim: tch})
+
+            # centered rolling mean; require full window to avoid edge bias
+            out = (
+                mag.rolling({time_dim: mean_period}, center=True, min_periods=mean_period)
+                .mean()
+                .astype(np.float32)
+            )
+            return out
+
+        else:
+            # NumPy fallback
+            from scipy.ndimage import uniform_filter1d
+            return uniform_filter1d(np.asarray(mag), size=mean_period, axis=0, mode="nearest").astype(np.float32)
 
     def Bavg_methA(self, B_component: np.ndarray, y_len, x_len) -> np.ndarray:
         """
@@ -138,12 +141,6 @@ class SeaIceClassification:
         # Final trim in case padding overshoots
         return avg[:, :y_len, :x_len]
 
-    def B2Ta(self, uB, vB, y_len, x_len):
-        uT = self.Bavg_methA(uB, y_len, x_len)
-        vT = self.Bavg_methA(vB, y_len, x_len)
-        sT = np.sqrt(uT**2 + vT**2)
-        return sT
-
     def Bavg_methB(self, B_component, y_len, x_len, wrap_x):
         """
         Average corner-staggered (B-grid) components onto T points by simple 2x2 mean with no-slip 
@@ -162,6 +159,12 @@ class SeaIceClassification:
         if wrap_x and out.shape[2] > 1:
             out[:, :, -1] = out[:, :, 0]
         return out[:, :y_len, :x_len].astype(np.float32)
+
+    def B2Ta(self, uB, vB, y_len, x_len):
+        uT = self.Bavg_methA(uB, y_len, x_len)
+        vT = self.Bavg_methA(vB, y_len, x_len)
+        sT = np.sqrt(uT**2 + vT**2)
+        return sT
 
     def B2Tb(self, uB, vB, y_len, x_len, wrap_x):
         uT = self.Bavg_methB(uB, y_len, x_len, wrap_x)
@@ -216,70 +219,32 @@ class SeaIceClassification:
             pad_before, pad_after = win - 1, 0
         return np.pad(meets, ((pad_before, pad_after), (0, 0), (0, 0)), constant_values=0)
 
-    def classify_binary_days_fast_ice(self, FI_mask,
-                                      bin_win_days : int  = None,
-                                      bin_min_days : int  = None,
-                                      time_dim     : str  = None,
-                                      centered     : bool = True):
+    def classify_binary_days_fast_ice(self, FI_mask: xr.DataArray,
+                                      bin_win_days : int | None = None,
+                                      bin_min_days : int | None = None,
+                                      time_dim     : str | None = None,
+                                      centered     : bool = True) -> xr.Dataset:
         """
-        Create a binary-day (persistence) fast-ice mask from a daily mask.
-
-        Parameters
-        ----------
-        FI_mask : xarray.DataArray or xarray.Dataset
-            Daily fast-ice mask with boolean/0-1 values over dims (time, y, x).
-            If a Dataset is provided, it must contain a variable named "FI_mask".
-        bin_win_days : int, optional
-            Sliding-window length (days). Defaults to `self.bin_win_days`.
-        bin_min_days : int, optional
-            Minimum number of fast-ice days in the window. Defaults to `self.bin_min_days`.
-        time_dim : str, optional
-            Name of the time dimension. Defaults to `self.CICE_dict["time_dim"]`.
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with a single variable `"FI_mask"` (dtype=uint8) holding the
-            persistence classification, chunked per `self.CICE_dict["FI_chunks"]`.
-
-        Raises
-        ------
-        ValueError
-            If two spatial dimensions cannot be inferred from the input.
+        Binary-day persistence: in each window of length W, mark fast ice if
+        at least M days are True. Uses rolling-sum (dask-parallel) and gracefully
+        handles empty time ranges.
         """
-        time_dim     = time_dim     or self.CICE_dict["time_dim"]
-        bin_win_days = bin_win_days or self.bin_win_days
-        bin_min_days = bin_min_days or self.bin_min_days
-        if isinstance(FI_mask, xr.Dataset):
-            if "FI_mask" not in FI_mask:
-                raise ValueError("Dataset must contain variable 'FI_mask'.")
-            da = FI_mask["FI_mask"]
-        else:
-            da = FI_mask
-        # infer spatial dims
-        spatial_dims = [d for d in da.dims if d != time_dim]
-        if len(spatial_dims) != 2:
-            raise ValueError(f"Expected two spatial dimensions, got: {spatial_dims}")
-        dim_y, dim_x = spatial_dims
-        # make sure time is a single chunk to avoid window breaks at chunk edges
-        dai = da.fillna(0).astype("i1").chunk({time_dim: -1})
-        self.logger.debug(f"   FI_mask dims before rolling: {dai.dims}, shape={tuple(dai.shape)}")
-        self.logger.info(f"   {bin_min_days:d} out of {bin_win_days:d} days must be immobile sea ice")
-        da_FI_bin = xr.apply_ufunc(self._binary_days, dai,
-                                   input_core_dims  = [[time_dim, dim_y, dim_x]],
-                                   output_core_dims = [[time_dim, dim_y, dim_x]],
-                                   dask             = "parallelized",
-                                   output_dtypes    = [np.uint8],
-                                   kwargs           = {"win"      : bin_win_days,
-                                                       "min_days" : bin_min_days, 
-                                                       "centered" : centered})
-        out = da_FI_bin.rename("FI_mask").to_dataset()
-        # record parameters on the variable (not just Dataset attrs)
-        out["FI_mask"].attrs.update({"long_name"    : "binary-day fast ice mask",
-                                     "bin_win_days" : bin_win_days,
-                                     "bin_min_days" : bin_min_days,
-                                     "window_type"  : "centered" if centered else "trailing",})
-        return out.chunk(self.CICE_dict["FI_chunks"])
+        time_dim    = time_dim or self.CICE_dict["time_dim"]
+        W           = int(bin_win_days or self.bin_win_days)
+        M           = int(bin_min_days or self.bin_min_days)
+        if FI_mask.sizes.get(time_dim, 0) == 0:
+            self.logger.warning("   FI_mask has zero time length for this slice; returning empty dataset.")
+            return FI_mask.astype(np.uint8).rename("FI_mask").to_dataset()
+        tlen = FI_mask.sizes[time_dim]
+        tch  = max(8, min(W, tlen))
+        if FI_mask.chunks is None or FI_mask.chunksizes[time_dim][0] in (0, None) or FI_mask.chunksizes[time_dim][0] > tch:
+            FI_mask = FI_mask.chunk({time_dim: tch})
+        # Rolling sum over time (centered), count of True days in each W-window
+        #    min_periods=M enforces the ">= M days" logic even at edges.
+        counts = (FI_mask.astype("uint8").rolling({time_dim: W}, center=centered, min_periods=M).sum())
+        # Threshold to binary fast-ice and package
+        da_bin = (counts >= M).astype("uint8").rename("FI_mask")
+        return da_bin.to_dataset()
 
     def _compose_T_speed(self,
                          uvel  : xr.DataArray,
@@ -329,107 +294,77 @@ class SeaIceClassification:
             if dim in FI.coords:
                 FI = FI.drop_vars(dim)
         return FI
-
-    def _compute_fast_ice_mask(self,
-                               uvel    : xr.DataArray,
-                               vvel    : xr.DataArray,
-                               aice    : xr.DataArray,
-                               dt0_str : str,
-                               dtN_str : str,
-                               label   : str = "") -> xr.Dataset:
+    
+    def _with_T_coords(self, da: xr.DataArray, name: str | None = None) -> xr.DataArray:
         """
-        Build the daily fast-ice mask on the analysis hemisphere from B-grid components.
-
-        Parameters
-        ----------
-        uvel, vvel : xarray.DataArray
-            Corner-staggered velocity components (t, y, x) on the B grid.
-        aice : xarray.DataArray
-            Sea-ice concentration (t, y, x) on the T grid.
-        dt0_str, dtN_str : str
-            Requested start/end dates (ISO yyyy-mm-dd). Used for logs and slicing.
-        label : str
-            Tag for logging (e.g., "daily", "rolling-mean").
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with boolean "FI_mask" over the selected hemisphere and time span.
+        Attach T-grid lon/lat (and optionally *_b) coords from self.G_t to `da`.
+        Assumes `da` has dims (time, y, x) matching self.CICE_dict["three_dims"].
         """
-        self.logger.info(f"FAST ICE MASK [{label}]:")
-        # Compose T-point speed correctly from components (Tb, optionally TxC)
-        ispd_T = self._compose_T_speed(uvel, vvel, label=label).compute()
-        # Thresholds
-        FI = self._apply_thresholds(ispd_T, aice, label=label)
-        # Final time crop (safety)
-        return FI.sel(time=slice(pd.to_datetime(dt0_str), pd.to_datetime(dtN_str)))
+        ydim, xdim = self.CICE_dict["spatial_dims"]
+        da         = da.rename(name or da.name)
+        da         = da.assign_coords({"lon"  : ((ydim, xdim), self.G_t["lon"].data),
+                                       "lat"  : ((ydim, xdim), self.G_t["lat"].data),
+                                       "angle": ((ydim, xdim), self.G_t["angle"].data),
+                                       "area" : ((ydim, xdim), self.G_t["area"].data)})
+        return da
 
     def classify_fast_ice(self,
-                          dt0_str               : str  = None,
-                          dtN_str               : str  = None,
-                          bin_win_days          : int  = None,
-                          bin_min_days          : int  = None,
-                          enable_rolling_output : bool = False,
-                          roll_win_days         : int  = None,
-                          time_dim_name         : str  = None):
-        """
-        End-to-end fast-ice classification over a date range, corrected to use
-        component-safe B->T interpolation (no-slip zeros, denom=4) for speed.
-        """
+                        dt0_str               : str  = None,
+                        dtN_str               : str  = None,
+                        bin_win_days          : int  = None,
+                        bin_min_days          : int  = None,
+                        enable_rolling_output : bool = False,
+                        roll_win_days         : int  = None,
+                        time_dim_name         : str  = None):
         time_dim      = time_dim_name or self.CICE_dict["time_dim"]
-        bin_win_days  = bin_win_days  or self.bin_win_days
-        bin_min_days  = bin_min_days  or self.bin_min_days
-        roll_win_days = roll_win_days or self.mean_period
+        bin_win_days  = int(bin_win_days  or self.bin_win_days)
+        bin_min_days  = int(bin_min_days  or self.bin_min_days)
+        roll_win_days = int(roll_win_days or self.mean_period)
         self.load_bgrid()
         self.define_reG_weights()
-        # Extend the requested time range for rolling/binary windows
-        ext_per = (self.mean_period // 2) if enable_rolling_output else (self.bin_win_days // 2)
-        dt0_ext = pd.to_datetime(dt0_str) - timedelta(days=ext_per)
-        dtN_ext = pd.to_datetime(dtN_str) + timedelta(days=ext_per)
-        # Load required variables
-        self.logger.info(f"loading model data between {dt0_ext.strftime('%Y-%m-%d')} and {dtN_ext.strftime('%Y-%m-%d')}")
-        CICE_all = self.load_cice_zarr(slice_hem=False,
-                                    variables=['aice', 'uvel', 'vvel'],
-                                    dt0_str=dt0_ext.strftime('%Y-%m-%d'),
-                                    dtN_str=dtN_ext.strftime('%Y-%m-%d'))
-        # Clamp to available range
-        dt0_avail = pd.to_datetime(CICE_all.time.values[0]).normalize()
-        dtN_avail = pd.to_datetime(CICE_all.time.values[-1]).normalize()
-        dt0_str   = pd.to_datetime(dt0_str).normalize()
-        dtN_str   = pd.to_datetime(dtN_str).normalize()
-        dt0_ext   = pd.to_datetime(dt0_ext).normalize()
-        dtN_ext   = pd.to_datetime(dtN_ext).normalize()
-        self.logger.debug(f"REQUESTED RANGE : {dt0_str} to {dtN_str}")
-        self.logger.debug(f"EXTENDED  RANGE : {dt0_ext} to {dtN_ext}")
-        self.logger.debug(f"AVAILABLE RANGE : {dt0_avail} to {dtN_avail}")
-        dt0_load = dt0_avail if dt0_avail > dt0_ext else dt0_ext
-        dtN_load = dtN_avail if dtN_avail < dtN_ext else dtN_ext
-        if dt0_load != dt0_ext:
-            self.logger.info(f"** EARLIEST AVAILABLE DATA IS {dt0_avail.date()} — differs from extended start date {dt0_ext.date()}")
-        if dtN_load != dtN_ext:
-            self.logger.info(f"** MOST RECENT AVAILABLE DATA IS {dtN_avail.date()} — differs from extended end date {dtN_ext.date()}")
-        # Define internal calc window
-        self.define_datetime_vars(dt0_str=dt0_load, dtN_str=dtN_load)
-        # Drop coord bloat early
-        aice = CICE_all['aice'].drop_vars(self.CICE_dict["drop_coords"])
-        uvel = CICE_all['uvel'].drop_vars(self.CICE_dict["drop_coords"])
-        vvel = CICE_all['vvel'].drop_vars(self.CICE_dict["drop_coords"])
-        # Daily mask (component-safe interpolation inside)
-        FI_dly = self._compute_fast_ice_mask(uvel, vvel, aice, dt0_str, dtN_str, label="daily")
-        FI_dly = FI_dly.sel(time=slice(dt0_str, dtN_str))
-        # Binary-day mask (on daily FI)
+        ispd_out = {'daily' : None,
+                    'rolly' : None}
+        # extend enough time for BOTH methods
+        ext_per = max(bin_win_days // 2, roll_win_days // 2 if enable_rolling_output else 0)
+        dt0_ext = pd.to_datetime(dt0_str) - pd.Timedelta(days=ext_per)
+        dtN_ext = pd.to_datetime(dtN_str) + pd.Timedelta(days=ext_per)
+        # Load (extended) data
+        self.logger.info(f"loading model data between {dt0_ext:%Y-%m-%d} and {dtN_ext:%Y-%m-%d}")
+        CICE_all = self.load_cice_zarr(slice_hem = False,
+                                       variables = ['aice','uvel','vvel'],
+                                       dt0_str   = f"{dt0_ext:%Y-%m-%d}",
+                                       dtN_str   = f"{dtN_ext:%Y-%m-%d}")
+        # Compact coords & set friendly chunks
+        aice   = CICE_all['aice'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+        uvel   = CICE_all['uvel'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+        vvel   = CICE_all['vvel'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+        yck    = self.CICE_dict.get("y_chunk", 540)
+        xck    = self.CICE_dict.get("x_chunk", 1440)
+        tch    = max(8, min(bin_win_days, roll_win_days))  # small time chunks help rolling parallelism
+        chunks = {self.CICE_dict["time_dim"]: tch, self.CICE_dict["y_dim"]: yck, self.CICE_dict["x_dim"]: xck}
+        aice, uvel, vvel = aice.chunk(chunks), uvel.chunk(chunks), vvel.chunk(chunks)
+        # Build T-grid speed ONCE over the extended span
+        ispd_T = self._compose_T_speed(uvel, vvel, label="base").persist()
+        ispd_T = self._with_T_coords(ispd_T, name="ispd_T")
+        ispd_out['daily'] = ispd_T
+        # DAILY mask on the EXTENDED range, THEN crop
+        FI_dly_ext = self._apply_thresholds(ispd_T, aice, label="daily")
+        FI_dly     = FI_dly_ext.sel(time=slice(dt0_str, dtN_str))
+        # BINARY-DAYS on the EXTENDED DAILY mask, THEN crop  <-- this fixes your all-zero issue
         self.logger.info("classifying binary-day fast ice mask")
-        FI_bin = self.classify_binary_days_fast_ice(FI_dly["FI_mask"],
-                                                    bin_win_days = bin_win_days,
-                                                    bin_min_days = bin_min_days,
-                                                    time_dim     = time_dim).sel(time=slice(dt0_str, dtN_str))
-        # Optional rolling classification on T-grid speed
+        FI_bin_ext = self.classify_binary_days_fast_ice(FI_dly_ext["FI_mask"],  # use extended
+                                                        bin_win_days = bin_win_days,
+                                                        bin_min_days = bin_min_days,
+                                                        time_dim     = time_dim,
+                                                        centered     = True)
+        FI_bin = FI_bin_ext.sel(time=slice(dt0_str, dtN_str))
+        # Optional ROLLING on the extended speed, THEN crop (unchanged in spirit)
         FI_roll = None
         if enable_rolling_output:
             self.logger.info(f"applying rolling mean on T-grid speed (period={roll_win_days})")
-            ispd_T      = self._compose_T_speed(uvel, vvel, label="rolling-pre")  # lazy
             ispd_T_roll = self._rolling_mean(ispd_T, mean_period=roll_win_days)
-            ispd_T_da   = xr.DataArray(ispd_T_roll, dims=(self.CICE_dict["three_dims"]), name="rolling-mean")
-            FI_roll     = self._apply_thresholds(ispd_T_da, aice, label="rolling-mean")
-            FI_roll     = FI_roll.sel(time=slice(dt0_str, dtN_str))
-        return FI_dly, FI_bin, FI_roll
+            ispd_T_roll = self._with_T_coords(ispd_T_roll, name="ispd_T_roll")
+            FI_roll_ext = self._apply_thresholds(ispd_T_roll, aice, label="rolling-mean")
+            FI_roll     = FI_roll_ext.sel(time=slice(dt0_str, dtN_str))
+            ispd_out['rolly'] = ispd_T_roll
+        return FI_dly, FI_bin, FI_roll, ispd_out

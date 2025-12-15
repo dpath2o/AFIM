@@ -1,5 +1,5 @@
 #!/bin/bash
-SIM_NAME=""
+SIM_NAME="elps-min"
 START_YEAR=2002
 END_YEAR=2012
 while [[ "$#" -gt 0 ]]; do

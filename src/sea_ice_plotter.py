@@ -152,34 +152,6 @@ class SeaIcePlotter:
         data_dict['lat']  = lat2d[mask].ravel()
         return data_dict
 
-    def load_GI_lon_lats(self):
-        """
-        Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
-
-        This method identifies cells where the landmask has been modified to add grounded icebergs
-        (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
-        landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
-
-        Returns
-        -------
-        dict
-            Dictionary with:
-            - 'lon': 1D array of longitudes of grounded iceberg grid cells
-            - 'lat': 1D array of latitudes  of grounded iceberg grid cells
-
-        Notes
-        -----
-        - `self.P_KMT_org` and `self.P_KMT_mod` must be paths to NetCDF files with the `kmt` landmask variable.
-        - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
-        - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
-        """
-        self.load_bgrid(slice_hem=True)
-        GI_loc_dict        = {}
-        GI_mask            = (self.G_t['kmt_org'] == 1) & (self.G_t['kmt_mod']== 0)
-        GI_loc_dict['lon'] = self.G_t['lon'][GI_mask].ravel()
-        GI_loc_dict['lat'] = self.G_t['lat'][GI_mask].ravel()
-        return GI_loc_dict
-
     def create_cbar_frame(self, series, label, units=None, extend_cbar=False, max_ann_steps=10):
         """
         Construct a GMT-style colorbar annotation frame string for PyGMT plotting.
@@ -818,7 +790,7 @@ class SeaIcePlotter:
         cbar_frame = self.create_cbar_frame(series, cbar_lab, units=cbar_units, extend_cbar=extend_cbar)
         hem_plot   = False
         if plot_GI:
-                plot_GI_dict = self.load_GI_lon_lats(plot_data_dict)
+            plot_GI_dict = self.load_GI_lon_lats()#plot_data_dict)
         if plot_regions is not None and plot_regions==8:
             self.logger.info("method will plot eight Antarctic sectors regional dictionary")
             reg_dict = self.Ant_8sectors
@@ -1142,46 +1114,46 @@ class SeaIcePlotter:
         return rep[["time", "rep"]]
 
     def pygmt_timeseries(self, ts_dict,
-                        comp_name        : str   = "test",
-                        primary_key      : str   = "FIA",
-                        smooth           : str|int | None = None,   # NEW: e.g., 15, "15D"
-                        clim_smooth      : int | None = None, 
-                        climatology      : bool  = False,
-                        ylabel           : str   = "@[Fast Ice Area (1\\times10^3 km^2)@[",
-                        ylim             : tuple = [0,1000],
-                        yaxis_pri        : int   = None,
-                        ytick_pri        : int   = 100,
-                        ytick_sec        : int   = 50,
-                        projection       : str   = None,
-                        fig_width        : str   = None,
-                        fig_height       : str   = None,
-                        xaxis_pri        : str   = None,
-                        xaxis_sec        : str   = None,
-                        frame_bndy       : str   = "WS",
-                        legend_pos       : str   = None,
-                        legend_box       : str   = "+gwhite+p0.5p",
-                        fmt_dt_pri       : str   = None,
-                        fmt_dt_sec       : str   = None,
-                        fmt_dt_map       : str   = None,
-                        fnt_type         : str   = "Helvetica",
-                        fnt_wght_lab     : str   = "20p",
-                        fnt_wght_ax      : str   = "18p",
-                        line_pen         : str    = "1p",
-                        grid_wght_pri    : str   = ".25p",
-                        grid_wght_sec    : str   = ".1p",
-                        P_png            : str   = None,
-                        time_coord       : str   = "time",
-                        time_coord_alt   : str   = "date",
-                        keys2plot        : list  = None,
+                        comp_name        : str              = "test",
+                        primary_key      : str              = "FIA",  # "FIA"
+                        smooth           : str|int | None   = None,   # e.g., 15, "15D"
+                        clim_smooth      : int | None       = None,   # 15
+                        climatology      : bool             = False,
+                        ylabel           : str              = None,   # "@[Fast Ice Area (1\\times10^3 km^2)@[",
+                        ylim             : tuple            = [0,1000],
+                        yaxis_pri        : int              = None,
+                        ytick_pri        : int              = 100,
+                        ytick_sec        : int              = 50,
+                        projection       : str              = None,
+                        fig_width        : str              = None,
+                        fig_height       : str              = None,
+                        xaxis_pri        : str              = None,
+                        xaxis_sec        : str              = None,
+                        frame_bndy       : str              = "WS",
+                        legend_pos       : str              = None,
+                        legend_box       : str              = "+gwhite+p0.5p",
+                        fmt_dt_pri       : str              = None,
+                        fmt_dt_sec       : str              = None,
+                        fmt_dt_map       : str              = None,
+                        fnt_type         : str              = "Helvetica",
+                        fnt_wght_lab     : str              = "20p",
+                        fnt_wght_ax      : str              = "18p",
+                        line_pen         : str              = "1p",
+                        grid_wght_pri    : str              = ".25p",
+                        grid_wght_sec    : str              = ".1p",
+                        P_png            : str              = None,
+                        time_coord       : str              = "time",
+                        time_coord_alt   : str              = "date",
+                        keys2plot        : list             = None,
                         repeat_keys      : list[str] | None = None,
-                        repeat_policy    : str  = "inside_others",      # "inside_others" | "outside_others" | "fill_gaps" | "always"
-                        repeat_ref_keys  : list[str] | None = None,  # which keys define the "others" window; default: all except current
-                        clip_x_axis      : bool  = False,
-                        zero_line        : bool  = False,
-                        zero_line_level  : float = 0.0,
-                        zero_line_pen    : str   = "2p,black",
-                        save_fig         : bool  = None,
-                        show_fig         : bool  = None):
+                        repeat_policy    : str              = "inside_others", # "inside_others" | "outside_others" | "fill_gaps" | "always"
+                        repeat_ref_keys  : list[str] | None = None,            # which keys define the "others" window; default: all except current
+                        clip_x_axis      : bool             = False,
+                        zero_line        : bool             = False,
+                        zero_line_level  : float            = 0.0,
+                        zero_line_pen    : str              = "2p,black",
+                        save_fig         : bool             = None,
+                        show_fig         : bool             = None):
         """
         Plot time series of a primary variable (e.g., FIA) for a set of simulations or observations.
 
@@ -1236,6 +1208,9 @@ class SeaIcePlotter:
         fmt_dt_pri = fmt_dt_pri if fmt_dt_pri is not None else "Character"
         fmt_dt_sec = fmt_dt_sec if fmt_dt_sec is not None else "Abbreviated"
         fmt_dt_map = fmt_dt_map if fmt_dt_map is not None else "o"
+        # primary_key = primary_key if primary_key is not None else keys2plot[0]
+        # if keys2plot is None:
+        #     raise("either 'primary_key' or 'keys2plot' must be defined")
         # need to get out the maximum times for plot boundaries
         tmin, tmax = self.extract_min_max_dates(ts_dict, keys2plot=keys2plot, primary_key=primary_key, time_coord=time_coord)
         # --- normalize new params ---
@@ -1275,13 +1250,13 @@ class SeaIcePlotter:
         else:
             fig_width  = fig_width  if fig_width  is not None else "50c"
             fig_height = fig_height if fig_height is not None else "15c"
-            xaxis_pri  = xaxis_pri  if xaxis_pri  is not None else "a2Of30Dg30D"
+            xaxis_pri  = xaxis_pri  if xaxis_pri  is not None else "a2Of30D"#g30D"
             xaxis_sec  = xaxis_sec  if xaxis_sec  is not None else "a1Y"
             region     = [x_start.strftime("%Y-%m-%d"), x_end.strftime("%Y-%m-%d"), ylim[0], ylim[1]]
         # define the projection and frame of the figure
         legend_pos = legend_pos if legend_pos is not None else f"JTL+jTL+o0.2c+w{fig_width}"
         projection = f"X{fig_width}/{fig_height}"
-        yaxis_pri  = yaxis_pri if yaxis_pri is not None else f"a{ytick_pri}gf{ytick_sec}+l{ylabel}"
+        yaxis_pri  = yaxis_pri if yaxis_pri is not None else f"a{ytick_pri}f{ytick_sec}+l{ylabel}"
         if xaxis_sec is not None:
             frame = [frame_bndy, f"sx{xaxis_sec}", f"px{xaxis_pri}", f"py{yaxis_pri}"]
         else:
@@ -1299,8 +1274,14 @@ class SeaIcePlotter:
             # loop over each key in the dictionary and if keys2plot is defined only plot those dictionaries
             cnt=0
             for i, (dict_key, data) in enumerate(ts_dict.items()):
-                line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
-                leg_lab    = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
+                if data.get("line_clr", None) is not None:
+                    line_color = data['line_clr']
+                else:
+                    line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
+                if data.get("leg_lab", None) is not None:
+                    leg_lab = data['leg_lab']
+                else:
+                    leg_lab = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
                 da = data[primary_key]
                 self.logger.info(f"pulling out data array for {dict_key} and putting into dataframe")
                 self.logger.info(f"legend label: {leg_lab}")

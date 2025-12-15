@@ -163,6 +163,34 @@ class SeaIceIcebergs:
             except Exception as e:
                 report['sector_check_failed'] = str(e)
         return report
+    
+    def load_GI_lon_lats(self):
+        """
+        Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
+
+        This method identifies cells where the landmask has been modified to add grounded icebergs
+        (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
+        landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
+
+        Returns
+        -------
+        dict
+            Dictionary with:
+            - 'lon': 1D array of longitudes of grounded iceberg grid cells
+            - 'lat': 1D array of latitudes  of grounded iceberg grid cells
+
+        Notes
+        -----
+        - `self.P_KMT_org` and `self.P_KMT_mod` must be paths to NetCDF files with the `kmt` landmask variable.
+        - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
+        - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
+        """
+        self.load_bgrid(slice_hem=True)
+        GI_loc_dict        = {}
+        GI_mask            = (self.G_t['kmt_org'] == 1) & (self.G_t['kmt_mod']== 0)
+        GI_loc_dict['lon'] = self.G_t['lon'][GI_mask].ravel()
+        GI_loc_dict['lat'] = self.G_t['lat'][GI_mask].ravel()
+        return GI_loc_dict
 
     def load_existing_thinned(self):
         """
