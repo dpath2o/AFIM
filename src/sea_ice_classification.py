@@ -29,7 +29,7 @@ Attributes (populated externally or via your toolbox manager):
 - self.bin_win_days: int    (persistence window length, e.g., 31)
 - self.bin_min_days: int    (min fast-ice count in window, e.g., 16)
 - self.mean_period: int     (rolling mean length in days)
-- self.BT_composite_grids: iterable of {"B","Ta","Tb","Tx"} to average into composite
+- self.B2T_type: some combination of {"B","C","Ta","Tb","Tc","Tx"} to average into composite
 - self.G_t, self.G_u: dicts providing T- and U-grid lon/lat arrays
 - self.dt_range: pandas.DatetimeIndex used by np3d_to_xr3d
 
@@ -256,26 +256,26 @@ class SeaIceClassification:
         x_len             = self.CICE_dict["x_dim_length"]
         wrap_x            = self.CICE_dict.get("wrap_x", True)
         members           = []
-        if "Ta" in self.BT_composite_grids:
+        if "Ta" in self.B2T_type:
             if hasattr(self, "B2Ta"):
                 ispd    = self.B2Ta(uvel, vvel, y_len, x_len).astype(np.float32)
                 ispd_Ta = xr.DataArray(ispd, dims=(self.CICE_dict["three_dims"]), name="ispd_Ta")
                 members.append(ispd_Ta)
             else:
-                self.logger.warning("Ta requested in BT_composite_grids but B2Ta not defined. Skipping Ta.")
-        if "Tb" in self.BT_composite_grids:
+                self.logger.warning("Ta requested in B2T_type but B2Ta not defined. Skipping Ta.")
+        if "Tb" in self.B2T_type:
             if hasattr(self, "B2Tb"):
                 ispd    = self.B2Tb(uvel, vvel, y_len, x_len, wrap_x=wrap_x).astype(np.float32)
                 ispd_Tb = xr.DataArray(ispd, dims=(self.CICE_dict["three_dims"]), name="ispd_Tb")
                 members.append(ispd_Tb)
             else:
-                self.logger.warning("Tb requested in BT_composite_grids but B2Tb not defined. Skipping Tb.")
-        if "Tx" in self.BT_composite_grids:
+                self.logger.warning("Tb requested in B2T_type but B2Tb not defined. Skipping Tb.")
+        if "Tx" in self.B2T_type:
             if hasattr(self, "B2Tx"):
                 ispd_Tx = self.B2Tx(uvel, vvel).astype(np.float32).rename("ispd_Tx")
                 members.append(ispd_Tx)
             else:
-                self.logger.warning("Tx requested in BT_composite_grids but B2Tx not defined. Skipping Tx.")
+                self.logger.warning("Tx requested in B2T_type but B2Tx not defined. Skipping Tx.")
         if len(members) == 1:
             return members[0]
         return xr.concat(members, dim="__concat_dim__").mean("__concat_dim__", skipna=True).astype(np.float32)

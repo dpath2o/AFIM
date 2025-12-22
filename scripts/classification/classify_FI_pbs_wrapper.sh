@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # --- Defaults ---
-ROLLING=false
-DAILY=false
-IVEC_TYPE_LIST=()
+B2T_TYPE_LIST=()
 START_DATE="1993-01-01"
 END_DATE=""
 YEARLY=false
@@ -17,16 +15,14 @@ PBS_SCRIPT=classify_FI.pbs
 print_help() {
     echo ""
     echo "Usage:"
-    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i IVEC_TYPE ...] [-r] [-d]"
+    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i B2T_TYPE ...] [-r] [-d]"
     echo ""
     echo "Options:"
     echo "  -s SIM_NAME      Simulation name (required)"
     echo "  -t ISPD_THRESH   Ice speed threshold (e.g. 1e-3) (required)"
-    echo "  -i IVEC_TYPE     Ice speed type(s): B, Ta, Tx, BT (repeatable)"
+    echo "  -i B2T_TYPE     B-grid regridding to T-grid method(s): B (no regridding), Ta, Tb, Tx (some combination)"
     echo "  -S START_DATE    Start date (YYYY-MM-DD, forced to first of month; default 1993-01-01)"
     echo "  -E END_DATE      End date (YYYY-MM-DD, forced to last of month)"
-    echo "  -r               Enable rolling fast ice masking"
-    echo "  -d               Enable daily fast ice masking"
     echo "  -z               overwrite zarrs"
     echo "  -y               process yearly loop"
     echo "  -k               if enabled then when creating new iceh_*.zarr monthly files, this will then delete the original daily ice history files for a particular month"
@@ -34,9 +30,9 @@ print_help() {
     echo "  -h               Show this help message and exit"
     echo ""
     echo "Examples:"
-    echo "  $0 -s gi-mid -t 1e-3 -i Ta -d"
-    echo "  $0 -s gi-mid -t 1e-3 -i B -i Ta -r -d"
-    echo "  $0 -s gi-mid -t 1e-3 -r -d     # runs all ispd types by default"
+    echo "  $0 -s gi-mid -t 1e-3 -i Ta"
+    echo "  $0 -s gi-mid -t 1e-3 -i Tb -i Tx"
+    echo "  $0 -s gi-mid # runs defaults"
     echo ""
 }
 
@@ -45,9 +41,7 @@ while getopts "s:t:i:rdzkhS:E:ny" opt; do
     case ${opt} in
         s) SIM_NAME="$OPTARG" ;;
         t) ISPD_THRESH="$OPTARG" ;;
-        i) IVEC_TYPE_LIST+=("$OPTARG") ;;
-        r) ROLLING=true ;;
-        d) DAILY=true ;;
+        i) B2T_TYPE_LIST+=("$OPTARG") ;;
         z) OVERWRITE_ZARR=true ;;
         k) DELETE_ORIGINAL_ICEH=true ;;
         S) START_DATE="$OPTARG" ;;
@@ -67,15 +61,9 @@ if [[ -z "$SIM_NAME" ]]; then
     exit 1
 fi
 
-if { [[ "$ROLLING" == true ]] || [[ "$DAILY" == true ]]; } && [[ -z "$ISPD_THRESH" ]]; then
-    echo "❌ Error: -t ISPD_THRESH is required when using -r (rolling) or -d (daily) modes." >&2
-    print_help
-    exit 1
-fi
-
 # --- Default ISPD types if none specified ---
-if [ ${#ISPD_TYPE_LIST[@]} -eq 0 ]; then
-    IVEC_TYPE_LIST=("BT") #"B" "Ta" "Tx"
+if [ ${#B2T_TYPE_LIST[@]} -eq 0 ]; then
+    B2T_TYPE_LIST=("Tb") #"B" "Ta" "Tx" "BT"
 fi
 
 # Validate start and end date
@@ -110,9 +98,7 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
     YEAR=$(date -d "$DT0" +%Y)
     MONTH=$(date -d "$DT0" +%m)
     VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH}"
-    [ "${#IVEC_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",ISPD_TYPE=${IVEC_TYPE_LIST[*]}"
-    [ "${ROLLING}" = true ] && VAR_PASS+=",ROLLING=true"
-    [ "${DAILY}" = true ] && VAR_PASS+=",DAILY=true"
+    [ "${#B2T_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",B2T_TYPE=${B2T_TYPE_LIST[*]}"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
     [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
     JOB_NAME="fi_${SIM_NAME}_${JOB_SUFFIX}_${ISPD_THRESH}"

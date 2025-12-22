@@ -10,7 +10,7 @@
 module use /g/data/xp65/public/modules
 module load conda/analysis3-25.05
 cd ~/AFIM/src/AFIM/scripts/classification/
-echo "Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, ivec_type=${IVEC_TYPE:-ALL}"
+echo "Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, B2T_type=${B2T_TYPE:-ALL}"
 F_log=/g/data/gv90/da1339/logs/classification/${SIM_NAME}/${START_DATE}_${END_DATE}_${ISPD_THRESH}_procees_fast_ice.log
 mkdir -p "$(dirname "$F_log")"
 CMD=(python3 classify_FI.py "$SIM_NAME" \
@@ -18,9 +18,7 @@ CMD=(python3 classify_FI.py "$SIM_NAME" \
              --end_date "$END_DATE" \
              --log_file "$F_log" \
              --ispd_thresh "$ISPD_THRESH")
-[ -n "${IVEC_TYPE}" ] && CMD+=(--ivec_type ${IVEC_TYPE})
-[ "${ROLLING}" = true ] && CMD+=(--rolling)
-[ "${DAILY}" = true ] && CMD+=(--daily)
+[ -n "${B2T_TYPE}" ] && CMD+=(--B2T_type ${B2T_TYPE})
 [ "${OVERWRITE_ZARR}" = true ] && CMD+=(--overwrite_zarr)
 [ "${DELETE_ORIGINAL_ICEH}" = true ] && CMD+=(--delete_original_iceh)
 echo "Running: ${CMD[*]}"

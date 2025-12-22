@@ -122,7 +122,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
     ice_speed_threshold : float, optional
         Speed threshold (m/s) below which ice is considered fast (default 5e-4).
     ice_vector_type : str | list[str], optional
-        Which speed field(s) to use: `'B'`, `'Ta'`, `'Tx'`, or `'BT'`.
+        Which speed field(s) to use: `'B'`, `'Ta'`, `'Tb'` `'Tx'`, or `'BT'`.
     ice_type : str | list[str], optional
         Classification (“FI”, “PI”, etc.), combined later into `self.ice_class`.
     mean_period : int, optional
@@ -133,8 +133,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         Controls hemisphere slicing throughout the pipeline.
     P_log : Path, optional
         Log file to attach to the toolbox logger.
-    overwrite_zarr / overwrite_AF2020_zarr / overwrite_saved_figs : bool, optional
-        Overwrite behaviours for outputs and figures.
     save_new_figs, show_figs : bool, optional
         Figure output/interactive toggles.
     client : dask.distributed.Client, optional
@@ -152,8 +150,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger.info(f"Analysis Start Date : {self.dt0_str}")
         self.logger.info(f"Analysis End Date   : {self.dtN_str}")
         self.logger.info(f"Speed Threshold     : {self.ispd_thresh:.1e} m/s")
-        self.logger.info(f"Speed Type(s)       : {self.BT_composite_grids}")
-        self.logger.info(f"Ice Speed Name      : {self.ivec_type}")
+        self.logger.info(f"B-regrid Type(s)    : {self.B2T_type}")
         self.logger.info(f"Ice Type(s)         : {self.ice_type}")
         self.logger.info(f"Mean Period         : {self.mean_period} days")
         self.logger.info(f"Binary-days Window  : {self.bin_win_days} days")
@@ -201,8 +198,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                                     # format is YYYY-MM-DD; default is 1993-01-01
                  dtN_str                     = None,# the end period over which many methods underneath use
                                                     # format is YYYY-MM-DD; default is 1999-12-31
-                 list_of_composite_grids     = None,# select list of ["B", "Ta", "Tb", "Tx"];  must contain two;
-                                                    # default ["Ta","Tx"]
+                 list_of_B2T                 = None,# select list of ["B", "Ta", "Tb", "Tx"];  must be a list;
+                                                    # default ["Tb"]
                  iceh_frequency              = None,# 'hourly', 'daily', 'monthly', 'yearly'
                                                     # defines the history files that will be used by this toolbox
 	             ice_concentration_threshold = None,# almost should never be changed from default value of
@@ -210,7 +207,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 	             ice_speed_threshold         = None,# a significantly important value in the determination
                                                     # and classification (masking) of fast ice; defualt value
                                                     # 5e-4 m/s
-                 ice_vector_type             = None,# a valid ice_vector_type or list thereof
                  ice_type                    = None,# a valid ice_type or list thereof
 	             mean_period                 = None,# rolling average, N-days
                  bin_win_days                = None,# the window of days with which to apply binary-days method
@@ -228,7 +224,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                  log_level                   = None,# the logging level (see python logging doc for more info)
                  dask_memory_limit           = None,# provide the memory limit to dask, default is 16GB
                  overwrite_zarr              = None,# whether or not to overwrite a zarr; default is false
-	             overwrite_AF2020_zarr       = None,# whether or not to overwrite AF2020db zarr; default is false
                  overwrite_saved_figs        = None,# whether or not to overwite saved figures; default is false
                  save_new_figs               = None,# whether or not to write new figures to disk; default is true
                  show_figs                   = None,# whether or not to show/print figures to screen; default is false
@@ -253,7 +248,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dt0_str, dtN_str : str, optional
             Inclusive analysis window in ``YYYY-MM-DD``. Defaults are pulled from
             the config if not provided.
-        list_of_composite_grids : list[str], optional
+        list_of_B2T : list[str], optional
             Which speed components to average into a composite (`"B"`, `"Ta"`, `"Tb"`, `"Tx"`).
             Defaults to ``['Ta','Tx']`` via config.
         iceh_frequency : {"hourly","daily","monthly","yearly"}, optional
@@ -263,9 +258,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ice_speed_threshold : float, optional
             Speed threshold (m/s) below which ice is treated as fast-ice. Defaults to
             a high/“strict” threshold from config (e.g., ``5e-4``).
-        ice_vector_type : str or list[str], optional
-            Speed field(s) to use (e.g., ``"B"``, ``"Ta"``, ``"Tx"``, or composite like
-            ``"BT"``). Defaults from config.
         ice_type : str or list[str], optional
             Ice classification type(s) to compute (e.g., ``"FI"`` fast-ice). Defaults from config.
         mean_period : int, optional
@@ -285,8 +277,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             Python logging level for this toolbox’s logger (e.g., ``logging.INFO``).
         dask_memory_limit : str or int, optional
             Memory limit to pass to a created Dask client (e.g., ``"16GB"``).
-        overwrite_zarr, overwrite_AF2020_zarr : bool, optional
-            Overwrite control flags for Zarr outputs.
         overwrite_saved_figs : bool, optional
             Whether to overwrite previously saved figures.
         save_new_figs, show_figs : bool, optional
@@ -353,23 +343,22 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.pygmt_dict         = self.config.get("pygmt_dict"        , {})
         self.pygmt_FIA_dict     = self.config.get('pygmt_FIA_dict'    , {})
         self.pygmt_FI_panel     = self.config.get('pygmt_FI_panel'    , {})
-        self.dt0_str              = dt0_str                     if dt0_str                     is not None else self.config.get('dt0_str', '1993-01-01')
-        self.dtN_str              = dtN_str                     if dtN_str                     is not None else self.config.get('dtN_str', '1999-12-31')
-        self.BT_composite_grids   = list_of_composite_grids     if list_of_composite_grids     is not None else self.config.get('BT_composite_grids', ['Ta','Tx'])
-        self.iceh_freq            = iceh_frequency              if iceh_frequency              is not None else self.config.get('iceh_freq', 'daily')
-        self.mean_period          = mean_period                 if mean_period                 is not None else self.config.get('mean_period', 15)
-        self.bin_win_days         = bin_win_days                if bin_win_days                is not None else self.config.get('bin_win_days', 11)
-        self.bin_min_days         = bin_min_days                if bin_min_days                is not None else self.config.get('bin_min_days', 9)
-        self.ispd_thresh          = ice_speed_threshold         if ice_speed_threshold         is not None else self.config.get('ice_speed_thresh_hi', 5.0e-4)
-        self.ivec_type            = ice_vector_type             if ice_vector_type             is not None else self.config.get('ice_vector_type', 'BT')
-        self.ice_type             = ice_type                    if ice_type                    is not None else self.config.get('ice_type', 'FI')
-        self.icon_thresh          = ice_concentration_threshold if ice_concentration_threshold is not None else self.config.get('ice_conc_thresh', 0.15)
-        self.overwrite_zarr_group = overwrite_zarr              if overwrite_zarr              is not None else False
-        self.ow_fig               = overwrite_saved_figs        if overwrite_saved_figs        is not None else False
-        self.save_fig             = save_new_figs               if save_new_figs               is not None else True
-        self.show_fig             = show_figs                   if show_figs                   is not None else False
-        self.delete_original_cice_iceh_nc = delete_original_cice_iceh_nc if delete_original_cice_iceh_nc is not None else False
-        hemisphere                = hemisphere                  if hemisphere                  is not None else self.config.get('hemisphere', 'south')
+        self.dt0_str              = dt0_str                      if dt0_str                      is not None else self.config.get('dt0_str', '1993-01-01')
+        self.dtN_str              = dtN_str                      if dtN_str                      is not None else self.config.get('dtN_str', '1999-12-31')
+        self.ispd_thresh          = ice_speed_threshold          if ice_speed_threshold          is not None else self.config.get('ice_speed_thresh_hi', 5.0e-4)
+        self.B2T_type             = list_of_B2T                  if list_of_B2T                  is not None else self.config.get('B2T_type', ['Tb'])
+        self.ice_type             = ice_type                     if ice_type                     is not None else self.config.get('ice_type', 'FI')
+        self.iceh_freq            = iceh_frequency               if iceh_frequency               is not None else self.config.get('iceh_freq', 'daily')
+        self.mean_period          = mean_period                  if mean_period                  is not None else self.config.get('mean_period', 15)
+        self.bin_win_days         = bin_win_days                 if bin_win_days                 is not None else self.config.get('bin_win_days', 11)
+        self.bin_min_days         = bin_min_days                 if bin_min_days                 is not None else self.config.get('bin_min_days', 9)
+        self.icon_thresh          = ice_concentration_threshold  if ice_concentration_threshold  is not None else self.config.get('ice_conc_thresh', 0.15)
+        self.overwrite_zarr_group = overwrite_zarr               if overwrite_zarr               is not None else False
+        self.ow_fig               = overwrite_saved_figs         if overwrite_saved_figs         is not None else False
+        self.save_fig             = save_new_figs                if save_new_figs                is not None else True
+        self.show_fig             = show_figs                    if show_figs                    is not None else False
+        self.del_org_cice_iceh_nc = delete_original_cice_iceh_nc if delete_original_cice_iceh_nc is not None else False
+        hemisphere                = hemisphere                   if hemisphere                   is not None else self.config.get('hemisphere', 'south')
         self.define_hemisphere(hemisphere)
         self.ispd_thresh_str     = f"{self.ispd_thresh:.1e}".replace("e-0", "e-")
         self.D_sim               = Path(self.D_dict['AFIM_out'], sim_name)
@@ -379,7 +368,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.D_tmp               = Path(self.config['D_dict']['tmp'])
         self.D_metrics           = Path(self.D_zarr, f"ispd_thresh_{self.ispd_thresh_str}", "metrics")
         self.sim_config          = self.parse_simulation_metadata(force_recompile=force_recompile_ice_in)   
-        self.valid_ivec_types    = self.config.get("valid_ivec_types", [])
+        self.valid_B2T_types    = self.config.get("valid_B2T_types", [])
         self.valid_ice_types     = self.config.get("valid_ice_types", [])
         self.cice_vars_reqd      = self.CICE_dict["cice_vars_reqd"]
         self.spatial_dims        = self.CICE_dict["spatial_dims"]
@@ -682,10 +671,10 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-").replace("e+0", "e+")
         self.D_ispd_thresh = Path(D_zarr, f"ispd_thresh_{ispd_thresh_str}")
 
-    def _check_ivec_type(self,ivec_type):
-        if isinstance(ivec_type, str):
-            ivec_type = [ivec_type]
-        assert all(v in self.valid_ivec_types for v in ivec_type), f"Invalid ivec_type: {ivec_type}"
+    def _check_B2T_type(self,B2T_type):
+        if isinstance(B2T_type, str):
+            B2T_type = [B2T_type]
+        assert all(v in self.valid_B2T_types for v in B2T_type), f"Invalid B2T_type: {B2T_type}"
 
     def _check_ice_type(self,ice_type):
         if isinstance(ice_type, str):
@@ -792,7 +781,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         except Exception:
             return float(np.asarray(x))
         
-    def define_ice_class_name(self, ice_type=None , ivec_type=None ):
+    def define_ice_class_name(self, ice_type=None , B2T_type=None ):
         """
         Define the classification name string for ice type and vector component type.
 
@@ -800,49 +789,49 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ----------
         ice_type : str or list of str, optional
             Type(s) of ice classification (e.g., 'fast', 'drift'). Defaults to `self.ice_type`.
-        ivec_type : str or list of str, optional
-            Type(s) of ice velocity vector used (e.g., 'B', 'Ta', 'Tx'). Defaults to `self.ivec_type`.
+        B2T_type : str or list of str, optional
+            Type(s) of ice velocity vector used (e.g., 'B', 'Ta', 'Tb', 'Tx'). Defaults to `self.B2T_type`.
 
         Raises
         ------
         AssertionError
-            If any provided `ice_type` or `ivec_type` is not in the list of valid types.
+            If any provided `ice_type` or `B2T_type` is not in the list of valid types.
 
         Sets
         ----
         self.ice_class : str
-            Combined classification string in the format "{ice_type}_{ivec_type}".
+            Combined classification string in the format "{ice_type}_{B2T_type}".
         """
         ice_type  = ice_type  or self.ice_type
-        ivec_type = ivec_type or self.ivec_type
-        self._check_ivec_type(ivec_type) 
+        B2T_type = B2T_type or self.B2T_type
+        self._check_B2T_type(B2T_type) 
         self._check_ice_type(ice_type)  
-        self.ice_class = f"{ice_type}_{ivec_type}"
+        self.ice_class = f"{ice_type}_{B2T_type}"
         self.logger.info(f" self.ice_class defined as {self.ice_class}")
 
-    def define_ice_speed_name(self, ivec_type=None):
+    def define_ice_speed_name(self, B2T_type=None):
         """
         Set the canonical name for the selected ice-speed vector type.
 
         Parameters
         ----------
-        ivec_type : str, optional
+        B2T_type : str, optional
             One of the valid vector types (e.g., ``"B"``, ``"Ta"``, ``"Tx"``, or
-            composites depending on your config). Defaults to ``self.ivec_type``.
+            composites depending on your config). Defaults to ``self.B2T_type``.
 
         Sets
         ----
         self.ispd_name : str
-            Name used throughout outputs/paths, formatted as ``f"ispd_{ivec_type}"``.
+            Name used throughout outputs/paths, formatted as ``f"ispd_{B2T_type}"``.
 
         Raises
         ------
         ValueError
-            If `ivec_type` is invalid (validated by `_check_ivec_type`).
+            If `B2T_type` is invalid (validated by `_check_B2T_type`).
         """
-        ivec_type = ivec_type or self.ivec_type
-        self._check_ivec_type(ivec_type) 
-        self.ispd_name = f"ispd_{ivec_type}"
+        B2T_type = B2T_type or self.B2T_type
+        self._check_B2T_type(B2T_type) 
+        self.ispd_name = f"ispd_{B2T_type}"
 
     def define_datetime_vars(self, dt0_str=None, dtN_str=None):
         """
@@ -1231,7 +1220,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             Defaults to ``self.overwrite_zarr_group``.
         delete_original : bool, optional
             If True, remove the month’s original NetCDF files **after** successful
-            Zarr write. Defaults to ``self.delete_original_cice_iceh_nc``.
+            Zarr write. Defaults to ``self.del_org_cice_iceh_nc``.
 
         Returns
         -------
@@ -1250,7 +1239,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dtN_str  = dtN_str  or self.dtN_str
         D_iceh   = D_iceh   or self.D_iceh
         overwrite = overwrite if overwrite is not None else self.overwrite_zarr_group
-        delete_nc = delete_original if delete_original is not None else self.delete_original_cice_iceh_nc
+        delete_nc = delete_original if delete_original is not None else self.del_org_cice_iceh_nc
         m_grps   = defaultdict(list)
         P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
         if not P_orgs:
@@ -1461,7 +1450,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                             roll_mean   : bool  = False,
                             ispd_thresh : float = None,
                             ice_type    : str   = None,
-                            ivec_type   : str   = None,
+                            B2T_type   : str   = None,
                             variables   : list  = None,
                             dt0_str     : str   = None,
                             dtN_str     : str   = None,
@@ -1480,7 +1469,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         roll_mean : bool, default False
         ispd_thresh : float, optional
             Threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
-        ice_type, ivec_type : str, optional
+        ice_type, B2T_type : str, optional
         variables : list[str], optional
             Optional variable subset to select on open.
         dt0_str, dtN_str : str, optional
@@ -1504,18 +1493,18 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         sim_name     = sim_name     or self.sim_name
         ispd_thresh  = ispd_thresh  or self.ispd_thresh
         ice_type     = ice_type     or self.ice_type
-        ivec_type    = ivec_type    or self.ivec_type
+        B2T_type     = B2T_type     or f"{''.join(self.B2T_type)}"
         dt0_str      = dt0_str      or self.dt0_str
         dtN_str      = dtN_str      or self.dtN_str
         chunks       = chunks       or self.CICE_dict["FI_chunks"]
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
         D_class = Path(D_zarr or Path(self.config['D_dict']['AFIM_out'], sim_name, "zarr", f"ispd_thresh_{ispd_thresh_str}"))
         if bin_days:
-            zarr_store = D_class / f"{ice_type}_{ivec_type}_bin.zarr"
+            zarr_store = D_class / f"{ice_type}_{B2T_type}_bin.zarr"
         elif roll_mean:
-            zarr_store = D_class / f"{ice_type}_{ivec_type}_roll.zarr"
+            zarr_store = D_class / f"{ice_type}_{B2T_type}_roll.zarr"
         else:
-            zarr_store = D_class / f"{ice_type}_{ivec_type}.zarr"
+            zarr_store = D_class / f"{ice_type}_{B2T_type}.zarr"
         # === Loop over years, not months ===
         dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
         dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
@@ -1530,7 +1519,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 self.logger.warning(f"Skipping year {yr}: {e}")
         if not datasets:
             raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
-        ds = xr.concat(datasets, dim="time")
+        ds = xr.concat(datasets, dim="time", coords='minimal')
         if variables:
             ds = ds[variables]
         if persist:
