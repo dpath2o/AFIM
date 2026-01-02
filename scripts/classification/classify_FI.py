@@ -13,8 +13,7 @@ def run_loop(sim_name,
              start_date           = None,
              end_date             = None,
              log_file             = None,
-             rolling              = False,
-             roll_period          = None,
+             netcdf_engine        = None,
              overwrite_zarr       = False,
              delete_original_iceh = False):
     SI_tool_mgr = SeaIceToolboxManager(P_log=log_file)
@@ -25,7 +24,9 @@ def run_loop(sim_name,
                                           sim_name            = sim_name,
                                           list_of_B2T         = B2T_type,
                                           ice_speed_threshold = ispd_thresh)
-    SI_tools.daily_iceh_to_monthly_zarr(overwrite=overwrite_zarr, delete_original=delete_original_iceh)
+    SI_tools.daily_iceh_to_monthly_zarr(netcdf_engine   = netcdf_engine,
+                                        overwrite       = overwrite_zarr,
+                                        delete_original = delete_original_iceh)
     SI_tools.define_datetime_vars()
     for yr0_str,yrN_str in zip(SI_tools.yr0_strs,SI_tools.yrN_strs):
         yr_str = f"{yr0_str[:4]}"
@@ -34,7 +35,9 @@ def run_loop(sim_name,
         FI_roll_mo = []
         FI_bin_mo  = []
         for mo0_str, moN_str in zip(SI_tools.mo0_strs, SI_tools.moN_strs):
-            FI_raw,FI_bin,FI_roll,_ = SI_tools.classify_fast_ice(dt0_str=mo0_str, dtN_str=moN_str, enable_rolling_output=True)
+            FI_raw,FI_bin,FI_roll,_ = SI_tools.classify_fast_ice(dt0_str               = mo0_str,
+                                                                 dtN_str               = moN_str, 
+                                                                 enable_rolling_output = True)
             FI_mo.append(FI_raw)
             FI_bin_mo.append(FI_bin)
             FI_roll_mo.append(FI_roll)
@@ -65,6 +68,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_file"            , help="Path to log file (default: use hard-coded JSON file in fast_ice_processor)")
     parser.add_argument("--start_date"          , help="Start date (YYYY-MM-DD), which is then added to FI_days as the first center-date", default="1993-01-01")
     parser.add_argument("--end_date"            , help="End date (YYYY-MM-DD), will stop processing when this end_date-FI_days", default="1999-12-31")
+    parser.add_argument("--netcdf_engine"       , help="Engine used for xarray mfdataset method", default="netcdf4")
     args = parser.parse_args()
     run_loop(sim_name             = args.sim_name,
              ispd_thresh          = args.ispd_thresh,
@@ -73,5 +77,6 @@ if __name__ == "__main__":
              start_date           = args.start_date,
              end_date             = args.end_date,
              log_file             = args.log_file,
+             netcdf_engine        = args.netcdf_engine,
              overwrite_zarr       = args.overwrite_zarr,
              delete_original_iceh = args.delete_original_iceh)

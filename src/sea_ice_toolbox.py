@@ -1190,6 +1190,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                    dt0_str         = None,
                                    dtN_str         = None,
                                    D_iceh          = None,
+                                   netcdf_engine   = "scipy",
                                    overwrite       = None,
                                    delete_original = None):
         """
@@ -1260,7 +1261,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             else:
                 self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
                 CICE_all = xr.open_mfdataset(P_,
-                                             engine   = "scipy",
+                                             engine   = netcdf_engine,
                                              parallel = True,
                                              combine  = "by_coords",
                                              cache    = True,

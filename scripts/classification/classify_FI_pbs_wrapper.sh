@@ -6,6 +6,7 @@ START_DATE="1993-01-01"
 END_DATE=""
 YEARLY=false
 DRY_RUN=false
+NC_ENG="netcdf4"
 OVERWRITE_ZARR=false
 DELETE_ORIGINAL_ICEH=false
 
@@ -23,6 +24,7 @@ print_help() {
     echo "  -i B2T_TYPE     B-grid regridding to T-grid method(s): B (no regridding), Ta, Tb, Tx (some combination)"
     echo "  -S START_DATE    Start date (YYYY-MM-DD, forced to first of month; default 1993-01-01)"
     echo "  -E END_DATE      End date (YYYY-MM-DD, forced to last of month)"
+    echo "  -x NC_ENG        NetCDF engine used by xarray mfdataset method; default 'netcdf4'"
     echo "  -z               overwrite zarrs"
     echo "  -y               process yearly loop"
     echo "  -k               if enabled then when creating new iceh_*.zarr monthly files, this will then delete the original daily ice history files for a particular month"
@@ -46,6 +48,7 @@ while getopts "s:t:i:rdzkhS:E:ny" opt; do
         k) DELETE_ORIGINAL_ICEH=true ;;
         S) START_DATE="$OPTARG" ;;
         E) END_DATE="$OPTARG" ;;
+        x) NC_ENG="$OPTARG" ;;
         y) YEARLY=true ;;
         n) DRY_RUN=true ;;  # <-- Dry run flag
         h) print_help; exit 0 ;;
@@ -97,7 +100,7 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
     fi
     YEAR=$(date -d "$DT0" +%Y)
     MONTH=$(date -d "$DT0" +%m)
-    VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH}"
+    VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH},NC_ENG=${NC_ENG}"
     [ "${#B2T_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",B2T_TYPE=${B2T_TYPE_LIST[*]}"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
     [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
