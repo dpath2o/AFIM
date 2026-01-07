@@ -109,48 +109,125 @@ class SeaIcePlotter:
         """
         return xr.open_dataset(self.config['pygmt_dict']["P_IBCSO_bath"]).bath
 
-    def prepare_data_for_pygmt_plot(self, da, bcoords=False, tcoords=True,
-                                    lon_coord_name=None, lat_coord_name=None,
-                                    diff_plot=False):
+    def prepare_data_for_pygmt_plot(self, da,
+                                    bcoords        = False,
+                                    tcoords        = True,
+                                    ecoords        = False,
+                                    ncoords        = False,
+                                    lon_coord_name = None,
+                                    lat_coord_name = None,
+                                    diff_plot      = False,
+                                    prefer_grid    = "t"):
         """
-        Prepare gridded data for PyGMT plotting.
-        
-        Priority:
-        1. If lon_coord_name and lat_coord_name are provided -> use them
-        2. Else, use bcoords/tcoords (cannot both be True)
+        Prepare gridded data for PyGMT scatter plotting.
+
+        Coordinate priority:
+        1) Explicit lon_coord_name/lat_coord_name (1D or 2D)
+        2) Requested grid flags: ecoords/ncoords/bcoords/tcoords (only one True)
+        3) AUTO by matching da's last-2D shape against available grids.
+
+        C-grid support:
+        - ecoords -> self.G_e (E/W faces; shape (nj, ni_b))
+        - ncoords -> self.G_n (N/S faces; shape (nj_b, ni))
         """
-        data_dict = {}
-        self.load_cice_grid(slice_hem=True)
         self.logger.info("preparing the data for plotting")
-        # Determine which coordinates to use
-        use_own_coords = lon_coord_name is not None or lat_coord_name is not None
-        if use_own_coords:
+        # --- Load grids once (cached) ---
+        need_cgrid = ecoords or ncoords
+        if not getattr(self, "bgrid_loaded", False):
+            self.load_bgrid(slice_hem=True, build_cgrid=need_cgrid)
+        else:
+            # ensure sliced SH versions if that is your plotting convention
+            if not getattr(self, "_bgrid_sliced", False):
+                self.load_bgrid(slice_hem=True, build_cgrid=need_cgrid)
+            elif need_cgrid and not getattr(self, "cgrid_loaded", False):
+                self.ensure_cgrid_faces(slice_hem=True)
+        # --- Reduce da to 2D ---
+        da2 = da
+        if hasattr(da2, "squeeze"):
+            da2 = da2.squeeze()
+        if da2.ndim != 2:
+            raise ValueError(f"prepare_data_for_pygmt_plot expects a 2D DataArray. Got shape {da2.shape} and dims {getattr(da2,'dims',None)}")
+        nyx = tuple(da2.shape)
+        # --- Coordinate selection: explicit coords ---
+        if lon_coord_name is not None or lat_coord_name is not None:
             if lon_coord_name is None or lat_coord_name is None:
-                raise ValueError("Both lon_coord_name and lat_coord_name must be provided if using own coordinates")
-            self.logger.info(f"   using own coordinates: {lon_coord_name}, {lat_coord_name}")
-            lon2d, lat2d = np.meshgrid(da[lon_coord_name], da[lat_coord_name])
-        else:
-            if bcoords and tcoords:
-                raise ValueError("Cannot set both bcoords and tcoords to True")
-            if bcoords:
-                self.logger.info("   using B-grid coordinates")
-                lon2d = self.G_u['lon'].values
-                lat2d = self.G_u['lat'].values
-            elif tcoords:
-                self.logger.info("   using T-grid coordinates")
-                lon2d = self.G_t['lon'].values
-                lat2d = self.G_t['lat'].values
+                raise ValueError("Both lon_coord_name and lat_coord_name must be provided if using explicit coordinates")
+            lonv = da2[lon_coord_name]
+            latv = da2[lat_coord_name]
+            # accept 2D coords (already gridded), or 1D coords (meshgrid)
+            if lonv.ndim == 2 and latv.ndim == 2:
+                lon2d = lonv.values
+                lat2d = latv.values
+            elif lonv.ndim == 1 and latv.ndim == 1:
+                lon2d, lat2d = np.meshgrid(lonv.values, latv.values)
             else:
-                raise ValueError("Must specify either bcoords, tcoords, or provide explicit coordinates")
-        data2d = np.asarray(da.data).astype('float32')
-        if diff_plot:
-            mask = (data2d >= -1) & (data2d <= 1) & np.isfinite(data2d)
+                raise ValueError(f"Explicit coords must be both 1D or both 2D. Got lon ndim={lonv.ndim}, lat ndim={latv.ndim}")
         else:
-            mask = np.isfinite(data2d)
-        data_dict['data'] = data2d[mask].ravel()
-        data_dict['lon']  = lon2d[mask].ravel()
-        data_dict['lat']  = lat2d[mask].ravel()
-        return data_dict
+            # --- Coordinate selection: requested flags or auto ---
+            flags = {"t": tcoords, "u": bcoords, "e": ecoords, "n": ncoords}
+            if sum(bool(v) for v in flags.values()) > 1:
+                raise ValueError("Only one of tcoords, bcoords, ecoords, ncoords can be True")
+            # Candidate grids and their lon/lat shapes
+            candidates = {}
+            if getattr(self, "G_t", None) is not None:
+                candidates["t"] = (self.G_t["lon"].values, self.G_t["lat"].values)
+            if getattr(self, "G_u", None) is not None:
+                candidates["u"] = (self.G_u["lon"].values, self.G_u["lat"].values)
+            if getattr(self, "G_e", None) is not None:
+                candidates["e"] = (self.G_e["lon"].values, self.G_e["lat"].values)
+            if getattr(self, "G_n", None) is not None:
+                candidates["n"] = (self.G_n["lon"].values, self.G_n["lat"].values)
+            # 2a) If a flag was set, try that first
+            chosen = None
+            for k, v in flags.items():
+                if v:
+                    chosen = k
+                    break
+            if chosen is not None:
+                lon2d, lat2d = candidates[chosen]
+                # If shape mismatch (common when user mistakenly uses tcoords for face fields),
+                # fall back to auto matching
+                if lon2d.shape != nyx:
+                    self.logger.warning(
+                        f"Requested grid '{chosen}' has shape {lon2d.shape} but data is {nyx}; falling back to auto grid selection."
+                    )
+                    chosen = None
+            # 2b) Auto: match by shape; if multiple matches, use prefer_grid or da name suffix
+            if chosen is None:
+                matches = [k for k, (LON, LAT) in candidates.items() if LON.shape == nyx]
+                if len(matches) == 0:
+                    raise ValueError(
+                        f"No grid coordinate set matches data shape {nyx}. "
+                        f"Available shapes: { {k: v[0].shape for k,v in candidates.items()} }"
+                    )
+                if len(matches) == 1:
+                    chosen = matches[0]
+                else:
+                    # Heuristic: variable name suffix E/N
+                    nm = getattr(da2, "name", "") or ""
+                    if nm.endswith("E") and "e" in matches:
+                        chosen = "e"
+                    elif nm.endswith("N") and "n" in matches:
+                        chosen = "n"
+                    else:
+                        chosen = prefer_grid if prefer_grid in matches else matches[0]
+
+                lon2d, lat2d = candidates[chosen]
+                self.logger.info(f"   auto-selected grid '{chosen}' for shape {nyx}")
+        # --- Data extraction (efficient flatten + index) ---
+        data = np.asarray(da2.data)
+        if data.dtype != np.float32:
+            data = data.astype("float32", copy=False)
+        flat = data.ravel()
+        valid = np.isfinite(flat)
+        if diff_plot:
+            valid &= (flat >= -1) & (flat <= 1)
+        idx = np.flatnonzero(valid)
+        lon_flat = np.asarray(lon2d).ravel()[idx]
+        lat_flat = np.asarray(lat2d).ravel()[idx]
+        dat_flat = flat[idx]
+        return {"data": dat_flat, "lon": lon_flat, "lat": lat_flat}
+
 
     def create_cbar_frame(self, series, label, units=None, extend_cbar=False, max_ann_steps=10):
         """
@@ -1412,7 +1489,6 @@ class SeaIcePlotter:
     def pygmt_map_plot_multi_var_8sectors(self, das, var_names,
                                           sim_name        = None,
                                             panel_titles    = None,
-                                            hemisphere      = "south",   # kept for API symmetry; not used (8-sector only)
                                             time_stamp      = None,
                                             tit_str         = None,
                                             plot_GI         = False,
