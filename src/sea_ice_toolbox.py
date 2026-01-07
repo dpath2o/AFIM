@@ -388,7 +388,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             self.GI_thin             = self.sim_config.get('GI_thin_fact')
             self.GI_version          = self.sim_config.get('GI_version')
             self.GI_iteration        = self.sim_config.get("GI_iter")
-            if self.GI_thin is not None:
+            if self.GI_thin is not None and self.GI_thin>0 and self.GI_version>0:
                 self.use_gi    = True
                 GI_thin_str    = f"{self.GI_thin:0.2f}".replace('.', 'p')
                 GI_vers_str    = f"{self.GI_version:0.2f}".replace('.', 'p')
@@ -409,7 +409,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             self.use_gi              = None
         self.reG_weights_defined       = False
         self.modified_landmask_aligned = False
-        self.bgrid_loaded              = False
+        self.grid_loaded               = False
         SeaIceClassification.__init__(self, sim_name, **kwargs)
         SeaIceMetrics.__init__(self, **kwargs)
         SeaIcePlotter.__init__(self, **kwargs)
@@ -669,7 +669,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         D_zarr             = D_zarr      or self.D_zarr
         ispd_thresh        = ispd_thresh or self.ispd_thresh
         ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-").replace("e+0", "e+")
-        self.D_ispd_thresh = Path(D_zarr, f"ispd_thresh_{ispd_thresh_str}")
+        self.D_ispd_thresh = Path(D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}")
 
     def _check_B2T_type(self,B2T_type):
         if isinstance(B2T_type, str):
@@ -1451,7 +1451,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                             roll_mean   : bool  = False,
                             ispd_thresh : float = None,
                             ice_type    : str   = None,
-                            B2T_type   : str   = None,
+                            B2T_type    : str   = None,
                             variables   : list  = None,
                             dt0_str     : str   = None,
                             dtN_str     : str   = None,
@@ -1463,24 +1463,18 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
         Parameters
         ----------
-        sim_name : str, optional
-        bin_days : bool, default True
-            If True, load the `_bin.zarr` product; if False and `roll_mean=True`,
-            load `_roll.zarr`; else load the daily product.
-        roll_mean : bool, default False
-        ispd_thresh : float, optional
-            Threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
-        ice_type, B2T_type : str, optional
-        variables : list[str], optional
-            Optional variable subset to select on open.
-        dt0_str, dtN_str : str, optional
-            Used only to determine which yearly groups to open.
-        D_zarr : str | Path, optional
-            Override base zarr directory.
-        chunks : dict, optional
-            Chunking to apply after concat (default `self.CICE_dict["FI_chunks"]`).
-        persist : bool, default False
-            Persist the concatenated dataset in memory.
+        sim_name    : str, optional
+        bin_days    : bool, default True; load `_bin.zarr` product; if False and `roll_mean=True`, load `_roll.zarr`; else load the daily product.
+        roll_mean   : bool, default False
+        ispd_thresh : float, optional; threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
+        ice_type    : str, optional; either 'FI', 'PI' or 'SI'
+        B2T_type    : str, optional; either 'Ta', 'Tb', 'Tx' or 'BT' (composite)
+        variables   : list[str], optional; variable subset to select on open.
+        dt0_str     : str, optional; start date
+        dtN_str     : str, optional; end date
+        D_zarr      : str | Path, optional; override base zarr directory.
+        chunks      : dict, optional; chunking to apply after concat (default `self.CICE_dict["FI_chunks"]`).
+        persist     : bool, default False; dask-persist the concatenated dataset in memory.
 
         Returns
         -------
@@ -1499,17 +1493,21 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dtN_str      = dtN_str      or self.dtN_str
         chunks       = chunks       or self.CICE_dict["FI_chunks"]
         ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        D_class = Path(D_zarr or Path(self.config['D_dict']['AFIM_out'], sim_name, "zarr", f"ispd_thresh_{ispd_thresh_str}"))
-        if bin_days:
-            zarr_store = D_class / f"{ice_type}_{B2T_type}_bin.zarr"
-        elif roll_mean:
-            zarr_store = D_class / f"{ice_type}_{B2T_type}_roll.zarr"
+        if ice_type=='SI':
+            D_class    = Path(D_zarr or Path(self.D_zarr, self.hemisphere_dict['abbreviation']))
+            zarr_store = D_class / "SI.zarr"
         else:
-            zarr_store = D_class / f"{ice_type}_{B2T_type}.zarr"
+            D_class = Path(D_zarr or Path(self.D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}"))
+            if bin_days:
+                zarr_store = D_class / f"{ice_type}_{B2T_type}_bin.zarr"
+            elif roll_mean:
+                zarr_store = D_class / f"{ice_type}_{B2T_type}_roll.zarr"
+            else:
+                zarr_store = D_class / f"{ice_type}_{B2T_type}.zarr"
         # === Loop over years, not months ===
-        dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
-        dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
-        years = list(range(dt0.year, dtN.year + 1))
+        dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
+        dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
+        years    = list(range(dt0.year, dtN.year + 1))
         datasets = []
         for yr in years:
             try:

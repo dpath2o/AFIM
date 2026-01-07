@@ -1,0 +1,46 @@
+#!/bin/bash
+#PBS -P jk72
+#PBS -q normal
+#PBS -l walltime=8:00:00
+#PBS -l ncpus=48
+#PBS -l mem=190GB
+#PBS -j oe
+#PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
+#PBS -v ENVFILE
+
+# --- Load environment ---
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+source activate
+
+# --- Source environment file ---
+if [[ -f "$ENVFILE" ]]; then
+    echo "Sourcing environment from: $ENVFILE"
+    source "$ENVFILE"
+else
+    echo "ENVFILE not found: $ENVFILE"
+    exit 1
+fi
+
+# --- Log inputs ---
+echo "Simulation        : $sim_name"
+echo "ISPD threshold    : $ispd_thresh"
+echo "start date        : $start_date"
+echo "end date          : $end_date"
+echo "Overwrite zarr    : $overwrite_zarr"
+echo "Overwrite png     : $overwrite_png"
+echo "PIA Rolling Window: $smooth_FIA_days days"
+echo "Ice types loaded from ENVFILE:"
+for t in "${ice_type[@]}"; do echo "  - $t"; done
+echo "Running for ${sim_name}, ${start_date} to ${end_date}, ispd_thresh=${ispd_thresh}"
+
+# --- Launch computation ---
+python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/PI_metrics.py \
+    --sim_name "$sim_name" \
+    --ispd_thresh "$ispd_thresh" \
+    --ice_type "$ice_type" \
+    --start_date "$start_date" \
+    --end_date "$end_date" \
+    $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
+    $( [ "$overwrite_png" = true ] && echo "--overwrite_png" ) \
+    --smooth_FIA_days "$smooth_FIA_days"

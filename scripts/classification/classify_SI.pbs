@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -l walltime=2:00:00
+#PBS -l mem=190GB
+#PBS -l ncpus=28
+#PBS -l jobfs=2GB
+#PBS -l storage=gdata/gv90+gdata/xp65+gdata/ik11+gdata/jk72
+#PBS -l wd
+#PBS -P jk72
+#PBS -q normalbw
+
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.05
+
+cd ~/AFIM/src/AFIM/scripts/classification/
+
+echo "Running for ${SIM_NAME}, ${START_DATE} to ${END_DATE}, B2T_type=${B2T_TYPE:-ALL}, NetCDF Engine=${NC_ENG}, ISPD_THRESH=${ISPD_THRESH:-None}"
+
+# Log file (optional threshold suffix)
+if [ -n "${ISPD_THRESH}" ]; then
+  F_log=/g/data/gv90/da1339/logs/classification/${SIM_NAME}/${START_DATE}_${END_DATE}_${ISPD_THRESH}_process_sea_ice.log
+else
+  F_log=/g/data/gv90/da1339/logs/classification/${SIM_NAME}/${START_DATE}_${END_DATE}_process_sea_ice.log
+fi
+mkdir -p "$(dirname "$F_log")"
+
+CMD=(python3 classify_SI.py "$SIM_NAME"              --start_date "$START_DATE"              --end_date "$END_DATE"              --log_file "$F_log"              --netcdf_engine "$NC_ENG")
+
+[ -n "${ISPD_THRESH}" ] && CMD+=(--ispd_thresh "$ISPD_THRESH")
+[ -n "${B2T_TYPE}" ] && CMD+=(--B2T_type ${B2T_TYPE})
+[ "${OVERWRITE_ZARR}" = true ] && CMD+=(--overwrite_zarr)
+[ "${DELETE_ORIGINAL_ICEH}" = true ] && CMD+=(--delete_original_iceh)
+
+echo "Running: ${CMD[*]}"
+"${CMD[@]}"

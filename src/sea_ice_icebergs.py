@@ -11,38 +11,31 @@ class SeaIceIcebergs:
     
     def __init__(self, **kwargs):
         return
+    
+    def load_GI_lon_lats(self):
+        """
+        Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
 
-    def align_modified_landmask(self):
+        This method identifies cells where the landmask has been modified to add grounded icebergs
+        (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
+        landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
+
+        Returns
+        -------
+        dict
+            Dictionary with:
+            - 'lon': 1D array of longitudes of grounded iceberg grid cells
+            - 'lat': 1D array of latitudes  of grounded iceberg grid cells
+
+        Notes
+        -----
+        - `self.P_KMT_org` and `self.P_KMT_mod` must be paths to NetCDF files with the `kmt` landmask variable.
+        - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
+        - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
         """
-        Compute the grounded iceberg mask and coordinates from the difference
-        between original and modified KMT arrays. Store in self.G_t.
-        """
-        self.load_bgrid()
-        kmt_mod = self.G_t['kmt_mod'].data
-        kmt_org = self.G_t['kmt_org'].data
-        lat     = self.G_t['lat'].data
-        lon     = self.normalise_longitudes(self.G_t['lon'].values, "-180-180")
-        area    = self.G_t['area'].data
-        # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
-        diff_mask           = (kmt_org == 1) & (kmt_mod == 0)
-        self.G_t['GI_mask'] = (self.CICE_dict["spatial_dims"], diff_mask)
-        # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
-        nj_idx, ni_idx = np.where(diff_mask)
-        ni_idx_shifted = ni_idx - 1
-        valid          = ni_idx_shifted >= 0
-        nj_idx         = nj_idx[valid]
-        ni_idx         = ni_idx_shifted[valid]
-        GI_lat         = lat[nj_idx, ni_idx]
-        GI_lon         = lon[nj_idx, ni_idx]
-        # Save 1D arrays with iceberg IDs
-        iceberg_id         = np.arange(len(GI_lat))
-        self.G_t['GI_lat'] = (('iceberg_id',), GI_lat)
-        self.G_t['GI_lon'] = (('iceberg_id',), GI_lon)
-        self.G_t['GI_lat'].attrs.update({'long_name': 'Grounded iceberg latitude'})
-        self.G_t['GI_lon'].attrs.update({'long_name': 'Grounded iceberg longitude'})
-        #print(f"{len(iceberg_id)} circumpolar grounded icebergs associated with {self.sim_name}")
-        self.modified_landmask_aligned = True
-        return self.G_t
+        self.load_cice_grid(slice_hem=True)
+        return {'lon' : self.G_t['lon'][self.G_GI['mask']].ravel(),
+                'lat' : self.G_t['lat'][self.G_GI['mask']].ravel()}
 
     def compute_grounded_iceberg_area(self, region=None, scale=1e6):
         '''
@@ -60,11 +53,11 @@ class SeaIceIcebergs:
             Total grounded iceberg area in m^2 if region is None.
             Dictionary of region-specific grounded iceberg areas otherwise.
         '''
-        self.align_modified_landmask()
+        self.load_cice_grid()
         area = self.G_t['area'].values
-        mask = self.G_t['GI_mask']
-        lon  = self.normalise_longitudes(self.G_t['lon'].values, "-180-180")
-        lat  = self.G_t['lat'].values
+        mask = self.G_GI['mask'].values
+        lon  = self.G_GI['lon'].values
+        lat  = self.G_GI['lat'].values
         self.logger.info(f"GI-area_calc: grid (G_t) lon min: {lon.min()}")
         self.logger.info(f"GI-area_calc: grid (G_t) lon max: {lon.max()}")
         self.logger.info(f"GI-area_calc: grid (G_t) lat min: {lat.min()}")
@@ -86,9 +79,7 @@ class SeaIceIcebergs:
                 self.logger.info(f"GI-area_calc: region {reg_name} total GI-area {area_dict[reg_name]:0.2f} km^2")
             return area_dict
         else:
-            total_area                = np.sum(area[mask])
-            self.G_t['GI_total_area'] = total_area
-            return total_area
+            return np.sum(area[mask])
 
     def check_GI_coverage(self, da, varname="GI_counts", lon_name="lon", lat_name="lat"):
         """
@@ -163,34 +154,6 @@ class SeaIceIcebergs:
             except Exception as e:
                 report['sector_check_failed'] = str(e)
         return report
-    
-    def load_GI_lon_lats(self):
-        """
-        Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
-
-        This method identifies cells where the landmask has been modified to add grounded icebergs
-        (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
-        landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
-
-        Returns
-        -------
-        dict
-            Dictionary with:
-            - 'lon': 1D array of longitudes of grounded iceberg grid cells
-            - 'lat': 1D array of latitudes  of grounded iceberg grid cells
-
-        Notes
-        -----
-        - `self.P_KMT_org` and `self.P_KMT_mod` must be paths to NetCDF files with the `kmt` landmask variable.
-        - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
-        - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
-        """
-        self.load_bgrid(slice_hem=True)
-        GI_loc_dict        = {}
-        GI_mask            = (self.G_t['kmt_org'] == 1) & (self.G_t['kmt_mod']== 0)
-        GI_loc_dict['lon'] = self.G_t['lon'][GI_mask].ravel()
-        GI_loc_dict['lat'] = self.G_t['lat'][GI_mask].ravel()
-        return GI_loc_dict
 
     def load_existing_thinned(self):
         """
