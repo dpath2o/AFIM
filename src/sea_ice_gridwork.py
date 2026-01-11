@@ -247,13 +247,20 @@ class SeaIceGridWork:
                                                                                 "long_name": "modified landmask on t-grid (grounded icebergs)"})},
                                     coords    = coords_nat)
             # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
-            GI_mask   = (kmt_org == 1) & (kmt_mod == 0)
-            GI_area   = TAREA[GI_mask]
-            self.G_GI = xr.Dataset(data_vars = {'mask' : (nat_dim, GI_mask.astype('float32')),
-                                                'area' : (nat_dim, GI_area),
-                                                'lat'  : (nat_dim, TLAT[GI_mask]),
-                                                'lon'  : (nat_dim, TLON[GI_mask])},
-                                    coords   = coords_nat)
+            GI_mask = (kmt_org == 1) & (kmt_mod == 0)
+            # 2-D fields with same shape as GI_mask (NaN outside GI)
+            GI_area = np.where(GI_mask, TAREA, np.nan).astype("float32")
+            GI_lat  = np.where(GI_mask, TLAT,  np.nan).astype("float32")
+            GI_lon  = np.where(GI_mask, TLON,  np.nan).astype("float32")
+            self.G_GI = xr.Dataset(data_vars={"mask": (nat_dim, GI_mask.astype("uint8"), {"units": "binary",
+                                                                                          "long_name": "grounded iceberg mask on t-grid"}),
+                                              "area": (nat_dim, GI_area, {"units": "m2",
+                                                                          "long_name": "t-cell area at grounded iceberg locations (NaN elsewhere)"}),
+                                              "lat":  (nat_dim, GI_lat,  {"units": "degrees_north",
+                                                                          "long_name": "latitude at grounded iceberg locations (NaN elsewhere)"}),
+                                              "lon":  (nat_dim, GI_lon,  {"units": "degrees_east",
+                                                                          "long_name": "longitude at grounded iceberg locations (NaN elsewhere)"})},
+                                   coords = coords_nat)
             # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
             nj_idx, ni_idx = np.where(GI_mask)
             ni_idx_shifted = ni_idx - 1
@@ -261,11 +268,13 @@ class SeaIceGridWork:
             nj_idx         = nj_idx[valid]
             ni_idx         = ni_idx_shifted[valid]
             # Save 1D arrays with iceberg IDs
-            nGI              = np.arange(len(TLAT[nj_idx, ni_idx]))
-            self.G_GI['lat_nGI'] = (('nGI',), TLAT[nj_idx, ni_idx])
-            self.G_GI['lon_nGI'] = (('nGI',), TLON[nj_idx, ni_idx])
-            self.G_GI['lat_nGI'].attrs.update({'long_name': 'Grounded iceberg latitude'})
-            self.G_GI['lon_nGI'].attrs.update({'long_name': 'Grounded iceberg longitude'})
+            self.G_GI             = self.G_GI.assign_coords(nGI=np.arange(nj_idx.size))
+            self.G_GI["area_nGI"] = (("nGI",), TAREA[nj_idx, ni_idx].astype("float32"))
+            self.G_GI["lat_nGI"]  = (("nGI",), TLAT[nj_idx, ni_idx].astype("float32"))
+            self.G_GI["lon_nGI"]  = (("nGI",), TLON[nj_idx, ni_idx].astype("float32"))
+            self.G_GI["area_nGI"].attrs.update({"units": "m2", "long_name": "t-cell area (1D list) at GI cells"})
+            self.G_GI["lat_nGI"].attrs.update({"units": "degrees_north", "long_name": "GI latitude (1D list)"})
+            self.G_GI["lon_nGI"].attrs.update({"units": "degrees_east",  "long_name": "GI longitude (1D list)"})
         # --- build datasets
         self.G_t = xr.Dataset(data_vars = {"lat"    : (nat_dim, TLAT, {"units": "degrees"}),
                                         "lon"    : (nat_dim, TLON, {"units": "degrees"}),
@@ -299,6 +308,12 @@ class SeaIceGridWork:
                 self.G_e = self.slice_hemisphere(self.G_e)
             if self.G_n is not None:
                 self.G_n = self.slice_hemisphere(self.G_n)
+            if self.use_gi and hasattr(self, "G_GI") and (self.G_GI is not None):
+                self.G_GI = self.slice_hemisphere(self.G_GI)
+            if hasattr(self, "kmt_org") and (self.kmt_org is not None):
+                self.kmt_org = self.slice_hemisphere(self.kmt_org)
+            if self.use_gi and hasattr(self, "kmt_mod") and (self.kmt_mod is not None):
+                self.kmt_mod = self.slice_hemisphere(self.kmt_mod)
         # flags for downstream
         self.bgrid_loaded = True
         self.cgrid_loaded = bool(build_faces)

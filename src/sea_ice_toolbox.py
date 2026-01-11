@@ -1722,3 +1722,126 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ang_m = np.arctan2(vm, um)
         d     = ang_m - ang_o
         return (d + np.pi) % (2 * np.pi) - np.pi
+
+    def _region_mask(
+        self,
+        lon: xr.DataArray,
+        lat: xr.DataArray,
+        geo_reg: tuple[float, float, float, float],
+        *,
+        right_open: bool = True,
+    ) -> xr.DataArray:
+        """
+        Geographic mask for [lon_min, lon_max, lat_min, lat_max].
+
+        right_open=True makes lon_max exclusive (helps avoid double-counting at boundaries).
+        """
+        lon_min, lon_max, lat_min, lat_max = geo_reg
+        m = (lon >= lon_min) & (lat >= lat_min) & (lat <= lat_max)
+        if right_open:
+            m = m & (lon < lon_max)
+        else:
+            m = m & (lon <= lon_max)
+        return m
+
+    def compute_fipdiff_stats_weighted(self,
+        FIP: xr.Dataset,
+        PIXEL: float = 5000.0,
+        regs_dict: dict | None = None,
+        gi_mask_da: xr.DataArray | None = None,
+        clip01: bool = True,
+        threecat_percent_only: bool = True,
+    ):
+        regs_dict = regs_dict if regs_dict is not None else self.Ant_8sectors  # adjust name if needed
+        for k in ("mod", "obs", "lon", "lat"):
+            if k not in FIP:
+                raise ValueError("FIP must contain 'mod', 'obs', 'lon', 'lat'.")
+        mod = FIP["mod"].astype("float64")
+        obs = FIP["obs"].astype("float64")
+        if clip01:
+            mod = mod.clip(0.0, 1.0)
+            obs = obs.clip(0.0, 1.0)
+        overlap      = xr.apply_ufunc(np.minimum, mod, obs)
+        model_excess = xr.apply_ufunc(np.maximum, mod - obs, 0.0)
+        obs_excess   = xr.apply_ufunc(np.maximum, obs - mod, 0.0)
+        lon_m = self.normalise_longitudes(FIP["lon"], to="-180-180")
+        lat   = FIP["lat"]
+        cell_area_km2 = (float(PIXEL) * float(PIXEL)) / 1e6
+
+        if gi_mask_da is not None:
+            valid = (~gi_mask_da.astype(bool).broadcast_like(mod))
+        else:
+            valid = xr.ones_like(mod, dtype=bool)
+
+        rows = []
+        for rname, reg_dict in regs_dict.items():
+            geo_reg = reg_dict["plot_region"]  # must be (lon_min, lon_max, lat_min, lat_max) in -180..180
+            R = self._region_mask(lon_m, lat, geo_reg) & valid
+
+            A_km2 = float((overlap      * R).sum()) * cell_area_km2
+            M_km2 = float((model_excess * R).sum()) * cell_area_km2
+            O_km2 = float((obs_excess   * R).sum()) * cell_area_km2
+            tot   = A_km2 + M_km2 + O_km2
+
+            pct_A = 100.0 * A_km2 / tot if tot > 0 else np.nan
+            pct_M = 100.0 * M_km2 / tot if tot > 0 else np.nan
+            pct_O = 100.0 * O_km2 / tot if tot > 0 else np.nan
+
+            MOD_km2 = float((mod * R).sum()) * cell_area_km2
+            OBS_km2 = float((obs * R).sum()) * cell_area_km2
+
+            pct_A_of_MOD = 100.0 * A_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
+            pct_M_of_MOD = 100.0 * M_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
+            pct_A_of_OBS = 100.0 * A_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
+            pct_O_of_OBS = 100.0 * O_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
+
+            rows.append(dict(
+                region=rname,
+                pct_agreement=pct_A,
+                pct_model_dominant=pct_M,
+                pct_observation_dominant=pct_O,
+                model_FIA_km2=MOD_km2,
+                obs_FIA_km2=OBS_km2,
+                agreement_overlap_km2=A_km2,
+                model_excess_km2=M_km2,
+                obs_excess_km2=O_km2,
+                agreement_pct_of_model=pct_A_of_MOD,
+                model_excess_pct_of_model=pct_M_of_MOD,
+                agreement_pct_of_obs=pct_A_of_OBS,
+                obs_excess_pct_of_obs=pct_O_of_OBS,
+            ))
+
+        df = pd.DataFrame(rows).set_index("region")
+
+        A_sum = df["agreement_overlap_km2"].sum()
+        M_sum = df["model_excess_km2"].sum()
+        O_sum = df["obs_excess_km2"].sum()
+        tot_sum = A_sum + M_sum + O_sum
+
+        ant_row = dict(
+            pct_agreement=100.0 * A_sum / tot_sum if tot_sum > 0 else np.nan,
+            pct_model_dominant=100.0 * M_sum / tot_sum if tot_sum > 0 else np.nan,
+            pct_observation_dominant=100.0 * O_sum / tot_sum if tot_sum > 0 else np.nan,
+            model_FIA_km2=df["model_FIA_km2"].sum(),
+            obs_FIA_km2=df["obs_FIA_km2"].sum(),
+            agreement_overlap_km2=A_sum,
+            model_excess_km2=M_sum,
+            obs_excess_km2=O_sum,
+            agreement_pct_of_model=np.nan,
+            model_excess_pct_of_model=np.nan,
+            agreement_pct_of_obs=np.nan,
+            obs_excess_pct_of_obs=np.nan,
+        )
+
+        df_all = pd.concat([df, pd.DataFrame(ant_row, index=["ANT"])])
+
+        if threecat_percent_only:
+            return df_all[["pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
+        else:
+            return df_all[[
+                "model_FIA_km2", "agreement_overlap_km2", "model_excess_km2",
+                "agreement_pct_of_model", "model_excess_pct_of_model",
+                "obs_FIA_km2", "agreement_pct_of_obs", "obs_excess_km2", "obs_excess_pct_of_obs",
+                "pct_agreement", "pct_model_dominant", "pct_observation_dominant"
+            ]]
+            

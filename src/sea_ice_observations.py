@@ -592,47 +592,6 @@ class SeaIceObservations:
         # attach as coordinates (on same (y,x) dims)
         return ds.assign_coords(lon=lon, lat=lat)
 
-    def subset_by_lonlat_box(self, da: xr.DataArray, lon_range, lat_range,
-                             lon_name = "TLON",
-                             lat_name = "TLAT",
-                             jdim     = "nj",
-                             idim     = "ni",
-                             wrap     = "-180-180",
-                             crop     = True):
-        """
-        Subset a curvilinear grid by a geographic box. Works with dask.
-        If the lon_range crosses the seam (e.g. (350, 20) in 0..360), it handles it.
-        """
-        # coords (2-D)
-        TLON = self.normalise_longitudes(da.coords[lon_name], wrap)
-        TLAT = da.coords[lat_name]
-        lon_min, lon_max = lon_range
-        lat_min, lat_max = lat_range
-        # Longitude mask (handle seam)
-        if wrap == "0-360":
-            lon_min, lon_max = lon_min % 360, lon_max % 360
-        else:
-            lon_min = ((lon_min + 180) % 360) - 180
-            lon_max = ((lon_max + 180) % 360) - 180
-        if lon_min <= lon_max:
-            mask_lon = (TLON >= lon_min) & (TLON <= lon_max)
-        else:
-            # crosses dateline / wrap seam
-            mask_lon = (TLON >= lon_min) | (TLON <= lon_max)
-        mask_lat = (TLAT >= lat_min) & (TLAT <= lat_max)
-        mask     = mask_lon & mask_lat                      # (nj, ni)
-        out = da.where(mask)                            # broadcast over time
-        if crop:
-            j_any = mask.any(dim=idim)
-            i_any = mask.any(dim=jdim)
-            j_idx = np.where(j_any.values)[0]
-            i_idx = np.where(i_any.values)[0]
-            if j_idx.size and i_idx.size:
-                j0, j1 = j_idx.min(), j_idx.max() + 1
-                i0, i1 = i_idx.min(), i_idx.max() + 1
-                out    = out.isel({jdim: slice(j0, j1), idim: slice(i0, i1)})
-        return out
-
     def regional_fast_ice_area(self, ds: xr.Dataset,
                                 region    = (52.5, 97.5, -70.5, -64),
                                 lon_name  = "longitude",

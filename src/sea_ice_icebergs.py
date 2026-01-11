@@ -13,73 +13,80 @@ class SeaIceIcebergs:
         return
     
     def load_GI_lon_lats(self):
+        self.load_cice_grid(slice_hem=True)
+
+        lon  = self.G_t["lon"].reset_coords(drop=True)
+        lat  = self.G_t["lat"].reset_coords(drop=True)
+        mask = self.G_GI["mask"].reset_coords(drop=True).astype(bool)
+
+        return {
+            "lon": lon.data[mask.data].ravel(),
+            "lat": lat.data[mask.data].ravel(),
+        }
+    
+    def _region_lon_mask(self, lon2d, lon_min, lon_max):
         """
-        Extract longitude and latitude positions of grounded iceberg (GI) grid cells.
-
-        This method identifies cells where the landmask has been modified to add grounded icebergs
-        (i.e., locations where the original landmask had ocean (`kmt_org == 1`) and the modified
-        landmask has land (`kmt_mod == 0`)), and returns their corresponding geographic coordinates.
-
-        Returns
-        -------
-        dict
-            Dictionary with:
-            - 'lon': 1D array of longitudes of grounded iceberg grid cells
-            - 'lat': 1D array of latitudes  of grounded iceberg grid cells
-
-        Notes
-        -----
-        - `self.P_KMT_org` and `self.P_KMT_mod` must be paths to NetCDF files with the `kmt` landmask variable.
-        - `self.hemisphere_dict['nj_slice']` is used to subset the hemisphere-specific grid region.
-        - The output is suitable for symbol plotting (e.g., `pygmt.Figure.plot(...)` with `style="c0.05c"`).
+        Build a longitude mask that works for either:
+        - non-wrapping bounds (lon_min <= lon_max)
+        - seam-crossing bounds (lon_min > lon_max) e.g. 330..10 on a 0..360 grid
+        """
+        if lon_min <= lon_max:
+            return (lon2d >= lon_min) & (lon2d <= lon_max)
+        else:
+            # crosses seam
+            return (lon2d >= lon_min) | (lon2d <= lon_max)    
+    
+    def compute_grounded_iceberg_area(self, region=None, scale=1e6):
+        """
+        Returns:
+        - dict of km^2 by region if region is provided
+        - total GI area (m^2) if region is None (or km^2 if you divide by scale)
         """
         self.load_cice_grid(slice_hem=True)
-        return {'lon' : self.G_t['lon'][self.G_GI['mask']].ravel(),
-                'lat' : self.G_t['lat'][self.G_GI['mask']].ravel()}
 
-    def compute_grounded_iceberg_area(self, region=None, scale=1e6):
-        '''
-        Compute grounded iceberg area from modified KMT relative to original KMT.
+        # IMPORTANT: use FULL-grid lon/lat for region tests (no NaNs)
+        lon2d = self.G_t["lon"].values
+        lat2d = self.G_t["lat"].values
 
-        Parameters
-        ----------
-        region : dict, optional
-            Dictionary with keys as region names and values as sub-dictionaries:
-            {'REG_NAME': {'ext': [lon_min, lon_max, lat_min, lat_max]}}
+        # GI area field already has NaNs outside GI in your loader
+        area2d = self.G_GI["area"].values
 
-        Returns
-        -------
-        float or dict
-            Total grounded iceberg area in m^2 if region is None.
-            Dictionary of region-specific grounded iceberg areas otherwise.
-        '''
-        self.load_cice_grid()
-        area = self.G_t['area'].values
-        mask = self.G_GI['mask'].values
-        lon  = self.G_GI['lon'].values
-        lat  = self.G_GI['lat'].values
-        self.logger.info(f"GI-area_calc: grid (G_t) lon min: {lon.min()}")
-        self.logger.info(f"GI-area_calc: grid (G_t) lon max: {lon.max()}")
-        self.logger.info(f"GI-area_calc: grid (G_t) lat min: {lat.min()}")
-        self.logger.info(f"GI-area_calc: grid (G_t) lat max: {lat.max()}")
-        total_area = 0
-        if region is not None:
-            area_dict = {}
-            for reg_name, reg_cfg in region.items():
-                lon_min, lon_max, lat_min, lat_max = reg_cfg['plot_region']
-                self.logger.info(f"GI-area_calc: region {reg_name} lon min: {lon_min}")
-                self.logger.info(f"GI-area_calc: region {reg_name} lon max: {lon_max}")
-                self.logger.info(f"GI-area_calc: region {reg_name} lat min: {lat_min}")
-                self.logger.info(f"GI-area_calc: region {reg_name} lat max: {lat_max}")
-                region_mask         = ( (lon >= lon_min) &
-                                        (lon <= lon_max) &
-                                        (lat >= lat_min) &
-                                        (lat <= lat_max) )
-                area_dict[reg_name] = np.sum(area[mask & region_mask])/scale #DEFAULT: m^2 to km^2
-                self.logger.info(f"GI-area_calc: region {reg_name} total GI-area {area_dict[reg_name]:0.2f} km^2")
-            return area_dict
-        else:
-            return np.sum(area[mask])
+        # IMPORTANT: convert mask back to boolean for indexing
+        gi_mask = self.G_GI["mask"].values.astype(bool)
+
+        # Logging (nan-safe)
+        self.logger.info(f"GI-area_calc: grid lon min/max: {np.nanmin(lon2d):.2f} / {np.nanmax(lon2d):.2f}")
+        self.logger.info(f"GI-area_calc: grid lat min/max: {np.nanmin(lat2d):.2f} / {np.nanmax(lat2d):.2f}")
+
+        if region is None:
+            # total GI area (m^2)
+            return np.nansum(area2d[gi_mask])
+
+        # Determine grid lon convention
+        grid_is_0360 = (np.nanmin(lon2d) >= 0.0) and (np.nanmax(lon2d) > 180.0)
+
+        area_dict = {}
+        for reg_name, reg_cfg in region.items():
+            lon_min, lon_max, lat_min, lat_max = reg_cfg["plot_region"]
+
+            # Convert region bounds if grid is 0..360 but bounds are negative / -180..180 style
+            if grid_is_0360:
+                lon_min_c = self.normalise_longitudes(lon_min)
+                lon_max_c = self.normalise_longitudes(lon_max)
+            else:
+                lon_min_c, lon_max_c = lon_min, lon_max
+
+            lon_mask = self._region_lon_mask(lon2d, lon_min_c, lon_max_c)
+            lat_mask = (lat2d >= lat_min) & (lat2d <= lat_max)
+            region_mask = lon_mask & lat_mask
+
+            # Sum GI areas within region
+            area_km2 = np.nansum(area2d[gi_mask & region_mask]) / scale
+            area_dict[reg_name] = area_km2
+
+            self.logger.info(f"GI-area_calc: region {reg_name} GI area = {area_km2:0.2f} km^2")
+
+        return area_dict
 
     def check_GI_coverage(self, da, varname="GI_counts", lon_name="lon", lat_name="lat"):
         """
@@ -344,3 +351,42 @@ class SeaIceIcebergs:
                         retained_count     += 1
         GI_thinning_factor = 1 - (retained_count / total_count) if total_count > 0 else 0
         return thinned_mask, GI_thinning_factor
+
+    def regrid_gi_to_fip_bool(self,
+                              gi_mask_da: xr.DataArray,
+                                gi_lon2d: xr.DataArray,
+                                gi_lat2d: xr.DataArray,
+                                fip_lon2d: xr.DataArray,
+                                fip_lat2d: xr.DataArray,
+                                dilate_pixels: int = 1):   # set 0 to disable adjacency expansion
+        """
+        Regrids a boolean GI mask from the model grid onto the FIP grid via nearest-neighbour
+        on great-circle distance (xesmf 'nearest_s2d'). Returns a boolean mask on the FIP grid.
+        Optionally dilates by N pixels on the target grid to include coast-adjacent cells.
+        """
+        from scipy.ndimage import binary_dilation
+        import xesmf as xe
+        # xESMF expects float fields; cast True->1, False->0
+        gi_float = gi_mask_da.astype(np.float32)
+
+        # Build source/target 'grid' dictionaries from 2D lon/lat
+        src = {'lon': gi_lon2d.values, 'lat': gi_lat2d.values}
+        dst = {'lon': fip_lon2d.values, 'lat': fip_lat2d.values}
+
+        # Regridder (nearest source-to-destination). reuse_weights=True if you call repeatedly.
+        regridder = xe.Regridder(src, dst, method='nearest_s2d', locstream_in=False, locstream_out=False)
+
+        gi_on_fip_float = regridder(gi_float.values)  # ndarray on target shape
+        gi_on_fip = xr.DataArray(gi_on_fip_float > 0.5, coords=fip_lon2d.coords, dims=fip_lon2d.dims)
+
+        # Optional: 1-pixel dilation to catch coast-adjacent cells next to GI
+        if dilate_pixels and dilate_pixels > 0:
+            # ndimage expects numpy array; preserve NaNs as False for mask ops
+            mask_np = np.asarray(gi_on_fip.fillna(False).values, dtype=bool)
+            structure = np.ones((1 + 2*dilate_pixels, 1 + 2*dilate_pixels), dtype=bool)
+            mask_np = binary_dilation(mask_np, structure=structure)
+            gi_on_fip = xr.DataArray(mask_np, coords=fip_lon2d.coords, dims=fip_lon2d.dims)
+
+        gi_on_fip.name = "GI_mask_on_FIP"
+        gi_on_fip.attrs.update(dict(long_name="Grounded iceberg mask (regridded to FIP)", comment="nearest_s2d + optional dilation"))
+        return gi_on_fip

@@ -26,7 +26,6 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path.home() / "AFIM" / "src" / "AFIM" / "src"))
 from sea_ice_toolbox import SeaIceToolboxManager  # noqa: E402
 
-
 def _guess_spatial_dims(da: xr.DataArray):
     """Return likely horizontal dims for a DataArray (excluding time/cat dims)."""
     drop = {"time", "time_bounds", "nbnd", "bounds", "ncat", "NCAT"}
