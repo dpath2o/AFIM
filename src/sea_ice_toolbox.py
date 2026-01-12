@@ -189,6 +189,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
     def __init__(self,
                  P_json                      = None,# the configuration file for which there are many dependencies
                                                     # that this toolbox relies upon
+                 P_CICE_grid                 = None,# name of the CICE grid file to be used; default is in JSON file
                  sim_name                    = None,# valid name of a model simulation; essentially 'valid' means
                                                     # any name given underneath the directory in the config file
                                                     # named 'AFIM_out'; the sea_ice_model class underneath the hood
@@ -359,6 +360,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.show_fig             = show_figs                    if show_figs                    is not None else False
         self.del_org_cice_iceh_nc = delete_original_cice_iceh_nc if delete_original_cice_iceh_nc is not None else False
         hemisphere                = hemisphere                   if hemisphere                   is not None else self.config.get('hemisphere', 'south')
+        self.CICE_dict['P_G']     = P_CICE_grid                  if P_CICE_grid                  is not None else self.CICE_dict['P_G']
         self.define_hemisphere(hemisphere)
         self.ispd_thresh_str     = f"{self.ispd_thresh:.1e}".replace("e-0", "e-")
         self.D_sim               = Path(self.D_dict['AFIM_out'], sim_name)
@@ -1355,12 +1357,12 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 self.monthly_zarr_iceh_time_correction(P_zarr, dry_run=dry_run)
 
     def load_cice_zarr(self,
-                    sim_name  = None,
-                    dt0_str   = None,
-                    dtN_str   = None,
-                    D_alt     = None,
-                    variables = None,
-                    slice_hem = False):
+                       sim_name  = None,
+                       dt0_str   = None,
+                       dtN_str   = None,
+                       D_alt     = None,
+                       variables = None,
+                       slice_hem = False):
         """
         Open monthly Zarr groups for the requested period and concatenate in time.
 

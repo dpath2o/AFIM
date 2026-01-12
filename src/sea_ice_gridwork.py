@@ -436,3 +436,378 @@ class SeaIceGridWork:
         area_2d /= 1e6
         area_da = xr.DataArray(area_2d, dims=("lat","lon"), coords={"lat":da['lat'], "lon":da['lon']})
         return area_da
+    
+    ######################################################################
+    #                           FORM FACTORS                             #
+    ######################################################################
+    def _infer_deg_from_grid_units(self, arr, name="var"):
+        """
+        Convert radians->degrees if values look like radians.
+        Returns numpy array (float64).
+        """
+        a = np.asarray(arr, dtype="float64")
+        finite = np.isfinite(a)
+        if not finite.any():
+            return a
+        amax = np.nanmax(np.abs(a[finite]))
+        # Heuristic: radians for lon/lat/angle typically within ~2*pi
+        if amax <= (2.0 * np.pi + 1e-6):
+            return np.rad2deg(a)
+        return a
+
+    def _open_cice_cgrid_for_F2(self, P_grid=None):
+        """
+        Open a CICE C-grid NetCDF and return (tlon_deg, tlat_deg, anglet_rad, dx_m, dy_m).
+        Handles common variable name variants.
+
+        Expected for ACCESS-OM3 C-grid:
+          tlon, tlat in radians
+          anglet in radians
+          hte, htn in cm
+        """
+        if P_grid is None:
+            P_grid = self.CICE_dict.get("P_G", None)
+        if P_grid is None:
+            raise ValueError("P_grid is None and self.CICE_dict['P_G'] is not set.")
+
+        self.logger.info(f"Opening CICE grid: {P_grid}")
+        ds = xr.open_dataset(P_grid, decode_times=False)
+
+        # ---- locate vars robustly
+        def pick(*names):
+            for n in names:
+                if n in ds.variables:
+                    return n
+            return None
+
+        v_tlon = pick("tlon", "TLON", "t_lon", "lon_t")
+        v_tlat = pick("tlat", "TLAT", "t_lat", "lat_t")
+        v_angt = pick("anglet", "angleT", "ANGLET", "angle_t")
+        v_hte  = pick("hte", "HTE", "dxT", "dxt")
+        v_htn  = pick("htn", "HTN", "dyT", "dyt")
+
+        for v, nm in [(v_tlon, "tlon"), (v_tlat, "tlat"), (v_angt, "anglet"), (v_hte, "hte"), (v_htn, "htn")]:
+            if v is None:
+                raise KeyError(f"Could not find required grid variable '{nm}' in {P_grid}")
+
+        tlon = ds[v_tlon].values
+        tlat = ds[v_tlat].values
+        angt = ds[v_angt].values
+        hte  = ds[v_hte].values
+        htn  = ds[v_htn].values
+
+        # lon/lat -> degrees, anglet stays radians
+        tlon_deg = self._infer_deg_from_grid_units(tlon, "tlon")
+        tlat_deg = self._infer_deg_from_grid_units(tlat, "tlat")
+
+        # ensure lon is suitable for Antarctic projection transforms
+        tlon_deg = self.normalise_longitudes(tlon_deg, to="-180-180")
+
+        # anglet: if it looks like degrees, convert to rad
+        angt_arr = np.asarray(angt, dtype="float64")
+        finite = np.isfinite(angt_arr)
+        if finite.any():
+            amax = np.nanmax(np.abs(angt_arr[finite]))
+            # if looks like degrees (e.g. up to ~180), assume degrees
+            if amax > (2.0 * np.pi + 1e-6) and amax <= 360.0:
+                anglet_rad = np.deg2rad(angt_arr)
+            else:
+                anglet_rad = angt_arr
+        else:
+            anglet_rad = angt_arr
+
+        # hte/htn expected in cm -> m
+        dx_m = np.asarray(hte, dtype="float64") * 0.01
+        dy_m = np.asarray(htn, dtype="float64") * 0.01
+
+        return tlon_deg, tlat_deg, anglet_rad, dx_m, dy_m, ds
+
+    def _iter_exterior_rings_lonlat(self, P_shp, target_crs="EPSG:4326"):
+        """
+        Stream exterior rings from a Polygon/MultiPolygon shapefile.
+
+        Yields:
+            (lon_deg_1d, lat_deg_1d) for each exterior ring, in target_crs degrees.
+        """
+        try:
+            import fiona
+            from pyproj import CRS, Transformer
+        except Exception as e:
+            raise ImportError("Requires fiona and pyproj for streaming shapefile rings.") from e
+
+        with fiona.open(P_shp) as src:
+            # Fiona may provide crs or crs_wkt
+            src_crs = None
+            if src.crs_wkt:
+                src_crs = CRS.from_wkt(src.crs_wkt)
+            elif src.crs:
+                src_crs = CRS.from_user_input(src.crs)
+            else:
+                # assume already lon/lat
+                src_crs = CRS.from_epsg(4326)
+
+            dst_crs = CRS.from_user_input(target_crs)
+            tfm = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
+
+            for feat in src:
+                geom = feat.get("geometry", None)
+                if geom is None:
+                    continue
+
+                gtype = geom.get("type", None)
+                coords = geom.get("coordinates", None)
+                if coords is None:
+                    continue
+
+                # Polygon: coords = [ring0, ring1, ...], ring0 is exterior
+                # MultiPolygon: coords = [[ring0, ...], [ring0, ...], ...]
+                if gtype == "Polygon":
+                    polys = [coords]
+                elif gtype == "MultiPolygon":
+                    polys = coords
+                else:
+                    # ignore non-polygons
+                    continue
+
+                for poly in polys:
+                    if not poly:
+                        continue
+                    exterior = poly[0]
+                    if exterior is None or len(exterior) < 2:
+                        continue
+
+                    x = np.asarray([p[0] for p in exterior], dtype="float64")
+                    y = np.asarray([p[1] for p in exterior], dtype="float64")
+                    lon, lat = tfm.transform(x, y)
+
+                    lon = np.asarray(lon, dtype="float64")
+                    lat = np.asarray(lat, dtype="float64")
+
+                    # normalise for downstream projection
+                    lon = self.normalise_longitudes(lon, to="-180-180")
+                    yield lon, lat
+
+    def build_F2_form_factors_from_high_res_coast(self,
+                                                  P_shp=None,
+                                                  P_grid=None,
+                                                  P_out=None,
+                                                  proj_crs="EPSG:3031",
+                                                  chunk_segments=2_000_000,
+                                                  coast_write_stride=25,
+                                                  lat_subset_max=-30.0,
+                                                  netcdf_compression=4):
+        """
+        Compute Liu et al. (2022) F2 form factors (Equations 9–10) on the CICE T-grid:
+
+            F2x(i,j) = sum_n |l_n cos(theta_n)| / dx(i,j)
+            F2y(i,j) = sum_n |l_n sin(theta_n)| / dy(i,j)
+
+        where theta_n is the angle between the coastline segment and the local model x-axis.
+
+        Output NetCDF contains:
+          - F2x(nj,ni), F2y(nj,ni)
+          - lon(ncoast), lat(ncoast)  [thinned coastline vertices for provenance/plotting]
+
+        Notes:
+          * This produces the *cell-based* integrals (Liu f^u_2 and f^v_2). The C-grid u/v-point
+            combination (their Eqs 11–12) is intentionally left for the Fortran side.
+          * Coastline segment length + azimuth are computed geodesically (WGS84).
+        """
+        if P_shp is None:
+            P_shp = self.CICE_dict.get("P_high_res_coast", None)
+        if P_out is None:
+            P_out = self.CICE_dict.get("P_F2_coast", None)
+
+        if P_shp is None:
+            raise ValueError("P_shp is None and self.CICE_dict['P_high_res_coast'] is not set.")
+        if P_out is None:
+            raise ValueError("P_out is None and self.CICE_dict['P_F2_coast'] is not set.")
+
+        from pyproj import CRS, Transformer, Geod
+        from scipy.spatial import cKDTree
+
+        tlon_deg, tlat_deg, anglet_rad, dx_m, dy_m, ds_grid = self._open_cice_cgrid_for_F2(P_grid=P_grid)
+
+        nj, ni = tlon_deg.shape
+        ncell = nj * ni
+
+        # Subset to SH band for KDTree efficiency (Antarctic coastline only)
+        mask = np.isfinite(tlat_deg) & (tlat_deg <= lat_subset_max)
+        if not mask.any():
+            raise RuntimeError(f"No grid cells found with tlat <= {lat_subset_max}. Check grid/units.")
+
+        flat_idx = np.arange(ncell, dtype="int64")
+        sub_flat = flat_idx[mask.ravel()]
+
+        # Project T-cell centers for KDTree
+        tfm_to_proj = Transformer.from_crs(CRS.from_epsg(4326), CRS.from_user_input(proj_crs), always_xy=True)
+
+        x_sub, y_sub = tfm_to_proj.transform(tlon_deg.ravel()[sub_flat], tlat_deg.ravel()[sub_flat])
+        pts = np.column_stack([np.asarray(x_sub, dtype="float64"), np.asarray(y_sub, dtype="float64")])
+
+        self.logger.info(f"Building KDTree on {pts.shape[0]:,} T-cells (subset for lat <= {lat_subset_max}).")
+        tree = cKDTree(pts)
+
+        # Accumulators
+        Sx = np.zeros(ncell, dtype="float64")
+        Sy = np.zeros(ncell, dtype="float64")
+
+        # Geodesic for segment length/azimuth
+        geod = Geod(ellps="WGS84")
+
+        # For output coastline provenance (thin vertices)
+        coast_lon_out = []
+        coast_lat_out = []
+
+        self.logger.info(f"Streaming coastline rings from: {P_shp}")
+        ring_count = 0
+        seg_total = 0
+
+        for lon_ring, lat_ring in self._iter_exterior_rings_lonlat(P_shp, target_crs="EPSG:4326"):
+            ring_count += 1
+
+            # store thinned vertices for output
+            if coast_write_stride is not None and coast_write_stride > 0:
+                coast_lon_out.append(lon_ring[::coast_write_stride])
+                coast_lat_out.append(lat_ring[::coast_write_stride])
+                # separator
+                coast_lon_out.append(np.asarray([np.nan], dtype="float64"))
+                coast_lat_out.append(np.asarray([np.nan], dtype="float64"))
+
+            # segments from consecutive vertices
+            if len(lon_ring) < 2:
+                continue
+
+            lon0_all = lon_ring[:-1]
+            lat0_all = lat_ring[:-1]
+            lon1_all = lon_ring[1:]
+            lat1_all = lat_ring[1:]
+
+            nseg = lon0_all.size
+            if nseg == 0:
+                continue
+
+            # chunk over segments for memory safety
+            for s0 in range(0, nseg, int(chunk_segments)):
+                s1 = min(nseg, s0 + int(chunk_segments))
+                lon0 = lon0_all[s0:s1]
+                lat0 = lat0_all[s0:s1]
+                lon1 = lon1_all[s0:s1]
+                lat1 = lat1_all[s0:s1]
+
+                # geodesic azimuth (deg from north) and length (m)
+                az12, _, dist_m = geod.inv(lon0, lat0, lon1, lat1)
+                dist_m = np.asarray(dist_m, dtype="float64")
+
+                # drop zero/NaN segments
+                good = np.isfinite(dist_m) & (dist_m > 0.0) & np.isfinite(az12)
+                if not good.any():
+                    continue
+                lon0 = lon0[good]; lat0 = lat0[good]
+                lon1 = lon1[good]; lat1 = lat1[good]
+                az12 = np.asarray(az12, dtype="float64")[good]
+                dist_m = dist_m[good]
+
+                # midpoint in projected CRS for nearest-cell assignment
+                x0, y0 = tfm_to_proj.transform(lon0, lat0)
+                x1, y1 = tfm_to_proj.transform(lon1, lat1)
+                xm = 0.5 * (np.asarray(x0, dtype="float64") + np.asarray(x1, dtype="float64"))
+                ym = 0.5 * (np.asarray(y0, dtype="float64") + np.asarray(y1, dtype="float64"))
+
+                _, nn = tree.query(np.column_stack([xm, ym]), workers=-1)
+                cell_flat = sub_flat[nn]  # map KDTree index -> full-grid flat index
+
+                # theta = angle between segment direction and local model x-axis
+                # az12 is degrees clockwise from north; convert to radians from east:
+                # angle_from_east = 90deg - az_from_north
+                seg_ang_e = np.deg2rad(90.0 - az12)
+
+                ang_local = anglet_rad.ravel()[cell_flat]
+                ang_local = np.where(np.isfinite(ang_local), ang_local, 0.0)
+
+                theta = seg_ang_e - ang_local
+
+                sx = np.abs(dist_m * np.cos(theta))
+                sy = np.abs(dist_m * np.sin(theta))
+
+                np.add.at(Sx, cell_flat, sx)
+                np.add.at(Sy, cell_flat, sy)
+
+                seg_total += int(dist_m.size)
+
+            if ring_count % 50 == 0:
+                self.logger.info(f"Processed {ring_count} rings; ~{seg_total:,} segments accumulated so far.")
+
+        self.logger.info(f"Finished coastline pass: rings={ring_count:,}, segments={seg_total:,}")
+
+        dx = dx_m.ravel()
+        dy = dy_m.ravel()
+        # Avoid divide-by-zero
+        good_dx = np.isfinite(dx) & (dx > 0)
+        good_dy = np.isfinite(dy) & (dy > 0)
+
+        F2x = np.zeros(ncell, dtype="float64")
+        F2y = np.zeros(ncell, dtype="float64")
+        F2x[good_dx] = Sx[good_dx] / dx[good_dx]
+        F2y[good_dy] = Sy[good_dy] / dy[good_dy]
+
+        F2x = F2x.reshape((nj, ni)).astype("float32")
+        F2y = F2y.reshape((nj, ni)).astype("float32")
+
+        # coastline output arrays
+        if coast_lon_out:
+            coast_lon = np.concatenate(coast_lon_out).astype("float32")
+            coast_lat = np.concatenate(coast_lat_out).astype("float32")
+        else:
+            coast_lon = np.asarray([], dtype="float32")
+            coast_lat = np.asarray([], dtype="float32")
+
+        ds_out = xr.Dataset(
+            data_vars=dict(
+                F2x=(("nj", "ni"), F2x, dict(
+                    long_name="Liu et al. (2022) F2 form factor, x-projection (cell-based)",
+                    units="1",
+                    description="sum_n |l_n cos(theta_n)| / dx; theta measured relative to local model x-axis",
+                )),
+                F2y=(("nj", "ni"), F2y, dict(
+                    long_name="Liu et al. (2022) F2 form factor, y-projection (cell-based)",
+                    units="1",
+                    description="sum_n |l_n sin(theta_n)| / dy; theta measured relative to local model x-axis",
+                )),
+                lon=(("ncoast",), coast_lon, dict(
+                    long_name="coast longitude",
+                    units="degrees_east",
+                )),
+                lat=(("ncoast",), coast_lat, dict(
+                    long_name="coast latitude",
+                    units="degrees_north",
+                )),
+            ),
+            coords=dict(
+                ni=np.arange(ni, dtype="int32"),
+                nj=np.arange(nj, dtype="int32"),
+                ncoast=np.arange(coast_lon.size, dtype="int64"),
+            ),
+            attrs=dict(
+                title="High-resolution coastline-derived F2 form factors for CICE",
+                references="Liu et al. (2022) JGR Oceans, doi:10.1029/2022JC018413 (Eqs 9-10)",
+                coastline_source=str(P_shp),
+                grid_source=str(P_grid if P_grid is not None else self.CICE_dict.get("P_G")),
+                proj_crs=str(proj_crs),
+                coast_write_stride=int(coast_write_stride),
+                lat_subset_max=float(lat_subset_max),
+                created_by="SeaIceToolbox.SeaIceGridWork.build_F2_form_factors_from_high_res_coast",
+            )
+        )
+
+        # write netcdf
+        self.logger.info(f"Writing F2 NetCDF: {P_out}")
+        enc = {
+            "F2x": {"zlib": True, "complevel": int(netcdf_compression), "dtype": "float32"},
+            "F2y": {"zlib": True, "complevel": int(netcdf_compression), "dtype": "float32"},
+            "lon": {"zlib": True, "complevel": int(netcdf_compression), "dtype": "float32"},
+            "lat": {"zlib": True, "complevel": int(netcdf_compression), "dtype": "float32"},
+        }
+        ds_out.to_netcdf(P_out, encoding=enc)
+
+        return ds_out

@@ -31,6 +31,8 @@
                             "P_G"               : "/g/data/gv90/da1339/grids/ACCESS-OM2-025_grid.nc",
                             "P_B"               : "/g/data/gv90/da1339/grids/ACCESS-OM2-025_topog.nc",
                             "P_KMT"             : "/g/data/gv90/da1339/grids/ACCESS-OM2-025_kmt.nc",
+                            "P_high_res_coast"  : "/g/data/gv90/da1339/coastlines/high_res_coast/add_coastline_high_res_polygon_v7_9.shp",
+                            "P_F2_coast"        : "/g/data/gv90/da1339/coastlines/high_res_coast/AAD_high-res_cstln_v7p9.nc",
                             "G_res"             : "0p25",
                             "SIC_name"          : "aice",
                             "SIT_name"          : "hi",
