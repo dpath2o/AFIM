@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # --- Defaults ---
+ISPD_THRESH="5e-4"
 B2T_TYPE_LIST=()
 START_DATE="1993-01-01"
 END_DATE=""

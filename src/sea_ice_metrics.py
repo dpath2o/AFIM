@@ -211,19 +211,77 @@ class SeaIceMetrics:
             self.logger.info(f"Metrics written to {P_mets_zarr}")
         return DS_METS
 
-    def load_computed_metrics(self,
-                              spatial_grid_type : str   = "bin", #bin, roll, None (which is 'daily')
-                              ice_type          : str   = None,
-                              ispd_thresh       : str   = None):
-        ice_type    = ice_type       if ice_type    is not None else self.ice_type
-        ispd_thresh = ispd_thresh    if ispd_thresh is not None else self.ispd_thresh
-        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        if ice_type=='SI':
-            D_mets = Path(self.D_zarr, self.hemisphere_dict['abbreviation'])
+    def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str, 
+                             time_dim: str = "time") -> xr.Dataset:
+        if time_dim not in ds.dims and time_dim not in ds.coords:
+            # Nothing to do
+            return ds
+        if dt0_str is None or dtN_str is None:
+            return ds
+        t = ds[time_dim]
+        if t.size == 0:
+            return ds
+        # Determine whether we're working with numpy datetime64 or cftime objects
+        t0 = t.values[0]
+        is_datetime64 = np.issubdtype(t.values.dtype, np.datetime64)
+        # Build start/end in matching type
+        if is_datetime64:
+            start = np.datetime64(dt0_str)
+            end   = np.datetime64(dtN_str)
         else:
-            D_mets = Path(self.D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}")
-        P_mets = Path(D_mets, f"{ice_type}_{spatial_grid_type}_mets.zarr") if spatial_grid_type is not None else Path(D_mets, f"{ice_type}_mets.zarr")
-        return xr.open_dataset(P_mets)
+            # cftime (dtype typically object)
+            try:
+                import cftime  # noqa: F401
+            except Exception as e:
+                raise RuntimeError("Dataset time coordinate appears to be cftime/object, but cftime is not available.") from e
+            # Try to preserve calendar if present; default to 'standard'
+            cal = t.encoding.get("calendar", None) or t.attrs.get("calendar", None) or "standard"
+            start = xr.cftime_range(start=dt0_str, periods=1, calendar=cal)[0]
+            end   = xr.cftime_range(start=dtN_str, periods=1, calendar=cal)[0]
+        # Sanity
+        if start > end:
+            raise ValueError(f"Requested start > end: {dt0_str} > {dtN_str}")
+        # Infer step from dataset time (fallback: 1 day)
+        if t.size >= 2:
+            step = t.values[1] - t.values[0]
+        else:
+            step = np.timedelta64(1, "D") if is_datetime64 else __import__("datetime").timedelta(days=1)
+        # Build the requested time axis (inclusive)
+        if is_datetime64:
+            # ensure inclusive end (np.arange is end-exclusive)
+            desired = np.arange(start, end + step, step)
+        else:
+            desired = []
+            cur = start
+            # robust loop for cftime + timedelta
+            while cur <= end:
+                desired.append(cur)
+                cur = cur + step
+            desired = np.array(desired, dtype=object)
+        # Reindex onto the desired axis -> pads with NaNs where outside original coverage
+        # (keeps original values where they overlap)
+        ds_out = ds.reindex({time_dim: desired})
+        return ds_out
+    
+    def load_computed_metrics(self,
+                              spatial_grid_type : str  = "bin",  # bin, roll, None (which is 'daily')
+                              ice_type          : str  = None,
+                              ispd_thresh       : str  = None,
+                              clip_to_self      : bool = True,
+                              time_dim          : str  = "time"):
+        ice_type        = ice_type if ice_type is not None else self.ice_type
+        ispd_thresh     = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
+        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
+        if ice_type == "SI":
+            D_mets = Path(self.D_zarr, self.hemisphere_dict["abbreviation"])
+        else:
+            D_mets = Path(self.D_zarr, self.hemisphere_dict["abbreviation"], f"ispd_thresh_{ispd_thresh_str}")
+        P_mets = (Path(D_mets, f"{ice_type}_{spatial_grid_type}_mets.zarr")
+                  if spatial_grid_type is not None else Path(D_mets, f"{ice_type}_mets.zarr"))
+        ds = xr.open_dataset(P_mets)
+        if clip_to_self:
+            ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
+        return ds
 
     def compute_hemisphere_ice_area_rate(self, DAT, IA, A,
                                            spatial_dim_names  : list  = None):

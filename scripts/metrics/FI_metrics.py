@@ -8,7 +8,7 @@ import pandas as pd
 
 def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, smooth_FIA_days, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
-    load_vars = ['aice','tarea','hi','strength','dvidtt','daidtt','dvidtd','daidtd']
+    load_vars = ['aice','tarea','hi','dvidtt','daidtt','dvidtd','daidtd'] # 'strength'
     ispd_str  = f"{ispd_thresh:.1e}".replace("e-0", "e-")
     P_log     = Path(Path.home(), "logs", f"metrics_{sim_name}_ispd_thresh{ispd_thresh}.log")
     SI_mgr    = SeaIceToolboxManager(P_log=P_log)

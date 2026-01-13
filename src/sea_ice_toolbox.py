@@ -1272,7 +1272,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
                 CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
                 self.logger.info(f"Writing {P_iceh_zarr} and group ('YYYY-MM'): {m_str}")
-                CICE_all.to_zarr(P_iceh_zarr, group=m_str, mode="w", consolidated=True)
+                CICE_all.to_zarr(P_iceh_zarr, group=m_str, mode="w", consolidated=True, zarr_format=2)
                 self.get_dir_size(P_iceh_zarr_group)
                 self.count_zarr_files(P_iceh_zarr_group)
                 if delete_nc:
@@ -1290,6 +1290,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
            dry_run   : bool, optional; if True, do not write any files — only print what would be changed.
         """
         from calendar import monthrange
+        import shutil
         P_mnthly_zarr = Path(P_mnthly_zarr)
         if not P_mnthly_zarr.exists():
             self.logger.warning(f"{P_mnthly_zarr} does not exist.")
@@ -1329,7 +1330,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             return
         tmp_path = P_mnthly_zarr.with_suffix(".tmp.zarr")
         self.logger.info(f"Writing fixed dataset to temporary path {tmp_path}")
-        ds.to_zarr(tmp_path, mode="w", consolidated=True)
+        ds.to_zarr(tmp_path, mode="w", consolidated=True, zarr_format=2)
         self.logger.info(f"Replacing original {P_mnthly_zarr.name}")
         shutil.rmtree(P_mnthly_zarr)
         tmp_path.rename(P_mnthly_zarr)
@@ -1725,14 +1726,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         d     = ang_m - ang_o
         return (d + np.pi) % (2 * np.pi) - np.pi
 
-    def _region_mask(
-        self,
-        lon: xr.DataArray,
-        lat: xr.DataArray,
-        geo_reg: tuple[float, float, float, float],
-        *,
-        right_open: bool = True,
-    ) -> xr.DataArray:
+    def _region_mask(self, lon : xr.DataArray, lat : xr.DataArray, geo_reg : tuple[float, float, float, float], *,
+                     right_open: bool = True) -> xr.DataArray:
         """
         Geographic mask for [lon_min, lon_max, lat_min, lat_max].
 
@@ -1746,14 +1741,12 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             m = m & (lon <= lon_max)
         return m
 
-    def compute_fipdiff_stats_weighted(self,
-        FIP: xr.Dataset,
-        PIXEL: float = 5000.0,
-        regs_dict: dict | None = None,
-        gi_mask_da: xr.DataArray | None = None,
-        clip01: bool = True,
-        threecat_percent_only: bool = True,
-    ):
+    def compute_fipdiff_stats_weighted(self, FIP: xr.Dataset,
+                                       PIXEL                 : float = 5000.0,
+                                       regs_dict             : dict | None = None,
+                                       gi_mask_da            : xr.DataArray | None = None,
+                                       clip01                : bool = True,
+                                       threecat_percent_only : bool = True):
         regs_dict = regs_dict if regs_dict is not None else self.Ant_8sectors  # adjust name if needed
         for k in ("mod", "obs", "lon", "lat"):
             if k not in FIP:
@@ -1769,81 +1762,66 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         lon_m = self.normalise_longitudes(FIP["lon"], to="-180-180")
         lat   = FIP["lat"]
         cell_area_km2 = (float(PIXEL) * float(PIXEL)) / 1e6
-
         if gi_mask_da is not None:
             valid = (~gi_mask_da.astype(bool).broadcast_like(mod))
         else:
             valid = xr.ones_like(mod, dtype=bool)
-
+        # loop over regional dictionary terms to create rows 
         rows = []
         for rname, reg_dict in regs_dict.items():
             geo_reg = reg_dict["plot_region"]  # must be (lon_min, lon_max, lat_min, lat_max) in -180..180
             R = self._region_mask(lon_m, lat, geo_reg) & valid
-
             A_km2 = float((overlap      * R).sum()) * cell_area_km2
             M_km2 = float((model_excess * R).sum()) * cell_area_km2
             O_km2 = float((obs_excess   * R).sum()) * cell_area_km2
             tot   = A_km2 + M_km2 + O_km2
-
             pct_A = 100.0 * A_km2 / tot if tot > 0 else np.nan
             pct_M = 100.0 * M_km2 / tot if tot > 0 else np.nan
             pct_O = 100.0 * O_km2 / tot if tot > 0 else np.nan
-
             MOD_km2 = float((mod * R).sum()) * cell_area_km2
             OBS_km2 = float((obs * R).sum()) * cell_area_km2
-
             pct_A_of_MOD = 100.0 * A_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
             pct_M_of_MOD = 100.0 * M_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
             pct_A_of_OBS = 100.0 * A_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
             pct_O_of_OBS = 100.0 * O_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
-
-            rows.append(dict(
-                region=rname,
-                pct_agreement=pct_A,
-                pct_model_dominant=pct_M,
-                pct_observation_dominant=pct_O,
-                model_FIA_km2=MOD_km2,
-                obs_FIA_km2=OBS_km2,
-                agreement_overlap_km2=A_km2,
-                model_excess_km2=M_km2,
-                obs_excess_km2=O_km2,
-                agreement_pct_of_model=pct_A_of_MOD,
-                model_excess_pct_of_model=pct_M_of_MOD,
-                agreement_pct_of_obs=pct_A_of_OBS,
-                obs_excess_pct_of_obs=pct_O_of_OBS,
-            ))
-
-        df = pd.DataFrame(rows).set_index("region")
-
-        A_sum = df["agreement_overlap_km2"].sum()
-        M_sum = df["model_excess_km2"].sum()
-        O_sum = df["obs_excess_km2"].sum()
+            rows.append(dict(region                    = rname,
+                             pct_agreement             = pct_A,
+                             pct_model_dominant        = pct_M,
+                             pct_observation_dominant  = pct_O,
+                             model_FIA_km2             = MOD_km2,
+                             obs_FIA_km2               = OBS_km2,
+                             agreement_overlap_km2     = A_km2,
+                             model_excess_km2          = M_km2,
+                             obs_excess_km2            = O_km2,
+                             agreement_pct_of_model    = pct_A_of_MOD,
+                             model_excess_pct_of_model = pct_M_of_MOD,
+                             agreement_pct_of_obs      = pct_A_of_OBS,
+                             obs_excess_pct_of_obs     = pct_O_of_OBS))
+        # create dataframe from dictionary
+        df      = pd.DataFrame(rows).set_index("region")
+        A_sum   = df["agreement_overlap_km2"].sum()
+        M_sum   = df["model_excess_km2"].sum()
+        O_sum   = df["obs_excess_km2"].sum()
         tot_sum = A_sum + M_sum + O_sum
-
-        ant_row = dict(
-            pct_agreement=100.0 * A_sum / tot_sum if tot_sum > 0 else np.nan,
-            pct_model_dominant=100.0 * M_sum / tot_sum if tot_sum > 0 else np.nan,
-            pct_observation_dominant=100.0 * O_sum / tot_sum if tot_sum > 0 else np.nan,
-            model_FIA_km2=df["model_FIA_km2"].sum(),
-            obs_FIA_km2=df["obs_FIA_km2"].sum(),
-            agreement_overlap_km2=A_sum,
-            model_excess_km2=M_sum,
-            obs_excess_km2=O_sum,
-            agreement_pct_of_model=np.nan,
-            model_excess_pct_of_model=np.nan,
-            agreement_pct_of_obs=np.nan,
-            obs_excess_pct_of_obs=np.nan,
-        )
-
+        # now sum together for pan-Ant. ... but what about NH??
+        ant_row = dict(pct_agreement             = 100.0 * A_sum / tot_sum if tot_sum > 0 else np.nan,
+                       pct_model_dominant        = 100.0 * M_sum / tot_sum if tot_sum > 0 else np.nan,
+                       pct_observation_dominant  = 100.0 * O_sum / tot_sum if tot_sum > 0 else np.nan,
+                       model_FIA_km2             = df["model_FIA_km2"].sum(),
+                       obs_FIA_km2               = df["obs_FIA_km2"].sum(),
+                       agreement_overlap_km2     = A_sum,
+                       model_excess_km2          = M_sum,
+                       obs_excess_km2            = O_sum,
+                       agreement_pct_of_model    = np.nan,
+                       model_excess_pct_of_model = np.nan,
+                       agreement_pct_of_obs      = np.nan,
+                       obs_excess_pct_of_obs     = np.nan)
         df_all = pd.concat([df, pd.DataFrame(ant_row, index=["ANT"])])
-
         if threecat_percent_only:
             return df_all[["pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
         else:
-            return df_all[[
-                "model_FIA_km2", "agreement_overlap_km2", "model_excess_km2",
-                "agreement_pct_of_model", "model_excess_pct_of_model",
-                "obs_FIA_km2", "agreement_pct_of_obs", "obs_excess_km2", "obs_excess_pct_of_obs",
-                "pct_agreement", "pct_model_dominant", "pct_observation_dominant"
-            ]]
+            return df_all[["model_FIA_km2", "agreement_overlap_km2", "model_excess_km2",
+                           "agreement_pct_of_model", "model_excess_pct_of_model",
+                           "obs_FIA_km2", "agreement_pct_of_obs", "obs_excess_km2", "obs_excess_pct_of_obs",
+                           "pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
             

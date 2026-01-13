@@ -51,10 +51,10 @@ class SeaIceRegridder:
         None
             The regridder is stored as `self.reG` and is not returned explicitly.
         """
-        self.define_cice_grid()
+        self.load_cice_grid()
         G_u           = self.G_u
         G_t           = self.G_t
-        G_t['mask']   = G_t['kmt_mod']
+        G_t['mask']   = self.kmt_org['kmt_org']
         F_weights     = self.CICE_dict["P_reG_u2t_weights"]
         weights_exist = os.path.exists(F_weights)
         self.logger.info(f"{'Reusing' if weights_exist else 'Creating'} regrid weights: {F_weights}")

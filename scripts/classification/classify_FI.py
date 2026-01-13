@@ -49,12 +49,13 @@ def run_loop(sim_name,
         P_zarr      = Path(SI_tools.D_ispd_thresh, f"{F_prefix}.zarr")
         P_zarr_bin  = Path(SI_tools.D_ispd_thresh, f"{F_prefix}_bin.zarr")
         P_zarr_roll = Path(SI_tools.D_ispd_thresh, f"{F_prefix}_roll.zarr")
+        toz         = dict(group=yr_str, mode="w", consolidated=False, zarr_format=2)
         SI_tools.logger.info(f"writing zarr to disk {P_zarr}")
-        FI_yr.to_zarr(P_zarr, group=yr_str, mode="w", consolidated=False)
+        FI_yr.to_zarr(P_zarr, **toz)
         SI_tools.logger.info(f"writing zarr to disk {P_zarr_bin}")
-        FI_bin_yr.to_zarr(P_zarr_bin, group=yr_str, mode="w", consolidated=False)
+        FI_bin_yr.to_zarr(P_zarr_bin, **toz)
         SI_tools.logger.info(f"writing zarr to disk {P_zarr_roll}")
-        FI_roll_yr.to_zarr(P_zarr_roll, group=yr_str, mode="w", consolidated=False)
+        FI_roll_yr.to_zarr(P_zarr_roll, **toz)
     SI_tools.client.close()
 
 if __name__ == "__main__":
