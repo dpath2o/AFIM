@@ -1125,12 +1125,12 @@ class SeaIceGridWork:
         if gdf.crs is None:
             gdf = gdf.set_crs("EPSG:3031")
         # metric perimeter/area from geometry in EPSG:3031
-        perim_m = gdf.geometry.length.astype("float64").to_numpy()
+        perim_m      = gdf.geometry.length.astype("float64").to_numpy()
         geom_area_m2 = gdf.geometry.area.astype("float64").to_numpy()
         # preferred area from attribute (mean across detections), fallback to geometry
         if use_attr_area and (area_km2_col in gdf.columns):
-            area_m2 = pd.to_numeric(gdf[area_km2_col], errors="coerce").to_numpy(dtype="float64") * 1e6
-            bad = ~np.isfinite(area_m2) | (area_m2 <= 0)
+            area_m2      = pd.to_numeric(gdf[area_km2_col], errors="coerce").to_numpy(dtype="float64") * 1e6
+            bad          = ~np.isfinite(area_m2) | (area_m2 <= 0)
             area_m2[bad] = geom_area_m2[bad]
         else:
             area_m2 = geom_area_m2
@@ -1140,37 +1140,35 @@ class SeaIceGridWork:
         # lon/lat for metadata (optional)
         lon = pd.to_numeric(gdf.get(lon_col, np.nan), errors="coerce").to_numpy(dtype="float64")
         lat = pd.to_numeric(gdf.get(lat_col, np.nan), errors="coerce").to_numpy(dtype="float64")
-        if normalise_lon_to == "0-360":
-            lon = (lon % 360.0 + 360.0) % 360.0
-        elif normalise_lon_to == "-180-180":
-            lon = ((lon + 180.0) % 360.0) - 180.0
-        df = pd.DataFrame({"uid": gdf[uid_col].values if uid_col in gdf.columns else np.arange(len(gdf)),
-                            "x_m": x,
-                            "y_m": y,
-                            "lon": lon,
-                            "lat": lat,
-                            "area_m2": area_m2,
-                            "perim_m": perim_m,
-                            "bed_depth": pd.to_numeric(gdf.get("Bed_Depth", np.nan), errors="coerce"),
-                            "timestamp": gdf.get("Timestamp", None),
-                            "date_range": gdf.get("Date_Range", None),
-                            "orbit": gdf.get("Orbit", None),
-                            "swath_mode": gdf.get("Swath_Mode", None)})
+        lon = self.normalise_longitudes(lon, to = normalise_lon_to)
+        df = pd.DataFrame({"uid"         : gdf[uid_col].values if uid_col in gdf.columns else np.arange(len(gdf)),
+                            "x_m"        : x,
+                            "y_m"        : y,
+                            "lon"        : lon,
+                            "lat"        : lat,
+                            "area_m2"    : area_m2,
+                            "perim_m"    : perim_m,
+                            "bed_depth"  : pd.to_numeric(gdf.get("Bed_Depth", np.nan), errors="coerce"),
+                            "timestamp"  : gdf.get("Timestamp", None),
+                            "date_range" : gdf.get("Date_Range", None),
+                            "orbit"      : gdf.get("Orbit", None),
+                            "swath_mode" : gdf.get("Swath_Mode", None)})
         # drop unusable rows
         df = df[np.isfinite(df["x_m"]) & np.isfinite(df["y_m"])].reset_index(drop=True)
         # deduplicate by uid (recommended)
         if dedup_uid and "uid" in df.columns:
             # keep one row per uid; use median for sizes, mean for position
-            agg = {"x_m": "mean", "y_m": "mean",
-                   "lon": "mean", "lat": "mean",
-                   "area_m2": "median", "perim_m": "median",
+            agg = {"x_m"      : "mean",   "y_m"    : "mean",
+                   "lon"      : "mean",   "lat"    : "mean",
+                   "area_m2"  : "median", "perim_m": "median",
                    "bed_depth": "median"}
             df = df.groupby("uid", as_index=False).agg(agg)
-        if getattr(self, "logger", None) is not None:
-            self.logger.info(f"Loaded GI GPKG: {P_gpkg} layer={layer} n={len(df)} (dedup_uid={dedup_uid})")
+        self.logger.info(f"Loaded GI GPKG: {P_gpkg} layer={layer} n={len(df)} (dedup_uid={dedup_uid})")
         return df
     
-    def map_xy_to_tgrid(self, x_m, y_m, proj_crs: str = "EPSG:3031", max_dist_km: float = None):
+    def map_xy_to_tgrid(self, x_m, y_m,
+                        proj_crs    : str   = "EPSG:3031", 
+                        max_dist_km : float = None):
         """
         Map projected x/y points to the nearest CICE T-cell using a cached KDTree.
 
@@ -1204,17 +1202,19 @@ class SeaIceGridWork:
         if (not hasattr(self, "G_t")) or (self.G_t is None):
             self.load_cice_grid(slice_hem=False, build_faces=True)
         tree, ij = self._get_tgrid_kdtree(proj_crs=proj_crs, force=False)
-        q = np.column_stack([np.asarray(x_m, dtype="float64"),
-                            np.asarray(y_m, dtype="float64")])
+        q        = np.column_stack([np.asarray(x_m, dtype="float64"),
+                                    np.asarray(y_m, dtype="float64")])
         dist_m, idx = tree.query(q, k=1)
-        ii = ij[idx, 0].astype("int64")
-        jj = ij[idx, 1].astype("int64")
-        valid = np.isfinite(dist_m)
+        ii          = ij[idx, 0].astype("int64")
+        jj          = ij[idx, 1].astype("int64")
+        valid       = np.isfinite(dist_m)
         if max_dist_km is not None:
             valid &= (dist_m <= (1000.0 * float(max_dist_km)))
         return ii, jj, dist_m, valid
 
-    def compute_tcell_dxdy_m(self, force=False, cache=True):
+    def compute_tcell_dxdy_m(self, 
+                             force = False,
+                             cache = True):
         """
         Compute approximate T-cell metric lengths dx and dy (meters).
 
@@ -1289,7 +1289,9 @@ class SeaIceGridWork:
             self._dxdy_cache = {"dx_m": dx_m, "dy_m": dy_m}
         return dx_m, dy_m
 
-    def _get_tgrid_kdtree(self, proj_crs="EPSG:3031", force=False):
+    def _get_tgrid_kdtree(self, 
+                          proj_crs = "EPSG:3031",
+                          force     = False):
         """
         Build (or retrieve) a cached KDTree of projected T-cell centers.
 
@@ -1452,7 +1454,7 @@ class SeaIceGridWork:
     
     def build_F2_GI_from_df(self, df,
                             method                : str = "simple-geometry",
-                            length_scale          : str = "perimeter",   # {"perimeter","area"}
+                            length_scale          : str = "perimeter",        # {"perimeter","area"}
                             base_area_m2          : float = None,
                             C_gi                  : float = 1.0,
                             proj_crs              : str = "EPSG:3031",
@@ -1552,7 +1554,7 @@ class SeaIceGridWork:
         nj, ni  = self.G_t["lat"].shape
         if base_area_m2 is None:
             base_area_m2 = float(np.nanmedian(self.G_t["area"].values))
-        # get coords for mapping
+        # get coords for mapping -- allows for either lon/lat or x/y points
         has_xy = ("x_m" in df.columns) and ("y_m" in df.columns) and np.isfinite(df["x_m"]).any()
         if has_xy:
             ii, jj, dist_m, valid = self.map_xy_to_tgrid(df["x_m"].values, df["y_m"].values,
@@ -1560,30 +1562,28 @@ class SeaIceGridWork:
         else:
             ii, jj, dist_m, valid = self.map_points_to_tgrid(df["lon"].values, df["lat"].values,
                                                             proj_crs=proj_crs, max_dist_km=max_map_dist_km)
-
-        df = df.loc[valid].reset_index(drop=True)
-        ii = ii[valid]; jj = jj[valid]; dist_m = dist_m[valid]
-
+        # update dataframe with valid-only points
+        df     = df.loc[valid].reset_index(drop=True)
+        ii     = ii[valid]
+        jj     = jj[valid]
+        dist_m = dist_m[valid]
         # dx/dy on T-grid
         dx_m, dy_m = self.compute_tcell_dxdy_m(force=False, cache=True)
-
         # flatten indexing for vectorised accumulation
         flat = (jj.astype("int64") * int(ni) + ii.astype("int64"))
-        dx = dx_m.ravel()[flat]
-        dy = dy_m.ravel()[flat]
+        dx   = dx_m.ravel()[flat]
+        dy   = dy_m.ravel()[flat]
+        # ensure dx/dy are finite and >0
         ok = np.isfinite(dx) & (dx > 0) & np.isfinite(dy) & (dy > 0)
-
         # areas/perimeters
-        area_m2  = df["area_m2"].values.astype("float64") if "area_m2" in df.columns else np.full(len(df), base_area_m2)
-        perim_m  = df["perim_m"].values.astype("float64") if "perim_m" in df.columns else np.full(len(df), np.nan)
-
+        area_m2 = df["area_m2"].values.astype("float64") if "area_m2" in df.columns else np.full(len(df), base_area_m2)
+        perim_m = df["perim_m"].values.astype("float64") if "perim_m" in df.columns else np.full(len(df), np.nan)
         # C_gi per point if present
         if "C_gi" in df.columns:
             Cvals = np.asarray(df["C_gi"].fillna(C_gi).values, dtype="float64")
         else:
             Cvals = np.full(len(df), float(C_gi), dtype="float64")
-
-        # isotropic projected length scale (for simple-geometry)
+        # 'isotropic' (my local definition) projected length scale (for simple-geometry)
         if length_scale == "perimeter" and np.isfinite(perim_m).any():
             Lproj = (2.0 / np.pi) * perim_m
             # fallback to area for any missing perimeters
@@ -1592,11 +1592,10 @@ class SeaIceGridWork:
                 Lproj[bad] = 4.0 * np.sqrt(np.maximum(area_m2[bad], 0.0) / np.pi)
         else:
             Lproj = 4.0 * np.sqrt(np.maximum(area_m2, 0.0) / np.pi)
-
-        F2x_gi = np.zeros((nj, ni), dtype="float64")
-        F2y_gi = np.zeros((nj, ni), dtype="float64")
+        # initialise x/y form factors
+        F2x_gi   = np.zeros((nj, ni), dtype="float64")
+        F2y_gi   = np.zeros((nj, ni), dtype="float64")
         gi_count = np.zeros((nj, ni), dtype="int32")
-
         if method == "simple-geometry":
             # vectorised add-at
             fx = np.zeros_like(dx); fy = np.zeros_like(dy)
@@ -1606,52 +1605,48 @@ class SeaIceGridWork:
             np.add.at(F2y_gi.ravel(), flat[ok], fy[ok])
             np.add.at(gi_count.ravel(), flat[ok], 1)
             labels = np.full(len(df), -1, dtype="int64")
-
         elif method == "cluster-axis":
             # need projected x/y for clustering; if not present, derive from lon/lat
             if has_xy:
                 x_gi = df["x_m"].values.astype("float64")
                 y_gi = df["y_m"].values.astype("float64")
             else:
-                tr = Transformer.from_crs("EPSG:4326", proj_crs, always_xy=True)
+                tr         = Transformer.from_crs("EPSG:4326", proj_crs, always_xy=True)
                 x_gi, y_gi = tr.transform(df["lon"].values.astype("float64"), df["lat"].values.astype("float64"))
-                x_gi = np.asarray(x_gi, dtype="float64")
-                y_gi = np.asarray(y_gi, dtype="float64")
+                x_gi       = np.asarray(x_gi, dtype="float64")
+                y_gi       = np.asarray(y_gi, dtype="float64")
+            # make sure inputs are inputs into this function
             labels = self._dbscan_like_clusters(x_gi, y_gi,
-                                                eps_m=float(eps_cluster_km) * 1000.0,
-                                                min_samples=int(min_cluster_size))
-
+                                                eps_m       = float(eps_cluster_km) * 1000.0,
+                                                min_samples = int(min_cluster_size))
             # local grid angle (rad)
             ang_rad = np.deg2rad(self.G_t["angle"].values.astype("float64"))
-
             # default buffer
             if cluster_buffer_m is None:
                 cluster_buffer_m = float(np.sqrt(base_area_m2 / np.pi))
-
             uniq = sorted([c for c in np.unique(labels) if c >= 0])
             for cid in uniq:
                 idx = np.where(labels == cid)[0]
                 npt = idx.size
                 if npt < int(min_cluster_size):
                     continue
-
-                X = np.column_stack([x_gi[idx], y_gi[idx]])
-                Xc = X - X.mean(axis=0)
-                C = np.cov(Xc.T)
+                # get eigenvecs and normalise for PCA part of computation
+                X                = np.column_stack([x_gi[idx], y_gi[idx]])
+                Xc               = X - X.mean(axis=0)
+                C                = np.cov(Xc.T)
                 eigvals, eigvecs = np.linalg.eigh(C)
-                v = eigvecs[:, np.argmax(eigvals)]
-                v = v / np.linalg.norm(v)
-                u = np.array([-v[1], v[0]])
-                s1 = Xc @ v
-                s2 = Xc @ u
-                L = (np.nanmax(s1) - np.nanmin(s1)) + 2.0 * cluster_buffer_m
-                W = (np.nanmax(s2) - np.nanmin(s2)) + 2.0 * cluster_buffer_m
+                v                = eigvecs[:, np.argmax(eigvals)]
+                v                = v / np.linalg.norm(v)
+                u                = np.array([-v[1], v[0]])
+                s1               = Xc @ v
+                s2               = Xc @ u
+                L                = (np.nanmax(s1) - np.nanmin(s1)) + 2.0 * cluster_buffer_m
+                W                = (np.nanmax(s2) - np.nanmin(s2)) + 2.0 * cluster_buffer_m
+                # cluster_amplication should never be 0, but ...
                 if cluster_amplification and cluster_amplification != 0.0:
                     amp = 1.0 + float(cluster_amplification) * np.log1p(float(npt))
                     L *= amp; W *= amp
-
                 phi = np.arctan2(v[1], v[0])  # rad from +x (east) in projected plane
-
                 # cluster share weights
                 if weight_by == "perim" and "perim_m" in df.columns and np.isfinite(perim_m[idx]).all():
                     w = perim_m[idx].astype("float64")
@@ -1659,12 +1654,12 @@ class SeaIceGridWork:
                     w = area_m2[idx].astype("float64")
                 else:
                     w = np.ones(npt, dtype="float64")
-                w = np.maximum(w, 0.0)
+                w    = np.maximum(w, 0.0)
                 wsum = w.sum()
                 if wsum <= 0:
                     w = np.ones(npt, dtype="float64"); wsum = float(npt)
                 share = w / wsum
-
+                # create form factors for every grid cell based on underlying grounded berg cluster-isation (!) and axis
                 for kk, k in enumerate(idx):
                     i = int(ii[k]); j = int(jj[k])
                     if not (0 <= i < ni and 0 <= j < nj):
@@ -1672,49 +1667,36 @@ class SeaIceGridWork:
                     dxk = dx_m[j, i]; dyk = dy_m[j, i]
                     if (not np.isfinite(dxk)) or (not np.isfinite(dyk)) or dxk <= 0 or dyk <= 0:
                         continue
-
-                    theta = phi - ang_rad[j, i]
-                    c = np.abs(np.cos(theta)); s = np.abs(np.sin(theta))
-                    Lx_tot = 2.0 * L * c + 2.0 * W * s
-                    Ly_tot = 2.0 * L * s + 2.0 * W * c
-
-                    F2x_gi[j, i] += Cvals[k] * share[kk] * (Lx_tot / dxk)
-                    F2y_gi[j, i] += Cvals[k] * share[kk] * (Ly_tot / dyk)
+                    theta           = phi - ang_rad[j, i]
+                    c               = np.abs(np.cos(theta)); s = np.abs(np.sin(theta))
+                    Lx_tot          = 2.0 * L * c + 2.0 * W * s
+                    Ly_tot          = 2.0 * L * s + 2.0 * W * c
+                    F2x_gi[j, i]   += Cvals[k] * share[kk] * (Lx_tot / dxk)
+                    F2y_gi[j, i]   += Cvals[k] * share[kk] * (Ly_tot / dyk)
                     gi_count[j, i] += 1
         else:
             raise ValueError("method must be 'simple-geometry' or 'cluster-axis'")
-
-        ds = xr.Dataset(
-            data_vars={
-                "F2x_gi": (nat_dim, F2x_gi.astype("float32"), {
-                    "long_name": "Grounded-iceberg additional form factor, x-projection (T-cell)",
-                    "units": "1", "method": method, "C_gi_default": float(C_gi),
-                    "length_scale": str(length_scale), "weight_by": str(weight_by),
-                }),
-                "F2y_gi": (nat_dim, F2y_gi.astype("float32"), {
-                    "long_name": "Grounded-iceberg additional form factor, y-projection (T-cell)",
-                    "units": "1", "method": method, "C_gi_default": float(C_gi),
-                    "length_scale": str(length_scale), "weight_by": str(weight_by),
-                }),
-                "gi_count": (nat_dim, gi_count.astype("int32"), {
-                    "long_name": "Number of GI polygons mapped into each T-cell", "units": "count"
-                }),
-            },
-            coords={nat_dim[0]: np.arange(nj), nat_dim[1]: np.arange(ni)},
-            attrs={"proj_crs": str(proj_crs)}
-        )
+        ds = xr.Dataset(data_vars = {"F2x_gi"   : (nat_dim, F2x_gi.astype("float32"), {"long_name"   : "Grounded-iceberg additional form factor, x-projection (T-cell)",
+                                                                                       "units"       : "1", "method": method, "C_gi_default": float(C_gi),
+                                                                                       "length_scale": str(length_scale), "weight_by": str(weight_by)}),
+                                     "F2y_gi"   : (nat_dim, F2y_gi.astype("float32"), {"long_name"   : "Grounded-iceberg additional form factor, y-projection (T-cell)",
+                                                                                       "units"       : "1", "method": method, "C_gi_default": float(C_gi),
+                                                                                       "length_scale": str(length_scale), "weight_by": str(weight_by)}),
+                                     "gi_count" : (nat_dim, gi_count.astype("int32"), {"long_name"   : "Number of GI polygons mapped into each T-cell",
+                                                                                       "units"       : "count"})},
+                        coords    = {nat_dim[0]: np.arange(nj),
+                                     nat_dim[1]: np.arange(ni)},
+                        attrs     = {"proj_crs": str(proj_crs)})
         # diagnostics
-        ds["gi_lon"] = ("ngi", df["lon"].values.astype("float32") if "lon" in df.columns else np.full(len(df), np.nan, "float32"))
-        ds["gi_lat"] = ("ngi", df["lat"].values.astype("float32") if "lat" in df.columns else np.full(len(df), np.nan, "float32"))
-        ds["gi_i"] = ("ngi", ii.astype("int32"))
-        ds["gi_j"] = ("ngi", jj.astype("int32"))
+        ds["gi_lon"]        = ("ngi", df["lon"].values.astype("float32") if "lon" in df.columns else np.full(len(df), np.nan, "float32"))
+        ds["gi_lat"]        = ("ngi", df["lat"].values.astype("float32") if "lat" in df.columns else np.full(len(df), np.nan, "float32"))
+        ds["gi_i"]          = ("ngi", ii.astype("int32"))
+        ds["gi_j"]          = ("ngi", jj.astype("int32"))
         ds["gi_cluster_id"] = ("ngi", labels.astype("int32"))
         ds["gi_map_dist_m"] = ("ngi", dist_m.astype("float32"))
-        ds["gi_area_m2"] = ("ngi", df["area_m2"].values.astype("float32") if "area_m2" in df.columns else np.full(len(df), np.nan, "float32"))
-        ds["gi_perim_m"] = ("ngi", df["perim_m"].values.astype("float32") if "perim_m" in df.columns else np.full(len(df), np.nan, "float32"))
-
-        if getattr(self, "logger", None) is not None:
-            self.logger.info(f"Built GI form factors ({method}): n_gi={len(df)}, nonzero_cells={(gi_count>0).sum()}")
+        ds["gi_area_m2"]    = ("ngi", df["area_m2"].values.astype("float32") if "area_m2" in df.columns else np.full(len(df), np.nan, "float32"))
+        ds["gi_perim_m"]    = ("ngi", df["perim_m"].values.astype("float32") if "perim_m" in df.columns else np.full(len(df), np.nan, "float32"))
+        self.logger.info(f"Built GI form factors ({method}): n_gi={len(df)}, nonzero_cells={(gi_count>0).sum()}")
         return ds
     
     # wrapper function for build_F2_GI_from_df
@@ -1726,8 +1708,7 @@ class SeaIceGridWork:
                                 C_gi            : float = 1.0,
                                 proj_crs        : str = "EPSG:3031",
                                 max_map_dist_km : float = 50.0,
-                                dedup_uid       : bool = True,
-                                **kwargs):
+                                dedup_uid       : bool = True, **kwargs):
         """
         Convenience wrapper to build GI form factors directly from a GeoPackage.
 
@@ -1794,11 +1775,11 @@ class SeaIceGridWork:
     
     # wrapper and writer 
     def write_F2_with_GI(self,
-                        P_F2_coast            : str = None,
-                        P_GI                  : str = None,   # NEW: can be .csv or .gpkg
-                        P_GI_CSV              : str = None,   # OPTIONAL: backward compatibility
-                        P_out                 : str = None,
-                        method                : str = "simple-geometry",
+                        P_F2_coast            : str   = None,
+                        P_GI                  : str   = None,   # NEW: can be .csv or .gpkg
+                        P_GI_CSV              : str   = None,   # OPTIONAL: backward compatibility
+                        P_out                 : str   = None,
+                        method                : str   = "simple-geometry",
                         base_area_m2          : float = None,
                         C_gi                  : float = 1.0,
                         # pass-through clustering controls
@@ -1808,9 +1789,9 @@ class SeaIceGridWork:
                         cluster_amplification : float = 0.0,
                         weight_by             : str   = 'perim',
                         # new optional knobs for GPKG workflow
-                        length_scale          : str = "perimeter",   # {"perimeter","area"} used by build_F2_GI_from_df/gpkg
-                        dedup_uid             : bool = True,
-                        overwrite             : bool = False):
+                        length_scale          : str   = "perimeter",   # {"perimeter","area"} used by build_F2_GI_from_df/gpkg
+                        dedup_uid             : bool  = True,
+                        overwrite             : bool  = False):
         """
         Combine coast-only F2 form factors with grounded-iceberg (GI) contributions
         and write a new NetCDF.
@@ -1895,38 +1876,38 @@ class SeaIceGridWork:
         ext = os.path.splitext(str(P_GI))[1].lower()
         if ext == ".csv":
             ds_gi = self.build_F2_GI_from_csv(P_GI,
-                                                method=method,
-                                                base_area_m2=base_area_m2,
-                                                C_gi=C_gi,
-                                                eps_cluster_km=eps_cluster_km,
-                                                min_cluster_size=min_cluster_size,
-                                                cluster_buffer_m=cluster_buffer_m,
-                                                cluster_amplification=cluster_amplification)
+                                                method                = method,
+                                                base_area_m2          = base_area_m2,
+                                                C_gi                  = C_gi,
+                                                eps_cluster_km        = eps_cluster_km,
+                                                min_cluster_size      = min_cluster_size,
+                                                cluster_buffer_m      = cluster_buffer_m,
+                                                cluster_amplification = cluster_amplification)
 
         elif ext == ".gpkg":
             # Prefer the new GPKG path; base_area_m2 can still be passed through via kwargs if you use it inside.
             ds_gi = self.build_F2_GI_from_gpkg(P_GI,
-                                                method=method,
-                                                length_scale=length_scale,
-                                                C_gi=C_gi,
-                                                proj_crs="EPSG:3031",
-                                                max_map_dist_km=50.0,
-                                                dedup_uid=dedup_uid,
+                                                method                = method,
+                                                length_scale          = length_scale,
+                                                C_gi                  = C_gi,
+                                                proj_crs              = "EPSG:3031",
+                                                max_map_dist_km       = 50.0,
+                                                dedup_uid             = dedup_uid,
                                                 # clustering controls forwarded
-                                                eps_cluster_km=eps_cluster_km,
-                                                min_cluster_size=min_cluster_size,
-                                                cluster_buffer_m=cluster_buffer_m,
-                                                cluster_amplification=cluster_amplification,
-                                                weight_by=weight_by,
-                                                # if your build_F2_GI_from_df supports base_area_m2, include it:
-                                                base_area_m2=base_area_m2)
+                                                eps_cluster_km        = eps_cluster_km,
+                                                min_cluster_size      = min_cluster_size,
+                                                cluster_buffer_m      = cluster_buffer_m,
+                                                cluster_amplification = cluster_amplification,
+                                                weight_by             = weight_by,
+                                                # if build_F2_GI_from_df supports base_area_m2, include it:
+                                                base_area_m2          = base_area_m2)
         else:
             raise ValueError(f"Unsupported GI input type '{ext}'. Expected .csv or .gpkg. Path: {P_GI}")
         # Align dims (coast file uses (nj,ni) order)
         F2x_coast = ds_coast["F2x"].astype("float32")
         F2y_coast = ds_coast["F2y"].astype("float32")
-        gi_x = ds_gi["F2x_gi"]
-        gi_y = ds_gi["F2y_gi"]
+        gi_x      = ds_gi["F2x_gi"]
+        gi_y      = ds_gi["F2y_gi"]
         if tuple(F2x_coast.dims) != tuple(gi_x.dims):
             gi_x = gi_x.transpose(*F2x_coast.dims)
             gi_y = gi_y.transpose(*F2y_coast.dims)
@@ -1953,17 +1934,17 @@ class SeaIceGridWork:
         for v in ["gi_lon", "gi_lat", "gi_i", "gi_j", "gi_cluster_id", "gi_map_dist_m", "gi_area_m2", "gi_perim_m"]:
             if v in ds_gi.variables:
                 ds_out[v] = ds_gi[v]
-        ds_out.attrs.update({"P_F2_coast_in": str(P_F2_coast),
-                            "P_GI_in": str(P_GI),
-                            "method_gi": str(method),
-                            "C_gi_default": float(C_gi),
-                            "base_area_m2": float(base_area_m2) if base_area_m2 is not None else np.nan,
-                            "length_scale": str(length_scale),
-                            "dedup_uid": bool(dedup_uid),
-                            "eps_cluster_km": float(eps_cluster_km),
-                            "min_cluster_size": int(min_cluster_size),
-                            "cluster_buffer_m": float(cluster_buffer_m) if cluster_buffer_m is not None else np.nan,
-                            "cluster_amplification": float(cluster_amplification)})
+        ds_out.attrs.update({"P_F2_coast_in"        : str(P_F2_coast),
+                            "P_GI_in"               : str(P_GI),
+                            "method_gi"             : str(method),
+                            "C_gi_default"          : float(C_gi),
+                            "base_area_m2"          : float(base_area_m2) if base_area_m2 is not None else np.nan,
+                            "length_scale"          : str(length_scale),
+                            "dedup_uid"             : bool(dedup_uid),
+                            "eps_cluster_km"        : float(eps_cluster_km),
+                            "min_cluster_size"      : int(min_cluster_size),
+                            "cluster_buffer_m"      : float(cluster_buffer_m) if cluster_buffer_m is not None else np.nan,
+                            "cluster_amplification" : float(cluster_amplification)})
         if getattr(self, "logger", None) is not None:
             self.logger.info(f"Writing combined F2 (coast+GI): {P_out}")
         clean = {}
