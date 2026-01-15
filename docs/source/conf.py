@@ -28,12 +28,13 @@ copyright = '2025, Daniel Atwater'
 author = 'Daniel Atwater'
 release = '0.1.0'
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.autosummary',
-    'myst_parser',
-    'nbsphinx',  # if using Jupyter notebooks
+    "sphinx.ext.mathjax",  # add this
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.autosummary",
+    "myst_parser",
+    "nbsphinx",
 ]
 myst_enable_extensions = ["dollarmath", "amsmath", "colon_fence"]
 nbsphinx_allow_errors = True
