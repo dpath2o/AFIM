@@ -322,7 +322,7 @@ These outputs are useful for confirming where and how strongly LDP is acting.
 
 ---
 
-## 7. ## 7. Deriving and interpreting $C_s$
+## 7. Deriving and interpreting $C_s$
 
 In AFIM’s CICE coastal (lateral) drag implementation, the *stress scale* is set by the product of:
 - an ice mass per unit area $m$ (kg m$^{-2}$),
