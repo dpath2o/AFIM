@@ -131,7 +131,7 @@ In addition, if LDP is enabled, the following are relevant:
 
 ### 3.1 Example `ice_in` snippet
 
-Below is a minimal excerpt consistent with the AFIM configuration you provided (showing both free-slip and LDP):
+Below is a minimal excerpt consistent with the AFIM configuration (showing both free-slip and LDP):
 
 ```fortran
 &dynamics_nml
@@ -435,7 +435,7 @@ Key takeaways:
 Parameter-space plot of $C_s(\tau^{\ast},F_2)=\tau^{\ast}/(mF_2)$ for $m=\rho_i h_i=900\times 1 = 900$ kg m$^{-2}$. Color shows $C_s$ (m s$^{-2}$); contours are log-spaced $C_s$ levels.
 :::
 
-*Practical usage:* a plausible $\tau^{\ast}$ (what peak lateral stress is rational given the model's physical-scheme to be capable of), then read off the implied $C_s$ over the range of $F_2$ values actually present on your grid (coastline- and GI-dependent).
+*Practical usage:* a plausible $\tau^{\ast}$ (what peak lateral stress is rational given the model's physical-scheme to be capable of), then read off the implied $C_s$ over the range of $F_2$ values actually present on the grid (coastline- and GI-dependent).
 
 ---
 
@@ -452,7 +452,7 @@ which makes it somewhat potentially easier to think of in terms of the actual st
 Some important points:
 - At fixed $C_s$, larger $F_2$ produces larger $K_u$.
 - At fixed $F_2$, increasing $C_s$ scales $K_u$ linearly.
-- This plot is the “inverse” of the previous one and is useful for sanity-checking what stress magnitudes your chosen $C_s$ will imply across the domain.
+- This plot is the “inverse” of the previous one and is useful for sanity-checking what stress magnitudes for a chosen $C_s$ will imply across the domain.
 
 :::{figure} ../figures/Ku_Cs_F2.png
 :alt: Ku as a function of Cs and F2 for nominal ice mass.
@@ -807,7 +807,7 @@ In AFIM’s lateral drag implementation, the residual velocity $u_0$ enters the 
   -\,\frac{K_u}{|\mathbf{u}| + u_0}\,\mathbf{u}.
   $$
 
-Here $K_u$ is the (precomputed) lateral-drag stress scale (your `KuE`, `KuN`) and is proportional to $C_s$ via
+Here $K_u$ is the (precomputed) lateral-drag stress scale (`KuE`, `KuN`) and is proportional to $C_s$ via
 
 $$
 K_u \propto F_2\,C_s\,(\text{ice mass/area factor}).
@@ -884,7 +884,7 @@ Some reference speeds correspond to ice motion per day (per grid cell):
 Possibly another way to consider this (a more hueristic method) is concerning the grid scale:
 
 - **High-resolution grids (Δ ≈ 1–5 km):**  
-  $u_0 \sim 1\times10^{-6}$ to $1\times10^{-5}$ m s$^{-1}$. Rationale: the model can resolve smaller coastal velocity gradients and narrow anchor zones, so you can afford a smaller regularisation without excessive numerical stiffness.
+  $u_0 \sim 1\times10^{-6}$ to $1\times10^{-5}$ m s$^{-1}$. Rationale: the model can resolve smaller coastal velocity gradients and narrow anchor zones, so one can afford a smaller regularisation without excessive numerical stiffness.
 
 - **Mesoscale climate grids (Δ ≈ 10–25 km):**  
   $u_0 \sim 1\times10^{-5}$ to $1\times10^{-4}$ m s$^{-1}$. Rationale: near-coastal velocities are more area-averaged and less “sharp”; a larger $u_0$ avoids over-damping and reduces stiffness, while $C_s$ is used to recover the desired fast-ice extent.
@@ -910,7 +910,7 @@ Holding $C_s$ and $F_2$ fixed:
 
 ## 10. Verification checklist
 
-When you enable free-slip + LDP, verify in this order:
+When free-slip + LDP is enabled, verify in this order:
 
 1. **Configuration check**
    - `boundary_condition = 'free_slip'` in `&dynamics_nml`
@@ -941,7 +941,7 @@ When you enable free-slip + LDP, verify in this order:
 
 - The free-slip implementation is applied **within the U-point strain-rate operator** for the C-grid EVP pathway. If other parts of the code still explicitly zero velocities adjacent to land (or deactivate points due to B-grid geometry), those effects can dominate.
 - The discrete “reflection/copy” approach is an approximation to free-slip on a **grid-aligned** boundary. For highly oblique coastlines relative to the grid, the effective tangential/normal decomposition is only approximate.
-- When combining free-slip with LDP, you should interpret results as a *controlled numerical/physical experiment*: free-slip changes what the solver permits near boundaries; LDP then imposes the intended physical damping.
+- When combining free-slip with LDP, I should interpret results as a *controlled numerical/physical experiment*: free-slip changes what the solver permits near boundaries; LDP then imposes the intended physical damping.
 
 ---
 
