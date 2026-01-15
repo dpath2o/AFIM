@@ -1,12 +1,12 @@
-# Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics
+# AFIM First Principles
 
-This document describes the simulation setup and core methodologies implemented in the AFIM (Antarctic Fast Ice Modelling) framework, corresponding to functions and constructs in the repository [`src/`](https://github.com/dpath2o/AFIM/tree/main/src).
+This document describes the simulation setup and core methodologies implemented for an Antarctic Fast Ice Modelling (AFIM) sensitivity study and published here: [link to be provided once published]
 
 ## 0. Model Configuration & Setup
 
 + **Simulation period** : [1993-01-01 Fri] to [1999-12-31 Tue]
-+ **Grid** : $1/4^{\circ}$ global, tri-polar Arakawa-B; `/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc`;
-+ **Landmask** : `/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc`;
++ **Grid** : $1/4^{\circ}$ global, *tripole* Arakawa-B (`B-grid`)
++ **Modified Landmask** : a grid cell is determined to contain a (or a number of) sub-grid scale grounded icebergs and a land cell is created where normally an ocean cell would exist [see sea_ice_toolbox.sea_ice_icebergs.modify_landmask_with_grounded_icebergs()](https://github.com/dpath2o/AFIM/blob/1f8881284c82781579cabf898f6776cde7bc18df/src/sea_ice_icebergs.py#L208);
 + `dt` : 1800 seconds
 + `kdyn` : revised-EVP
 + `ndte` : 240

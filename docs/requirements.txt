@@ -13,6 +13,5 @@ geopandas
 netCDF4
 scipy
 cmocean
-tqdm
 pyproj
 zarr

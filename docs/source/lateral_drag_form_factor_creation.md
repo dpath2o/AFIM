@@ -1,36 +1,36 @@
 # Coastal-drag form factors from high-resolution coastline and grounded icebergs
 
-This workflow constructs **unitless coastal-drag form factors** \((F_{2x}, F_{2y})\) on the **CICE T-grid** using:
+This workflow constructs **unitless coastal-drag form factors** $(\mathrm{F2}_{x}, \mathrm{F2}_{y})$ on the **CICE T-grid** using:
 
 1. A **high-resolution polygon coastline** (Antarctic land + ice-shelf surfaces) to compute the *coast-only* form factors; and
-2. A **grounded-iceberg polygon dataset** to add sub-grid obstacle form drag, producing a *combined* (coast + GI) \(F_2\).
+2. A **grounded-iceberg polygon dataset** to add sub-grid obstacle form drag, producing a *combined* (high-resolution coastline + grounded-iceberg locations).
 
-The implementation follows the cell-based formulation of **Liu et al. (2022)** for coastal geometry, then appends grounded-iceberg contributions via a separate parameterisation.
+The implementation follows the cell-based formulation of [**Liu et al. (2022)**](https://onlinelibrary.wiley.com/doi/abs/10.1029/2022JC018413) for coastal geometry, then appends grounded-iceberg contributions via a separate methodolgy.
 
 ---
 
 ## 1. Definitions and target quantities
 
-For each T-cell \((i,j)\), define two **cell-based** form factors:
+For each T-grid-cell $(i,j)$, two **cell-based** form factors are defined:
 
-\[
+$$
 F_{2x}(i,j) \;=\; \frac{1}{\Delta x(i,j)} \sum_{n \in \mathcal{S}(i,j)} \left| \ell_n \cos\theta_n \right|,
 \qquad
 F_{2y}(i,j) \;=\; \frac{1}{\Delta y(i,j)} \sum_{n \in \mathcal{S}(i,j)} \left| \ell_n \sin\theta_n \right|.
-\]
+$$
 
 Where:
 
-- \(\ell_n\) is the **geodesic length** (m) of coastline segment \(n\),
-- \(\Delta x(i,j)\), \(\Delta y(i,j)\) are **local grid metric lengths** (m) on the T-grid,
-- \(\theta_n\) is the **segment orientation** expressed in the **local model coordinate frame**,
-- \(\mathcal{S}(i,j)\) is the set of segments assigned to cell \((i,j)\) by nearest-neighbour mapping in a projected CRS.
+- $\ell_n$ is the **geodesic length** (m) of coastline segment $n$,
+- $\Delta x(i,j)$, $\Delta y(i,j)$ are **local grid metric lengths** (m) on the T-grid,
+- $\theta_n$ is the **segment orientation** expressed in the **local model coordinate frame**,
+- $\mathcal{S}(i,j)$ is the set of segments assigned to cell $(i,j)$ by nearest-neighbour mapping in a projected coordinate reference system (CRS).
 
 A convenient plotted diagnostic is the magnitude:
 
-\[
+$$
 \left|F_2\right|(i,j) \;=\; \sqrt{F_{2x}(i,j)^2 + F_{2y}(i,j)^2}.
-\]
+$$
 
 ---
 
@@ -38,15 +38,15 @@ A convenient plotted diagnostic is the magnitude:
 
 The grid file supplies, per T-cell:
 
-- T-cell centres: \(\lambda(i,j)\) (lon), \(\phi(i,j)\) (lat),
-- local rotation angle: \(\alpha(i,j)\) (radians), and
-- metric lengths: \(\Delta x(i,j)\), \(\Delta y(i,j)\) (m).
+- T-cell centres: $\lambda(i,j)$ (lon), $\phi(i,j)$ (lat),
+- local rotation angle: $\alpha(i,j)$ (radians), and
+- metric lengths: $\Delta x(i,j)$, $\Delta y(i,j)$ (m).
 
 **Unit handling** is robust:
 - lon/lat are inferred as radians vs degrees by magnitude and converted to degrees if needed;
-- \(\Delta x,\Delta y\) are converted to meters using metadata when available (cm → m is supported).
+- $\Delta x,\Delta y$ are converted to meters using metadata when available (cm → m is supported).
 
-Longitudes are normalised to \([-180^\circ, 180^\circ]\) for stable Antarctic projection transforms.
+Longitudes are normalised to $[-180^\circ, 180^\circ]$ for stable Antarctic projection transforms.
 
 ---
 
@@ -63,9 +63,9 @@ To avoid artefacts from internal polygon boundaries (e.g., grounding-line edges 
 
 ### 3.3 Exterior rings as lon/lat
 The dissolved geometry is reprojected to EPSG:4326 and each polygon’s **exterior ring** is emitted as a vertex sequence:
-\[
+$$
 (\lambda_k, \phi_k)_{k=1}^K,
-\]
+$$
 with consecutive vertices forming line segments.
 
 ---
@@ -78,9 +78,9 @@ For each coastline segment connecting \((\lambda_0,\phi_0)\) → \((\lambda_1,\p
 - compute forward azimuth \(az\) (degrees, clockwise from north).
 
 The implementation converts azimuth to a segment angle in **east-north** convention:
-\[
+$$
 \gamma \;=\; \mathrm{rad}\left(90^\circ - az\right),
-\]
+$$
 so \(\gamma=0\) corresponds to +east.
 
 ---
@@ -89,9 +89,9 @@ so \(\gamma=0\) corresponds to +east.
 
 ### 5.1 Project to Antarctic CRS
 Segment endpoints are projected to an Antarctic planar CRS (default EPSG:3031). Segment midpoints:
-\[
+$$
 (x_m, y_m) \;=\; \tfrac{1}{2}(x_0+x_1,\, y_0+y_1)
-\]
+$$
 are used for mapping.
 
 ### 5.2 KDTree over selected T-cells
