@@ -19,7 +19,7 @@ from sea_ice_toolbox import SeaIceToolbox, SeaIceToolboxManager
 
 def main():
     p = argparse.ArgumentParser(description="Build Liu et al. (2022) F2 form factors from a high-resolution coastline shapefile.")
-    p.add_argument("--sim_name", type=str, default="elps-min",
+    p.add_argument("--sim_name", type=str, default="LD-GI",
                    help="Simulation name used by SeaIceToolbox config initialisation (grid/coast are overridden).")
     p.add_argument("--P_json", type=str, default=None,
                    help="Path to sea_ice_config.json (defaults to SeaIceToolbox internal default if omitted).")

@@ -1,8 +1,8 @@
 #!/bin/bash
 #PBS -P jk72
-#PBS -q normal
+#PBS -q normalbw
 #PBS -l walltime=8:00:00
-#PBS -l ncpus=48
+#PBS -l ncpus=24
 #PBS -l mem=190GB
 #PBS -j oe
 #PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
@@ -25,13 +25,12 @@ fi
 # --- Log inputs ---
 echo "Simulation        : $sim_name"
 echo "ISPD threshold    : $ispd_thresh"
+echo "ice type          : $ice_type"
+echo "BorC2T type       : $borc2t_type"
 echo "start date        : $start_date"
 echo "end date          : $end_date"
 echo "Overwrite zarr    : $overwrite_zarr"
 echo "Overwrite png     : $overwrite_png"
-echo "FIA Rolling Window: $smooth_FIA_days days"
-echo "Ice types loaded from ENVFILE:"
-for t in "${ice_type[@]}"; do echo "  - $t"; done
 echo "Running for ${sim_name}, ${start_date} to ${end_date}, ispd_thresh=${ispd_thresh}"
 
 # --- Launch computation ---
@@ -39,8 +38,8 @@ python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/FI_metrics.py \
     --sim_name "$sim_name" \
     --ispd_thresh "$ispd_thresh" \
     --ice_type "$ice_type" \
+    --BorC2T_type "$borc2t_type" \
     --start_date "$start_date" \
     --end_date "$end_date" \
     $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
-    $( [ "$overwrite_png" = true ] && echo "--overwrite_png" ) \
-    --smooth_FIA_days "$smooth_FIA_days"
+    $( [ "$overwrite_png" = true ] && echo "--overwrite_png" )

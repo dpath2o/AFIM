@@ -1,14 +1,11 @@
-import os, sys, time, json, logging, re, psutil, dask, tempfile
+import os, sys, json, logging, re, tempfile
 import xarray             as xr
-import xesmf              as xe
 import pandas             as pd
 import numpy              as np
-import matplotlib.pyplot  as plt
 from collections          import defaultdict
 from pathlib              import Path
 from datetime             import datetime, timedelta
-from dask.distributed     import Client, LocalCluster, get_client
-from distributed.client   import _get_global_client
+from dask.distributed     import Client, LocalCluster
 import warnings
 warnings.filterwarnings( "ignore", message="Sending large graph of size", category=UserWarning, module="distributed.client")
 sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
@@ -150,7 +147,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger.info(f"Analysis Start Date : {self.dt0_str}")
         self.logger.info(f"Analysis End Date   : {self.dtN_str}")
         self.logger.info(f"Speed Threshold     : {self.ispd_thresh:.1e} m/s")
-        self.logger.info(f"B-regrid Type(s)    : {self.B2T_type}")
+        self.logger.info(f"BorC-regrid Type(s) : {self.BorC2T_type}")
         self.logger.info(f"Ice Type(s)         : {self.ice_type}")
         self.logger.info(f"Mean Period         : {self.mean_period} days")
         self.logger.info(f"Binary-days Window  : {self.bin_win_days} days")
@@ -199,7 +196,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                                     # format is YYYY-MM-DD; default is 1993-01-01
                  dtN_str                     = None,# the end period over which many methods underneath use
                                                     # format is YYYY-MM-DD; default is 1999-12-31
-                 list_of_B2T                 = None,# select list of ["B", "Ta", "Tb", "Tx"];  must be a list;
+                 list_of_BorC2T              = None,# select list of ["B", "Ta", "Tb", "Tc", "Tx"];  must be a list;
                                                     # default ["Tb"]
                  iceh_frequency              = None,# 'hourly', 'daily', 'monthly', 'yearly'
                                                     # defines the history files that will be used by this toolbox
@@ -249,7 +246,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dt0_str, dtN_str : str, optional
             Inclusive analysis window in ``YYYY-MM-DD``. Defaults are pulled from
             the config if not provided.
-        list_of_B2T : list[str], optional
+        list_of_BorC2T : list[str], optional
             Which speed components to average into a composite (`"B"`, `"Ta"`, `"Tb"`, `"Tx"`).
             Defaults to ``['Ta','Tx']`` via config.
         iceh_frequency : {"hourly","daily","monthly","yearly"}, optional
@@ -327,6 +324,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             return
         # now for the technical and sim-specific configurations
         self.leap_year          = self.config.get("leap_year"         , 1996)
+        self.metrics_name       = self.config.get("metrics_name"      , "mets")
+        self.FI_class_types     = self.config.get("FI_class_types"    , {})
         self.CICE_dict          = self.config.get("CICE_dict"         , {})
         self.GI_dict            = self.config.get('GI_dict'           , {})
         self.NSIDC_dict         = self.config.get('NSIDC_dict'        , {})
@@ -347,7 +346,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.dt0_str              = dt0_str                      if dt0_str                      is not None else self.config.get('dt0_str', '1993-01-01')
         self.dtN_str              = dtN_str                      if dtN_str                      is not None else self.config.get('dtN_str', '1999-12-31')
         self.ispd_thresh          = ice_speed_threshold          if ice_speed_threshold          is not None else self.config.get('ice_speed_thresh_hi', 5.0e-4)
-        self.B2T_type             = list_of_B2T                  if list_of_B2T                  is not None else self.config.get('B2T_type', ['Tb'])
+        self.BorC2T_type          = list_of_BorC2T               if list_of_BorC2T               is not None else self.config.get('BorC2T_type', ['Tb'])
         self.ice_type             = ice_type                     if ice_type                     is not None else self.config.get('ice_type', 'FI')
         self.iceh_freq            = iceh_frequency               if iceh_frequency               is not None else self.config.get('iceh_freq', 'daily')
         self.mean_period          = mean_period                  if mean_period                  is not None else self.config.get('mean_period', 15)
@@ -370,12 +369,13 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.D_tmp               = Path(self.config['D_dict']['tmp'])
         self.D_metrics           = Path(self.D_zarr, f"ispd_thresh_{self.ispd_thresh_str}", "metrics")
         self.sim_config          = self.parse_simulation_metadata(force_recompile=force_recompile_ice_in)   
-        self.valid_B2T_types    = self.config.get("valid_B2T_types", [])
+        self.valid_BorC2T_types    = self.config.get("valid_BorC2T_types", [])
         self.valid_ice_types     = self.config.get("valid_ice_types", [])
         self.cice_vars_reqd      = self.CICE_dict["cice_vars_reqd"]
         self.spatial_dims        = self.CICE_dict["spatial_dims"]
         self.define_ispd_thresh_dir()
         self.define_ice_class_name()
+        self.define_fast_ice_class_name()
         if extra_cice_vars is not None:
             if extra_cice_vars:
                 self.cice_var_list = self.cice_vars_reqd + self.CICE_dict["cice_vars_ext"]
@@ -672,11 +672,36 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ispd_thresh        = ispd_thresh or self.ispd_thresh
         ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-").replace("e+0", "e+")
         self.D_ispd_thresh = Path(D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}")
+        
+    def define_classification_dir(self, ice_type=None, D_zarr=None, ispd_thresh=None):
+        """
+        Define the output directory path for a given ice speed threshold.
 
-    def _check_B2T_type(self,B2T_type):
-        if isinstance(B2T_type, str):
-            B2T_type = [B2T_type]
-        assert all(v in self.valid_B2T_types for v in B2T_type), f"Invalid B2T_type: {B2T_type}"
+        Parameters
+        ----------
+        D_zarr : str or Path, optional
+            Base path to the parent Zarr directory. Defaults to `self.D_zarr`.
+        ispd_thresh : float, optional
+            Ice speed threshold to be included in the subdirectory name. Defaults to `self.ispd_thresh`.
+
+        Sets
+        ----
+        self.D_ispd_thresh : Path
+            Full path to the threshold-specific subdirectory, e.g., "ispd_thresh_5.0e-4".
+        """
+        ice_type        = ice_type    or self.ice_type
+        D_zarr          = D_zarr      or self.D_zarr
+        ispd_thresh     = ispd_thresh or self.ispd_thresh
+        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-").replace("e+0", "e+")
+        if ice_type == "SI":
+            self.D_class = Path(D_zarr, self.hemisphere_dict["abbreviation"])
+        else:
+            self.D_class = Path(D_zarr, self.hemisphere_dict["abbreviation"], f"ispd_thresh_{ispd_thresh_str}")
+
+    def _check_BorC2T_type(self,BorC2T_type):
+        if isinstance(BorC2T_type, str):
+            BorC2T_type = [BorC2T_type]
+        assert all(v in self.valid_BorC2T_types for v in BorC2T_type), f"Invalid BorC2T_type: {BorC2T_type}"
 
     def _check_ice_type(self,ice_type):
         if isinstance(ice_type, str):
@@ -783,7 +808,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         except Exception:
             return float(np.asarray(x))
         
-    def define_ice_class_name(self, ice_type=None , B2T_type=None ):
+    def define_ice_class_name(self, ice_type=None , BorC2T_type=None ):
         """
         Define the classification name string for ice type and vector component type.
 
@@ -791,49 +816,58 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ----------
         ice_type : str or list of str, optional
             Type(s) of ice classification (e.g., 'fast', 'drift'). Defaults to `self.ice_type`.
-        B2T_type : str or list of str, optional
-            Type(s) of ice velocity vector used (e.g., 'B', 'Ta', 'Tb', 'Tx'). Defaults to `self.B2T_type`.
+        BorC2T_type : str or list of str, optional
+            Type(s) of ice velocity vector used (e.g., 'B', 'Ta', 'Tb', 'Tx'). Defaults to `self.BorC2T_type`.
 
         Raises
         ------
         AssertionError
-            If any provided `ice_type` or `B2T_type` is not in the list of valid types.
+            If any provided `ice_type` or `BorC2T_type` is not in the list of valid types.
 
         Sets
         ----
         self.ice_class : str
-            Combined classification string in the format "{ice_type}_{B2T_type}".
+            Combined classification string in the format "{ice_type}_{BorC2T_type}".
         """
-        ice_type  = ice_type  or self.ice_type
-        B2T_type = B2T_type or self.B2T_type
-        self._check_B2T_type(B2T_type) 
+        ice_type    = ice_type    or self.ice_type
+        BorC2T_type = BorC2T_type or self.BorC2T_type
+        self._check_BorC2T_type(BorC2T_type) 
         self._check_ice_type(ice_type)  
-        self.ice_class = f"{ice_type}_{B2T_type}"
+        self.ice_class = f"{ice_type}_{BorC2T_type}"
         self.logger.info(f" self.ice_class defined as {self.ice_class}")
+        
+    def define_fast_ice_class_name(self, BorC2T_type = None , fast_ice_class_method = 'binary-days'):
+        """
+        """
+        BorC2T_type = BorC2T_type or self.BorC2T_type
+        self._check_BorC2T_type(BorC2T_type)
+        FI_class_name = self.FI_class_types[fast_ice_class_method]
+        self.FI_class = f"FI_{BorC2T_type}_{FI_class_name}"
+        self.logger.info(f" self.FI_class defined as {self.FI_class}")
 
-    def define_ice_speed_name(self, B2T_type=None):
+    def define_ice_speed_name(self, BorC2T_type=None):
         """
         Set the canonical name for the selected ice-speed vector type.
 
         Parameters
         ----------
-        B2T_type : str, optional
+        BorC2T_type : str, optional
             One of the valid vector types (e.g., ``"B"``, ``"Ta"``, ``"Tx"``, or
-            composites depending on your config). Defaults to ``self.B2T_type``.
+            composites depending on your config). Defaults to ``self.BorC2T_type``.
 
         Sets
         ----
         self.ispd_name : str
-            Name used throughout outputs/paths, formatted as ``f"ispd_{B2T_type}"``.
+            Name used throughout outputs/paths, formatted as ``f"ispd_{BorC2T_type}"``.
 
         Raises
         ------
         ValueError
-            If `B2T_type` is invalid (validated by `_check_B2T_type`).
+            If `BorC2T_type` is invalid (validated by `_check_BorC2T_type`).
         """
-        B2T_type = B2T_type or self.B2T_type
-        self._check_B2T_type(B2T_type) 
-        self.ispd_name = f"ispd_{B2T_type}"
+        BorC2T_type = BorC2T_type or self.BorC2T_type
+        self._check_BorC2T_type(BorC2T_type) 
+        self.ispd_name = f"ispd_{BorC2T_type}"
 
     def define_datetime_vars(self, dt0_str=None, dtN_str=None):
         """
@@ -1356,86 +1390,189 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             zarr_months = sorted(D_zarr.glob("iceh_????-??.zarr"))
             for P_zarr in zarr_months:
                 self.monthly_zarr_iceh_time_correction(P_zarr, dry_run=dry_run)
+                
+    def _get_zarr_group_index(self, zarr_root):
+        """
+        Cache available YYYY-MM groups and overall time bounds for a given zarr_root.
+        """
+        key = str(zarr_root)
+
+        if not hasattr(self, "_zarr_group_index"):
+            self._zarr_group_index = {}
+
+        if key in self._zarr_group_index:
+            return self._zarr_group_index[key]
+
+        groups = sorted(
+            [p.name for p in zarr_root.glob("????-??")
+            if (zarr_root / p.name / ".zgroup").exists()]
+        )
+        if not groups:
+            raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
+
+        # Use consolidated metadata if present; else fall back
+        consolidated = (zarr_root / ".zmetadata").exists()
+
+        ds0 = xr.open_zarr(zarr_root, group=groups[0], consolidated=consolidated)
+        dsN = xr.open_zarr(zarr_root, group=groups[-1], consolidated=consolidated)
+
+        available_dt0 = pd.to_datetime(ds0.time.values[0])
+        available_dtN = pd.to_datetime(dsN.time.values[-1])
+
+        self._zarr_group_index[key] = (groups, available_dt0, available_dtN, consolidated)
+        self.logger.info(
+            f"Indexed Zarr root {zarr_root} (groups={len(groups)}, "
+            f"bounds={available_dt0.date()}..{available_dtN.date()}, consolidated={consolidated})"
+        )
+        return self._zarr_group_index[key]
 
     def load_cice_zarr(self,
-                       sim_name  = None,
-                       dt0_str   = None,
-                       dtN_str   = None,
-                       D_alt     = None,
-                       variables = None,
-                       slice_hem = False):
-        """
-        Open monthly Zarr groups for the requested period and concatenate in time.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        dt0_str, dtN_str : str, optional
-            Clamp the load to the intersection of requested and available data.
-        D_alt : str | Path, optional
-            Alternative simulation directory (overrides `self.D_sim`).
-        variables : list[str], optional
-            Subset to these variables; groups missing any are skipped with a warning.
-        slice_hem : bool, default False
-            If True, apply `slice_hemisphere()` after concatenation.
-
-        Returns
-        -------
-        xr.Dataset
-            Concatenated dataset with time cropped to `[user_dt0, user_dtN]`.
-
-        Notes
-        -----
-        - Uses conservative Dask settings for slicing and fusion to keep graphs
-          small (`split_large_chunks=True`, `chunk-size=256MiB`).
-        - Requires Zarr groups of the form `YYYY-MM`.
-        """
+                    sim_name=None,
+                    dt0_str=None,
+                    dtN_str=None,
+                    D_alt=None,
+                    variables=None,
+                    slice_hem=False):
         import dask
         sim_name = sim_name or self.sim_name
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
         D_alt    = D_alt    or self.D_sim
+
         self.define_iceh_dirs(D_alt)
-        # Step 1: Identify available YYYY-MM groups
         zarr_root = self.D_iceh_zarr
-        available_groups = sorted([ p.name for p in zarr_root.glob("????-??") if (zarr_root / p.name / ".zgroup").exists() ])
-        if not available_groups:
-            raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
-        # Step 2: Load first and last datasets to get true data bounds
-        ds0 = xr.open_zarr(zarr_root, group=available_groups[0], consolidated=False)
-        dsN = xr.open_zarr(zarr_root, group=available_groups[-1], consolidated=False)
-        available_dt0 = pd.to_datetime(ds0.time.values[0])
-        available_dtN = pd.to_datetime(dsN.time.values[-1])
-        # Step 3: Clamp user request to data availability
+
+        available_groups, available_dt0, available_dtN, consolidated = self._get_zarr_group_index(zarr_root)
+
+        # Clamp user request to data availability
         user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
         user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
-        # Step 4: Select required YYYY-MM groups
-        required_groups = [g for g in available_groups
-                          if pd.to_datetime(f"{g}-01") <= user_dtN and pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0 ]
-        self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()}")
-        with dask.config.set({'array.slicing.split_large_chunks': True,
-                            'array.chunk-size': '256MiB',
-                            'optimization.fuse.active': False}):
+
+        required_groups = [
+            g for g in available_groups
+            if (pd.to_datetime(f"{g}-01") <= user_dtN)
+            and (pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0)
+        ]
+
+        self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()} ({len(required_groups)} groups)")
+
+        with dask.config.set({
+            "array.slicing.split_large_chunks": True,
+            "array.chunk-size": "256MiB",
+            # Consider turning fuse back on unless you have a specific reason to disable it:
+            # "optimization.fuse.active": True,
+            "optimization.fuse.active": False,
+        }):
             ds_list = []
             for g in required_groups:
                 self.logger.debug(f"  - opening group {g}")
-                ds = xr.open_zarr(zarr_root, group=g, consolidated=False)
+                ds = xr.open_zarr(zarr_root, group=g, consolidated=consolidated)
+
                 if variables:
                     missing = [v for v in variables if v not in ds]
                     if missing:
                         self.logger.warning(f"  > Skipping {g}, missing: {missing}")
                         continue
+
+                    # Much clearer logging:
+                    self.logger.info(f"  [{g}] selecting variables: {variables}")
                     ds = ds[variables]
+
+                # Optional but often beneficial: crop each group before concat
+                ds = ds.sel(time=slice(user_dt0, user_dtN))
                 ds_list.append(ds)
+
             if not ds_list:
                 raise ValueError("No datasets to concatenate after filtering.")
+
             ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
-            ds_all = ds_all.sel(time=slice(user_dt0, user_dtN))
+
         if slice_hem:
             self.logger.info("  slicing hemisphere")
             ds_all = self.slice_hemisphere(ds_all)
+
         return ds_all
+
+    # def load_cice_zarr(self,
+    #                    sim_name  = None,
+    #                    dt0_str   = None,
+    #                    dtN_str   = None,
+    #                    D_alt     = None,
+    #                    variables = None,
+    #                    slice_hem = False):
+    #     """
+    #     Open monthly Zarr groups for the requested period and concatenate in time.
+
+    #     Parameters
+    #     ----------
+    #     sim_name : str, optional
+    #         Simulation name. Defaults to `self.sim_name`.
+    #     dt0_str, dtN_str : str, optional
+    #         Clamp the load to the intersection of requested and available data.
+    #     D_alt : str | Path, optional
+    #         Alternative simulation directory (overrides `self.D_sim`).
+    #     variables : list[str], optional
+    #         Subset to these variables; groups missing any are skipped with a warning.
+    #     slice_hem : bool, default False
+    #         If True, apply `slice_hemisphere()` after concatenation.
+
+    #     Returns
+    #     -------
+    #     xr.Dataset
+    #         Concatenated dataset with time cropped to `[user_dt0, user_dtN]`.
+
+    #     Notes
+    #     -----
+    #     - Uses conservative Dask settings for slicing and fusion to keep graphs
+    #       small (`split_large_chunks=True`, `chunk-size=256MiB`).
+    #     - Requires Zarr groups of the form `YYYY-MM`.
+    #     """
+    #     import dask
+    #     sim_name = sim_name or self.sim_name
+    #     dt0_str  = dt0_str  or self.dt0_str
+    #     dtN_str  = dtN_str  or self.dtN_str
+    #     D_alt    = D_alt    or self.D_sim
+    #     self.define_iceh_dirs(D_alt)
+    #     # Step 1: Identify available YYYY-MM groups
+    #     zarr_root = self.D_iceh_zarr
+    #     available_groups = sorted([ p.name for p in zarr_root.glob("????-??") if (zarr_root / p.name / ".zgroup").exists() ])
+    #     if not available_groups:
+    #         raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
+    #     # Step 2: Load first and last datasets to get true data bounds
+    #     ds0 = xr.open_zarr(zarr_root, group=available_groups[0], consolidated=False)
+    #     dsN = xr.open_zarr(zarr_root, group=available_groups[-1], consolidated=False)
+    #     available_dt0 = pd.to_datetime(ds0.time.values[0])
+    #     available_dtN = pd.to_datetime(dsN.time.values[-1])
+    #     # Step 3: Clamp user request to data availability
+    #     user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
+    #     user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
+    #     # Step 4: Select required YYYY-MM groups
+    #     required_groups = [g for g in available_groups
+    #                       if pd.to_datetime(f"{g}-01") <= user_dtN and pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0 ]
+    #     self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()}")
+    #     with dask.config.set({'array.slicing.split_large_chunks': True,
+    #                         'array.chunk-size': '256MiB',
+    #                         'optimization.fuse.active': False}):
+    #         ds_list = []
+    #         for g in required_groups:
+    #             self.logger.debug(f"  - opening group {g}")
+    #             ds = xr.open_zarr(zarr_root, group=g, consolidated=False)
+    #             if variables:
+    #                 self.logger.info(f"Loading variables {[v for v in variables if v in ds]}")
+    #                 missing = [v for v in variables if v not in ds]
+    #                 if missing:
+    #                     self.logger.warning(f"  > Skipping {g}, missing: {missing}")
+    #                     continue
+    #                 ds = ds[variables]
+    #             ds_list.append(ds)
+    #         if not ds_list:
+    #             raise ValueError("No datasets to concatenate after filtering.")
+    #         ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
+    #         ds_all = ds_all.sel(time=slice(user_dt0, user_dtN))
+    #     if slice_hem:
+    #         self.logger.info("  slicing hemisphere")
+    #         ds_all = self.slice_hemisphere(ds_all)
+    #     return ds_all
 
     @staticmethod
     def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
@@ -1454,7 +1591,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                             roll_mean   : bool  = False,
                             ispd_thresh : float = None,
                             ice_type    : str   = None,
-                            B2T_type    : str   = None,
+                            BorC2T_type    : str   = None,
                             variables   : list  = None,
                             dt0_str     : str   = None,
                             dtN_str     : str   = None,
@@ -1471,7 +1608,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         roll_mean   : bool, default False
         ispd_thresh : float, optional; threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
         ice_type    : str, optional; either 'FI', 'PI' or 'SI'
-        B2T_type    : str, optional; either 'Ta', 'Tb', 'Tx' or 'BT' (composite)
+        BorC2T_type    : str, optional; either 'Ta', 'Tb', 'Tx' or 'BT' (composite)
         variables   : list[str], optional; variable subset to select on open.
         dt0_str     : str, optional; start date
         dtN_str     : str, optional; end date
@@ -1491,7 +1628,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         sim_name     = sim_name     or self.sim_name
         ispd_thresh  = ispd_thresh  or self.ispd_thresh
         ice_type     = ice_type     or self.ice_type
-        B2T_type     = B2T_type     or f"{''.join(self.B2T_type)}"
+        BorC2T_type  = BorC2T_type  or f"{''.join(self.BorC2T_type)}"
         dt0_str      = dt0_str      or self.dt0_str
         dtN_str      = dtN_str      or self.dtN_str
         chunks       = chunks       or self.CICE_dict["FI_chunks"]
@@ -1502,11 +1639,11 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         else:
             D_class = Path(D_zarr or Path(self.D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}"))
             if bin_days:
-                zarr_store = D_class / f"{ice_type}_{B2T_type}_bin.zarr"
+                zarr_store = D_class / f"{ice_type}_{BorC2T_type}_bin.zarr"
             elif roll_mean:
-                zarr_store = D_class / f"{ice_type}_{B2T_type}_roll.zarr"
+                zarr_store = D_class / f"{ice_type}_{BorC2T_type}_roll.zarr"
             else:
-                zarr_store = D_class / f"{ice_type}_{B2T_type}.zarr"
+                zarr_store = D_class / f"{ice_type}_{BorC2T_type}.zarr"
         # === Loop over years, not months ===
         dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
         dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")

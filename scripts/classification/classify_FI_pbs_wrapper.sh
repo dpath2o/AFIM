@@ -2,7 +2,7 @@
 
 # --- Defaults ---
 ISPD_THRESH="5e-4"
-B2T_TYPE_LIST=()
+BorC2T_TYPE_LIST=()
 START_DATE="1993-01-01"
 END_DATE=""
 YEARLY=false
@@ -17,12 +17,12 @@ PBS_SCRIPT=classify_FI.pbs
 print_help() {
     echo ""
     echo "Usage:"
-    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i B2T_TYPE ...] [-r] [-d]"
+    echo "  $0 -s SIM_NAME -t ISPD_THRESH [-i BorC2T_TYPE ...] [-r] [-d]"
     echo ""
     echo "Options:"
     echo "  -s SIM_NAME      Simulation name (required)"
     echo "  -t ISPD_THRESH   Ice speed threshold (e.g. 1e-3) (required)"
-    echo "  -i B2T_TYPE     B-grid regridding to T-grid method(s): B (no regridding), Ta, Tb, Tx (some combination)"
+    echo "  -i BorC2T_TYPE   B-grid regridding to T-grid method(s): B (no regridding), Ta, Tb, Tc, Tx (some combination)"
     echo "  -S START_DATE    Start date (YYYY-MM-DD, forced to first of month; default 1993-01-01)"
     echo "  -E END_DATE      End date (YYYY-MM-DD, forced to last of month)"
     echo "  -x NC_ENG        NetCDF engine used by xarray mfdataset method; default 'netcdf4'"
@@ -44,7 +44,7 @@ while getopts "s:t:i:rdzkhS:E:ny" opt; do
     case ${opt} in
         s) SIM_NAME="$OPTARG" ;;
         t) ISPD_THRESH="$OPTARG" ;;
-        i) B2T_TYPE_LIST+=("$OPTARG") ;;
+        i) BorC2T_TYPE_LIST+=("$OPTARG") ;;
         z) OVERWRITE_ZARR=true ;;
         k) DELETE_ORIGINAL_ICEH=true ;;
         S) START_DATE="$OPTARG" ;;
@@ -66,8 +66,8 @@ if [[ -z "$SIM_NAME" ]]; then
 fi
 
 # --- Default ISPD types if none specified ---
-if [ ${#B2T_TYPE_LIST[@]} -eq 0 ]; then
-    B2T_TYPE_LIST=("Tb") #"B" "Ta" "Tx" "BT"
+if [ ${#BorC2T_TYPE_LIST[@]} -eq 0 ]; then
+    BorC2T_TYPE_LIST=("Tb") #"B" "Ta" "Tx" "BT"
 fi
 
 # Validate start and end date
@@ -102,7 +102,7 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
     YEAR=$(date -d "$DT0" +%Y)
     MONTH=$(date -d "$DT0" +%m)
     VAR_PASS="SIM_NAME=${SIM_NAME},MONTH=${MONTH},YEAR=${YEAR},START_DATE=${DT0},END_DATE=${DTN},ISPD_THRESH=${ISPD_THRESH},NC_ENG=${NC_ENG}"
-    [ "${#B2T_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",B2T_TYPE=${B2T_TYPE_LIST[*]}"
+    [ "${#BorC2T_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",BorC2T_TYPE=${BorC2T_TYPE_LIST[*]}"
     [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
     [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
     JOB_NAME="fi_${SIM_NAME}_${JOB_SUFFIX}_${ISPD_THRESH}"

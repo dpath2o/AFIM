@@ -6,15 +6,16 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 
-def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, smooth_FIA_days, overwrite_zarr, overwrite_png):
+def main(sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
     load_vars = ['aice','tarea','hi','dvidtt','daidtt','dvidtd','daidtd'] # 'strength'
-    ispd_str  = f"{ispd_thresh:.1e}".replace("e-0", "e-")
     P_log     = Path(Path.home(), "logs", f"metrics_{sim_name}_ispd_thresh{ispd_thresh}.log")
     SI_mgr    = SeaIceToolboxManager(P_log=P_log)
     SI_tools  = SI_mgr.get_toolbox(sim_name             = sim_name,
                                    dt0_str              = dt0_str,
                                    dtN_str              = dtN_str,
+                                   ice_type             = ice_type,
+                                   list_of_BorC2T       = BorC2T_type,
                                    ice_speed_threshold  = ispd_thresh,
                                    overwrite_zarr       = overwrite_zarr,
                                    overwrite_saved_figs = overwrite_png)
@@ -33,40 +34,40 @@ def main(sim_name, ispd_thresh, ice_type, dt0_str, dtN_str, smooth_FIA_days, ove
     FI_rl = SI_tools.fast_ice_metrics_data_dict(FI_rol, FI_rolly, A)
     FI_bn = SI_tools.fast_ice_metrics_data_dict(FI_bin, FI_binly, A)
     # Compute metrics for each FI type
-    FI_types = [('FI_BT', FI_dy), ('FI_BT_roll', FI_rl), ('FI_BT_bin', FI_bn)]
-    for prefix, FI_data in FI_types:
-        P_mets_zarr = Path(SI_tools.D_ispd_thresh, f"{prefix}_mets.zarr")
+    SI_tools.define_fast_ice_class_name(BorC2T_type = BorC2T_type , fast_ice_class_method = 'raw')
+    FI_dy_name = SI_tools.FI_class
+    SI_tools.define_fast_ice_class_name(BorC2T_type = BorC2T_type , fast_ice_class_method = 'rolling-mean')
+    FI_roll_name = SI_tools.FI_class
+    SI_tools.define_fast_ice_class_name(BorC2T_type = BorC2T_type , fast_ice_class_method = 'binary-days')
+    FI_bin_name = SI_tools.FI_class
+    FI_types = [(FI_dy_name, FI_dy), (FI_roll_name, FI_rl), (FI_bin_name, FI_bn)]
+    for FI_name, FI_data in FI_types:
+        P_mets_zarr = Path(SI_tools.D_ispd_thresh, f"{FI_name}_{SI_tools.metrics_name}.zarr")
         SI_tools.compute_sea_ice_metrics(FI_data, 
-                                         ice_type="FI",
-                                         P_mets_zarr=P_mets_zarr,
-                                         ice_area_scale=SI_tools.FIC_scale)
+                                         ice_type       = "FI",
+                                         P_mets_zarr    = P_mets_zarr,
+                                         ice_area_scale = SI_tools.FIC_scale)
     SI_tools.client.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute FIA and FIP metrics, apply boolean mask, and plot spatial + temporal outputs.")
     parser.add_argument("--sim_name", type=str, required=True)
     parser.add_argument("--ispd_thresh", type=float, required=True)
-    parser.add_argument("--ice_type", nargs="+", default=["FI_BT"], help="must be of the format [TYPE_OF_ICE]_[TYPE_OF_GRID] (e.g. 'FI_BT')")
+    parser.add_argument("--ice_type", default="FI", help="either FI, PI, SI or MI")
+    parser.add_argument("--BorC2T_type", default="Tc", help="must be Tc, Ta, Tb, Tx, B or BT")
     parser.add_argument("--start_date", default="1994-01-01", help="Start date (YYYY-MM-DD), which is then added to FI_days as the first center-date")
     parser.add_argument("--end_date", default="1999-12-31", help="End date (YYYY-MM-DD), will stop processing when this end_date-FI_days")
     parser.add_argument("--overwrite_zarr", action="store_true")
     parser.add_argument("--overwrite_png", action="store_true")
-    parser.add_argument("--smooth_FIA_days", type=int, default=0)
     parser.set_defaults(compute_boolean=False, overwrite_zarr=False, overwrite_png=False)
     args = parser.parse_args()
 
-    # Flatten any space-separated or comma-separated strings into a proper list
-    ice_type = args.ice_type
-    if isinstance(ice_type, list):
-        if len(ice_type) == 1:
-            ice_type = ice_type[0].replace(",", " ").split()
-
     main(args.sim_name,
          args.ispd_thresh,
-         ice_type,
+         args.ice_type,
+         args.BorC2T_type,
          args.start_date,
          args.end_date,
-         args.smooth_FIA_days,
          args.overwrite_zarr,
          args.overwrite_png)
 

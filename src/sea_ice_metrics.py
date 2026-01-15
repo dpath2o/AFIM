@@ -264,20 +264,23 @@ class SeaIceMetrics:
         return ds_out
     
     def load_computed_metrics(self,
-                              spatial_grid_type : str  = "bin",  # bin, roll, None (which is 'daily')
-                              ice_type          : str  = None,
-                              ispd_thresh       : str  = None,
-                              clip_to_self      : bool = True,
-                              time_dim          : str  = "time"):
-        ice_type        = ice_type if ice_type is not None else self.ice_type
-        ispd_thresh     = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
-        ispd_thresh_str = f"{ispd_thresh:.1e}".replace("e-0", "e-")
-        if ice_type == "SI":
-            D_mets = Path(self.D_zarr, self.hemisphere_dict["abbreviation"])
+                              fast_ice_class_method : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
+                              BorC2T_type           : str  = None,
+                              ice_type              : str  = None,
+                              ispd_thresh           : str  = None,
+                              zarr_directory        : str  = None,
+                              clip_to_self          : bool = True,
+                              time_dim              : str  = "time"):
+        BorC2T_type = BorC2T_type    or self.BorC2T_type
+        ice_type    = ice_type       or self.ice_type
+        ispd_thresh = ispd_thresh    or self.ispd_thresh
+        D_zarr      = zarr_directory or self.D_zarr
+        self.define_classification_dir(ice_type = ice_type, D_zarr = D_zarr, ispd_thresh = ispd_thresh)
+        if (ice_type == 'FI') or (ice_type =='PI'): 
+            self.define_fast_ice_class_name(BorC2T_type = BorC2T_type, fast_ice_class_method = fast_ice_class_method)
+            P_mets = self.D_class / f"{self.FI_class}_{self.metrics_name}.zarr"
         else:
-            D_mets = Path(self.D_zarr, self.hemisphere_dict["abbreviation"], f"ispd_thresh_{ispd_thresh_str}")
-        P_mets = (Path(D_mets, f"{ice_type}_{spatial_grid_type}_mets.zarr")
-                  if spatial_grid_type is not None else Path(D_mets, f"{ice_type}_mets.zarr"))
+            P_mets = self.D_class / f"{ice_type}_{self.metrics_name}.zarr"
         ds = xr.open_dataset(P_mets)
         if clip_to_self:
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
@@ -357,7 +360,6 @@ class SeaIceMetrics:
         HI   = HI.where(mask)
         IS   = IS.where(mask)
         return (IS / HI).sum(dim=spatial_dim_names) / ice_strength_scale
-
 
     def compute_sector_ice_area(self, I_mask, area_grid, sector_defs, GI_area=False):
         # Compute ice area per geographic sector and a domain total, from an arbitrary ice mask.

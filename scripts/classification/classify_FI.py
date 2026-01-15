@@ -8,7 +8,7 @@ from sea_ice_toolbox import SeaIceToolbox, SeaIceToolboxManager
 
 def run_loop(sim_name,
              ispd_thresh          = None,
-             B2T_type             = None,
+             BorC2T_type             = None,
              json_path            = None,
              start_date           = None,
              end_date             = None,
@@ -22,7 +22,7 @@ def run_loop(sim_name,
                                           dt0_str             = start_date,
                                           dtN_str             = end_date,
                                           sim_name            = sim_name,
-                                          list_of_B2T         = B2T_type,
+                                          list_of_BorC2T         = BorC2T_type,
                                           ice_speed_threshold = ispd_thresh)
     SI_tools.daily_iceh_to_monthly_zarr(netcdf_engine   = netcdf_engine,
                                         overwrite       = overwrite_zarr,
@@ -45,7 +45,7 @@ def run_loop(sim_name,
         FI_yr       = xr.concat(FI_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
         FI_bin_yr   = xr.concat(FI_bin_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
         FI_roll_yr  = xr.concat(FI_roll_mo, dim="time").chunk(SI_tools.CICE_dict["FI_chunks"])
-        F_prefix    = f"{SI_tools.ice_type}_{''.join(SI_tools.B2T_type)}"
+        F_prefix    = f"{SI_tools.ice_type}_{''.join(SI_tools.BorC2T_type)}"
         P_zarr      = Path(SI_tools.D_ispd_thresh, f"{F_prefix}.zarr")
         P_zarr_bin  = Path(SI_tools.D_ispd_thresh, f"{F_prefix}_bin.zarr")
         P_zarr_roll = Path(SI_tools.D_ispd_thresh, f"{F_prefix}_roll.zarr")
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run pack ice processor loop over time.")
     parser.add_argument("sim_name"              , help="Name of simulation")
     parser.add_argument("--ispd_thresh"         , help="ice speed threshold for masking fast ice (default: use hard-coded value in JSON file)")
-    parser.add_argument("--B2T_type"           , nargs="+", choices=["B", "Ta", "Tb", "Tx"], help="List of ice speed masking types to use (choose one or more of: B, Ta, Tb, Tx). Example: --B2T_type B Ta")
+    parser.add_argument("--BorC2T_type"           , nargs="+", choices=["B", "Ta", "Tb", "Tc", "Tx"], help="List of ice speed masking types to use (choose one or more of: B, Ta, Tb, Tx). Example: --BorC2T_type B Ta")
     parser.add_argument("--overwrite_zarr"      , action="store_true", help="overwrite zarrs")
     parser.add_argument("--delete_original_iceh", action="store_true", help="when creating monthly zarr files of original CICE files, if enabled this will then delete the original model ice history files")
     parser.add_argument("--json_config"         , help="Path to JSON config file (default: use hard-coded JSON file in fast_ice_processor)")
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     run_loop(sim_name             = args.sim_name,
              ispd_thresh          = args.ispd_thresh,
-             B2T_type             = args.B2T_type,
+             BorC2T_type             = args.BorC2T_type,
              json_path            = args.json_config,
              start_date           = args.start_date,
              end_date             = args.end_date,

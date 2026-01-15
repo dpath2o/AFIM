@@ -1555,17 +1555,13 @@ class SeaIcePlotter:
             if repeat_ref_keys:
                 ref_keys = set(repeat_ref_keys)
             else:
-                ref_keys = {k for k in ts_dict.keys()
-                            if (keys2plot is None or k in (keys2plot or []))
-                            and k not in repeat_keys}
-
+                ref_keys = {k for k in ts_dict.keys() if (keys2plot is None or k in (keys2plot or [])) and k not in repeat_keys}
             other_mins, other_maxs = [], []
             for k in ref_keys:
                 da2 = ts_dict[k][primary_key]
                 tt2 = pd.to_datetime(da2[time_coord].values)
                 if len(tt2) > 0:
                     other_mins.append(tt2.min()); other_maxs.append(tt2.max())
-
             if other_mins:  # only override if we actually have refs
                 x_start = pd.to_datetime(min(other_mins)).normalize()
                 x_end   = pd.to_datetime(max(other_maxs)).normalize()
@@ -1604,18 +1600,14 @@ class SeaIcePlotter:
             # loop over each key in the dictionary and if keys2plot is defined only plot those dictionaries
             cnt=0
             for i, (dict_key, data) in enumerate(ts_dict.items()):
-                if data.get("line_clr", None) is not None:
-                    line_color = data['line_clr']
-                else:
-                    line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
-                if data.get("leg_lab", None) is not None:
-                    leg_lab = data['leg_lab']
-                else:
-                    leg_lab = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
+                self.logger.info(f"extracting data array from ts_dict[{dict_key} : {primary_key}]")
                 da = data[primary_key]
-                self.logger.info(f"pulling out data array for {dict_key} and putting into dataframe")
-                self.logger.info(f"legend label: {leg_lab}")
-                self.logger.info(f"line color  : {line_color}")
+                self.logger.info(f"matching {dict_key} with JSON-toolbox-config dictionary for line color and legend label")
+                # removed option to pass 'line_clr' and 'leg_lab' with ts_dict
+                line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
+                leg_lab    = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
+                self.logger.info(f"   legend label: {leg_lab}")
+                self.logger.info(f"   line color  : {line_color}")
                 if dict_key=="AF2020" and primary_key=="FIA":
                     df = pd.DataFrame({"time": pd.to_datetime(da[time_coord_alt].values), "data": da.values})
                 else:
