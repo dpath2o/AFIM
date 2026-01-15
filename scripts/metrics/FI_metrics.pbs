@@ -1,16 +1,16 @@
 #!/bin/bash
-#PBS -P jk72
+#PBS -P gv90
 #PBS -q normalbw
 #PBS -l walltime=8:00:00
 #PBS -l ncpus=24
 #PBS -l mem=190GB
 #PBS -j oe
-#PBS -l storage=gdata/jk72+gdata/xp65+gdata/gv90+gdata/ik11+scratch/jk72
+#PBS -l storage=gdata/xp65+gdata/gv90+gdata/ik11+scratch/gv90
 #PBS -v ENVFILE
 
 # --- Load environment ---
 module use /g/data/xp65/public/modules
-module load conda/analysis3-25.05
+module load conda/analysis3-25.12
 source activate
 
 # --- Source environment file ---

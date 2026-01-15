@@ -13,13 +13,14 @@ This note documents the **free-slip boundary condition** implementation added to
 3. [`ice_in` configuration](#3-ice_in-configuration)  
 4. [Code changes and control flow](#4-code-changes-and-control-flow)  
 5. [Free-slip strain-rate discretisation](#5-free-slip-strain-rate-discretisation)  
-6. [Interaction with Lateral Drag Parameterisation (LDP)](#6-interaction-with-coastal-drag-parameterisation-cdp)  
-7. [Deriving and interpreting **C\_s**](#7-deriving-and-interpreting-c_s)  
-8. [Resolution dependence: why **C\_s** can vary by 10–1000×](#8-resolution-dependence-why-c_s-can-vary-by-101000)
+6. [Interaction with Lateral Drag Parameterisation (LDP)](#6-interaction-with-lateral-drag-parameterisation-cdp)  
+7. [Deriving and interpreting $C_s$](#7-deriving-and-interpreting-c_s)  
+8. [Resolution dependence: why $C_s$ can vary by 10–1000×](#8-resolution-dependence-why-c_s-can-vary-by-101000)
 9. [Mixed layer depth (`hmix`) in standalone-CICE](#9-mixed-layer-depth-in-standalone-CICE)
-10. [Verification checklist](#10-verification-checklist)  
-11. [Caveats and known limitations](#11-caveats-and-known-limitations)  
-12. [References](#12-references)  
+10. [Practical tuning for the residual velocity $u_0$](#10-practical-tuning-for-the-residual-velocity)
+11. [Verification checklist](#11-verification-checklist)  
+12. [Caveats and known limitations](#12-caveats-and-known-limitations)  
+13. [References](#13-references)  
 
 ---
 
@@ -321,90 +322,195 @@ These outputs are useful for confirming where and how strongly LDP is acting.
 
 ---
 
-## 7. Deriving and interpreting **C\_s**
+## 7. ## 7. Deriving and interpreting $C_s$
 
-### 7.1 Units and meaning
+In AFIM’s CICE coastal (lateral) drag implementation, the *stress scale* is set by the product of:
+- an ice mass per unit area $m$ (kg m$^{-2}$),
+- a dimensionless form factor $F_2$ (unitless), and
+- a tunable coefficient $C_s$ (m s$^{-2}$),
 
-From the stress scale:
+via:
 
 $$
-K_u = m\,F_2\,C_s
+K_u = m\,F_2\,C_s,
 $$
 
-- $m$ has units kg/m$^2$
+where $K_u$ has units of stress (Pa). In the momentum solve, this stress scale is applied in a velocity-dependent way via the regularisation speed $u_0$ (see the “Practical note” below).
+
+### 7.1 Units and physical meaning
+
+From
+
+$$
+K_u = m\,F_2\,C_s,
+$$
+
+- $m$ has units kg m$^{-2}$
 - $F_2$ is dimensionless
-- $C_s$ has units m/s\ :sup:`-2`
+- $C_s$ has units m s$^{-2}$
 
 Therefore:
 
-- $K_u$ has units kg m$^{-1}$ s$^{-2}$ = N m$^{-2}$ = Pa
+$$
+[K_u] = \mathrm{kg\,m^{-2}}\cdot 1 \cdot \mathrm{m\,s^{-2}}
+      = \mathrm{kg\,m^{-1}\,s^{-2}}
+      = \mathrm{N\,m^{-2}}
+      = \mathrm{Pa}.
+$$
 
-So $C_s$ is an **acceleration scale**, which can be interpreted as:
+So $C_s$ is an **acceleration scale**. A useful interpretation is:
 
-> the maximum lateral-drag deceleration per unit ice mass, in a cell with $F_2=1$, when the stress is fully “activated”.
+> $C_s$ sets the *maximum lateral-drag deceleration per unit ice mass* in a cell with $F_2=1$, expressed as an equivalent stress scale $K_u$ (Pa).
 
-A useful back-of-envelope conversion:
+A back-of-envelope conversion is:
 
-- $C_s = 10^{-4}\,\mathrm{m\,s^{-2}}$ corresponds to changing speed by  
-  $\Delta u \approx 8.6\times 10^{-3}\,\mathrm{m\,s^{-1}}$ per day.
+- $C_s = 10^{-4}\,\mathrm{m\,s^{-2}}$ corresponds to a speed change of
+
+  $$
+  \Delta u \approx C_s\,\Delta t \approx 10^{-4}\times 86400 \approx 8.6\times10^{-3}\ \mathrm{m\,s^{-1}}
+  $$
+
+  per day.
 
 ### 7.2 Stress magnitude relative to wind stress
 
-Take typical values:
-
-- $\rho_i \approx 900\,\mathrm{kg\,m^{-3}}$
-- $h \approx 1\,\mathrm{m}$
-- $a \approx 1$
-- so $m \approx 900\,\mathrm{kg\,m^{-2}}$
-
-Then:
+Representative (“nominal”) ice properties:
+- $\rho_i \approx 900\,\mathrm{kg\,m^{-3}}$,
+- $h_i \approx 1\,\mathrm{m}$, so the column ice mass per unit area is:
 
 $$
-m\,C_s \approx 900 \times 10^{-4} = 0.09\,\mathrm{Pa}
+m \approx \rho_i h_i \approx 900\,\mathrm{kg\,m^{-2}}.
 $$
 
-For $F_2\approx 1$, this yields a peak drag scale comparable to typical Antarctic wind stresses (~0.1 Pa). This is consistent with the motivation used by [Liu et al.](https://onlinelibrary.wiley.com/doi/abs/10.1029/2022JC018413).
-
-### 7.3 A practical conceptual $C_s$ tuning rule
-
-If we have a target peak lateral stress magnitude $\tau_*$ (Pa) for a representative coastal cell:
+Then, for $C_s=10^{-4}\,\mathrm{m\,s^{-2}}$,
 
 $$
-C_s \approx \frac{\tau_*}{m\,F_2}
+m\,C_s \approx 900\times10^{-4} = 0.09\ \mathrm{Pa}.
+$$
+
+If $F_2\approx 1$, this implies $K_u\approx 0.09$ Pa, comparable to typical Antarctic wind-stress magnitudes ($\mathcal{O}(0.1)$ Pa). This is broadly consistent with the motivation in Liu et al. (2022), where the lateral-drag stress scale is intended to be dynamically competitive with atmospheric and ocean stresses in near-coastal fast-ice regimes.
+
+### 7.3 A practical $C_s$ tuning rule (given a target stress scale)
+
+If we have a *target peak lateral stress magnitude* $\tau^{\ast}$ (Pa) for a representative coastal cell, then:
+
+$$
+C_s(\tau^{\ast},F_2) \approx \frac{\tau^{\ast}}{m\,F_2}.
 $$
 
 Example:
+- $\tau^{\ast} = 10\ \mathrm{Pa}$,
+- $m = 900\ \mathrm{kg\,m^{-2}}$,
+- $F_2=1$,
 
-- $\tau_* = 10\,\mathrm{Pa}$
-- $m = 900\,\mathrm{kg\,m^{-2}}$
-- $F_2 = 1$
+gives:
 
 $$
-C_s \approx \frac{10}{900\times 1} \approx 1.1\times 10^{-2}\,\mathrm{m\,s^{-2}}
+C_s \approx \frac{10}{900\times 1} \approx 1.1\times 10^{-2}\ \mathrm{m\,s^{-2}}.
 $$
 
-This is close to the AFIM configuration values currently being tested (order 10$^{-4}$-10$^{-2}).
+This sits within the AFIM test range ($10^{-4}$–$10^{-2}$), but the effective value depends strongly on local $F_2$.
+
+---
+
+### 7.4 Parameter-space view: $C_s(\tau^{\ast},F_2)$
+
+The figure below visualises the tuning rule
+
+$$
+C_s(\tau^{\ast},F_2)=\frac{\tau^{\ast}}{m\,F_2}
+$$
+
+over a log–log range $\tau^{\ast}\in[0.1,100]$ Pa and $F_2\in[0.1,100]$ using $m=900$ kg m$^{-2}$.
+
+Key takeaways:
+- Increasing $\tau^{\ast}$ (moving right) requires larger $C_s$.
+- Increasing $F_2$ (moving up) allows smaller $C_s$ for the same $\tau^{\ast}$.
+- Contours are lines of constant $\tau^{\ast}/F_2$ (i.e., constant $C_s$ for fixed $m$).
+
+:::{figure} ../figures/Cs_tau_F2.png
+:alt: Cs as a function of target stress tau_star and F2 for nominal ice mass.
+:width: 85%
+
+Parameter-space plot of $C_s(\tau^{\ast},F_2)=\tau^{\ast}/(mF_2)$ for $m=\rho_i h_i=900\times 1 = 900$ kg m$^{-2}$. Color shows $C_s$ (m s$^{-2}$); contours are log-spaced $C_s$ levels.
+:::
+
+*Practical usage:* a plausible $\tau^{\ast}$ (what peak lateral stress is rational given the model's physical-scheme to be capable of), then read off the implied $C_s$ over the range of $F_2$ values actually present on your grid (coastline- and GI-dependent).
+
+---
+
+### 7.5 Companion view: the implied stress scale $K_u(C_s,F_2)$
+
+In CICE [lateral drag](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1443) is numerically implemented first by computing
+
+$$
+K_u(C_s,F_2)=mF_2C_s,
+$$
+
+which makes it somewhat potentially easier to think of in terms of the actual stress scale $K_u$ (Pa) implied by a chosen $C_s$ and the spatially varying $F_2$ field.
+
+Some important points:
+- At fixed $C_s$, larger $F_2$ produces larger $K_u$.
+- At fixed $F_2$, increasing $C_s$ scales $K_u$ linearly.
+- This plot is the “inverse” of the previous one and is useful for sanity-checking what stress magnitudes your chosen $C_s$ will imply across the domain.
+
+:::{figure} ../figures/Ku_Cs_F2.png
+:alt: Ku as a function of Cs and F2 for nominal ice mass.
+:width: 85%
+
+Companion parameter-space plot of $K_u(C_s,F_2)=mF_2C_s$ (Pa), using $m=900$ kg m$^{-2}$. Color shows $K_u$; contours are log-spaced $K_u$ levels. This is useful for interpreting a chosen $C_s$ in terms of the implied coastal stress scale across the local $F_2$ distribution.
+:::
+
+---
+
+### 7.6 Practical note: why $\tau^{\ast}$ is a “maximum stress” in the solver (role of $u_0$)
+
+In the C-grid momentum solve, the lateral-drag contribution is implemented using a speed scale:
+
+$$
+c = |\mathbf{u}| + u_0,
+\qquad
+C_l = \frac{K_u}{c},
+\qquad
+\boldsymbol{\tau}_{\mathrm{coast}} \sim -\,C_l\,\mathbf{u}.
+$$
+
+This implies a stress magnitude scaling like:
+
+$$
+|\boldsymbol{\tau}_{\mathrm{coast}}| \sim \frac{K_u\,|\mathbf{u}|}{|\mathbf{u}|+u_0}.
+$$
+
+So:
+- for $|\mathbf{u}|\gg u_0$, the stress **asymptotes** to $|\boldsymbol{\tau}_{\mathrm{coast}}|\to K_u$ (i.e., $K_u$ behaves like a *maximum stress scale*);
+- for $|\mathbf{u}|\ll u_0$, the stress becomes small and approximately linear in speed, $|\boldsymbol{\tau}_{\mathrm{coast}}|\approx K_u\,|\mathbf{u}|/u_0$.
+
+This is one reason it is meaningful to treat $\tau^{\ast}$ as a “target peak stress” when using this "tuning rule"
+
+$$
+C_s \approx \frac{\tau^{\ast}}{mF_2}.
+$$
 
 ---
 
 ## 8. Resolution dependence and tuning behaviour: why $C_s$ can vary by 10–1000×
 
-### 8.0 What we observe in AFIM (1993 example)
+### 8.0 What we observed in AFIM (1993 example)
 
-In the AFIM CICE6 Antarctic configuration, increasing the coastal-drag coefficient $C_s$ produces a **strong, monotonic increase in pan-Antarctic fast-ice area (FIA)**, while leaving **pan-Antarctic sea-ice area (SIA) essentially unchanged** over the same year. In other words, $C_s$ primarily controls the *partitioning* of coastal ice into “fast” versus “mobile” regimes (through the momentum balance), rather than materially altering the basin-scale thermodynamic ice edge that dominates SIA.
+In the AFIM CICE6 Antarctic configuration, increasing the lateral-drag coefficient $C_s$ produces a **strong**, increase in pan-Antarctic fast-ice area (FIA), while leaving pan-Antarctic sea-ice area (SIA) essentially unchanged over the same year. In other words, $C_s$ primarily controls the *partitioning* of coastal ice into “immobile” versus “mobile” regimes (through the momentum balance), rather than materially altering the basin-scale thermodynamic ice edge that dominates SIA.
 
 At the same time, fast-ice thickness (FIT) and mean sea-ice thickness (SIT) can exhibit a measurable response to $C_s$:
 - **FIT** responds because changing $C_s$ changes (i) the extent of the fast-ice mask and (ii) the mechanical redistribution within the coastal zone; a larger fast-ice mask can also lower the *area-mean* FIT if it expands into thinner, newly-classified regions.
-- **SIT** is typically much less sensitive in these tests, consistent with SIA invariance and the fact that most of the pack-ice thermodynamic budget is not directly targeted by coastal drag.
+- **SIT** is typically much less sensitive in these tests, consistent with SIA invariance and the fact that most of the pack-ice thermodynamic budget is not directly targeted by lateral drag.
 
-### 8.1 Why FIA is sensitive to $C_s$ but SIA is not (first-order explanation)
+### 8.1 Some thoughts on why FIA is sensitive to $C_s$ but SIA is not
 
 Coastal drag enters the momentum equation as an additional sink proportional to velocity (implemented as a stress term that is strongest where the form factor $F_2$ is non-zero). This tends to:
 1) reduce coastal ice speeds and shear along the land/ice boundary,  
 2) increase the persistence of near-coastal immobility, and therefore  
 3) expand the diagnosed landfast-ice mask and FIA.
 
-However, SIA is primarily set by the large-scale balance of surface fluxes and the thermodynamic ice edge over the open Southern Ocean. Because coastal drag is geographically confined to a comparatively small fraction of the domain and acts primarily on dynamics (not directly on thermodynamic freezing potential), its integrated impact on basin-scale SIA can be weak—consistent with the near-overlap of SIA curves across $C_s$ in 1993.
+However, SIA is primarily set by the large-scale balance of surface fluxes and the thermodynamic ice edge over the open Southern Ocean. Because lateral drag is geographically confined to a comparatively small fraction of the domain and acts primarily on dynamics (not directly on thermodynamic freezing potential), its integrated impact on basin-scale SIA can be weak—consistent with the near-overlap of SIA curves across $C_s$ in 1993.
 
 ### 8.2 Area-averaging a line (or narrow-strip) momentum sink
 
@@ -429,7 +535,7 @@ Nevertheless, $F_2$ cannot remove resolution dependence entirely because:
 - landfast physics depends on narrow anchored features that may not exist at coarse resolution, and
 - the effective width $w$ of the coastal shear/anchor zone is not universal (it depends on coastline geometry, grounded-iceberg pinning, and the local stress regime).
 
-### 8.4 Worked scaling examples (order-of-magnitude)
+### 8.4 Worked scaling examples (orders-of-magnitude)
 
 Assume $w = 5\,\mathrm{km}$ for an effective coastal anchor/shear zone. Then:
 
@@ -471,7 +577,7 @@ Pan-Antarctic sea-ice area (SIA) in 1993 across the same $C_s$ sweep. In this ex
 :width: 100%
 :align: center
 
-Fast-ice thickness (FIT) in 1993 across the $C_s$ sweep. Thickness responds to $C_s$, reflecting redistribution of fast ice across a changing fast-ice mask and changes in the dynamical/thermodynamic balance under stronger coastal drag.
+Fast-ice thickness (FIT) in 1993 across the $C_s$ sweep. Thickness responds to $C_s$, reflecting redistribution of fast ice across a changing fast-ice mask and changes in the dynamical/thermodynamic balance under stronger lateral drag.
 :::
 
 :::{figure} ../figures/SIT_TS_LD-Cs_1993-01-01_1993-12-31.png
@@ -676,6 +782,129 @@ A concise qualitative summary is therefore:
 #### (v) Important nuance: “standalone” still has local coupling
 
 Even in standalone mode there remains an **ice–slab-ocean coupling**: `aice` feeds back on SST via the $(1-a_{\mathrm{ice}})$ factor on atmospheric fluxes and via the ice-to-ocean terms (`fhocn`, `fswthru`). What is absent is a dynamically responding ocean circulation and associated lateral heat transport; `hmix` therefore controls **local slab heat capacity**, not ocean heat convergence.
+
+---
+
+## 10. Practical tuning for the residual velocity
+
+In AFIM’s lateral drag implementation, the residual velocity $u_0$ enters the momentum update through the speed-dependent drag coefficient used for both seabed stress and coastal drag. In the C-grid LDP code (e.g., `stepu_C`, `stepv_C`) the relevant definitions are:
+
+- Ice speed: $|\mathbf{u}| = \sqrt{u^2 + v^2}$
+- Regularised speed: $|\mathbf{u}| + u_0$
+- Coastal drag “coefficient” (in the solver denominator):
+  
+  $$
+  C_\ell = \frac{K_u}{|\mathbf{u}| + u_0}
+  $$
+
+- Coastal drag stress (vector form; schematically):
+  
+  $$
+  \boldsymbol{\tau}_{\mathrm{LDP}}
+  \propto
+  -\,C_\ell\,\mathbf{u}
+  =
+  -\,\frac{K_u}{|\mathbf{u}| + u_0}\,\mathbf{u}.
+  $$
+
+Here $K_u$ is the (precomputed) lateral-drag stress scale (your `KuE`, `KuN`) and is proportional to $C_s$ via
+
+$$
+K_u \propto F_2\,C_s\,(\text{ice mass/area factor}).
+$$
+
+### 10.1 $u_0$ physical interpretation
+
+A very useful identity is the magnitude of the LDP stress:
+
+$$
+|\boldsymbol{\tau}_{\mathrm{LDP}}|
+\propto
+K_u\,\frac{|\mathbf{u}|}{|\mathbf{u}| + u_0}.
+$$
+
+This shows that $u_0$ is a half-saturation speed:
+
+- If $|\mathbf{u}| = u_0$, then $|\boldsymbol{\tau}_{\mathrm{LDP}}|$ reaches **half** of its maximum value ($\approx K_u/2$).
+- If $|\mathbf{u}| \gg u_0$, then $|\boldsymbol{\tau}_{\mathrm{LDP}}| \to K_u$ (a capped stress magnitude).
+- If $|\mathbf{u}| \ll u_0$, then
+  
+  $$
+  |\boldsymbol{\tau}_{\mathrm{LDP}}| \approx \frac{K_u}{u_0}\,|\mathbf{u}|,
+  $$
+  
+  i.e., the scheme behaves like a **linear (Rayleigh) drag** with an effective linear damping scale proportional to $K_u/u_0$.
+
+So:
+
+- **Smaller $u_0$** ⇒ stronger damping at very small speeds (more “stickiness” as $|\mathbf{u}|\to 0$), and earlier approach to the capped-stress regime.
+- **Larger $u_0$** ⇒ weaker damping in the low-speed regime (more “slip”), requiring larger $C_s$ (and therefore $K_u$) to achieve the same fast ice constraint.
+
+### 10.2 $u_0$ can partially degenerate with $C_s$
+
+In the low-speed regime most relevant to fast ice, $|\mathbf{u}| \lesssim 5\times 10^{-3}$ m s$^{-1}$, we make a linear approximation of $\tau_{\mathrm{LDP}}$:
+
+$$
+\boldsymbol{\tau}_{\mathrm{LDP}} \propto -\left(\frac{K_u}{u_0}\right)\mathbf{u}.
+$$
+
+This can be done because $K_u \propto C_s$, the *effective* low-speed damping strength scale:
+
+$$
+\frac{K_u}{u_0} \propto \frac{C_s}{u_0}.
+$$
+
+This implies a practical tuning rule:
+
+- If one **increases** $u_0$ by a factor **$r$**, then often they'll need to **increase** $C_s$ by approximately the same factor **$r$** to maintain comparable damping of near-stationary ice.
+
+Conversely, if $u_0$ is too small, the LDP term can become overly stiff numerically (very large $C_\ell$ when $|\mathbf{u}|$ is tiny), which can suppress realistic shear and could amplify solver sensitivity.
+
+### 10.3 Practical values of $u_0$
+
+A convenient way to choose $u_0$ is to tie it to a **physically meaningful velocity floor**--the smallest velocity which is believed that the model can represent credibly near the coast.
+
+Two choices:
+
+1. **A “noise floor” / unresolved-motion proxy**
+   $u_0$ represents unresolved sub-grid motions (e.g., tides, inertial oscillations, wave-driven motion, small-scale shear) that prevent the system from ever being truly at $|\mathbf{u}|=0$.
+
+2. **A fraction of the fast ice classification threshold**  
+   Many studies use thresholds like $5\times10^{-4}$ m s$^{-1}$ for “near-stationary” ice. Setting $u_0$ on the order of that threshold makes the LDP stress transition occur right in the regime that we are concerning ourselves with.
+
+Some reference speeds correspond to ice motion per day (per grid cell):
+
+- $u_0 = 1\times10^{-5}$ m s$^{-1}$ = 0.86 m day$^{-1}$
+- $u_0 = 1\times10^{-4}$ m s$^{-1}$ ≈ 8.6 m day$^{-1}$
+- $u_0 = 5\times10^{-4}$ m s$^{-1}$ ≈ 43 m day$^{-1}$
+- $u_0 = 1\times10^{-3}$ m s$^{-1}$ ≈ 86 m day$^{-1}$
+
+#### 10.4.1 Practical tuning ranges
+
+Possibly another way to consider this (a more hueristic method) is concerning the grid scale:
+
+- **High-resolution grids (Δ ≈ 1–5 km):**  
+  $u_0 \sim 1\times10^{-6}$ to $1\times10^{-5}$ m s$^{-1}$. Rationale: the model can resolve smaller coastal velocity gradients and narrow anchor zones, so you can afford a smaller regularisation without excessive numerical stiffness.
+
+- **Mesoscale climate grids (Δ ≈ 10–25 km):**  
+  $u_0 \sim 1\times10^{-5}$ to $1\times10^{-4}$ m s$^{-1}$. Rationale: near-coastal velocities are more area-averaged and less “sharp”; a larger $u_0$ avoids over-damping and reduces stiffness, while $C_s$ is used to recover the desired fast-ice extent.
+
+- **Coarse global grids (Δ ≳ 50 km):**  
+  $u_0 \sim 1\times10^{-4}$ to $1\times10^{-3}$ m s$^{-1}$. Rationale: coastal processes are highly sub-grid; a too-small $u_0$ can make LDP act like an unrealistically strong clamp on already-diluted velocities.
+
+This is not a strict scaling law (because $F_2$ and coastline/grounded iceberg geometry also vary with resolution), but it offers some insight as to why “reasonable” $u_0$ values can differ by an order of magnitude across configurations.
+
+### 10.5 Expected qualitative model response when varying $u_0$
+
+Holding $C_s$ and $F_2$ fixed:
+
+- **Increase $u_0$ (e.g., $1\times10^{-4}\to 5\times10^{-4}$ m s$^{-1}$):**  
+  Weakens damping in the low-speed regime ($|\mathbf{u}| \ll u_0$), so fast ice is **harder** to sustain. You typically see **reduced FIA/FIP** (and often reduced FIT), unless compensated by a larger $C_s$.
+
+- **Decrease $u_0$ (e.g., $5\times10^{-4}\to 1\times10^{-4}$ m s$^{-1}$):**  
+  Strengthens damping near zero speed, making “lock-in” easier. You typically see **increased FIA/FIP** and often thicker/steadier fast ice, but at the risk of over-stabilising near-coastal ice and increasing numerical stiffness.
+
+**Why SIA can be largely insensitive:** LDP acts primarily in coastal-adjacent cells (where $F_2>0$ and the masks allow it). Total Southern Ocean sea ice area (SIA) is dominated by pack-ice thermodynamics and large-scale drift, so it is common for substantial FIA changes to occur with only minor SIA changes—consistent with current simulations/experiments on the topic.
 
 ---
 
