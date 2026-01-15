@@ -1,14 +1,12 @@
-import os, sys, json, logging, re, tempfile
-import xarray             as xr
-import pandas             as pd
-import numpy              as np
-from collections          import defaultdict
-from pathlib              import Path
-from datetime             import datetime, timedelta
-from dask.distributed     import Client, LocalCluster
-import warnings
-warnings.filterwarnings( "ignore", message="Sending large graph of size", category=UserWarning, module="distributed.client")
-sys.path.insert(0, '/home/581/da1339/AFIM/src/AFIM/src')
+from __future__ import annotations
+import os, sys, logging
+import xarray as xr
+import pandas as pd
+import numpy  as np
+from pathlib  import Path
+_dev_path = "/home/581/da1339/AFIM/src/AFIM/src"
+if os.path.isdir(_dev_path) and _dev_path not in sys.path:
+    sys.path.insert(0, _dev_path)
 from sea_ice_classification import SeaIceClassification
 from sea_ice_metrics        import SeaIceMetrics
 from sea_ice_plotter        import SeaIcePlotter
@@ -24,24 +22,40 @@ __all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
 
 class SeaIceToolboxManager:
     """
-    Lightweight factory for a shared Dask client and preconfigured `SeaIceToolbox`.
+    Factory for creating `SeaIceToolbox` instances backed by a shared Dask client.
+
+    `SeaIceToolboxManager` maintains a **class-level** Dask client so that multiple
+    toolboxes (e.g., multiple simulations or multiple analyses) reuse a single
+    scheduler and worker pool. This is particularly useful on HPC login/compute nodes
+    where repeatedly creating local clusters is slow and can fragment resources.
 
     Parameters
     ----------
-    P_log : str | Path
-        Path to a log file to attach to the toolbox logger.
+    P_log : str or pathlib.Path
+        Path to a log file. The created toolboxes attach a file handler to this path.
+    n_workers : int, default 4
+        Number of Dask workers for the shared LocalCluster.
+    n_threads : int, default 1
+        Threads per worker.
+    mem_lim : str, default "16GB"
+        Worker memory limit passed to Dask (e.g., "8GB", "16GB").
+    process : bool, default True
+        Whether to use separate worker processes (True) or threads-only workers (False).
+    D_dask : str, optional
+        Local directory for Dask worker spill and temporary files. If None, uses
+        `DASK_TEMPORARY_DIRECTORY` or the system temp directory.
 
     Notes
     -----
-    - `get_shared_dask_client()` creates a class-level client (cached) so multiple
-      toolboxes reuse the same cluster.
-    - `get_toolbox(sim_name, **kwargs)` returns a `SeaIceToolbox` bound to the
-      shared client and your log file.
+    - The shared client is cached on the class (`SeaIceToolboxManager._shared_client`).
+    - `shutdown()` closes the shared client and attempts to close file handlers.
+    - `get_toolbox(sim_name, **kwargs)` returns a preconfigured `SeaIceToolbox`
+    attached to the shared client and log file.
 
     See Also
     --------
     SeaIceToolbox
-        The main analysis class composed from SeaIce* modules.
+        Unified AFIM sea-ice analysis class composed of multiple SeaIce* mixins.
     """
     _shared_client = None
 
@@ -51,6 +65,37 @@ class SeaIceToolboxManager:
                  mem_lim   : str  = "16GB",
                  process   : bool = True,
                  D_dask    : str  = None):
+        """
+        Create (or reuse) a shared Dask client for AFIM sea-ice analysis.
+
+        If a shared client has not yet been created, this initialiser creates a
+        `dask.distributed.LocalCluster` and a corresponding `Client`, storing it at the
+        class level so that subsequent instances reuse the same client.
+
+        Parameters
+        ----------
+        P_log : str or pathlib.Path
+            Log file path to pass through to created `SeaIceToolbox` instances.
+        n_workers : int, default 4
+            Number of Dask workers.
+        n_threads : int, default 1
+            Threads per worker.
+        mem_lim : str, default "16GB"
+            Worker memory limit (Dask "memory_limit").
+        process : bool, default True
+            If True, use multiple processes. If False, use threads-only workers.
+        D_dask : str, optional
+            Local directory for worker temporary files and spill. If None, uses
+            `DASK_TEMPORARY_DIRECTORY` or the system temp directory.
+
+        Notes
+        -----
+        - This method does not return a `Client`; access it via
+        `SeaIceToolboxManager._shared_client`.
+        - The shared client is created once per Python process.
+        """
+        import tempfile
+        from dask.distributed  import Client, LocalCluster
         D_dask     = D_dask if D_dask is not None else os.environ.get("DASK_TEMPORARY_DIRECTORY", tempfile.gettempdir())
         self.P_log = P_log
         if SeaIceToolboxManager._shared_client is None:
@@ -63,6 +108,20 @@ class SeaIceToolboxManager:
             SeaIceToolboxManager._shared_client = Client(LocCls)
 
     def shutdown(self):
+        """
+        Shut down the shared Dask client and close file log handlers.
+
+        Closes the class-level Dask client if it exists and resets the cached reference.
+        Also attempts to close any `logging.FileHandler` instances attached to the
+        `SeaIceToolbox` logger.
+
+        Notes
+        -----
+        - Intended for interactive sessions to avoid orphaned local clusters.
+        - If multiple loggers/handlers are in use, only file handlers on the named
+        logger are closed.
+        """
+        import logging
         if SeaIceToolboxManager._shared_client is not None:
             SeaIceToolboxManager._shared_client.close()
             print("Dask client shut down.")
@@ -74,9 +133,27 @@ class SeaIceToolboxManager:
                 print(f"Closed log file handler: {getattr(h, 'baseFilename', h)}")
 
     def get_toolbox(self, sim_name, **kwargs):
-        '''
-        This requires a simulation name and can pass any of the accepted agruments that SeaIceToolbox takes
-        '''
+        """
+        Create a `SeaIceToolbox` for a given simulation using the shared Dask client.
+
+        Parameters
+        ----------
+        sim_name : str
+            Simulation name (must correspond to a configured simulation directory).
+        **kwargs
+            Additional keyword arguments forwarded to `SeaIceToolbox(...)`. Use this to
+            override date ranges, thresholds, plotting options, etc.
+
+        Returns
+        -------
+        SeaIceToolbox
+            Toolbox instance bound to the shared Dask client and configured log file.
+
+        Raises
+        ------
+        ValueError
+            If the shared Dask client has not been created successfully.
+        """
         return SeaIceToolbox(sim_name = sim_name,
                              client   = SeaIceToolboxManager._shared_client,  # explicit
                              P_log    = self.P_log, **kwargs)
@@ -86,62 +163,110 @@ class SeaIceToolboxManager:
 class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, 
                     SeaIceIcebergs, SeaIceObservations, SeaIceACCESS, SeaIceGridWork, SeaIceRegridder):
     """
-    Unified toolbox for processing and analysing Antarctic sea ice from CICE simulations
-    as part of the Antarctic Fast Ice Model (AFIM) workflow.
+    Unified AFIM toolbox for processing and analysing Antarctic sea ice from CICE.
 
-    Composition
-    -----------
-    - SeaIceClassification : fast/pack ice masking and simulation I/O
-    - SeaIceMetrics        : metrics and statistics
-    - SeaIcePlotter        : PyGMT maps and time series
-    - SeaIceIcebergs       : grounded iceberg thinning/masking
-    - SeaIceObservations   : Fraser et al. (2020) & NSIDC integration
-    - SeaIceACCESS         : ACCESS-OM sea-ice helpers
-    - SeaIceGridWork       : 
-    - SeaIceRegridder      : B→T regridding helpers
+    `SeaIceToolbox` composes several functional mixins into a single interface for
+    reading CICE output, classifying fast/pack ice, computing metrics, regridding,
+    working with grounded-iceberg masks, and producing plots.
 
-    Key external data
-    -----------------
-    - Fraser et al. (2020) fast-ice climatology (ESSD)
-    - NSIDC daily sea-ice concentration
-    - AFIM JSON config (paths, parameters)
+    Inheritance / Composition
+    -------------------------
+    SeaIceToolbox inherits from the following modules:
+
+    - SeaIceClassification : classification masks and simulation I/O helpers
+    - SeaIceMetrics        : time-series and spatial metrics, skill statistics
+    - SeaIcePlotter        : PyGMT maps and time series plotting utilities
+    - SeaIceIcebergs       : grounded-iceberg thinning/masking and GI datasets
+    - SeaIceObservations   : Fraser et al. (2020) and NSIDC observational utilities
+    - SeaIceACCESS         : ACCESS-OM related helpers (where applicable)
+    - SeaIceGridWork       : grid geometry, landmask application, hemisphere slicing
+    - SeaIceRegridder      : B-grid → T-grid and swath/gridded regridding utilities
+
+    Configuration
+    -------------
+    The toolbox is configured primarily by an AFIM JSON file. The constructor loads
+    that JSON, sets commonly used directories (simulation output, zarr, metrics,
+    figures), defines hemisphere behaviour, and stores thresholds used throughout
+    the pipeline.
 
     Parameters
     ----------
-    P_json : str | Path, optional
-        Path to AFIM JSON configuration file (defaults to project root if None).
+    P_json : str or pathlib.Path, optional
+        Path to the AFIM configuration JSON. If None, a project default path is used.
+    P_CICE_grid : str or pathlib.Path, optional
+        Override path to the CICE grid file; otherwise uses config entry `CICE_dict['P_G']`.
     sim_name : str
-        Simulation name (must match an entry under `AFIM_out` in the config).
+        Simulation name (must exist under the configured AFIM output root).
     dt0_str, dtN_str : str, optional
-        Analysis date bounds in `YYYY-MM-DD`.
+        Inclusive analysis window bounds in ``YYYY-MM-DD``.
+    list_of_BorC2T : list[str], optional
+        Speed/vector products to use (e.g., ["Tb"], ["Ta","Tx"], or ["B"]).
+    iceh_frequency : {"hourly","daily","monthly","yearly"}, optional
+        Which CICE history cadence to use for iceh inputs.
     ice_concentration_threshold : float, optional
-        Concentration cutoff for fast ice (default 0.15).
+        Concentration threshold used for masking / metrics (default from config; often 0.15).
     ice_speed_threshold : float, optional
-        Speed threshold (m/s) below which ice is considered fast (default 5e-4).
-    ice_vector_type : str | list[str], optional
-        Which speed field(s) to use: `'B'`, `'Ta'`, `'Tb'` `'Tx'`, or `'BT'`.
-    ice_type : str | list[str], optional
-        Classification (“FI”, “PI”, etc.), combined later into `self.ice_class`.
+        Speed threshold (m/s) below which ice is treated as “fast” (default from config).
+    ice_type : str or list[str], optional
+        Ice classification type(s) to process (e.g., "FI", "PI", "SI").
     mean_period : int, optional
-        N-day rolling window for speed smoothing (default 15).
+        Rolling mean window length (days) used in some classification products.
     bin_win_days, bin_min_days : int, optional
-        Binary-days window size and minimum days (defaults per config).
-    hemisphere : {'south','north'}, optional
-        Controls hemisphere slicing throughout the pipeline.
-    P_log : Path, optional
-        Log file to attach to the toolbox logger.
+        Binary-days window length and minimum count used for persistence classification.
+    extra_cice_vars : list[str] or bool, optional
+        Additional variables to include when loading/processing beyond `cice_vars_reqd`.
+    hemisphere : str, optional
+        Hemisphere selector. Common aliases are accepted (e.g., "south", "SH", "nh").
+    P_log : str or pathlib.Path, optional
+        Log file path to attach a `FileHandler` to.
+    log_level : int or str, optional
+        Python logging level for the toolbox logger.
+    dask_memory_limit : str, optional
+        Memory limit (informational here unless you create the client externally).
+    overwrite_zarr : bool, optional
+        If True, overwrite Zarr groups when writing classification/metrics products.
+    overwrite_saved_figs : bool, optional
+        If True, overwrite existing figure files.
     save_new_figs, show_figs : bool, optional
-        Figure output/interactive toggles.
+        Figure saving and interactive display toggles.
+    delete_original_cice_iceh_nc : bool, optional
+        If True, delete original NetCDF inputs after conversion to monthly Zarr (where implemented).
     client : dask.distributed.Client, optional
-        Pre-existing Dask client. If omitted, use `SeaIceToolboxManager`.
+        Dask client to use. In this implementation, a client must already exist and be passed in.
+    force_recompile_ice_in : bool, default False
+        Force regeneration of derived simulation metadata (e.g., parsing/rebuilding ice_in JSON).
+    **kwargs
+        Additional keyword arguments are attached to the instance so mixins can
+        access specialised tunables without changing the constructor signature.
+
+    Attributes Set (high-level)
+    ---------------------------
+    - Configuration dicts: `self.CICE_dict`, `self.GI_dict`, `self.NSIDC_dict`, etc.
+    - Directory paths: `self.D_sim`, `self.D_zarr`, `self.D_metrics`, etc.
+    - Hemisphere metadata: `self.hemisphere_dict`, `self.hemisphere`
+    - Thresholds/settings: `self.ispd_thresh`, `self.icon_thresh`, `self.mean_period`, etc.
+    - State flags: `self.grid_loaded`, `self.reG_weights_defined`, etc.
 
     Notes
     -----
-    - The constructor normalises configuration, paths, thresholds, and date
-      bounds, then prints a short summary to the logger.
+    - The constructor performs substantial configuration and path normalisation and
+    therefore has side effects (file IO, logger configuration).
+    - Grids and regridders are not loaded/built until needed (`load_cice_grid`,
+    `define_reG_weights`, etc.).
     """
     def summary(self):
-        """Print a summary of key simulation setup and configuration."""
+        """
+        Log a concise summary of key configuration and runtime settings.
+
+        This is primarily a convenience method for sanity checking during interactive
+        work and batch runs. It writes configuration metadata to `self.logger`.
+
+        Notes
+        -----
+        - No values are returned.
+        - Assumes `self.logger` has already been configured and that core attributes
+        (sim_name, date bounds, thresholds, toggles) are present.
+        """
         self.logger.info("--- SeaIceToolbox Summary ---")
         self.logger.info(f"Simulation Name     : {self.sim_name}")
         self.logger.info(f"Analysis Start Date : {self.dt0_str}")
@@ -158,30 +283,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger.info(f"Show Figures        : {self.show_fig}")
         self.logger.info(f"Hemisphere          : {self.hemisphere}")
         self.logger.info("------------------------------")
-
-    def help(self):
-        """Print an overview of available methods grouped by module."""
-        print("Available methods by submodule:")
-        print("- SeaIceModels:")
-        print("    • process_daily_cice")
-        print("    • process_rolling_cice")
-        print("    • compute_fast_ice_outputs")
-        print("    • compute_pack_ice_outputs")
-        print("    • sea_ice_metrics_wrapper")
-        print("- SeaIcePlotter:")
-        print("    • plot_ice_area")
-        print("    • plot_timeseries_compare")
-        print("    • plot_map")
-        print("    • pygmt_map_plot_one_var")
-        print("- SeaIceIcebergs:")
-        print("    • load_GI_lon_lats")
-        print("    • thin_grounded_icebergs")
-        print("    • modify_landmask")
-        print("- SeaIceObservations:")
-        print("    • process_nsidc_obs")
-        print("    • filter_AF2020_FI_by_date")
-        print("    • regrid_AF2020_to_model")
-        print("------------------------------")
 
     def __init__(self,
                  P_json                      = None,# the configuration file for which there are many dependencies
@@ -230,72 +331,86 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                  force_recompile_ice_in      = False,# reinitialise ice_in JSON file; see help self.parse_simulation_metadata()
                  **kwargs):
         """
-        Construct the unified AFIM sea-ice toolbox for a given simulation/config.
+        Initialise the unified AFIM sea-ice toolbox for a given simulation/config.
 
-        The constructor normalises configuration from a JSON file (`P_json`) and
-        simulation metadata, sets directory paths, thresholds, and plotting/Dask
-        options, and wires up mixins (classification, metrics, plotting, icebergs,
-        observations). It also initialises hemisphere slicing and output naming.
+        The constructor loads the AFIM JSON configuration file, normalises user-provided
+        overrides (simulation name, date bounds, thresholds, hemisphere), defines key
+        directories, parses simulation metadata, and initialises the composed mixins.
 
         Parameters
         ----------
         P_json : str or pathlib.Path, optional
-            Path to the AFIM configuration JSON. If None, uses project defaults.
+            Path to the AFIM configuration JSON. If None, uses a project default path.
+        P_CICE_grid : str or pathlib.Path, optional
+            Optional override for the CICE grid file path used by `load_cice_grid`.
         sim_name : str, optional
-            Simulation name (must match a key under `AFIM_out` in the config).
+            Simulation name used to resolve directories under AFIM output root.
         dt0_str, dtN_str : str, optional
-            Inclusive analysis window in ``YYYY-MM-DD``. Defaults are pulled from
-            the config if not provided.
+            Inclusive analysis window bounds in ``YYYY-MM-DD``.
         list_of_BorC2T : list[str], optional
-            Which speed components to average into a composite (`"B"`, `"Ta"`, `"Tb"`, `"Tx"`).
-            Defaults to ``['Ta','Tx']`` via config.
+            Speed/vector product identifiers (e.g., ["Tb"], ["Ta","Tx"], ["B"]).
         iceh_frequency : {"hourly","daily","monthly","yearly"}, optional
-            Source history cadence for CICE iceh inputs. Default from config is ``"daily"``.
+            CICE history cadence to use for loading inputs and/or locating Zarr stores.
         ice_concentration_threshold : float, optional
-            Sea-ice concentration threshold used for fast-ice masking (default 0.15).
+            Concentration threshold used in masking/metrics (often 0.15).
         ice_speed_threshold : float, optional
-            Speed threshold (m/s) below which ice is treated as fast-ice. Defaults to
-            a high/“strict” threshold from config (e.g., ``5e-4``).
+            Speed threshold (m/s) used to classify fast ice (e.g., 5e-4).
         ice_type : str or list[str], optional
-            Ice classification type(s) to compute (e.g., ``"FI"`` fast-ice). Defaults from config.
+            Ice classification product(s) to work with ("FI", "PI", "SI", etc.).
         mean_period : int, optional
-            N-day rolling window length for speed smoothing (default 15 via config).
+            Rolling mean window length (days) used for smoothed classification products.
         bin_win_days, bin_min_days : int, optional
-            Binary-days window size and required number of days (defaults from config).
+            Binary-days window length and minimum count for persistence-based masks.
         extra_cice_vars : list[str] or bool, optional
-            Additional CICE variables to include in outputs. If True, uses the
-            config’s `cice_vars_ext`; if a list, uses that list; if None, only the
-            required minimal set is used.
-        hemisphere : {'south','north','sh','nh', ...}, optional
-            Hemisphere of interest. Various synonyms are accepted; default from config.
+            Additional CICE variables to include beyond `cice_vars_reqd`. If True, use
+            config `cice_vars_ext`. If a list, extend required list with that list.
+        hemisphere : str, optional
+            Hemisphere selector (accepts common aliases).
         P_log : str or pathlib.Path, optional
-            Log file to attach a file handler to. If omitted, logging goes to the
-            preconfigured handlers only.
+            Log file path to attach to the toolbox logger.
         log_level : int or str, optional
-            Python logging level for this toolbox’s logger (e.g., ``logging.INFO``).
-        dask_memory_limit : str or int, optional
-            Memory limit to pass to a created Dask client (e.g., ``"16GB"``).
+            Logging verbosity level.
+        dask_memory_limit : str, optional
+            Informational; the client is expected to be created externally.
+        overwrite_zarr : bool, optional
+            Overwrite Zarr groups when writing outputs.
         overwrite_saved_figs : bool, optional
-            Whether to overwrite previously saved figures.
+            Overwrite existing figure files.
         save_new_figs, show_figs : bool, optional
             Figure saving and interactive display toggles.
         delete_original_cice_iceh_nc : bool, optional
-            If True, delete original daily iceh NetCDFs after writing monthly Zarr.
+            Delete original NetCDF after conversion to Zarr (where implemented).
         client : dask.distributed.Client, optional
-            Reuse an existing Dask client; otherwise one may be obtained externally.
+            Dask client for computation. This implementation requires an existing client.
         force_recompile_ice_in : bool, default False
-            Force regeneration/reparse of the simulation’s `ice_in` JSON metadata.
+            Force regeneration/reparse of simulation metadata.
         **kwargs
-            Extra fields are attached verbatim to `self`, allowing downstream mixins
-            to see additional tuning parameters.
+            Additional keyword arguments are attached to the instance and available to mixins.
+
+        Raises
+        ------
+        FileNotFoundError
+            If `P_json` is provided but cannot be opened.
+        ValueError
+            If a Dask client is not provided (and no manager-created client is present),
+            or if hemisphere is invalid.
+        KeyError
+            If required keys are missing from the JSON configuration.
+
+        Side Effects
+        ------------
+        - Reads JSON configuration and may open/create the log file path.
+        - Configures `self.logger` (stream handler + optional file handler).
+        - Defines many path attributes and state flags.
+        - Initialises mixin classes.
 
         Notes
         -----
-        - Directory attributes like `self.D_sim`, `self.D_iceh`, `self.D_zarr`,
-        and metrics directories are derived from the config and `sim_name`.
-        - `self.define_hemisphere()` is called during initialisation.
-        - Mixins are initialised at the end to ensure shared attributes are in place.
+        - Heavyweight initialisation is intentional; it ensures all mixins share a
+        consistent configuration namespace.
+        - Grids and regridders are not loaded until requested by other methods.
         """
+        import json
         # essentially high-level administrative work:
         self.sim_name = sim_name if sim_name is not None else 'test'
         if P_json is None:
@@ -421,6 +536,26 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.summary()
 
     def setup_logging(self, logfile=None, log_level=logging.INFO):
+        """
+        Configure the toolbox logger with a stream handler and optional file handler.
+
+        This method creates (or reuses) a named logger, sets the logging level, and
+        ensures that (a) a console StreamHandler exists and (b) exactly one FileHandler
+        is attached when `logfile` is provided.
+
+        Parameters
+        ----------
+        logfile : str or pathlib.Path, optional
+            File to write log messages to. If None, only console logging is configured.
+        log_level : int, default logging.INFO
+            Logging level for the logger and its handlers.
+
+        Notes
+        -----
+        - Existing FileHandlers are removed and closed before attaching a new one.
+        - `self.logger.propagate` is set False to avoid duplicate logs when parent
+        loggers are configured elsewhere.
+        """
         logger_name = "sea_ice_classification"
         self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(log_level)
@@ -469,6 +604,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dict
             Dictionary of extracted parameters including inferred grounded iceberg info.
         """
+        import json, re
         sim_name   = Path(self.D_sim).name
         P_diag     = Path(self.D_sim, "ice_diag.d")
         P_json     = Path(self.D_sim, f"ice_in_AFIM_subset_{sim_name}.json")
@@ -538,23 +674,36 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
     def define_hemisphere(self, hemisphere):
         """
-        Initialise the hemisphere configuration for analysis.
+        Initialise hemisphere configuration used across grid slicing and plotting.
 
-        Maps common inputs (e.g. 'north', 'NH', 'sh') to the internal
-        `self.hemisphere_dict` used for slicing, and converts the configured
-        `nj_slice` tuple to a Python `slice`.
+        Accepts common hemisphere aliases (e.g., "south", "SH", "nh") and maps them to
+        the internal `self.hemisphere_dict` configuration (slicing indices and labels).
+        Also converts `nj_slice` from a (start, stop) tuple into a Python `slice`.
+
+        Parameters
+        ----------
+        hemisphere : str
+            Hemisphere selector. Accepted aliases include:
+            - North: "north", "northern", "nh", "n"
+            - South: "south", "southern", "sh", "s"
 
         Sets
         ----
-        self.hemisphere_dict : dict
-            Slicing and naming metadata (includes `nj_slice` and abbreviation).
-        self.hemisphere : str
-            Canonical lowercase hemisphere name.
+        hemisphere_dict : dict
+            Hemisphere metadata dictionary loaded from the JSON config, with `nj_slice`
+            stored as a Python `slice`.
+        hemisphere : str
+            Canonical lowercase hemisphere string used internally.
 
         Raises
         ------
         ValueError
-            If the input does not match any accepted names.
+            If `hemisphere` does not match any accepted alias.
+
+        Notes
+        -----
+        Downstream methods rely on `self.hemisphere_dict['nj_slice']` for slicing and
+        `self.hemisphere_dict['abbreviation']` for path construction.
         """
         key = hemisphere.lower()
         if key in ['north', 'northern', 'nh', 'n', 'no']:
@@ -647,6 +796,28 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             raise ValueError(f"Unsupported input type: {type(var)}. Must be dict, Dataset, or DataArray.")
 
     def define_iceh_dirs(self, D_sim=None, iceh_freq=None):
+        """
+        Define the NetCDF and Zarr directories for CICE ice history ("iceh") inputs.
+
+        Parameters
+        ----------
+        D_sim : str or pathlib.Path, optional
+            Base simulation directory. Defaults to `self.D_sim`.
+        iceh_freq : str, optional
+            Ice history cadence (e.g., "daily", "monthly"). Defaults to `self.iceh_freq`.
+
+        Sets
+        ----
+        D_iceh_netcdf : pathlib.Path
+            Directory containing NetCDF ice history files.
+        D_iceh_zarr : pathlib.Path
+            Zarr store path for ice history (e.g., ".../zarr/iceh_daily.zarr").
+
+        Notes
+        -----
+        This method only defines paths; it does not create directories or validate
+        existence.
+        """
         D_sim              = D_sim     or self.D_sim
         iceh_freq          = iceh_freq or self.iceh_freq
         self.D_iceh_netcdf = Path(D_sim, "history", iceh_freq)
@@ -777,6 +948,48 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         if not isinstance(x, xr.DataArray):
             raise TypeError("A must be an xarray.DataArray or Dataset containing an area variable.")
         return x
+    
+    def _get_first(self, ds: xr.Dataset, names) -> Optional[xr.DataArray]:
+        """
+        Return the first matching variable or coordinate from a dataset.
+
+        Parameters
+        ----------
+        ds : xarray.Dataset
+            Dataset to search.
+        names : iterable of str
+            Candidate names to check in order.
+
+        Returns
+        -------
+        xarray.DataArray or None
+            The first match found in ds.variables or ds.coords, else None.
+        """
+        for n in names:
+            if n in ds.variables:
+                return ds[n]
+            if n in ds.coords:
+                return ds.coords[n]
+        return None
+
+    def _norm_list(self, x: Optional[Iterable[str]]) -> Optional[List[str]]:
+        """
+        Normalize an optional iterable of strings into a clean list.
+
+        Parameters
+        ----------
+        x : iterable of str or None
+            Input strings (e.g., sensors, levels, versions). Elements that are None,
+            empty, or whitespace-only are removed.
+
+        Returns
+        -------
+        list[str] or None
+            Cleaned list of non-empty strings, or None if the result is empty.
+        """
+        if x is None: return None
+        out = [str(s).strip() for s in x if s and str(s).strip()]
+        return out or None
 
     def _to_float_scalar(self, x):
         """
@@ -838,6 +1051,34 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         
     def define_fast_ice_class_name(self, BorC2T_type = None , fast_ice_class_method = 'binary-days'):
         """
+        Define the canonical fast-ice classification product name.
+
+        This method standardises the naming of fast-ice classification products based
+        on the velocity product(s) used (e.g., "Tb") and the classification method
+        (e.g., "binary-days"). The resulting name is stored in `self.FI_class`.
+
+        Parameters
+        ----------
+        BorC2T_type : str or list[str], optional
+            Velocity product identifier(s). Defaults to `self.BorC2T_type`.
+        fast_ice_class_method : str, default "binary-days"
+            Classification method key used to select a suffix from `self.FI_class_types`.
+
+        Sets
+        ----
+        FI_class : str
+            Name string such as "FI_Tb_BIN" (exact suffix depends on config mapping).
+
+        Raises
+        ------
+        KeyError
+            If `fast_ice_class_method` is not present in `self.FI_class_types`.
+        ValueError
+            If `BorC2T_type` fails validation via `_check_BorC2T_type`.
+
+        Notes
+        -----
+        The class name is used in output paths and Zarr store naming.
         """
         BorC2T_type = BorC2T_type or self.BorC2T_type
         self._check_BorC2T_type(BorC2T_type)
@@ -926,6 +1167,94 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         mN_str = (pd.to_datetime(m0_str) + pd.offsets.MonthEnd()).strftime("%Y-%m-%d")
         return m0_str, mN_str
 
+    def _days_in_month(self, y: int, m: int) -> int:
+        """
+        Return the number of days in a given month of a given year (Gregorian calendar).
+
+        Parameters
+        ----------
+        y : int
+            Year (e.g., 2002).
+        m : int
+            Month number in [1..12].
+
+        Returns
+        -------
+        int
+            Number of days in the month, accounting for leap years.
+        """
+        if m in (1,3,5,7,8,10,12): return 31
+        if m in (4,6,9,11): return 30
+        return 29 if ((y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)) else 28
+
+    def _month_overlap(self, y: int, m: int, t0: pd.Timestamp, t1: pd.Timestamp) -> bool:
+        """
+        Check whether a given (year, month) overlaps an inclusive UTC time window.
+
+        Parameters
+        ----------
+        y, m : int
+            Year and month to test.
+        t0, t1 : pandas.Timestamp
+            Start and end timestamps of the desired window (inclusive), interpreted in UTC.
+
+        Returns
+        -------
+        bool
+            True if the month interval intersects [t0, t1], otherwise False.
+        """
+        first = pd.Timestamp(year=y, month=m, day=1, tz="UTC")
+        last  = pd.Timestamp(year=y, month=m, day=self._days_in_month(y,m), tz="UTC")
+        return not (last < t0 or first > t1)
+
+    def _parse_yyyymmdd(self, name: str) -> Optional[pd.Timestamp]:
+        """
+        Parse a YYYYMMDD date token from a filename-like string.
+
+        This looks for an 8-digit date token in the range 2000–2099 and returns it as a
+        UTC pandas.Timestamp.
+
+        Parameters
+        ----------
+        name : str
+            Filename (or other string) to search.
+
+        Returns
+        -------
+        pandas.Timestamp or None
+            Parsed UTC timestamp for the detected date, or None if no valid token exists.
+
+        Notes
+        -----
+        - The regex is constrained to 20xx years by design.
+        - Invalid day/month combinations return None.
+        """
+        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)", name)
+        if not m: return None
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return pd.Timestamp(year=y, month=mo, day=d, tz="UTC")
+        except Exception:
+            return None
+
+    def _parse_yyyymm(self, name: str) -> Optional[Tuple[int,int]]:
+        """
+        Parse a YYYYMM month token from a filename-like string.
+
+        Parameters
+        ----------
+        name : str
+            Filename (or other string) to search.
+
+        Returns
+        -------
+        tuple[int, int] or None
+            (year, month) if a YYYYMM token is found (2000–2099), else None.
+        """
+        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(?!\d)", name)
+        if not m: return None
+        return int(m.group(1)), int(m.group(2))
+
     def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
         """
         Translate the ice speed threshold into intuitive grid-scale metrics.
@@ -982,32 +1311,138 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 "days_per_grid_cell"          : days_per_GC}
 
     def get_dir_size(self, path):
+        """
+        Compute and log the total on-disk size of a directory tree.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Directory to scan recursively.
+
+        Notes
+        -----
+        - Size is computed from file sizes returned by `Path.rglob` and may be slow on
+        large filesystems.
+        - The result is logged in GiB (1024**3).
+        """
         size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
         self.logger.info(f"Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
 
     def create_monthly_strings(self, dt0_str=None, dtN_str=None):
+        """
+        Return sorted unique YYYY-MM strings between two dates (inclusive).
+
+        Parameters
+        ----------
+        dt0_str, dtN_str : str, optional
+            Start/end dates in ``YYYY-MM-DD``. Defaults to `self.dt0_str` and `self.dtN_str`.
+
+        Returns
+        -------
+        list[str]
+            Sorted list of unique month strings, e.g., ["1993-01", "1993-02", ...].
+
+        Notes
+        -----
+        Uses a daily pandas date range and then de-duplicates by month.
+        """
         dt0_str = dt0_str if dt0_str is not None else self.dt0_str
         dtN_str = dtN_str if dtN_str is not None else self.dtN_str
         dts     = pd.date_range(dt0_str, dtN_str, freq="D")
         return sorted(set(dt.strftime("%Y-%m") for dt in dts))
 
     def create_empty_valid_DS_dictionary(self, valid_zarr_DS_list=None):
+        """
+        Create a nested dictionary template for collecting datasets by category.
+
+        Parameters
+        ----------
+        valid_zarr_DS_list : list[str], optional
+            List of dataset keys to initialise per outer key. Defaults to `self.valid_ice_types`.
+
+        Returns
+        -------
+        collections.defaultdict
+            A defaultdict where each new outer key maps to a dict of empty lists:
+            { <outer_key>: {<ds_key_1>: [], <ds_key_2>: [], ...} }.
+
+        Notes
+        -----
+        This is a lightweight utility for accumulating per-year/per-month objects before
+        concatenation.
+        """
+        from collections import defaultdict
         valid_DS_list = valid_zarr_DS_list if valid_zarr_DS_list is not None else self.valid_ice_types
         return defaultdict(lambda: {k: [] for k in valid_DS_list})
 
     def count_zarr_files(self, path):
+        """
+        Count and log the number of files under a directory tree (e.g., a Zarr store).
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Directory to count files under.
+
+        Notes
+        -----
+        This counts filesystem entries, not Zarr logical arrays. It is useful for quick
+        sanity checks and estimating metadata overhead.
+        """
         total_files = sum(len(files) for _, _, files in os.walk(path))
         self.logger.info(f"{path} contains {total_files} files")
 
     def radians_to_degrees(self, da):
+        """
+        Convert radians to degrees.
+
+        Parameters
+        ----------
+        da : array-like
+            Values in radians (NumPy array, xarray DataArray, or scalar).
+
+        Returns
+        -------
+        same type as `da`
+            Values converted to degrees.
+        """
         return (da * 180) / np.pi
 
     def get_static_grid(self, var):
+        """
+        Return a static (time-independent) slice of a grid-like DataArray.
+
+        If the input has a "time" dimension, returns `isel(time=0)`, otherwise returns
+        the object unchanged.
+
+        Parameters
+        ----------
+        var : xarray.DataArray
+            DataArray that may or may not have a "time" dimension.
+
+        Returns
+        -------
+        xarray.DataArray
+            Time-sliced or original DataArray.
+        """
         if "time" in var.dims:
             return var.isel(time=0)
         return var
 
     def dict_to_ds(self, data_dict):
+        """
+        Convert a dictionary of DataArrays into an xarray.Dataset.
+
+        Parameters
+        ----------
+        data_dict : dict
+            Mapping of variable name -> xarray.DataArray (or array-like compatible).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with keys from `data_dict` as variables.
+        """
         return xr.Dataset({k: v for k, v in data_dict.items()})
 
     #-------------------------------------------------------------------------------------------
@@ -1026,6 +1461,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
     #-------------------------------------------------------------------------------------------
     @staticmethod
     def get_month_range(year_month):
+        from datetime import datetime, timedelta
         dt0 = datetime.strptime(year_month + "-01", "%Y-%m-%d")
         dtN = (dt0.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         return [dt0 + timedelta(days=i) for i in range((dtN - dt0).days + 1)]
@@ -1104,6 +1540,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         - The verification routines are implemented as static helpers (`get_month_range`,
         `verify_month`).
         """
+        from datetime import datetime
         self.D_iceh_nc = Path(self.D_sim,"history","daily")
         P_clean_log    = Path(self.D_sim,"cleanup.log")
         zarr_months    = sorted([p for p in self.D_zarr.glob("iceh_????-??.zarr") if p.is_dir()])
@@ -1271,6 +1708,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
         - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
         """
+        from datetime    import datetime
+        from collections import defaultdict
         sim_name = sim_name if sim_name is not None else self.sim_name
         dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
@@ -1314,14 +1753,30 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
     def monthly_zarr_iceh_time_correction(self, P_mnthly_zarr, dry_run=True):
         """
-        Fix the time coordinate in a monthly iceh zarr file by shifting all time entries back by 1 day.
-        This corrects for CICE's 00:00:00 datestamp which represents daily averages for the *previous* day.
-        This method was done after a correction to daily_iceh_to_monthly_zarr() accounts for this timestamp
-        discrepancy and hence this method may quickly become outdated/unnecessary. 
+        Correct the time coordinate in a monthly iceh Zarr store by shifting timestamps back by one day.
 
-        INPUTS:
-           P_mnthly_zarr : str or Path; path to the Zarr directory to correct (e.g., iceh_2011-05.zarr).
-           dry_run   : bool, optional; if True, do not write any files — only print what would be changed.
+        CICE ice history files may encode timestamps at 00:00 that represent averages
+        for the *previous* day. This utility rewrites a monthly Zarr store such that all
+        time entries are shifted by -1 day.
+
+        Parameters
+        ----------
+        P_mnthly_zarr : str or pathlib.Path
+            Path to the monthly Zarr directory to correct (e.g., "iceh_2011-05.zarr").
+        dry_run : bool, default True
+            If True, do not write changes; only log what would be done.
+
+        Notes
+        -----
+        - This method rewrites the store by writing a temporary Zarr and then replacing
+        the original directory. Ensure you have permissions and sufficient disk space.
+        - If timestamps already lie within the expected month bounds inferred from the
+        filename, the store is skipped.
+
+        Warnings
+        --------
+        This method may become obsolete if upstream conversion routines already perform
+        the correct timestamp handling.
         """
         from calendar import monthrange
         import shutil
@@ -1372,13 +1827,19 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
     def correct_timestamp_for_all_monthly_zarr_iceh(self, sim_names=None, dry_run=True):
         """
-        Loop through all monthly Zarr files in one or more simulation archives and correct the time index.
-        See monthly_zarr_iceh_time_correction()
+        Apply `monthly_zarr_iceh_time_correction` across all monthly iceh Zarr stores.
 
-        INPUTS
-           sim_name_list : list of str, optional; list of simulation names (e.g., ["FI-heavy", "PI-control"]).
-                           If None, defaults to [self.sim_name].
-           dry_run       : bool, optional; if True, no files will be changed — actions will be logged only.
+        Parameters
+        ----------
+        sim_names : list[str], optional
+            Simulation names to scan under the AFIM output root. If None, defaults to
+            `[self.sim_name]`.
+        dry_run : bool, default True
+            If True, do not write changes; only log what would be done.
+
+        Notes
+        -----
+        Monthly stores are identified using the glob pattern "iceh_????-??.zarr".
         """
         sims = sim_names if sim_names is not None else [self.sim_name]
         for sim in sims:
@@ -1393,7 +1854,39 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 
     def _get_zarr_group_index(self, zarr_root):
         """
-        Cache available YYYY-MM groups and overall time bounds for a given zarr_root.
+        Index available Zarr groups under a root store and cache the results.
+
+        This helper scans for groups of the form "YYYY-MM", determines overall time
+        bounds by opening the first and last group, and detects whether consolidated
+        metadata (`.zmetadata`) exists.
+
+        Parameters
+        ----------
+        zarr_root : str or pathlib.Path
+            Root path to a grouped Zarr store (expects "YYYY-MM" groups underneath).
+
+        Returns
+        -------
+        tuple
+            (groups, available_dt0, available_dtN, consolidated) where:
+            - groups : list[str]
+                Sorted list of available group names.
+            - available_dt0 : pandas.Timestamp
+                Earliest available timestamp in the first group.
+            - available_dtN : pandas.Timestamp
+                Latest available timestamp in the last group.
+            - consolidated : bool
+                True if `.zmetadata` exists at the root.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no valid Zarr groups are found.
+
+        Notes
+        -----
+        Results are cached per `zarr_root` string key in `self._zarr_group_index` to
+        avoid repeated filesystem scans and metadata opens.
         """
         key = str(zarr_root)
 
@@ -1433,6 +1926,44 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                     D_alt=None,
                     variables=None,
                     slice_hem=False):
+        """
+        Open and concatenate monthly-grouped CICE ice history Zarr data over a date window.
+
+        This method loads only those monthly Zarr groups that intersect the requested
+        date window, optionally subselects variables, crops each group to the requested
+        time range, and concatenates along time.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Simulation name. Defaults to `self.sim_name`.
+        dt0_str, dtN_str : str, optional
+            Requested analysis window in ``YYYY-MM-DD``. Defaults to `self.dt0_str` and
+            `self.dtN_str`. Requests are clamped to available data.
+        D_alt : str or pathlib.Path, optional
+            Alternative simulation directory to use instead of `self.D_sim`.
+        variables : list[str], optional
+            If provided, select only these variables from each monthly group. Groups
+            missing any requested variable are skipped with a warning.
+        slice_hem : bool, default False
+            If True, apply `self.slice_hemisphere(...)` after concatenation.
+
+        Returns
+        -------
+        xarray.Dataset
+            Concatenated dataset cropped to the intersection of requested and available
+            times.
+
+        Raises
+        ------
+        ValueError
+            If no datasets remain after filtering/cropping (e.g., all groups skipped).
+
+        Notes
+        -----
+        - Expects a grouped Zarr store at `self.D_iceh_zarr` with groups named "YYYY-MM".
+        - Uses dask configuration overrides to control slicing and fusion behaviour.
+        """
         import dask
         sim_name = sim_name or self.sim_name
         dt0_str  = dt0_str  or self.dt0_str
@@ -1493,87 +2024,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
         return ds_all
 
-    # def load_cice_zarr(self,
-    #                    sim_name  = None,
-    #                    dt0_str   = None,
-    #                    dtN_str   = None,
-    #                    D_alt     = None,
-    #                    variables = None,
-    #                    slice_hem = False):
-    #     """
-    #     Open monthly Zarr groups for the requested period and concatenate in time.
-
-    #     Parameters
-    #     ----------
-    #     sim_name : str, optional
-    #         Simulation name. Defaults to `self.sim_name`.
-    #     dt0_str, dtN_str : str, optional
-    #         Clamp the load to the intersection of requested and available data.
-    #     D_alt : str | Path, optional
-    #         Alternative simulation directory (overrides `self.D_sim`).
-    #     variables : list[str], optional
-    #         Subset to these variables; groups missing any are skipped with a warning.
-    #     slice_hem : bool, default False
-    #         If True, apply `slice_hemisphere()` after concatenation.
-
-    #     Returns
-    #     -------
-    #     xr.Dataset
-    #         Concatenated dataset with time cropped to `[user_dt0, user_dtN]`.
-
-    #     Notes
-    #     -----
-    #     - Uses conservative Dask settings for slicing and fusion to keep graphs
-    #       small (`split_large_chunks=True`, `chunk-size=256MiB`).
-    #     - Requires Zarr groups of the form `YYYY-MM`.
-    #     """
-    #     import dask
-    #     sim_name = sim_name or self.sim_name
-    #     dt0_str  = dt0_str  or self.dt0_str
-    #     dtN_str  = dtN_str  or self.dtN_str
-    #     D_alt    = D_alt    or self.D_sim
-    #     self.define_iceh_dirs(D_alt)
-    #     # Step 1: Identify available YYYY-MM groups
-    #     zarr_root = self.D_iceh_zarr
-    #     available_groups = sorted([ p.name for p in zarr_root.glob("????-??") if (zarr_root / p.name / ".zgroup").exists() ])
-    #     if not available_groups:
-    #         raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
-    #     # Step 2: Load first and last datasets to get true data bounds
-    #     ds0 = xr.open_zarr(zarr_root, group=available_groups[0], consolidated=False)
-    #     dsN = xr.open_zarr(zarr_root, group=available_groups[-1], consolidated=False)
-    #     available_dt0 = pd.to_datetime(ds0.time.values[0])
-    #     available_dtN = pd.to_datetime(dsN.time.values[-1])
-    #     # Step 3: Clamp user request to data availability
-    #     user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
-    #     user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
-    #     # Step 4: Select required YYYY-MM groups
-    #     required_groups = [g for g in available_groups
-    #                       if pd.to_datetime(f"{g}-01") <= user_dtN and pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0 ]
-    #     self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()}")
-    #     with dask.config.set({'array.slicing.split_large_chunks': True,
-    #                         'array.chunk-size': '256MiB',
-    #                         'optimization.fuse.active': False}):
-    #         ds_list = []
-    #         for g in required_groups:
-    #             self.logger.debug(f"  - opening group {g}")
-    #             ds = xr.open_zarr(zarr_root, group=g, consolidated=False)
-    #             if variables:
-    #                 self.logger.info(f"Loading variables {[v for v in variables if v in ds]}")
-    #                 missing = [v for v in variables if v not in ds]
-    #                 if missing:
-    #                     self.logger.warning(f"  > Skipping {g}, missing: {missing}")
-    #                     continue
-    #                 ds = ds[variables]
-    #             ds_list.append(ds)
-    #         if not ds_list:
-    #             raise ValueError("No datasets to concatenate after filtering.")
-    #         ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
-    #         ds_all = ds_all.sel(time=slice(user_dt0, user_dtN))
-    #     if slice_hem:
-    #         self.logger.info("  slicing hemisphere")
-    #         ds_all = self.slice_hemisphere(ds_all)
-    #     return ds_all
-
     @staticmethod
     def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
         """
@@ -1599,32 +2049,55 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                             chunks      : dict  = None,
                             persist     : bool  = False):
         """
-        Load classified ice products (daily, binary-day, or rolling) from yearly Zarr groups.
+        Load classified ice products from yearly-grouped Zarr stores.
+
+        Loads fast-ice/pack-ice/sea-ice classification products written as Zarr stores
+        containing per-year groups. Supports daily, rolling-mean, and binary-days
+        products via store naming conventions.
 
         Parameters
         ----------
-        sim_name    : str, optional
-        bin_days    : bool, default True; load `_bin.zarr` product; if False and `roll_mean=True`, load `_roll.zarr`; else load the daily product.
-        roll_mean   : bool, default False
-        ispd_thresh : float, optional; threshold embedded in the Zarr path (defaults to `self.ispd_thresh`).
-        ice_type    : str, optional; either 'FI', 'PI' or 'SI'
-        BorC2T_type    : str, optional; either 'Ta', 'Tb', 'Tx' or 'BT' (composite)
-        variables   : list[str], optional; variable subset to select on open.
-        dt0_str     : str, optional; start date
-        dtN_str     : str, optional; end date
-        D_zarr      : str | Path, optional; override base zarr directory.
-        chunks      : dict, optional; chunking to apply after concat (default `self.CICE_dict["FI_chunks"]`).
-        persist     : bool, default False; dask-persist the concatenated dataset in memory.
+        sim_name : str, optional
+            Simulation name. Defaults to `self.sim_name`.
+        bin_days : bool, default True
+            If True, load the binary-days product (`*_bin.zarr`).
+        roll_mean : bool, default False
+            If True (and `bin_days` is False), load the rolling-mean product (`*_roll.zarr`).
+        ispd_thresh : float, optional
+            Speed threshold embedded in the Zarr path; defaults to `self.ispd_thresh`.
+        ice_type : str, optional
+            Ice type identifier ('FI', 'PI', or 'SI'). Defaults to `self.ice_type`.
+        BorC2T_type : str, optional
+            Velocity product identifier used in the store name (e.g., 'Ta', 'Tb', 'Tx', 'BT').
+        variables : list[str], optional
+            Variable subset to select after concatenation.
+        dt0_str, dtN_str : str, optional
+            Requested date window. Used here only to select which years to attempt to open.
+        D_zarr : str or pathlib.Path, optional
+            Override base Zarr directory.
+        chunks : dict, optional
+            Chunking mapping applied after concatenation (implementation-dependent).
+        persist : bool, default False
+            If True, Dask persist the concatenated dataset in memory.
 
         Returns
         -------
-        xr.Dataset
+        xarray.Dataset
+            Concatenated dataset across requested years.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no valid year groups could be opened from the target store.
 
         Notes
         -----
-        - Drops duplicate `ni` coords per year before concatenation to avoid
-          index collisions along x (see `_drop_duplicate_coords()`).
+        - Uses `_drop_duplicate_coords` (class-level helper) to avoid coordinate collisions
+        during concat.
+        - This method does not currently crop the returned dataset to dt0/dtN; caller may
+        apply `sel(time=slice(...))` if needed.
         """
+        from datetime import datetime
         sim_name     = sim_name     or self.sim_name
         ispd_thresh  = ispd_thresh  or self.ispd_thresh
         ice_type     = ice_type     or self.ice_type
@@ -1683,49 +2156,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         """
         mean_period = mean_period if mean_period is not None else self.mean_period
         return ds.rolling(time=mean_period, center=True, min_periods=1).mean()
-
-    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean", obs_time_coord="time"):
-        """
-        Coarsen daily sim data into windows defined by AF2020 observation periods.
-
-        INPUTS:
-            sim_ds : xr.Dataset; daily CICE model output with time dimension.
-            obs_ds : xr.Dataset; oservational fast ice dataset with `t_FI_obs` coordinate.
-            doy_vals : list of int; DOY start values for each observation period. Defaults to AF2020 standard (24 bins).
-            method : str; Aggregation method ("mean" or "median").
-
-        OUTPUTS:
-            Dataset with same shape as obs_ds[t_FI_obs] and matched time resolution.
-        """
-        if doy_vals is None:
-            doy_vals = self.AF_FI_dict["DOY_vals"]
-        sim_time = sim_ds["time"].values
-        obs_times = pd.to_datetime(obs_ds[obs_time_coord].values)
-        years = np.unique(obs_times.year)
-        grouped = []
-        for year in years:
-            for i, doy_start in enumerate(doy_vals):
-                dt_start = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(doy_start - 1, unit="D")
-                dt_end = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(
-                    (doy_vals[i+1]-1 if i+1 < len(doy_vals) else 365 + int(pd.Timestamp(f"{year}-12-31").is_leap_year)), unit="D")
-                period_mask = (sim_ds.time >= dt_start) & (sim_ds.time < dt_end)
-                ds_window = sim_ds.sel(time=period_mask)
-                if ds_window.time.size == 0:
-                    self.logger.warning(f"🕳️ No model data in window {dt_start.date()} to {dt_end.date()}")
-                    continue
-                if method == "mean":
-                    ds_agg = ds_window.mean(dim="time")
-                elif method == "median":
-                    ds_agg = ds_window.median(dim="time")
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-                ds_agg = ds_agg.expand_dims({obs_time_coord: [dt_start]})
-                grouped.append(ds_agg)
-        if not grouped:
-            raise ValueError("❌ No observation periods matched simulation data")
-        ds_aligned = xr.concat(grouped, dim=obs_time_coord)
-        self.logger.info(f"✅ Aligned model output to {len(ds_aligned[obs_time_coord])} obs windows")
-        return ds_aligned
 
     def compute_doy_climatology(self, da, leap_year=None, time_coord=None):
         """
@@ -1862,7 +2292,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ang_m = np.arctan2(vm, um)
         d     = ang_m - ang_o
         return (d + np.pi) % (2 * np.pi) - np.pi
-
+    
     def _region_mask(self, lon : xr.DataArray, lat : xr.DataArray, geo_reg : tuple[float, float, float, float], *,
                      right_open: bool = True) -> xr.DataArray:
         """
@@ -1877,6 +2307,80 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         else:
             m = m & (lon <= lon_max)
         return m
+
+    ##########################################################################################
+    #                              FAST ICE SPECIFIC FUNCTIONS                               #
+    ##########################################################################################
+    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean", obs_time_coord="time"):
+        """
+        Aggregate daily simulated fields onto observational fast-ice time windows.
+
+        This method coarsens daily model output into the same temporal windows used by
+        the AF2020 observational product (typically 24 bins defined by day-of-year start
+        values). For each year and each DOY window, it aggregates model data over the
+        corresponding date range and writes one output timestep per window.
+
+        Parameters
+        ----------
+        sim_ds : xarray.Dataset
+            Daily model output with a "time" coordinate.
+        obs_ds : xarray.Dataset
+            Observational dataset providing the target window definitions via its time
+            coordinate (default name is `obs_time_coord`).
+        doy_vals : list[int], optional
+            Day-of-year start values defining observation windows. If None, uses
+            `self.AF_FI_dict["DOY_vals"]`.
+        method : {"mean","median"}, default "mean"
+            Aggregation method to apply within each window.
+        obs_time_coord : str, default "time"
+            Name of the time coordinate in `obs_ds` used as the output time dimension.
+
+        Returns
+        -------
+        xarray.Dataset
+            Aggregated dataset with one timestep per observation window (per year),
+            concatenated along `obs_time_coord`.
+
+        Raises
+        ------
+        ValueError
+            If no windows intersect the simulation data or `method` is unsupported.
+
+        Notes
+        -----
+        - Window end dates are computed from successive DOY boundaries. The final window
+        extends to the end of the year (accounting for leap years).
+        - The output time stamps correspond to the start date of each window.
+        """
+        if doy_vals is None:
+            doy_vals = self.AF_FI_dict["DOY_vals"]
+        sim_time = sim_ds["time"].values
+        obs_times = pd.to_datetime(obs_ds[obs_time_coord].values)
+        years = np.unique(obs_times.year)
+        grouped = []
+        for year in years:
+            for i, doy_start in enumerate(doy_vals):
+                dt_start = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(doy_start - 1, unit="D")
+                dt_end = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(
+                    (doy_vals[i+1]-1 if i+1 < len(doy_vals) else 365 + int(pd.Timestamp(f"{year}-12-31").is_leap_year)), unit="D")
+                period_mask = (sim_ds.time >= dt_start) & (sim_ds.time < dt_end)
+                ds_window = sim_ds.sel(time=period_mask)
+                if ds_window.time.size == 0:
+                    self.logger.warning(f"🕳️ No model data in window {dt_start.date()} to {dt_end.date()}")
+                    continue
+                if method == "mean":
+                    ds_agg = ds_window.mean(dim="time")
+                elif method == "median":
+                    ds_agg = ds_window.median(dim="time")
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
+                ds_agg = ds_agg.expand_dims({obs_time_coord: [dt_start]})
+                grouped.append(ds_agg)
+        if not grouped:
+            raise ValueError("❌ No observation periods matched simulation data")
+        ds_aligned = xr.concat(grouped, dim=obs_time_coord)
+        self.logger.info(f"✅ Aligned model output to {len(ds_aligned[obs_time_coord])} obs windows")
+        return ds_aligned
 
     def compute_fipdiff_stats_weighted(self, FIP: xr.Dataset,
                                        PIXEL                 : float = 5000.0,
@@ -1961,4 +2465,254 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                            "agreement_pct_of_model", "model_excess_pct_of_model",
                            "obs_FIA_km2", "agreement_pct_of_obs", "obs_excess_km2", "obs_excess_pct_of_obs",
                            "pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
+            
+    def define_FIP_diff_names(self, 
+                     AF2020            = False,
+                     variable_name     = None,
+                     lon_coord_name    = None,
+                     lat_coord_name    = None,
+                     time_coord_name   = None,
+                     spatial_dim_names = None,
+                     thresh_val        = None):
+        """
+        Standardise coordinate/variable naming for fast-ice persistence diagnostics.
+
+        This is a lightweight helper that returns a consistent naming dictionary used by
+        fast-ice mask and coordinate extraction routines for either:
+          - AF2020 observational datasets (AF2020=True), or
+          - model/CICE datasets (AF2020=False).
+
+        Parameters
+        ----------
+        AF2020 : bool, default False
+            If True, derive names and threshold from `self.AF_FI_dict`; otherwise use
+            CICE/model conventions.
+        variable_name, lon_coord_name, lat_coord_name, time_coord_name : str, optional
+            Override defaults for variable and coordinate names.
+        spatial_dim_names : tuple[str, str], optional
+            Override spatial dim names. Defaults to `self.CICE_dict["spatial_dims"]`.
+        thresh_val : float, optional
+            Override the threshold value used to define "fast ice" presence.
+
+        Returns
+        -------
+        dict
+            Keys:
+            - spatial_dims, time_dim, variable, latitude, longitude, thresh_val
+        """
+        name_space        = {}
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
+        if AF2020:
+            name_var   = variable_name   if variable_name   is not None else self.AF_FI_dict["variable_name"]
+            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.AF_FI_dict["lat_coord_name"]
+            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.AF_FI_dict["lon_coord_name"]
+            name_dt    = time_coord_name if time_coord_name is not None else self.AF_FI_dict["time_coord_name"]
+            thresh_val = thresh_val      if thresh_val      is not None else self.AF_FI_dict["threshold_value"]
+        else:    
+            name_var   = variable_name   if variable_name   is not None else "aice"
+            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.CICE_dict["tcoord_names"][1]
+            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.CICE_dict["tcoord_names"][0]
+            name_dt    = time_coord_name if time_coord_name is not None else self.CICE_dict["time_dim"]
+            thresh_val = thresh_val      if thresh_val      is not None else self.icon_thresh
+        return {'spatial_dims': spatial_dim_names,
+                'time_dim'    : name_dt,
+                'variable'    : name_var,
+                'latitude'    : name_lat,
+                'longitude'   : name_lon,
+                'thresh_val'  : thresh_val}
+
+    def define_fast_ice_coordinates(self, ds,
+                                    AF2020            = False,
+                                    variable_name     = None,
+                                    lon_coord_name    = None,
+                                    lat_coord_name    = None,
+                                    time_coord_name   = None,
+                                    spatial_dim_names = None,
+                                    thresh_val        = None):
+        """
+        Extract lat/lon/time arrays and standardised naming for fast-ice mask construction.
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Dataset containing the required variable and coordinate fields.
+        AF2020 : bool, default False
+            Switch between AF2020 and CICE/model conventions.
+        (other parameters)
+            Passed through to `define_FIP_diff_names(...)`.
+
+        Returns
+        -------
+        dict
+            Keys:
+            - datetimes : 1D datetime array
+            - latitudes : 2D latitude array
+            - longitudes : 2D longitude array
+            - names : the naming dictionary returned by `define_FIP_diff_names`
+        """
+        names = self.define_FIP_diff_names(AF2020            = AF2020,
+                                           variable_name     = variable_name,
+                                           lon_coord_name    = lon_coord_name,
+                                           lat_coord_name    = lat_coord_name,
+                                           time_coord_name   = time_coord_name,
+                                           spatial_dim_names = spatial_dim_names,
+                                           thresh_val        = thresh_val)
+        if "time" in ds[names['latitude']].dims:
+            lat = ds[names['latitude']].isel(time=0).values
+        else:
+            lat = ds[names['latitude']].values
+        if "time" in ds[names['longitude']].dims:
+            lon = ds[names['longitude']].isel(time=0).values
+        else:
+            lon = ds[names['longitude']].values
+        dt = ds[names['time_dim']].values
+        return {'datetimes'  : dt,
+                'latitudes'  : lat,
+                'longitudes' : lon,
+                'names'      : names}
+
+    def define_fast_ice_mask_da(self, ds,
+                                AF2020            = False,
+                                variable_name     = None,
+                                lon_coord_name    = None,
+                                lat_coord_name    = None,
+                                time_coord_name   = None,
+                                spatial_dim_names = None,
+                                thresh_val        = None):
+        """
+        Construct a binary fast-ice mask DataArray from a dataset.
+
+        A grid cell is classified as fast ice when:
+            ds[variable] >= thresh_val
+        where names/threshold are determined by `define_FIP_diff_names()`.
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Input dataset.
+        AF2020 : bool, default False
+            If True, use AF2020 conventions; else CICE/model.
+        (other parameters)
+            Passed through to `define_fast_ice_coordinates(...)`.
+
+        Returns
+        -------
+        xr.DataArray
+            Binary mask with dims given by `self.CICE_dict['three_dims']` and coordinates
+            attached using the configured lat/lon/time coordinate names.
+
+        Notes
+        -----
+        - This routine assumes the mask should always be expressed on the CICE naming
+          conventions (coords from `self.CICE_dict`), even when sourced from AF2020.
+        """
+        coords  = self.define_fast_ice_coordinates(ds,
+                                                    AF2020            = AF2020,
+                                                    variable_name     = variable_name,
+                                                    lon_coord_name    = lon_coord_name,
+                                                    lat_coord_name    = lat_coord_name,
+                                                    time_coord_name   = time_coord_name,
+                                                    spatial_dim_names = spatial_dim_names,
+                                                    thresh_val        = thresh_val)
+        FI_mask = xr.where(ds[coords['names']['variable']] >= coords['names']['thresh_val'], 1.0, 0.0)
+        return xr.DataArray(FI_mask,
+                            dims   = self.CICE_dict['three_dims'],
+                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], coords['latitudes']),
+                                      self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], coords['longitudes']),
+                                      self.CICE_dict['time_dim']       : (self.CICE_dict['time_dim']    , coords['datetimes'])})
+
+    def define_fast_ice_persistence_da(self, fip, reG=False):
+        """
+        Wrap a persistence-like array into a consistently-labelled 2D DataArray.
+
+        Parameters
+        ----------
+        fip : xr.DataArray
+            Persistence field on either the native grid or a regridded regular grid.
+        reG : bool, default False
+            If True, attach coordinates from `define_regular_G(...)` (0.15° global SH);
+            otherwise use fip's existing lat/lon coordinates.
+
+        Returns
+        -------
+        xr.DataArray
+            2D float32 DataArray with spatial dims `self.CICE_dict['spatial_dims']` and
+            lat/lon coordinates attached.
+        """
+        if reG:
+            G_dst = self.define_regular_G(0.15, region=[0,360,-90,0], spatial_dim_names=self.CICE_dict['spatial_dims'])
+            lats  = G_dst[self.CICE_dict['lat_coord_name']].values
+            lons  = G_dst[self.CICE_dict['lon_coord_name']].values
+        else:
+            lats = fip[self.CICE_dict['lat_coord_name']].values
+            lons = fip[self.CICE_dict['lon_coord_name']].values
+        return xr.DataArray(fip.astype('float32').values,
+                            dims   = self.CICE_dict['spatial_dims'],
+                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], lats),
+                                    self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], lons)})
+
+    def compute_fip_weight(self,
+                           FIP   : xr.Dataset, 
+                           mode  : str = "max",
+                           t     : float = 0.1,
+                           gamma : float = 1.0) -> xr.DataArray:
+        """
+        Compute an opacity/weight field from fast-ice persistence coverage.
+
+        This is used for visualisation or for weighting a misfit field, producing
+        values in [0, 1] where:
+          - 0 => fully transparent / no weight (below threshold)
+          - 1 => fully opaque / full weight (high persistence coverage)
+
+        Parameters
+        ----------
+        FIP : xr.Dataset
+            Must include `FIP["obs"]` (observed persistence fraction). May include
+            `FIP["mod"]` (model persistence fraction).
+        mode : {"max","mean","prod","obs"}, default "max"
+            Coverage operator used before thresholding:
+              - "max"  : max(obs, mod)
+              - "mean" : 0.5*(obs + mod)
+              - "prod" : sqrt(obs*mod) (geometric mean)
+              - any other value falls back to obs only
+        t : float, default 0.1
+            Soft threshold. Values below t map to 0; values linearly ramp to 1 by 1.0.
+        gamma : float, default 1.0
+            Contrast shaping exponent (w ** gamma). gamma>1 increases contrast.
+
+        Returns
+        -------
+        xr.DataArray
+            Weight field in [0, 1], named "diff_weight", with descriptive attributes.
+
+        Raises
+        ------
+        KeyError
+            If FIP does not contain an "obs" variable.
+
+        Notes
+        -----
+        - This routine is agnostic to the grid; it simply transforms persistence fractions.
+        """
+        if "obs" not in FIP:
+            raise KeyError("FIP['obs'] is required")
+        obs = FIP["obs"]
+        mod = FIP.get("mod", None)
+        if mode == "max" and mod is not None:
+            cov = xr.apply_ufunc(np.maximum, obs, mod)
+        elif mode == "mean" and mod is not None:
+            cov = 0.5 * (obs + mod)
+        elif mode == "prod" and mod is not None:
+            cov = xr.apply_ufunc(np.sqrt, obs * mod)  # geometric mean
+        else:
+            cov = obs  # fall back to obs only
+        # Soft ramp: 0 below t, then linear to 1 at 1.0
+        w = (cov - t) / (1 - t)
+        w = w.clip(0, 1)
+        # Optional contrast shaping
+        if gamma != 1.0:
+            w = w ** gamma
+        w.name = "diff_weight"
+        w.attrs.update(dict(long_name="opacity weight", comment=f"weight ~ {mode}(obs,mod), threshold={t}, gamma={gamma}"))
+        return w
             

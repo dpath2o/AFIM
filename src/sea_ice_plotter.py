@@ -1,18 +1,61 @@
-import os, time, imageio, pygmt
-import xarray            as xr
-import pandas            as pd
-import geopandas         as gpd
-import numpy             as np
-import matplotlib.pyplot as plt
-import matplotlib.dates  as mdates
-from tqdm                import tqdm
-from PIL                 import Image
-from pathlib             import Path
-from datetime            import datetime
-
+from __future__ import annotations
+import xarray as xr
+import pandas as pd
+import numpy  as np
+from pathlib  import Path
+__all__ = ["SeaIcePlotter"]
 class SeaIcePlotter:
+    """
+    Plotting utilities for AFIM / CICE sea-ice diagnostics.
+
+    This class groups helper methods that prepare gridded xarray.DataArray fields
+    for plotting (primarily with PyGMT), including:
+
+      - Writing custom CPT (colour palette table) files for continuous or categorical
+        difference fields (e.g., obs–model agreement maps).
+      - Building “alpha/transparency” layers that modulate opacity by confidence or
+        persistence strength.
+      - Resolving 2D lon/lat coordinates from a DataArray via explicit coordinate names,
+        inferred coordinate names, or fallback class grid objects (B-grid / T-grid).
+      - Converting a 2D DataArray into 1D lon/lat/z vectors + masks suitable for
+        `pygmt.Figure.plot` / `pygmt.Figure.grdimage` workflows.
+
+    Notes
+    -----
+    - Several methods assume the class has access to grid datasets such as `self.G_t`
+      and `self.G_u`, and a method `self.load_bgrid(slice_hem=True)` that populates them.
+    - The methods here are designed to be safe with Dask-backed DataArrays: they will
+      compute only when necessary and will avoid materialising coordinate grids unless
+      required.
+    - CPT writing methods create plain text files on disk and return the resolved path.
+
+    Expected Attributes / Methods
+    -----------------------------
+    _hex_to_rgb : callable
+        Helper that converts hex colour strings (e.g. "#2CA25F") to integer RGB triplets.
+    load_bgrid : callable
+        Loads grid coordinate datasets (at least `self.G_t` and/or `self.G_u`).
+    G_t, G_u : xarray.Dataset
+        Grid datasets holding 2D lon/lat fields under keys like `"lon"` and `"lat"`.
+    normalise_longitudes : callable
+        Converts longitudes to a target convention ("0-360" or "-180-180").
+    """
 
     def __init__(self,**kwargs):
+        """
+        Initialise the plotter.
+
+        Parameters
+        ----------
+        **kwargs
+            Implementation-dependent configuration. In typical AFIM usage, kwargs may
+            include paths, logging, grid configuration, or pre-loaded grid datasets.
+
+        Notes
+        -----
+        - This constructor is intentionally lightweight; many plotting workflows defer
+          expensive grid loading until it is required (e.g., in `_resolve_lonlat_2d()`).
+        """
         return
 
     def load_ice_shelves(self):
@@ -40,6 +83,7 @@ class SeaIcePlotter:
         - self.plot_FIA_FIP_faceted : Uses this method to overlay ice shelves in map panels.
         - geopandas.read_file : For reading shapefiles.
         """
+        import geopandas as gpd
         gdf                     = gpd.read_file(self.config['pygmt_dict']['P_coast_shape'])
         shelves                 = gdf[gdf['POLY_TYPE'] == 'S']
         shelves                 = shelves[~shelves.geometry.is_empty & shelves.geometry.notnull()]
@@ -381,8 +425,48 @@ class SeaIcePlotter:
         cmax: str = "#2171B5",  # blue
         background_rgb: str = "255/255/255",
         foreground_rgb: str = "0/0/0",
-        nan_rgb: str = "255/255/255",
-    ) -> str:
+        nan_rgb: str = "255/255/255") -> str:
+        """
+        Create and write a 3-colour continuous CPT file for difference fields.
+
+        This writes a simple two-segment CPT suitable for continuous data where values
+        below/above a midpoint should transition through three anchor colours:
+
+          - [vmin, vmid] mapped cmin → cmid
+          - [vmid, vmax] mapped cmid → cmax
+
+        The output is a GMT CPT text file, usable directly by PyGMT (e.g. `cmap=P_cpt`).
+
+        Parameters
+        ----------
+        P_cpt : str or pathlib.Path
+            Target output path for the CPT file. Parent directories are created if needed.
+        vmin, vmid, vmax : float, optional
+            Data range breakpoints. `vmid` defines the central colour transition point.
+        cmin, cmid, cmax : str, optional
+            Hex colours used at `vmin`, `vmid`, and `vmax` respectively.
+            Example: "#2CA25F".
+        background_rgb : str, optional
+            GMT background colour specification used for values below `vmin` (B record),
+            formatted as "R/G/B".
+        foreground_rgb : str, optional
+            GMT foreground colour specification used for values above `vmax` (F record),
+            formatted as "R/G/B".
+        nan_rgb : str, optional
+            GMT NaN colour specification (N record), formatted as "R/G/B".
+
+        Returns
+        -------
+        str
+            String path to the written CPT file.
+
+        Notes
+        -----
+        - This function assumes `self._hex_to_rgb()` returns (r, g, b) integers in [0, 255].
+        - GMT expects CPT lines of the form:
+              z0 r/g/b z1 r/g/b
+          plus optional B/F/N records for background/foreground/NaN.
+        """
         r1, g1, b1 = self._hex_to_rgb(cmin)
         r2, g2, b2 = self._hex_to_rgb(cmid)
         r3, g3, b3 = self._hex_to_rgb(cmax)
@@ -419,12 +503,83 @@ class SeaIcePlotter:
         alpha_mode: str = "max",      # "max" or "mean"
         alpha_power: float = 1.0,
         alpha_floor: float = 0.0,
-        nan_transparency: float = 100.0,  # percent (0 opaque, 100 transparent)
-    ):
+        nan_transparency: float = 100.0):  # percent (0 opaque, 100 transparent)
         """
-        Returns (cpt_path, z, t)
-        z: clipped difference in [vmin,vmax]
-        t: transparency percent in [0,100] (0 opaque)
+        Build a tricolour CPT plus a transparency (alpha) layer from obs/model fields.
+
+        This helper is designed for “difference + confidence” map products where:
+          - colour encodes the signed difference (obs − model or model − obs), clipped
+            into a fixed range [vmin, vmax], and
+          - transparency encodes the strength/credibility of the signal (e.g., based on
+            persistence or agreement magnitude), computed from the obs/model magnitudes.
+
+        The function returns:
+          - `cpt_path`: path to the written tricolour CPT
+          - `z`: the clipped difference array
+          - `t`: transparency percent array (0 = opaque, 100 = fully transparent)
+
+        Parameters
+        ----------
+        P_cpt : str or pathlib.Path
+            Output path for the CPT file written by `write_tricolour_cpt()`.
+        obs, mod : array-like
+            Observed and modelled fields on a common grid. These are converted to
+            `numpy.ndarray(dtype=float)` internally and must be broadcast-compatible.
+
+        vmin, vmid, vmax : float, optional
+            Colour scale limits and midpoint. The returned difference `z` is clipped
+            into [vmin, vmax].
+        cmin, cmid, cmax : str, optional
+            Hex colours for the CPT anchor points at vmin/vmid/vmax.
+
+        diff_mode : {"obs-mod", "mod-obs"}, optional
+            Sign convention for the difference:
+              - "obs-mod": z = obs - mod
+              - "mod-obs": z = mod - obs
+            Choose a convention consistent with your map interpretation (e.g. green as
+            model-dominant vs obs-dominant).
+
+        alpha_mode : {"max", "mean"}, optional
+            How to compute the “alpha strength” `a` from `obs` and `mod`:
+              - "max":  a = max(obs, mod)
+              - "mean": a = 0.5 * (obs + mod)
+            In both cases, `a` is clipped to [0, 1].
+
+        alpha_power : float, optional
+            Exponent applied to `a` after clipping. Values > 1 sharpen opacity toward
+            high-confidence regions; values < 1 broaden opacity.
+        alpha_floor : float, optional
+            Minimum opacity floor expressed in alpha-space. When > 0, rescales:
+                a <- alpha_floor + (1 - alpha_floor) * a
+            This prevents regions from becoming too transparent.
+
+        nan_transparency : float, optional
+            Transparency percentage used where either `z` or `t` becomes non-finite
+            (NaN/inf). Default 100 = fully transparent.
+
+        Returns
+        -------
+        (str, np.ndarray, np.ndarray)
+            cpt_path : str
+                Path to the written CPT file.
+            z : np.ndarray
+                Difference field, clipped to [vmin, vmax].
+            t : np.ndarray
+                Transparency percent in [0, 100], where 0 is opaque.
+
+        Raises
+        ------
+        ValueError
+            If `diff_mode` is not one of {"obs-mod", "mod-obs"}.
+        ValueError
+            If `alpha_mode` is not one of {"max", "mean"}.
+
+        Notes
+        -----
+        - Transparency is computed as: t = (1 - a) * 100, so larger `a` yields more
+          opaque pixels (smaller transparency percentage).
+        - This method does not attempt to regrid or align obs/model; inputs must already
+          be on a common grid and comparable.
         """
         cpt_path = self.write_tricolour_cpt(
             P_cpt, vmin=vmin, vmid=vmid, vmax=vmax, cmin=cmin, cmid=cmid, cmax=cmax
@@ -466,25 +621,62 @@ class SeaIcePlotter:
 
         return cpt_path, z, t
 
-    def write_tricolor_category_cpt(
-        self,
-        P_cpt,
-        *,
-        # codes: 0=agreement, 1=model-dom, 2=obs-dom
-        int0=(0.0, 1.0),
-        int1=(1.0, 2.0),
-        int2=(2.0, 3.0),
-        hex0="#FDAE61",  # agreement = orange
-        hex1="#2CA25F",  # model-dom = green
-        hex2="#2171B5",  # obs-dom   = blue
-        background_rgb="255/255/255",
-        foreground_rgb="0/0/0",
-        nan_rgb="255/255/255",
-    ) -> str:
+    def write_tricolor_category_cpt(self, P_cpt, *, # codes: 0=agreement, 1=model-dom, 2=obs-dom
+                                    int0=(0.0, 1.0),
+                                    int1=(1.0, 2.0),
+                                    int2=(2.0, 3.0),
+                                    hex0="#FDAE61",  # agreement = orange
+                                    hex1="#2CA25F",  # model-dom = green
+                                    hex2="#2171B5",  # obs-dom   = blue
+                                    background_rgb="255/255/255",
+                                    foreground_rgb="0/0/0",
+                                    nan_rgb="255/255/255") -> str:
+        """
+        Create and write a 3-class categorical CPT file.
+
+        This is intended for integer-coded classification maps, commonly:
+          - 0 : agreement
+          - 1 : model-dominant
+          - 2 : observation-dominant
+
+        Each class is given a constant colour across its interval. The default colour
+        scheme matches the continuous tricolour palette:
+          - agreement: orange
+          - model-dominant: green
+          - obs-dominant: blue
+
+        Parameters
+        ----------
+        P_cpt : str or pathlib.Path
+            Target output path for the categorical CPT file. Parent directories are
+            created if needed.
+
+        int0, int1, int2 : tuple[float, float], optional
+            Numeric intervals for categories 0, 1, and 2 respectively. Defaults are
+            (0,1), (1,2), (2,3), which works well with integer-coded rasters.
+        hex0, hex1, hex2 : str, optional
+            Hex colours for category 0, 1, and 2.
+        background_rgb : str, optional
+            GMT background (B record) colour as "R/G/B".
+        foreground_rgb : str, optional
+            GMT foreground (F record) colour as "R/G/B".
+        nan_rgb : str, optional
+            GMT NaN (N record) colour as "R/G/B".
+
+        Returns
+        -------
+        str
+            String path to the written CPT file.
+
+        Notes
+        -----
+        - The CPT uses constant colours per interval, which is typically what you want
+          for categorical class rasters.
+        - This function assumes `self._hex_to_rgb()` returns integer RGB triplets.
+        """
         r0, g0, b0 = self._hex_to_rgb(hex0)
         r1, g1, b1 = self._hex_to_rgb(hex1)
         r2, g2, b2 = self._hex_to_rgb(hex2)
-
         cpt_text = (
             f"{int0[0]} {r0}/{g0}/{b0} {int0[1]} {r0}/{g0}/{b0}\n"
             f"{int1[0]} {r1}/{g1}/{b1} {int1[1]} {r1}/{g1}/{b1}\n"
@@ -493,20 +685,63 @@ class SeaIcePlotter:
             f"F {foreground_rgb}\n"
             f"N {nan_rgb}\n"
         )
-
         P_cpt = Path(P_cpt)
         P_cpt.parent.mkdir(parents=True, exist_ok=True)
         P_cpt.write_text(cpt_text)
         return str(P_cpt)
     
     def _is_dask_array(self, x) -> bool:
+        """
+        Return True if `x` appears to be a Dask-backed array-like.
+
+        Parameters
+        ----------
+        x : object
+            Any object. The check is heuristic and designed to work for common
+            Dask array types attached to xarray objects.
+
+        Returns
+        -------
+        bool
+            True if `x` has a `.compute()` method and its module path suggests a Dask type;
+            False otherwise.
+
+        Notes
+        -----
+        - This is intentionally lightweight and avoids importing dask explicitly.
+        - False positives are unlikely but possible if an object mimics the Dask API.
+        """
         return hasattr(x, "compute") and ("dask" in type(x).__module__.lower())
 
     def _auto_mask_zero(self, da: xr.DataArray) -> bool:
         """
-        Decide whether to mask zeros:
-          - categorical fields (e.g., diff_cat with flag_values) -> do NOT mask zero
-          - continuous fields -> mask zero by default
+        Decide whether zero values should be masked when preparing data for plotting.
+
+        Many continuous diagnostics use zeros as “no data” placeholders (or contain large
+        regions of structural zeros that would dominate plotting). However, categorical
+        fields frequently use 0 as a valid class label and must not be masked.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            2D data field intended for plotting.
+
+        Returns
+        -------
+        bool
+            True if zeros should be masked (typical for continuous fields),
+            False if zeros should be retained (typical for categorical class rasters).
+
+        Decision Logic
+        --------------
+        - If the variable name suggests a categorical difference field (e.g. contains
+          "diff_cat"), or if `da.attrs["flag_values"]` indicates a {0,1,2} category
+          encoding, then zeros are treated as valid and are NOT masked.
+        - Otherwise, zeros are masked by default.
+
+        Notes
+        -----
+        - You can override this behaviour explicitly in `pygmt_da_prep(mask_zero=...)`.
         """
         name = (da.name or "").lower()
         fv = str(da.attrs.get("flag_values", "")).strip().replace(",", " ")
@@ -524,11 +759,57 @@ class SeaIcePlotter:
         infer_if_missing: bool = True,
     ):
         """
-        Return (lon2d, lat2d) as numpy arrays matching da2.shape.
-        Priority:
-          1) explicit coord names (lon_coord_name/lat_coord_name) present in da2
-          2) infer from common coord names in da2 if infer_if_missing
-          3) B/T grid (self.G_u / self.G_t) with nj/ni subsetting
+        Resolve 2D longitude/latitude arrays matching a 2D DataArray.
+
+        This method returns `(lon2d, lat2d)` as NumPy arrays matching `da2.shape`.
+        It supports multiple coordinate discovery strategies (in priority order):
+
+          1) Explicit coordinate names passed via `lon_coord_name` / `lat_coord_name`.
+             - Supports either 2D lon/lat coords aligned to the data, or 1D lon/lat
+               vectors that can be meshed into 2D grids.
+          2) Inference from common coordinate naming conventions present in `da2.coords`
+             (if `infer_if_missing=True`), e.g.:
+               ("lon","lat"), ("longitude","latitude"), ("TLON","TLAT"), ("ULON","ULAT")
+          3) Fallback to class grid datasets (`self.G_u` for B-grid or `self.G_t` for T-grid),
+             loaded on demand via `self.load_bgrid(slice_hem=True)`, including optional
+             subsetting via `da2["nj"]` and `da2["ni"]` coordinate indices.
+
+        Parameters
+        ----------
+        da2 : xr.DataArray
+            2D DataArray whose spatial coordinates are required.
+        bcoords : bool, default False
+            If True, use B-grid coordinates (typically `self.G_u["lon"]`, `self.G_u["lat"]`).
+        tcoords : bool, default True
+            If True, use T-grid coordinates (typically `self.G_t["lon"]`, `self.G_t["lat"]`).
+        lon_coord_name, lat_coord_name : str or None, optional
+            Explicit coordinate names to use from `da2`. Both must be provided together.
+        infer_if_missing : bool, default True
+            If True, attempt to infer coordinate names from common patterns in `da2.coords`
+            when explicit names are not provided.
+
+        Returns
+        -------
+        (np.ndarray, np.ndarray)
+            lon2d, lat2d arrays with shape equal to `da2.shape`.
+
+        Raises
+        ------
+        ValueError
+            If `da2` is not 2D.
+        ValueError
+            If only one of `lon_coord_name` or `lat_coord_name` is provided.
+        ValueError
+            If both `bcoords` and `tcoords` are True, or both are False, when fallback
+            grid coordinates are required.
+        ValueError
+            If lon/lat cannot be resolved or cannot be matched/subset to `da2.shape`.
+
+        Notes
+        -----
+        - If `da2` lacks lon/lat coordinates and the grid arrays do not match in shape,
+          `da2` must provide integer index coordinates `nj` and `ni` so the grid can be
+          subset consistently.
         """
         # Ensure clean 2D view, and standard ordering if possible
         if da2.ndim != 2:
@@ -628,13 +909,97 @@ class SeaIcePlotter:
         return_mask: bool = True,         # NEW
         return_flat_index: bool = True):
         """
-        Returns a dict with 1D arrays for PyGMT plotting.
+        Prepare a 2D DataArray for PyGMT plotting by returning 1D lon/lat/z vectors.
 
-        Always returns: lon, lat, z
-        Optionally returns:
-        - mask2d: 2D boolean mask on da2 grid
-        - flat_idx: 1D integer indices into da2.ravel() where mask is True
-        - shape: original 2D shape (for sanity checks)
+        This routine standardises a gridded field into a structure that PyGMT commonly
+        expects for point plotting or scattered gridding. It also constructs masks for:
+          - finite values,
+          - optional masking of structural zeros,
+          - optional clipping/masking by z-range,
+          - optional geographic subsetting by `region` (dateline-safe),
+          - optional additional user-provided mask.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            Input data field. It may contain singleton dimensions; these will be squeezed.
+            After squeeze, the data must be 2D.
+
+        bcoords : bool, default False
+            Use B-grid coordinates if lon/lat are not directly available on `da`.
+        tcoords : bool, default True
+            Use T-grid coordinates if lon/lat are not directly available on `da`.
+
+        lon_coord_name, lat_coord_name : str or None, optional
+            Explicit coordinate names to use for longitude and latitude in `da`.
+            If provided, both must be provided.
+
+        region : tuple[float, float, float, float], optional
+            Geographic bounding box `(xmin, xmax, ymin, ymax)` applied as a mask.
+            This masking is dateline-safe: if `xmin > xmax`, the region is interpreted
+            as crossing the dateline and uses `(lon >= xmin) OR (lon <= xmax)`.
+
+        lon_wrap : {"auto", "0-360", "-180-180"}, default "auto"
+            Longitude convention to enforce on the resolved lon grid. If "auto" and
+            `region` is provided, the method will choose a convention consistent with
+            the region bounds; otherwise it leaves longitudes unchanged.
+
+        extra_mask : array-like, xr.DataArray, callable, optional
+            Additional mask to apply. If callable, it is invoked as `extra_mask(da2)`
+            and must return a boolean mask with the same shape as the 2D data.
+            If array-like, it is converted to a boolean array and combined with the
+            existing mask.
+
+        mask_zero : bool or None, optional
+            Whether to mask zeros (treat as missing) before flattening.
+              - If None, uses `_auto_mask_zero(da2)` to decide.
+              - If True, masks values close to zero (|z| <= 1e-8).
+              - If False, preserves zeros.
+
+        z_clip : tuple[float, float], optional
+            If provided, clip z values into `[z_clip[0], z_clip[1]]` prior to masking.
+            This is a hard clip (values outside become boundary values).
+        z_range_mask : tuple[float, float], optional
+            If provided, apply an additional mask retaining only values within
+            `[lo, hi]`.
+
+        dtype : str, default "float32"
+            Target dtype used when materialising arrays (especially helpful for memory).
+        infer_coords : bool, default True
+            If True, allow `_resolve_lonlat_2d()` to infer lon/lat from common coordinate
+            names on `da` when explicit names are not provided.
+
+        return_mask : bool, default True
+            If True, include `mask2d` (boolean 2D mask) in the returned dict.
+        return_flat_index : bool, default True
+            If True, include `flat_idx` (indices into `z2d.ravel()` where mask is True)
+            in the returned dict.
+
+        Returns
+        -------
+        dict
+            Always includes:
+              - "lon"   : 1D np.ndarray of longitudes (masked + flattened)
+              - "lat"   : 1D np.ndarray of latitudes  (masked + flattened)
+              - "z"     : 1D np.ndarray of values     (masked + flattened)
+              - "shape" : tuple of original 2D shape for sanity checks
+
+            Optionally includes:
+              - "mask2d"   : 2D boolean mask (if `return_mask=True`)
+              - "flat_idx" : 1D integer indices into `z2d.ravel()` (if `return_flat_index=True`)
+
+        Raises
+        ------
+        ValueError
+            If `da` cannot be reduced to a 2D field (after squeeze).
+        ValueError
+            If coordinate resolution fails or `extra_mask` has a shape mismatch.
+
+        Notes
+        -----
+        - If `da` is Dask-backed, the data are computed only once, and coerced to `dtype`.
+        - If `da` has dims ("nj","ni") in a different order, the method transposes to
+          ("nj","ni") to keep indexing consistent with AFIM grid conventions.
         """
         da2 = da.squeeze(drop=True)
         if da2.ndim != 2:
@@ -866,6 +1231,7 @@ class SeaIcePlotter:
         --------
         >>> self.pygmt_map_plot_one_var(FIP_DA, "FIP", plot_regions=8, show_fig=True)
         """
+        import pygmt
         sim_name    = sim_name      if sim_name      is not None else self.sim_name
         show_fig    = show_fig      if show_fig      is not None else self.show_fig
         ow_fig      = overwrite_fig if overwrite_fig is not None else self.ow_fig
@@ -1082,6 +1448,7 @@ class SeaIcePlotter:
 
         The rest of the arguments let you override those defaults if you need to.
         """
+        import pygmt
         var = fast_ice_variable.lower()
         if var not in ("fia", "fit", "fis", "fimar", "fimvr", "fitar", "fitvr"):
             raise ValueError(f"`fast_ice_variable` must be one of ['FIA','FIT','FIS','FIMAR','FIMVR','FITAR','FITVR']; got {fast_ice_variable}")
@@ -1263,6 +1630,7 @@ class SeaIcePlotter:
         - Uses binned transparency for robustness (multiple fig.plot calls).
         - If obs/mod provided and tricolor=True: computes z,t internally.
         """
+        import pygmt
         if plot_GI:
             self.load_cice_grid(slice_hem=True)
         if plot_bathymetry:
@@ -1533,6 +1901,7 @@ class SeaIcePlotter:
             "outside_others" policy. By default, it's all plotted series except the
             current one.
         """
+        import pygmt
         show_fig   = show_fig   if show_fig   is not None else self.show_fig
         save_fig   = save_fig   if save_fig   is not None else self.save_fig
         fmt_dt_pri = fmt_dt_pri if fmt_dt_pri is not None else "Character"
@@ -1705,32 +2074,6 @@ class SeaIcePlotter:
             fig.show()
         pygmt.clib.Session.__exit__
 
-    def plot_taylor(self, stats_dict, out_path):
-        fig = plt.figure(figsize=(6, 6))
-        ax = fig.add_subplot(111, polar=True)
-        ax.set_theta_zero_location('E')
-        ax.set_theta_direction(-1)
-
-        for rms in [0.2, 0.5, 1.0, 1.5]:
-            rs = np.linspace(0.5, 2.0, 500)
-            theta = np.arccos(np.clip(1 - (rms**2 - 1)/(2 * rs), -1, 1))
-            ax.plot(theta, rs, '--', color='gray', lw=0.6)
-        ax.plot([0], [1], 'ko', label='Reference')
-
-        for label, stat in stats_dict.items():
-            angle = np.arccos(stat["corr"])
-            r = stat["std_ratio"]
-            ax.plot(angle, r, 'o', label=label)
-
-        ax.set_rmax(2)
-        ax.set_rticks([0.5, 1.0, 1.5, 2.0])
-        ax.set_rlabel_position(135)
-        ax.set_title("Taylor Diagram: Sea Ice Speed Comparison", fontsize=12)
-        ax.legend(loc='upper right', bbox_to_anchor=(1.45, 1.1))
-        plt.tight_layout()
-        plt.savefig(out_path)
-        plt.close()
-
     def pygmt_map_plot_multi_var_8sectors(
         self,
         das,
@@ -1764,15 +2107,14 @@ class SeaIcePlotter:
         var_out         = None,
         overwrite_fig   = None,
         show_fig        = None,
-        xshift          = "w+1c",
-    ):
+        xshift          = "w+1c"):
         """
         8-sector plot with 2–3 panels laid out left-to-right using shift_origin.
 
         Performance: compute PyGMT plot point clouds ONCE per panel (u1/u2/du),
         then sector-filter the point clouds cheaply (no repeated Dask compute).
         """
-
+        import pygmt
         def _as_list(x, n, name):
             if x is None:
                 return [None] * n

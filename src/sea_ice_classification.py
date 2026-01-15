@@ -1,92 +1,133 @@
-"""
-SeaIceClassification
-====================
-
-Class utilities for classifying Antarctic fast ice using sea-ice concentration
-(`aice`) and speed thresholds on multiple grids:
-
-- B  : native CICE B-grid (cell centers) magnitude computed from (uvel, vvel)
-- Ta : 2×2 B-grid box average (area-like) magnitude
-- Tb : 2×2 B-grid box average (grid-like) magnitude
-- Tx : B-grid regridded to T-grid magnitude via precomputed weights
-
-High-level API
---------------
-- classify_fast_ice(...): end-to-end daily fast-ice mask, binary-day mask, and
-  optional rolling-mean variant.
-- classify_binary_days_fast_ice(...): “persistence” classification over a sliding
-  window (N days) requiring ≥M fast-ice days within the window.
-
-Assumptions / required attributes
----------------------------------
-Before calling the high-level methods, the following attributes/methods must exist:
-
-Attributes (populated externally or via your toolbox manager):
-- self.CICE_dict: dict with keys
-    "y_dim_length", "x_dim_length", "time_dim", "FI_chunks",
-    "spatial_dims", "drop_coords"
-- self.icon_thresh: float   (sea-ice concentration threshold, e.g., 0.15)
-- self.ispd_thresh: float   (speed threshold for fast ice, e.g., 1e-4 m/s)
-- self.bin_win_days: int    (persistence window length, e.g., 31)
-- self.bin_min_days: int    (min fast-ice count in window, e.g., 16)
-- self.mean_period: int     (rolling mean length in days)
-- self.BorC2T_type: some combination of {"B","C","Ta","Tb","Tc","Tx"} to average into composite
-- self.G_t, self.G_u: dicts providing T- and U-grid lon/lat arrays
-- self.dt_range: pandas.DatetimeIndex used by np3d_to_xr3d
-
-Methods (provided elsewhere in your stack):
-- self.load_cice_grid()
-- self.define_reG_weights()
-- self.load_cice_zarr(...)
-- self.slice_hemisphere(xr.DataArray/xr.Dataset)
-- self.define_datetime_vars(dt0_str, dtN_str)
-- self.reG(xr.DataArray)   (B→T regridding using precomputed weights)
-"""
-
-import json, os, shutil, logging, re, dask, gc
 import xarray    as xr
 import pandas    as pd
 import numpy     as np
-import xesmf     as xe
-from collections import defaultdict
-from pathlib     import Path
-from datetime    import datetime, timedelta
-from numpy.lib.stride_tricks import sliding_window_view
-import concurrent.futures
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-
+__all__ = ["SeaIceClassification"]
 class SeaIceClassification:
     """
-    Classify fast ice from CICE outputs using concentration and speed thresholds,
-    with support for daily, persistence (binary-day), and rolling-mean variants.
+    Classify Antarctic landfast ice, pack ice, and total sea ice from CICE output.
 
-    Parameters
-    ----------
-    sim_name : str, optional
-        Name/identifier of the simulation (used for logs/paths).
-    logger : logging.Logger, optional
-        Logger instance. If None, uses a module-level logger.
-    **kwargs
-        Arbitrary configuration attributes set directly on `self`. Common keys
-        include thresholds, window lengths, and dictionaries noted in the module
-        docstring.
+    This class implements a threshold-based classification framework driven by:
+      - sea-ice concentration (`aice`), and
+      - sea-ice speed magnitude on the model’s analysis grid (nominally the CICE T-grid).
+
+    It supports multiple velocity staggering strategies for constructing a *T-grid*
+    speed magnitude (`ispd_T`) from the native model velocity components:
+
+    Staggering → T-grid strategies
+    ------------------------------
+    The strategy is controlled by `self.BorC2T_type`, which can be a string (e.g. "Tb")
+    or an iterable (e.g. ["Ta", "Tb"]). Supported tokens are:
+
+    **B-grid derived modes (legacy / B-grid CICE)**
+    - "Ta": Convert corner-staggered B-grid velocities to a T-grid speed using a 2×2
+            box mean where NaNs propagate (area-like average; intended to preserve holes).
+    - "Tb": Convert corner-staggered B-grid velocities to a T-grid speed using a 2×2
+            box mean with NaNs → 0 (no-slip-like fill; tends to remove coastal holes).
+    - "Tx": Regrid B-grid velocities to T-grid using precomputed weights (e.g., xESMF).
+
+    **C-grid derived mode (new / C-grid CICE)**
+    - "Tc": Reconstruct T-grid (cell-centre) velocities directly from C-grid edge
+            components:
+              uvelE, uvelN, vvelE, vvelN  →  (velE_T, velN_T)  →  ispd_T
+            This mode uses a dedicated C-grid-to-T-grid reconstruction (`C2T`) and is
+            conceptually distinct from the B-grid averaging/regridding modes. Because "Tc"
+            is a physically different reconstruction (not merely an alternate smoothing),
+            it is enforced as **exclusive**: if "Tc" is selected, it must be the only token.
+
+    Classification products
+    -----------------------
+    For a given date range [dt0, dtN] the class can produce:
+      - Daily masks: computed directly from daily `aice` and `ispd_T`.
+      - Persistence (binary-day) masks: computed from the extended-range daily mask using
+        a sliding window length W (days) and minimum count M (days in window).
+      - Optional rolling-mean masks: computed from a rolling-mean speed field and the
+        same concentration + speed thresholds.
+
+    Definitions
+    -----------
+    Using thresholds `icon_thresh` (concentration) and `ispd_thresh` (speed):
+
+      Fast ice (FI):
+        (aice > icon_thresh) AND (0 < ispd_T <= ispd_thresh)
+
+      Pack ice (PI):
+        (aice > icon_thresh) AND (ispd_T > ispd_thresh)
+
+      Total sea ice (SI):
+        (aice > icon_thresh)
+
+    Persistence (“binary-day”) classification:
+      A day is classed as persistent if at least `bin_min_days` out of `bin_win_days`
+      days in a centred sliding window are classed as FI/PI.
+
+    Required configuration and dependencies
+    ---------------------------------------
+    The class expects the broader AFIM stack to provide the following attributes:
+
+    Core configuration
+    - CICE_dict : dict
+        Must include (names may vary across your stack):
+          "time_dim", "y_dim", "x_dim", "y_dim_length", "x_dim_length",
+          "drop_coords", "FI_chunks", and optionally "wrap_x", "y_chunk", "x_chunk".
+    - icon_thresh : float
+        Concentration threshold (e.g., 0.15).
+    - ispd_thresh : float
+        Speed threshold for FI/PI discrimination (e.g., 1e-4 m/s).
+    - bin_win_days : int
+        Persistence window length W.
+    - bin_min_days : int
+        Minimum count M within window.
+    - mean_period : int
+        Rolling mean window length for optional rolling output.
+    - BorC2T_type : str | list[str] | set[str]
+        Mode tokens controlling `compute_ispdT()`.
+
+    External methods (implemented elsewhere in your toolbox)
+    - load_cice_grid()
+    - define_reG_weights()
+    - load_cice_zarr(...)
+    - slice_hemisphere(...)
+    - reG(...) or B2Tx(...)  (depending on your architecture)
+    - B2Ta(...), B2Tb(...), B2Tx(...)  (if Ta/Tb/Tx are used)
+    - C2T(...)  (required for Tc)
+    - _apply_thresholds(...), _rolling_mean(...), _with_T_coords(...)
+    - classify_binary_days_fast_ice(...), classify_binary_days_pack_ice(...)
+    - _wrap_x_last_equals_first(...)  (if wrap_x=True)
 
     Notes
     -----
-    - The “daily” fast-ice mask is defined where:
-        (aice > icon_thresh) AND (0 < ispd <= ispd_thresh)
-      after composing `ispd` from one or more of {B, Ta, Tb, Tx}.
-    - The binary-day mask applies a centered sliding window that marks a day as
-      “persistent fast ice” if at least `bin_min_days` within `bin_win_days` are
-      fast-ice days.
-    - Several operations use Dask via `xr.apply_ufunc(..., dask="parallelized")`,
-      but key intermediates are explicitly `.compute()`’d for determinism. Ensure
-      available memory/cluster config is appropriate for your domain size.
+    - Many operations are Dask-friendly; however, persistence and rolling calculations
+      benefit from careful chunking along time.
+    - The high-level classifiers extend the requested time window to avoid edge artefacts
+      when applying centred rolling/persistence windows, then crop back to [dt0, dtN].
+    - For C-grid runs ("Tc"), velocities are expected as edge components (E/N) and are
+      reconstructed rather than averaged/regridded. This typically reduces the systematic
+      “west-of-land NaN/zero” artefacts seen in B-grid corner-staggered products.
     """
+    
     def __init__(self, sim_name=None, logger=None, **kwargs):
+        """
+        Initialise the classifier and attach configuration.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Simulation identifier used for logging and/or output paths.
+        logger : logging.Logger, optional
+            Logger instance. If None, a module-level logger is created.
+        **kwargs
+            Configuration values to be set as attributes on `self`. Typical keys include:
+            `CICE_dict`, `icon_thresh`, `ispd_thresh`, `bin_win_days`, `bin_min_days`,
+            `mean_period`, `BorC2T_type`, plus grid or path metadata used by your stack.
+
+        Notes
+        -----
+        - This constructor is intentionally lightweight; grid loading and weight
+          construction are deferred to the high-level classifier methods.
+        """
+        import logging
         self.sim_name = sim_name
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger   = logger or logging.getLogger(__name__)
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -588,6 +629,7 @@ class SeaIceClassification:
         window is not available). This differs from xarray rolling with partial
         windows.
         """
+        from numpy.lib.stride_tricks import sliding_window_view
         m = np.asarray(mask)
         if m.dtype != np.uint8:
             # convert {NaN,0,1} → {0,0,1}
@@ -740,38 +782,74 @@ class SeaIceClassification:
     
     def compute_ispdT(self, uvel, vvel=None) -> xr.DataArray:
         """
-        Compute T-grid sea-ice speed magnitude using the configured staggering→T strategy.
+        Compute T-grid sea-ice speed magnitude (`ispd_T`) using the configured strategy.
 
-        Supported conversion modes in `self.BorC2T_type`:
-        - "Ta": B-grid corner 2x2 mean (NaNs propagate) via `B2Ta`
-        - "Tb": B-grid corner 2x2 mean (NaNs->0, no-slip) via `B2Tb`
-        - "Tx": regrid (xESMF) via `B2Tx`
-        - "Tc": C-grid edge→center reconstruction from (uvelE/uvelN/vvelE/vvelN) via `C2T`
+        This method converts native velocity components to a speed magnitude on the
+        analysis grid (nominally T-grid). The conversion mode(s) are determined by
+        `self.BorC2T_type`, which is normalised to a set of tokens via `_b2t_selection_set()`.
 
-        IMPORTANT: "Tc" is exclusive. If "Tc" is selected, it must be the only mode
-        and the result is NOT averaged with other modes.
+        Supported modes
+        ---------------
+        **B-grid derived modes (can be combined and averaged):**
+        - "Ta": Uses `self.B2Ta(uvel, vvel, y_len, x_len)` to produce a T-grid-like speed
+          from corner-staggered B-grid components via a 2×2 mean where NaNs propagate.
+        - "Tb": Uses `self.B2Tb(uvel, vvel, y_len, x_len, wrap_x=...)` to produce a T-grid-like
+          speed via a 2×2 mean where NaNs are converted to 0 (no-slip-like fill).
+        - "Tx": Uses `self.B2Tx(uvel, vvel)` to regrid B-grid components to T-grid (e.g., via weights).
+
+        If multiple of {Ta, Tb, Tx} are selected, the method returns the mean of the
+        members (skipna=True) to form a composite speed estimate.
+
+        **C-grid derived mode (exclusive):**
+        - "Tc": Reconstructs T-grid velocities directly from C-grid edge components using
+          `self.C2T(uvelE, uvelN, vvelE, vvelN, ...)`, then computes:
+              ispd_T = hypot(velE_T, velN_T)
+
+          "Tc" must be the **only** selected token. It is not averaged with Ta/Tb/Tx,
+          because it represents a different staggering and reconstruction pathway.
 
         Parameters
         ----------
-        uvel, vvel : xarray.DataArray or xarray.Dataset
-            For Ta/Tb/Tx:
-                uvel and vvel are the usual B-grid corner-staggered components.
-            For Tc:
-                pass a Dataset (or mapping-like object) containing the four required
-                variables: uvelE, uvelN, vvelE, vvelN. `vvel` is ignored in this case.
-        label : str, optional
-            Optional label for logging; not required.
+        uvel : xr.DataArray, xr.Dataset, or mapping-like
+            Velocity input. Interpretation depends on mode:
+
+            - For Ta/Tb/Tx:
+                `uvel` is the B-grid corner-staggered u-component DataArray (typically `uvel`).
+                `vvel` must be provided as the matching v-component DataArray.
+
+            - For Tc:
+                `uvel` must be a Dataset (or dict-like) containing the four required C-grid
+                edge components:
+                    "uvelE", "uvelN", "vvelE", "vvelN"
+                In Tc mode, the `vvel` argument is ignored.
+
+        vvel : xr.DataArray, optional
+            B-grid corner-staggered v-component. Required for Ta/Tb/Tx; ignored for Tc.
 
         Returns
         -------
-        ispd_T : xarray.DataArray
-            T-grid speed magnitude (float32).
+        xr.DataArray
+            T-grid speed magnitude (float32). Name will reflect the mode:
+              - "ispd_Tc" for Tc
+              - "ispd_Ta"/"ispd_Tb"/"ispd_Tx" when only one B-grid member is selected
+              - composite mean when multiple B-grid members are selected
 
         Raises
         ------
         ValueError
-            If "Tc" is combined with other modes, or if required C-grid variables
-            are missing.
+            If Tc is requested but `uvel` does not provide the required variables.
+        ValueError
+            If Tc is selected together with any of Ta/Tb/Tx.
+        ValueError
+            If required C-grid variables ("uvelE", "uvelN", "vvelE", "vvelN") are missing.
+        AttributeError
+            If a requested conversion method (e.g., B2Ta/B2Tb/B2Tx/C2T) is not defined.
+
+        Notes
+        -----
+        - In Tc mode, `wrap_x` handling is applied (if `self.CICE_dict["wrap_x"]` is True)
+          using `_wrap_x_last_equals_first()` so that the last x-column matches the first.
+        - Speed is computed using `np.hypot` via `xr.apply_ufunc(..., dask="parallelized")`.
         """
         sel   = self._b2t_selection_set()
         is_Tc = ("Tc" in sel)
@@ -936,8 +1014,30 @@ class SeaIceClassification:
     
     def _b2t_selection_set(self) -> set[str]:
         """
-        Normalize self.BorC2T_type into a set of mode tokens, e.g. {"Ta","Tb"} or {"Tc"}.
-        Accepts list/tuple/set or a string (optionally comma/space separated).
+        Normalise `self.BorC2T_type` into a set of mode tokens.
+
+        This helper accepts either:
+          - an iterable (list/tuple/set) of tokens, e.g. ["Ta", "Tb"], or
+          - a string containing tokens separated by commas and/or whitespace,
+            e.g. "Ta,Tb" or "Ta Tb".
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        set[str]
+            Set of non-empty token strings (whitespace stripped), e.g. {"Ta", "Tb"} or {"Tc"}.
+
+        Side Effects
+        ------------
+        Logs the raw value and normalised selection if `self.logger` exists.
+
+        Notes
+        -----
+        - This method does not validate tokens beyond basic normalisation; validation is
+          performed by downstream methods (e.g., `compute_ispdT()` enforcing Tc exclusivity).
         """
         b2t = getattr(self, "BorC2T_type", None)
 
@@ -964,60 +1064,85 @@ class SeaIceClassification:
                         roll_win_days         : int  = None,
                         time_dim_name         : str  = None):
         """
-        Classify fast ice (FI) from model output using daily, persistence, and optional rolling criteria.
+        Classify fast ice (FI) using concentration + speed thresholds with optional persistence/rolling products.
 
-        Fast ice is defined where sea-ice concentration exceeds a threshold and ice
-        speed is small (immobile) but non-zero:
-            FI := (aice > icon_thresh) AND (0 < speed <= ispd_thresh)
+        Fast ice is defined where concentration exceeds `icon_thresh` and the T-grid
+        speed magnitude is small but non-zero:
 
-        The method returns:
-        1) A daily FI mask computed directly from instantaneous (daily) T-grid speed.
-        2) A binary-day (persistence) FI mask computed from the *extended-range* daily
-            mask using a W-day window requiring at least M FI days.
-        3) Optionally, a rolling-mean FI mask computed from a rolling-mean speed field.
-        4) Speed diagnostics (daily and optional rolling speed) in `ispd_out`.
+            FI := (aice > icon_thresh) AND (0 < ispd_T <= ispd_thresh)
 
-        To avoid edge artefacts in persistence and rolling calculations, the input time
-        range is extended by half the largest window on each side, masks are computed
-        on the extended range, and then cropped back to [dt0_str, dtN_str].
+        The method computes products over an *extended* time range to avoid edge artefacts
+        for centred windows (binary-day persistence and optional rolling-mean speed). It
+        then crops the outputs back to the requested interval [dt0_str, dtN_str].
+
+        C-grid "Tc" behaviour (important)
+        ---------------------------------
+        If `BorC2T_type` includes "Tc", the classification uses C-grid edge velocities:
+            uvelE, uvelN, vvelE, vvelN
+        and reconstructs T-grid velocities using `C2T`. In this mode:
+          - `define_reG_weights()` is not called (no B→T regridding required),
+          - the velocity dataset passed to `compute_ispdT()` must contain the four
+            C-grid variables, and
+          - "Tc" must be exclusive (it cannot be combined with Ta/Tb/Tx).
 
         Parameters
         ----------
         dt0_str, dtN_str : str
-            Start and end dates (inclusive) in a pandas-parsable format (e.g., "YYYY-MM-DD").
+            Start and end dates (inclusive). Must be parseable by pandas, e.g. "YYYY-MM-DD".
         bin_win_days : int, optional
             Persistence window length W (days). Defaults to `self.bin_win_days`.
         bin_min_days : int, optional
-            Minimum FI days M within the window. Defaults to `self.bin_min_days`.
-        enable_rolling_output : bool, default=False
-            If True, also compute a rolling-mean speed field and corresponding FI mask.
+            Minimum number of FI days M required within the window. Defaults to `self.bin_min_days`.
+        enable_rolling_output : bool, default False
+            If True, compute a rolling-mean speed field and corresponding FI mask.
         roll_win_days : int, optional
-            Rolling-mean window length (days). Defaults to `self.mean_period`.
+            Rolling mean window length (days). Defaults to `self.mean_period`.
         time_dim_name : str, optional
             Name of the time dimension. Defaults to `self.CICE_dict["time_dim"]`.
 
         Returns
         -------
-        FI_dly : xarray.Dataset
+        FI_dly : xr.Dataset
             Daily fast-ice mask dataset with variable "FI_mask" over [dt0_str, dtN_str].
-        FI_bin : xarray.Dataset
+        FI_bin : xr.Dataset
             Binary-day (persistence) fast-ice mask dataset with variable "FI_mask" over
-            [dt0_str, dtN_str].
-        FI_roll : xarray.Dataset or None
+            [dt0_str, dtN_str]. Computed from the *extended-range* daily mask and then cropped.
+        FI_roll : xr.Dataset or None
             Rolling-mean fast-ice mask dataset with variable "FI_mask" over [dt0_str, dtN_str],
             or None if `enable_rolling_output` is False.
         ispd_out : dict
-            Dictionary with speed diagnostics:
-            - "daily": DataArray "ispd_T"
-            - "rolly": DataArray "ispd_T_roll" (if enabled), else None
+            Speed diagnostics:
+              - "daily": xr.DataArray "ispd_T" over the *extended* range (with T coords)
+              - "rolly": xr.DataArray "ispd_T_roll" over the *extended* range (if enabled), else None
+
+        Raises
+        ------
+        ValueError
+            If "Tc" is selected together with any of {"Ta", "Tb", "Tx"}.
+        ValueError
+            If required C-grid velocity variables are missing when "Tc" is selected.
+        Exception
+            Propagates exceptions from dataset loading, coordinate attachment, thresholding,
+            or persistence/rolling helpers.
 
         Notes
         -----
-        - Loads variables ['aice','uvel','vvel'] over an extended time range.
-        - Computes T-grid speed once on the extended range and reuses it.
-        - Uses Dask-friendly chunking with small time chunks to improve rolling operations.
-        - The binary-day mask is computed from the extended daily mask to prevent “all-zero”
-        behaviour near the analysis window edges.
+        Implementation outline
+        ----------------------
+        1) Determine selection set from `BorC2T_type` and enforce Tc exclusivity.
+        2) Load grid and, if needed (non-Tc), load/define regridding weights.
+        3) Extend requested time range by half the maximum of:
+             - persistence window (W/2)
+             - rolling window (R/2, if enabled)
+        4) Load required variables across the extended range:
+             - Tc:  aice + (uvelE,uvelN,vvelE,vvelN)
+             - else: aice + (uvel,vvel)
+        5) Chunk for rolling-friendly time blocks.
+        6) Compute `ispd_T` once on the extended range and persist.
+        7) Compute:
+             - daily FI mask on extended range, then crop
+             - binary-day FI mask on extended daily mask, then crop
+             - optional rolling FI mask on rolled speed, then crop
         """
         time_dim      = time_dim_name or self.CICE_dict["time_dim"]
         bin_win_days  = int(bin_win_days  or self.bin_win_days)
@@ -1108,58 +1233,58 @@ class SeaIceClassification:
                           roll_win_days         : int  = None,
                           time_dim_name         : str  = None):
         """
-        Classify pack ice (PI) from model output using daily, persistence, and optional rolling criteria.
+        Classify pack ice (PI) using concentration + speed thresholds with optional persistence/rolling products.
 
-        Pack ice is defined as the complement of fast ice under the same concentration
-        threshold, using a speed threshold:
-            PI := (aice > icon_thresh) AND (speed > ispd_thresh)
+        Pack ice is defined where concentration exceeds `icon_thresh` and the T-grid
+        speed magnitude exceeds the fast-ice speed threshold:
 
-        The method returns:
-        1) A daily PI mask computed from instantaneous (daily) T-grid speed.
-        2) A binary-day (persistence) PI mask computed from the *extended-range* daily
-            mask using a W-day window requiring at least M PI days.
-        3) Optionally, a rolling-mean PI mask computed from rolling-mean speed.
-        4) Speed diagnostics (daily and optional rolling speed) in `ispd_out`.
+            PI := (aice > icon_thresh) AND (ispd_T > ispd_thresh)
 
-        As with fast-ice classification, the input time range is extended to avoid
-        edge artefacts in persistence/rolling calculations, and products are cropped
+        As with fast-ice classification, this method extends the input time range to
+        avoid edge artefacts for centred persistence/rolling windows and then crops outputs
         back to [dt0_str, dtN_str].
 
         Parameters
         ----------
         dt0_str, dtN_str : str
-            Start and end dates (inclusive) in a pandas-parsable format (e.g., "YYYY-MM-DD").
+            Start and end dates (inclusive). Must be parseable by pandas, e.g. "YYYY-MM-DD".
         bin_win_days : int, optional
             Persistence window length W (days). Defaults to `self.bin_win_days`.
         bin_min_days : int, optional
-            Minimum PI days M within the window. Defaults to `self.bin_min_days`.
-        enable_rolling_output : bool, default=False
-            If True, also compute a rolling-mean speed field and corresponding PI mask.
+            Minimum number of PI days M required within the window. Defaults to `self.bin_min_days`.
+        enable_rolling_output : bool, default False
+            If True, compute a rolling-mean speed field and corresponding PI mask.
         roll_win_days : int, optional
-            Rolling-mean window length (days). Defaults to `self.mean_period`.
+            Rolling mean window length (days). Defaults to `self.mean_period`.
         time_dim_name : str, optional
             Name of the time dimension. Defaults to `self.CICE_dict["time_dim"]`.
 
         Returns
         -------
-        PI_dly : xarray.Dataset
+        PI_dly : xr.Dataset
             Daily pack-ice mask dataset with variable "PI_mask" over [dt0_str, dtN_str].
-        PI_bin : xarray.Dataset
+        PI_bin : xr.Dataset
             Binary-day (persistence) pack-ice mask dataset with variable "PI_mask" over
-            [dt0_str, dtN_str].
-        PI_roll : xarray.Dataset or None
+            [dt0_str, dtN_str]. Computed from the extended daily mask and then cropped.
+        PI_roll : xr.Dataset or None
             Rolling-mean pack-ice mask dataset with variable "PI_mask" over [dt0_str, dtN_str],
             or None if `enable_rolling_output` is False.
         ispd_out : dict
-            Dictionary with speed diagnostics:
-            - "daily": DataArray "ispd_T"
-            - "rolly": DataArray "ispd_T_roll" (if enabled), else None
+            Speed diagnostics:
+              - "daily": xr.DataArray "ispd_T"
+              - "rolly": xr.DataArray "ispd_T_roll" (if enabled), else None
+
+        Raises
+        ------
+        Exception
+            Propagates exceptions from loading, speed computation, thresholding, or persistence/rolling helpers.
 
         Notes
         -----
-        - Pack ice is only classified where `aice > icon_thresh`.
-        - Binary-day persistence is computed on the extended daily mask to avoid
-        edge-related bias and truncation artefacts.
+        - Current implementation assumes B-grid inputs (uvel/vvel) and uses `define_reG_weights()`.
+          If you intend to support Tc for pack-ice classification, mirror the Tc branching used
+          in `classify_fast_ice()` (variable selection + compute_ispdT(ds_vel) path).
+        - Binary-day persistence is computed on the extended daily mask to reduce truncation bias.
         """
         time_dim      = time_dim_name or self.CICE_dict["time_dim"]
         bin_win_days  = int(bin_win_days  or self.bin_win_days)
@@ -1222,34 +1347,35 @@ class SeaIceClassification:
         Classify total sea ice (SI) using only a concentration threshold.
 
         Total sea ice is defined as:
+
             SI := (aice > icon_thresh)
 
-        This classification does not use speed, and therefore does not produce
-        binary-day (persistence) or rolling-mean products.
+        This classifier does not require velocity variables and therefore does not
+        produce persistence (binary-day) or rolling-mean products.
 
         Parameters
         ----------
         dt0_str, dtN_str : str
-            Start and end dates (inclusive) in a pandas-parsable format (e.g., "YYYY-MM-DD").
+            Start and end dates (inclusive). Must be parseable by pandas, e.g. "YYYY-MM-DD".
         time_dim_name : str, optional
             Name of the time dimension. Defaults to `self.CICE_dict["time_dim"]`.
 
         Returns
         -------
-        SI_dly : xarray.Dataset
+        SI_dly : xr.Dataset
             Daily sea-ice mask dataset with variable "SI_mask" over [dt0_str, dtN_str].
         SI_bin : None
             Always None (no persistence product for SI).
         SI_roll : None
-            Always None (no rolling-mean product for SI).
+            Always None (no rolling product for SI).
         ispd_out : dict
             Empty dict, returned for API consistency with FI/PI classifiers.
 
         Notes
         -----
-        - Loads only `aice` (no velocity fields required).
-        - Applies hemisphere slicing via `self.slice_hemisphere`.
-        - Output is chunked using `self.CICE_dict["FI_chunks"]` and computed into memory.
+        - Loads only `aice` across the requested period.
+        - Applies hemisphere slicing via `slice_hemisphere()` prior to thresholding.
+        - Uses chunking consistent with FI/PI products to keep downstream workflows uniform.
         """
         time_dim = time_dim_name or self.CICE_dict["time_dim"]
         # Load aice only (no need to compute speed)

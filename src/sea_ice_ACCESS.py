@@ -1,14 +1,74 @@
-import os, sys
-import intake
-import datetime
-import xarray as xr
-import pandas as pd
-import numpy  as np
-from pathlib  import Path
-
+from __future__ import annotations
 class SeaIceACCESS:
+    """
+    Interface to the ACCESS-NRI Intake catalog for loading ACCESS-OM* CICE daily output
+    and writing it into an AFIM-friendly monthly Zarr layout.
+
+    This class is intended to:
+      1) Query the ACCESS-NRI Intake catalog for available CICE variables for a given
+         ACCESS experiment.
+      2) Load a daily dataset (1day frequency) for a selected set of variables and
+         time window.
+      3) Standardise basic indexing/coordinates (e.g., ensure `nj`/`ni` coordinates
+         exist) so downstream merging/processing is reliable.
+      4) Persist the daily time series to monthly Zarr groups (one directory per month).
+
+    Notes
+    -----
+    - The Intake catalog must be installed and the ACCESS-NRI catalog must be available
+      as `intake.cat.access_nri`.
+    - This class assumes CICE daily output is labelled as a daily mean associated with
+      the *following* day (a common convention); `write_ACCESS_to_monthly_zarr()` shifts
+      timestamps back by 1 day to align with the intended averaging period.
+    - Dask is optional, but recommended for performance. If `self.client` is not set,
+      operations may still work but can be slower and may run locally.
+
+    Expected Attributes
+    -------------------
+    logger : logging.Logger
+        Logger used for status and warnings.
+    client : dask.distributed.Client or None
+        Dask client (optional). If None, a warning is emitted at initialisation.
+    AOM2_dict : dict
+        Configuration dictionary expected to contain at least `experiment` (str) when
+        `experiment` is not passed explicitly to methods.
+    dt0_str, dtN_str : str
+        Default ISO date strings (e.g. "1993-01-01") used when method arguments are None.
+    cice_vars_reqd : list[str]
+        Required CICE variable names you want to extract from the loaded dataset.
+    cice_var_list : list[str]
+        Variable names used to query the catalog. This can match `cice_vars_reqd`, or be
+        a broader list (e.g., including coordinates/auxiliary vars).
+    D_zarr : str or pathlib.Path
+        Output directory where monthly Zarr groups are written.
+
+    Raises
+    ------
+    ValueError
+        If `self.cice_vars_reqd` is not defined at initialisation.
+    """
 
     def __init__(self, **kwargs):
+        """
+        Initialise the ACCESS-NRI CICE catalog helper.
+
+        Parameters
+        ----------
+        **kwargs
+            Implementation-dependent configuration parameters. Typical usage is to pass
+            or set attributes such as `logger`, `client`, `AOM2_dict`, `dt0_str`, `dtN_str`,
+            `cice_vars_reqd`, `cice_var_list`, and `D_zarr`.
+
+        Notes
+        -----
+        - If no Dask client is provided (`self.client is None`), a warning is printed.
+        - `self.cice_vars_reqd` must be set before completion; otherwise a ValueError is raised.
+
+        Raises
+        ------
+        ValueError
+            If `self.cice_vars_reqd` is None.
+        """
         if self.client is None:
             print("Warning: No Dask client was provided to SeaIceACCESS.")
         if self.cice_vars_reqd is None:
@@ -16,20 +76,38 @@ class SeaIceACCESS:
 
     def list_access_cice_variables(self, experiment=None):
         """
-        Lists all available CICE sea ice variables in the ACCESS-NRI Intake catalog
-        for the specified experiment.
+        List available daily CICE variables in the ACCESS-NRI Intake catalog.
+
+        This method queries the ACCESS-NRI catalog for the specified experiment and returns
+        the unique set of variable names found at daily frequency (frequency="1day").
 
         Parameters
         ----------
         experiment : str, optional
-            ACCESS experiment name (e.g., "access-om2-01-iaf").
-            If not provided, falls back to `self.AOM2_dict['experiment']`.
+            ACCESS experiment identifier (e.g., "access-om2-01-iaf").
+            If None, the method falls back to `self.AOM2_dict['experiment']`.
 
         Returns
         -------
-        List[str]
-            Sorted list of unique CICE variable names.
+        list[str]
+            Sorted list of unique CICE variable names available for the experiment at
+            1-day frequency. Returns an empty list if no matching results are found.
+
+        Raises
+        ------
+        ValueError
+            If `experiment` is not provided and `self.AOM2_dict['experiment']` is missing.
+        RuntimeError
+            If the ACCESS-NRI catalog is not available as `intake.cat.access_nri`.
+
+        Notes
+        -----
+        - The ACCESS-NRI Intake catalog must be installed and configured (i.e., the catalog
+          is discoverable under `intake.cat`).
+        - Catalog entries sometimes store variable names as a list per asset. This method
+          flattens those lists into a unique set.
         """
+        import intake
         experiment = experiment or self.AOM2_dict.get('experiment', None)
         if experiment is None:
             raise ValueError("Experiment name must be provided or set in self.AOM2_dict['experiment'].")
@@ -53,6 +131,56 @@ class SeaIceACCESS:
         return var_list
 
     def load_ACCESS_OM_CICE(self, experiment=None, dt0_str=None, dtN_str=None):
+        """
+        Load daily CICE output from the ACCESS-NRI Intake catalog as an xarray.Dataset.
+
+        The method searches the ACCESS-NRI catalog for a daily (frequency="1day") CICE dataset
+        matching `self.cice_var_list`, opens it via `to_dataset_dict()`, extracts the variables
+        listed in `self.cice_vars_reqd` (if present), and subsets the time dimension to the
+        requested window.
+
+        Parameters
+        ----------
+        experiment : str, optional
+            ACCESS experiment identifier. If None, defaults to `self.AOM2_dict['experiment']`.
+        dt0_str : str, optional
+            Inclusive start date string (ISO-like), e.g. "1993-01-01".
+            If None, defaults to `self.dt0_str`.
+        dtN_str : str, optional
+            Inclusive end date string (ISO-like), e.g. "1993-12-31".
+            If None, defaults to `self.dtN_str`.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing the extracted variables on the time subset. The dataset is
+            merged from individual variables to ensure consistent coordinate labelling.
+
+        Raises
+        ------
+        RuntimeError
+            If the ACCESS-NRI catalog is not available as `intake.cat.access_nri`.
+        KeyError
+            If `experiment` is None and `self.AOM2_dict['experiment']` is missing.
+        ValueError
+            If the catalog search returns zero or multiple daily datasets (expects exactly one).
+
+        Warns
+        -----
+        UserWarning (via logger)
+            If any of `self.cice_vars_reqd` are missing from the loaded dataset.
+
+        Notes
+        -----
+        - Uses `use_cftime=True` for robust non-standard calendars.
+        - Adds explicit `nj` and `ni` coordinates (integer labels) to each extracted variable
+          to avoid merge failures or downstream ambiguity when datasets lack labelled indices.
+        - The catalog search uses `self.cice_var_list`; variables actually returned are then
+          filtered to `self.cice_vars_reqd` (if present).
+        """
+        import intake
+        import numpy as np
+        import xarray as xr
         experiment = experiment if experiment is not None else self.AOM2_dict['experiment']
         dt0_str    = dt0_str    if dt0_str    is not None else self.dt0_str
         dtN_str    = dtN_str    if dtN_str    is not None else self.dtN_str
@@ -82,17 +210,55 @@ class SeaIceACCESS:
 
     def write_ACCESS_to_monthly_zarr(self, DS, overwrite=False):
         """
-        Splits a daily dataset into monthly chunks and writes each to a separate Zarr file.
+        Write a daily ACCESS-CICE Dataset into monthly Zarr groups.
 
-        INPUTS:
-        DS : xarray.Dataset
-            Daily model output dataset with a 'time' dimension.
-        overwrite : bool
-            If True, overwrite existing Zarr directories.
+        The input dataset is assumed to have a daily time axis. The method:
+          1) Creates/ensures the output directory exists (`self.D_zarr`).
+          2) Shifts timestamps back by one day to correct the common "daily mean labelled
+             by the following day" convention in some CICE outputs.
+          3) Splits the dataset into monthly subsets (YYYY-MM).
+          4) Writes each month to `iceh_YYYY-MM.zarr` under `self.D_zarr`.
 
-        OUTPUTS:
-        Writes: D_out/iceh_YYYY-MM.zarr for each month in DS
+        Parameters
+        ----------
+        DS : xr.Dataset
+            Daily CICE dataset with a `time` dimension. Expected to also have spatial
+            dimensions `nj` and `ni`.
+        overwrite : bool, default False
+            If True, existing monthly Zarr directories are overwritten. If False, existing
+            outputs are skipped.
+
+        Returns
+        -------
+        None
+            This method writes Zarr stores to disk and does not return a value.
+
+        Side Effects
+        ------------
+        Writes monthly Zarr groups to:
+            <self.D_zarr>/iceh_YYYY-MM.zarr
+
+        Raises
+        ------
+        OSError
+            If the output directory cannot be created.
+        Exception
+            Any exception raised by `xarray.Dataset.to_zarr()` will be logged and propagated
+            unless caught (current implementation logs errors per month).
+
+        Notes
+        -----
+        - Time shift: `time = time - 1 day`. If your upstream data is already correctly
+          labelled, remove or disable this adjustment.
+        - Chunking: this method applies a default chunking
+          `{"time": -1, "nj": 540, "ni": 1440}`. Adjust to match your grid shape and
+          storage/performance requirements.
         """
+        import datetime
+        import numpy as np
+        import pandas as pd
+        import xarray as xr
+        from pathlib import Path
         D_out = Path(self.D_zarr)
         D_out.mkdir(parents=True, exist_ok=True)
         DS["time"] = xr.DataArray([t - datetime.timedelta(days=1) for t in DS["time"].values], dims="time", coords={"time": DS["time"].values})

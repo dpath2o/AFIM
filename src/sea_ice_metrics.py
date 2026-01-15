@@ -1,15 +1,124 @@
-import gc, re, dask
-import xarray      as xr
-import numpy       as np
-import pandas      as pd
-from pathlib       import Path
+from __future__ import annotations
+import xarray as xr
+import numpy  as np
+import pandas as pd
+from pathlib  import Path
+__all__ = ["SeaIceMetrics"]
 class SeaIceMetrics:
+    """
+    Compute diagnostic and skill metrics for processed sea-ice classifications.
+
+    This class aggregates common post-processing calculations used in AFIM workflows,
+    including:
+
+      - building standardised input dictionaries for metrics computations
+        (fast ice / pack ice / total sea ice),
+      - computing hemisphere-integrated time series (area, volume, thickness, rates),
+      - computing spatial summary fields (temporal mean thickness; spatial rates),
+      - computing inter-comparison skill statistics against observations,
+      - computing seasonal statistics (timing, growth/retreat slopes, extrema),
+      - computing persistence-distance statistics relative to an Antarctic coastline,
+      - loading previously computed metrics from Zarr and padding/reindexing time.
+
+    The principal entry point is `compute_sea_ice_metrics()`, which ingests a dictionary
+    of masks and core prognostic/tendency fields (already prepared elsewhere), computes
+    a suite of metrics, and optionally writes the results to a consolidated Zarr archive.
+
+    Expected external configuration
+    ------------------------------
+    This class is designed to operate inside the broader AFIM stack and expects several
+    attributes to exist on `self`, typically injected via kwargs or a toolbox manager:
+
+    - logger : logging.Logger
+        For progress/debug logging.
+    - CICE_dict : dict
+        Must contain at least:
+          * "time_dim" and "spatial_dims"
+          * "drop_coords" (list of coordinate vars to drop before computations)
+          * "FI_chunks" (chunking spec for small 1D/2D outputs)
+    - dt0_str, dtN_str : str
+        Analysis window bounds ("YYYY-MM-DD").
+    - D_metrics : str | Path
+        Output directory for metrics Zarr archives.
+    - metrics_name : str
+        Suffix used when constructing default metrics filenames.
+    - ice_type : str
+        e.g., "FI", "FI_Tb_bin", etc. Cleaned internally to one of {"FI","PI","SI"}.
+    - FIC_scale : float
+        Scaling factor applied to area (commonly used to convert m² → km² or similar).
+    - sim_config : dict
+        Metadata inserted into output dataset attributes and/or scalars.
+    - AF_FI_dict : dict
+        Must include path to AF2020 fast-ice area observations (e.g., "P_AF2020_FIA").
+    - BAS_dict : dict
+        Must include coastline shapefile path (e.g., "P_Ant_Cstln") for persistence distance.
+    - BorC2T_type, ispd_thresh, D_zarr, etc.
+        Used by `load_computed_metrics()` to locate metrics on disk.
+
+    Required external methods (defined elsewhere in your stack)
+    ----------------------------------------------------------
+    - compute_hemisphere_ice_area(...)
+    - compute_hemisphere_ice_volume(...)
+    - compute_hemisphere_ice_thickness(...)
+    - compute_hemisphere_variable_aggregate(...)
+    - compute_NSIDC_metrics()  (for PI/SI observational comparisons)
+    - persistence_stability_index(...)
+    - load_cice_grid(slice_hem=True)
+    - _prepare_BAS_coast(...)
+    - compute_grounded_iceberg_area() (optional, for GI area accounting)
+
+    Notes
+    -----
+    - Many methods are written to be safe with Dask-backed inputs. Where appropriate,
+      the implementation forces local computation to avoid shipping large task graphs.
+    - Output writing uses Zarr v2 (explicitly `zarr_format=2`) for compatibility.
+    """
 
     def __init__(self, **kwargs):
+        """
+        Initialise the metrics helper.
+
+        Parameters
+        ----------
+        **kwargs
+            Optional configuration injected into `self` by the surrounding workflow.
+            Typical keys include `logger`, `CICE_dict`, directory paths, and analysis
+            settings (dt0/dtN, thresholds, etc.).
+
+        Notes
+        -----
+        - The shown implementation is a no-op; in production you typically assign kwargs
+          onto `self` (as done in your other classes) or inherit a shared base class.
+        """
         return
 
     @staticmethod
     def _clean_zarr_chunks(ds):
+        """
+        Remove per-variable chunk encodings and return an unchunked dataset.
+
+        Zarr writes can be sensitive to stale or inconsistent `encoding["chunks"]`
+        metadata inherited from prior reads. This helper deletes the `chunks` entry
+        from each variable encoding (if present) and returns `ds.chunk(None)` to
+        remove active Dask chunking.
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Dataset to sanitise prior to writing.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset with `encoding["chunks"]` removed (where present) and with
+            chunking disabled (`chunk(None)`).
+
+        Notes
+        -----
+        - This does not change data values; it only adjusts encoding and chunk metadata.
+        - Use immediately before `.to_zarr(...)` to avoid RTD/runtime confusion and
+          Zarr rechunk warnings.
+        """
         for var in ds.variables:
             if 'chunks' in ds[var].encoding:
                 del ds[var].encoding['chunks']
@@ -17,7 +126,41 @@ class SeaIceMetrics:
 
     def fast_ice_metrics_data_dict(self, FI_mask, FI_data, A):
         """
-        Utility function to create the dictionary for each FI type (dy, rl, bn).
+        Build a standardised input dictionary for fast-ice (FI) metrics.
+
+        This is a small convenience wrapper to construct the `da_dict` expected by
+        `compute_sea_ice_metrics()` for fast ice. It bundles:
+          - the FI mask,
+          - core state variables (aice, hi),
+          - thermodynamic/dynamic tendency diagnostics (area/volume),
+          - the grid-cell area field.
+
+        Parameters
+        ----------
+        FI_mask : xr.DataArray
+            Fast-ice boolean mask (True/1 where fast ice is present). Typically
+            dims: (time, nj, ni) or (time, y, x) depending on your grid naming.
+        FI_data : xr.Dataset or mapping-like
+            Dataset containing at least:
+              - "aice"   : sea-ice concentration
+              - "hi"     : ice thickness
+              - "dvidtt" : thermodynamic ice volume tendency
+              - "dvidtd" : dynamic ice volume tendency
+              - "daidtt" : thermodynamic ice area tendency
+              - "daidtd" : dynamic ice area tendency
+        A : xr.DataArray
+            Grid-cell area field, typically in m², matching the spatial dims of FI_mask.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+              "FI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
+
+        Notes
+        -----
+        - The returned dictionary is intentionally minimal and matches the fields used by
+          `compute_sea_ice_metrics()`.
         """
         return {"FI_mask"  : FI_mask,
                 'aice'     : FI_data['aice'],
@@ -31,7 +174,25 @@ class SeaIceMetrics:
 
 
     def pack_ice_metrics_data_dict(self, PI_mask, PI_data, A):
-        # Utility function to create the dictionary for each PI type (dy, rl, bn).
+        """
+        Build a standardised input dictionary for pack-ice (PI) metrics.
+
+        Parameters
+        ----------
+        PI_mask : xr.DataArray
+            Pack-ice boolean mask.
+        PI_data : xr.Dataset or mapping-like
+            Dataset containing the same required keys as `fast_ice_metrics_data_dict()`
+            ("aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd").
+        A : xr.DataArray
+            Grid-cell area field.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+              "PI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
+        """
         return {"PI_mask"  : PI_mask,
                 'aice'     : PI_data['aice'],
                 'hi'       : PI_data['hi'],
@@ -43,7 +204,29 @@ class SeaIceMetrics:
                 'tarea'    : A}
 
     def sea_ice_metrics_data_dict(self, SI_mask, SI_data, A):
-        # Utility function to create the dictionary for SI (daily-only; no binary-day association).
+        """
+        Build a standardised input dictionary for total sea-ice (SI) metrics.
+
+        Parameters
+        ----------
+        SI_mask : xr.DataArray
+            Total sea-ice boolean mask (e.g., aice > icon_thresh).
+        SI_data : xr.Dataset or mapping-like
+            Dataset containing required keys ("aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd").
+        A : xr.DataArray
+            Grid-cell area field.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+              "SI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
+
+        Notes
+        -----
+        - SI typically has only a daily mask in your workflow; persistence metrics are not
+          computed by `compute_sea_ice_metrics()` unless explicitly implemented elsewhere.
+        """
         return {"SI_mask"  : SI_mask,
                 'aice'     : SI_data['aice'],
                 'hi'       : SI_data['hi'],
@@ -61,29 +244,98 @@ class SeaIceMetrics:
                                 P_mets_zarr    = None,
                                 ice_area_scale = None):
         """
-        Compute sea ice metrics from a processed sea ice simulation and compare against observations.
+        Compute sea-ice metrics for FI/PI/SI and optionally write them to a Zarr archive.
+
+        This method ingests a standardised dictionary of fields (mask + state + tendencies
+        + grid area), computes:
+          - hemisphere-integrated time series metrics (area, volume, thickness, rates),
+          - spatial summary diagnostics (temporal mean thickness; spatial rate fields),
+          - inter-comparison skill metrics for ice area versus observations (where available),
+          - seasonal statistics on the area time series (extrema/timing/slopes),
+          - persistence statistics for fast ice (stability index; distance metrics),
+        and assembles the results into a single `xr.Dataset`.
+
+        The output dataset contains:
+          - 1D time series variables (dims: time),
+          - 2D spatial variables (dims: nj, ni),
+          - scalar summary metrics stored as 0D DataArrays and/or attributes.
 
         Parameters
         ----------
         da_dict : dict
-            Dictionary containing xarray DataArrays or Datasets for the fields:
-            'aice', 'hi', 'tarea', and a corresponding mask ('FI_mask', 'PI_mask', or 'SI_mask').
+            Dictionary containing the required inputs. Must include:
+              - a mask: one of {"FI_mask","PI_mask","SI_mask"} or an ice-type-specific key
+                resolved from `ice_type` after cleaning.
+              - "aice"   : concentration DataArray
+              - "hi"     : thickness DataArray
+              - "dvidtt" : thermodynamic volume tendency DataArray
+              - "dvidtd" : dynamic volume tendency DataArray
+              - "daidtt" : thermodynamic area tendency DataArray
+              - "daidtd" : dynamic area tendency DataArray
+              - "tarea"  : grid-cell area DataArray
+
         ice_type : str, optional
-            Type of ice to process (e.g., 'FI', 'FI_BT_bin', etc.). Will be cleaned internally.
-        dt0_str : str, optional
-            Start date of the analysis window in 'YYYY-MM-DD'. Defaults to self.dt0_str.
-        dtN_str : str, optional
-            End date of the analysis window in 'YYYY-MM-DD'. Defaults to self.dtN_str.
+            Ice-type label used to name outputs and choose observational comparisons.
+            This string may include suffixes (e.g., "_roll", "_bin", "_Tb", "_Tx"), which are
+            removed internally to produce `ice_type_clean` in {"FI","PI","SI"}.
+
+            Examples:
+              - "FI_Tb_bin"   -> ice_type_clean="FI"
+              - "PI_Ta_roll"  -> ice_type_clean="PI"
+              - "SI"          -> ice_type_clean="SI"
+
+        dt0_str, dtN_str : str, optional
+            Start/end of the analysis window ("YYYY-MM-DD"). Defaults to `self.dt0_str` and
+            `self.dtN_str`. These are primarily used for metadata and for time-alignment tasks
+            in downstream loaders; the computations here operate on the provided data.
+
         P_mets_zarr : str or Path, optional
-            Path to save Zarr archive of computed metrics. If None, uses default path.
+            Output path for the metrics Zarr store. If None, a default is constructed as:
+                Path(self.D_metrics, f"{ice_type}_mets.zarr")
+
+            If provided (or defaulted), the dataset is written with:
+                consolidated=True, mode="w", zarr_format=2
+
         ice_area_scale : float, optional
-            Scaling factor to apply to the area field. Defaults to self.FIC_scale.
+            Scaling applied in hemisphere area computations (e.g., to convert m² to km² or
+            10^3 km²). Defaults to `self.FIC_scale`.
 
         Returns
         -------
-        xarray.Dataset
-            Dataset containing time series, spatial, and summary metrics.
+        xr.Dataset
+            Dataset containing computed metrics. Variable naming is prefixed by the cleaned
+            ice type, e.g.:
+              - "FIA", "FIV", "FIT", ... for fast ice
+              - "PIA", "PIV", ... for pack ice
+              - "SIA", "SIV", ... for sea ice
+
+            Scalar summary fields are stored as 0D DataArrays, and simulation configuration
+            metadata may also be included as attributes.
+
+        Raises
+        ------
+        ValueError
+            If `ice_type` cannot be cleaned to one of {"FI","PI","SI"}.
+        KeyError
+            If the required mask key cannot be resolved from `da_dict`.
+        Exception
+            Propagates errors from underlying compute_* methods, I/O, or observation loaders.
+
+        Notes
+        -----
+        Observation handling
+        --------------------
+        - For FI: attempts to load AF2020 fast-ice area observations from `self.AF_FI_dict["P_AF2020_FIA"]`.
+        - For PI/SI: uses `self.compute_NSIDC_metrics()` and compares against NSIDC SIA.
+
+        Robustness
+        ----------
+        - Skill statistics and seasonal statistics are wrapped in try/except blocks to ensure
+          metrics generation does not fail catastrophically if an observational file is missing
+          or a time series is too short for filters.
+        - Persistence metrics are only computed for FI (by design).
         """
+        import re
         ice_type       = ice_type  or self.ice_type
         dt0_str        = dt0_str   or self.dt0_str
         dtN_str        = dtN_str   or self.dtN_str
@@ -213,6 +465,43 @@ class SeaIceMetrics:
 
     def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str, 
                              time_dim: str = "time") -> xr.Dataset:
+        """
+        Reindex a dataset to a requested inclusive time axis, padding with NaNs as needed.
+
+        This helper is used when loading metrics computed over a slightly different time span
+        than the current analysis window. It creates a desired time coordinate from `dt0_str`
+        to `dtN_str` (inclusive) using the dataset’s native time type and step, then reindexes
+        onto that coordinate. Missing days are introduced as NaNs.
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Dataset to subset/reindex. If `time_dim` is absent, `ds` is returned unchanged.
+        dt0_str, dtN_str : str
+            Start/end dates ("YYYY-MM-DD") for the desired inclusive time axis.
+        time_dim : str, default "time"
+            Name of the time coordinate/dimension.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset reindexed to the desired time axis. Values are preserved where the
+            original dataset overlaps, and NaNs are inserted where the dataset did not
+            originally contain those times.
+
+        Raises
+        ------
+        ValueError
+            If `dt0_str` is later than `dtN_str`.
+        RuntimeError
+            If the time coordinate appears to be cftime/object and `cftime` is unavailable.
+
+        Notes
+        -----
+        - Supports both numpy datetime64 time coordinates and cftime calendars.
+        - The step is inferred from the first two time points when available; otherwise
+          defaults to one day.
+        """
         if time_dim not in ds.dims and time_dim not in ds.coords:
             # Nothing to do
             return ds
@@ -271,6 +560,53 @@ class SeaIceMetrics:
                               zarr_directory        : str  = None,
                               clip_to_self          : bool = True,
                               time_dim              : str  = "time"):
+        """
+        Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
+
+        This method resolves the expected metrics path based on:
+          - the requested ice type (FI/PI/SI),
+          - the classification method (raw / rolling-mean / binary-days),
+          - the staggering→T strategy (BorC2T_type),
+          - the speed threshold label (ispd_thresh),
+          - the configured directory layout (via `define_classification_dir()` and related helpers).
+
+        Parameters
+        ----------
+        fast_ice_class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
+            Classification product to load for FI/PI. Used to build `self.FI_class`.
+        BorC2T_type : str, optional
+            Velocity staggering token(s) used for classification, e.g. "Tb", "Tx", "Tc".
+            Defaults to `self.BorC2T_type`.
+        ice_type : str, optional
+            Ice type to load ("FI", "PI", or "SI"). Defaults to `self.ice_type`.
+        ispd_thresh : str, optional
+            Speed threshold label (often embedded in directory naming). Defaults to `self.ispd_thresh`.
+        zarr_directory : str, optional
+            Root Zarr directory. Defaults to `self.D_zarr`.
+        clip_to_self : bool, default True
+            If True, reindex to `[self.dt0_str, self.dtN_str]` using `_subset_and_pad_time()`.
+        time_dim : str, default "time"
+            Name of the time dimension in the stored metrics.
+
+        Returns
+        -------
+        xr.Dataset
+            Metrics dataset loaded from disk, optionally reindexed/padded to the current window.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the resolved metrics store does not exist.
+        Exception
+            Propagates errors from path-resolution helpers or xarray open operations.
+
+        Notes
+        -----
+        - This method assumes helper methods exist:
+            * define_classification_dir(...)
+            * define_fast_ice_class_name(...)
+          and that these set `self.D_class` and `self.FI_class` consistently with your on-disk layout.
+        """
         BorC2T_type = BorC2T_type    or self.BorC2T_type
         ice_type    = ice_type       or self.ice_type
         ispd_thresh = ispd_thresh    or self.ispd_thresh
@@ -289,6 +625,38 @@ class SeaIceMetrics:
     def compute_hemisphere_ice_area_rate(self, DAT, IA, A,
                                            spatial_dim_names  : list  = None):
         """
+        Compute a hemisphere-aggregated ice area tendency rate.
+
+        This metric converts a dynamic area tendency field (typically in 1/s) into a
+        domain-aggregated rate by:
+          1) multiplying the tendency by grid cell area (m²),
+          2) summing over spatial dimensions, and
+          3) normalising by the instantaneous ice area time series.
+
+        Parameters
+        ----------
+        DAT : xr.DataArray
+            Dynamic area tendency field (commonly units of 1/s), with dims including time
+            and spatial dimensions.
+        IA : xr.DataArray
+            Hemisphere-integrated ice area time series used for normalisation.
+            Must share the same time coordinate as `DAT`.
+        A : xr.DataArray
+            Grid cell area (m²), broadcastable to `DAT` spatial dimensions.
+        spatial_dim_names : list[str], optional
+            Names of spatial dimensions to sum over. Defaults to `self.CICE_dict["spatial_dims"]`.
+
+        Returns
+        -------
+        xr.DataArray
+            Hemisphere-aggregated area rate time series. Units depend on `DAT` but are
+            commonly interpreted as m/s after normalisation and scaling.
+
+        Notes
+        -----
+        - The implementation divides by 1e9, which is typically used to convert m² to
+          10^9 m² (i.e., ~10^3 km²) or to keep magnitudes numerically convenient.
+          Ensure this scaling matches your publication units.
         """
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
         self.logger.info("Computing **DYNAMIC AREA TENDENCY** for hemisphere")
@@ -302,6 +670,37 @@ class SeaIceMetrics:
                                            spatial_dim_names  : list  = None,
                                            sic_threshold      : float = None):
         """
+        Compute a hemisphere-aggregated ice volume tendency rate.
+
+        This metric aggregates a volume tendency field (thermodynamic or dynamic) over a
+        hemisphere by:
+          1) masking to ice-covered cells using `SIC > sic_threshold`,
+          2) converting units as needed (implementation multiplies by 100 cm/m),
+          3) summing over spatial dimensions, and
+          4) dividing by seconds per day to yield a per-second rate.
+
+        Parameters
+        ----------
+        SIC : xr.DataArray
+            Sea-ice concentration field used for masking (typically "aice").
+        DVT : xr.DataArray
+            Ice volume tendency field (e.g., dvidtt or dvidtd). Must share the same
+            dims/coords as `SIC` (or be broadcastable).
+        spatial_dim_names : list[str], optional
+            Names of spatial dimensions to sum over. Defaults to `self.CICE_dict["spatial_dims"]`.
+        sic_threshold : float, optional
+            Concentration threshold for masking. Defaults to `self.icon_thresh`.
+
+        Returns
+        -------
+        xr.DataArray
+            Hemisphere-aggregated volume tendency rate time series.
+
+        Notes
+        -----
+        - The conversion factor `*1e2` and division by `8.64e4` (seconds/day) encode
+          specific unit assumptions about `DVT`. Document these assumptions in your
+          paper and adjust if the upstream tendency units change.
         """
         sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
@@ -361,9 +760,45 @@ class SeaIceMetrics:
         IS   = IS.where(mask)
         return (IS / HI).sum(dim=spatial_dim_names) / ice_strength_scale
 
-    def compute_sector_ice_area(self, I_mask, area_grid, sector_defs, GI_area=False):
-        # Compute ice area per geographic sector and a domain total, from an arbitrary ice mask.
-        # This generalises compute_sector_FIA while preserving the original FI-specific wrapper.
+    def compute_sector_ice_area(self, I_mask, area_grid, sector_defs, 
+                                GI_area = False):
+        """
+        Compute ice area per geographic sector and a domain total from an arbitrary ice mask.
+
+        This method generalises sector-based area computations for any ice type (FI/PI/SI)
+        by integrating a boolean mask over an area grid within sector bounding boxes.
+
+        Parameters
+        ----------
+        I_mask : xr.DataArray
+            Ice mask (boolean or 0/1) on the same grid as `area_grid`.
+        area_grid : xr.DataArray
+            Grid-cell area field (typically m²). Must have coordinate variables `lon` and `lat`
+            (either as DataArray attributes or attached coords) compatible with the sector
+            definitions.
+        sector_defs : dict
+            Sector definition dictionary. For each sector key, expects:
+              sector_defs[sec_name]["geo_region"] == (lon_min, lon_max, lat_min, lat_max)
+        GI_area : bool, default False
+            If True, include grounded iceberg area in the domain total. This uses
+            `compute_grounded_iceberg_area()` (called internally) and adds the result
+            (converted to km²) to the total.
+
+        Returns
+        -------
+        IA_da : xr.DataArray
+            Sector ice areas (same units as `area_grid` integration), indexed by "sector".
+        IA_tot : float
+            Domain total ice area (sum of sectors) plus optional grounded iceberg contribution.
+
+        Notes
+        -----
+        - Current implementation assumes sectors do not cross the dateline in a way that
+          requires wrap-aware longitude masking. If any sector bounds cross the dateline,
+          adjust the masking logic accordingly.
+        - If `I_mask` or `area_grid` are Dask-backed, each sector sum is computed independently;
+          this is typically acceptable because the number of sectors is small.
+        """
         if GI_area:
             self.compute_grounded_iceberg_area()
             GI_ttl_area = self.compute_grounded_iceberg_area() / 1e6
@@ -390,9 +825,26 @@ class SeaIceMetrics:
 
     def compute_sector_FIA(self, FI_mask, area_grid, sector_defs, GI_area=False):
         """
-        Backwards-compatible wrapper for fast-ice area (FIA).
+        Backwards-compatible wrapper for fast-ice area (FIA) sector computation.
 
-        For new workflows, prefer `compute_sector_ice_area`, which is ice-type agnostic.
+        This method preserves the original FI-specific API by delegating to the
+        ice-type-agnostic `compute_sector_ice_area()`.
+
+        Parameters
+        ----------
+        FI_mask : xr.DataArray
+            Fast-ice mask on the same grid as `area_grid`.
+        area_grid : xr.DataArray
+            Grid-cell area field with lon/lat coordinates.
+        sector_defs : dict
+            Sector definition dictionary (see `compute_sector_ice_area()`).
+        GI_area : bool, default False
+            If True, add grounded iceberg area to the domain total.
+
+        Returns
+        -------
+        (xr.DataArray, float)
+            Sector areas and domain total, as returned by `compute_sector_ice_area()`.
         """
         return self.compute_sector_ice_area(FI_mask, area_grid, sector_defs, GI_area=GI_area)
 
@@ -701,21 +1153,71 @@ class SeaIceMetrics:
                                     drop_leap_day       : bool = True,
                                     return_per_year     : bool = False):
         """
-        Fast version that loads once, computes derivatives once per year, and uses NumPy slicing.
+        Compute seasonal timing and rate statistics from a daily 1D time series.
+
+        This method is optimised for long daily time series (multi-year) by:
+          - loading the full 1D series once,
+          - computing Savitzky–Golay derivatives once per year,
+          - using NumPy slicing for seasonal windows (minimising xarray overhead).
+
+        It returns summary statistics (mean and standard deviation across years) for:
+          - annual maxima and minima,
+          - day-of-year (DOY) of maxima and minima,
+          - onset timing (first positive derivative after `min_onset_doy`),
+          - retreat timing (last negative curvature after `min_retreat_doy`),
+          - duration (onset → retreat, wrap-aware),
+          - growth slope (within `growth_range`),
+          - retreat slope(s): early, late, and combined.
 
         Parameters
         ----------
-        da : xr.DataArray  # 1D, daily, with 'time'
-        window, polyorder, min_onset_doy, min_retreat_doy : as before
-        growth_range, retreat_early_range, retreat_late_range : as before
-        scaling_factor : float  # multiplies slopes for nicer units
-        drop_leap_day : bool    # remove Feb 29 to keep DOY logic simple
-        return_per_year : bool  # also return a per-year table if True
+        da : xr.DataArray
+            Daily 1D time series with dimension "time" (e.g., ice area in km²).
+        stat_name : str, default "FIA"
+            Label used for logging and downstream reporting.
+        window : int, default 15
+            Savitzky–Golay filter window length (days). Will be coerced to an odd integer
+            and adjusted upward if too small for `polyorder`.
+        polyorder : int, default 2
+            Polynomial order for Savitzky–Golay derivatives.
+        min_onset_doy : int, default 50
+            Earliest DOY at which onset is permitted (limits spurious early detections).
+        min_retreat_doy : int, default 240
+            Earliest DOY at which retreat is permitted.
+        growth_range : tuple[int, int], default (71, 273)
+            DOY window used to estimate growth slope.
+        retreat_early_range : tuple[int, int], default (273, 330)
+            DOY window used to estimate early retreat slope within the same year.
+        retreat_late_range : tuple[tuple[int,int], tuple[int,int]], default ((331,365), (1,71))
+            Late retreat window that may span the year boundary:
+              - first tuple: late-year DOY window in current year
+              - second tuple: early-year DOY window in next year
+        scaling_factor : float, default 1e6
+            Multiplier applied to slope estimates to yield convenient units (e.g., km²/day).
+        drop_leap_day : bool, default True
+            If True, removes Feb 29 to simplify DOY-consistent filtering.
+        return_per_year : bool, default False
+            If True, also return a per-year table (pandas.DataFrame) with raw annual values.
 
         Returns
         -------
         summary : dict[str, float | None]
-        (optional) per_year : pandas.DataFrame  # one row per year (except last, by design)
+            Dictionary of mean/std summary metrics across years.
+        per_year : pandas.DataFrame, optional
+            Returned only if `return_per_year=True`. Indexed by year, containing annual
+            extrema, DOYs, and slope estimates.
+
+        Raises
+        ------
+        ValueError
+            If `da` does not have a "time" dimension.
+
+        Notes
+        -----
+        - The routine iterates over years except the final year (by design) because the
+          late-retreat window can require samples from the subsequent year.
+        - Slope estimates use a lightweight least-squares implementation (`_safe_slope`)
+          instead of `np.polyfit` to reduce overhead.
         """
         from scipy.signal import savgol_filter
         from tqdm         import tqdm
@@ -897,6 +1399,7 @@ class SeaIceMetrics:
         • Assumes `I_mask` is truly binary (0/1). For classification outputs that are boolean, they will be cast to float internally.
         • Designed to be Dask-friendly: only two area reductions are computed eagerly.
         """
+        import dask
         self.logger.info("Computing FIPSI: persistent-winter area / ever-winter area")
         I_mask = self._as_da_mask(I_mask).astype("float32")
         A      = self._as_da_area(A)
@@ -1019,12 +1522,52 @@ class SeaIceMetrics:
                                           path_coast_shape      : str = None,
                                           crs_out               : str = "EPSG:3031"):
         """
-        Mean/max distance from the USNIC/ADD coastline for persistent fast ice.
-        Uses a densified coastline KD-Tree in a metric CRS (default EPSG:3031).
+        Compute mean and maximum distance from the Antarctic coastline for persistent ice.
 
-        Assumes `ice_prstnc` is a persistence field in [0..1] computed from a
-        binary fast-ice mask over the austral-winter window (e.g., May–Oct).
+        This method measures how far persistent ice (e.g., persistent fast ice) extends
+        from the coastline by:
+          1) thresholding a persistence field `ice_prstnc` in [0, 1],
+          2) projecting grid coordinates into a metric CRS (default EPSG:3031),
+          3) querying nearest coastline points via a pre-built KD-tree, and
+          4) returning mean and maximum distances (km) of persistent grid cells.
+
+        Parameters
+        ----------
+        ice_prstnc : xr.DataArray
+            Persistence field in [0, 1], typically computed from a binary mask over a
+            seasonal window (e.g., May–Oct). Must be on the same spatial grid as `self.G_t`.
+        persistence_threshold : float, default 0.8
+            Cells with persistence >= threshold are treated as “persistent” for distance
+            computations.
+        path_coast_shape : str, optional
+            Path to a coastline shapefile. Defaults to `self.BAS_dict["P_Ant_Cstln"]`.
+        crs_out : str, default "EPSG:3031"
+            Output CRS used for distance computations. Must be a metric CRS.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+              - "persistence_mean_distance": mean distance (km)
+              - "persistence_max_distance" : max distance (km)
+
+        Raises
+        ------
+        KeyError
+            If longitude/latitude fields cannot be found in `self.G_t`.
+        ValueError
+            If `ice_prstnc` shape does not match the loaded grid coordinates.
+        Exception
+            Propagates errors from coordinate transforms or KD-tree construction.
+
+        Notes
+        -----
+        - The coastline KD-tree is cached on `self` as `_coast_kdtree` and rebuilt only if
+          `crs_out` changes.
+        - The method forces local computation of `ice_prstnc` (via `.compute()`) using the
+          threaded scheduler to avoid distributing a large Dask graph.
         """
+        import dask
         from pyproj import Transformer
         P_shp = path_coast_shape if path_coast_shape is not None else self.BAS_dict["P_Ant_Cstln"]
         spat_dims = self.CICE_dict["spatial_dims"]
@@ -1095,18 +1638,40 @@ class SeaIceMetrics:
         
     def compute_skill_statistics(self, mod, obs, min_points=100):
         """
-        Compute statistical skill metrics between model and observational time series.
-        If time alignment fails and `climatology_if_mismatch` is True, computes climatological
-        skill instead (e.g., using day-of-year climatologies).
+        Compute model-vs-observation skill statistics for a time series.
+
+        The method attempts a direct time-series comparison by intersecting model and
+        observation timestamps. If there are fewer than `min_points` intersecting times,
+        it falls back to a climatological comparison using day-of-year means.
 
         Parameters
         ----------
-        mod : xarray.DataArray; Time series of modelled values.
-        obs : xarray.DataArray; Time series of observed values (must be aligned with model, or climatology is used).
+        mod : xr.DataArray
+            Modelled time series (must have a "time" coordinate for direct alignment).
+        obs : xr.DataArray
+            Observational time series. Ideally shares the same time basis as `mod`.
+        min_points : int, default 100
+            Minimum number of intersecting timestamps required to compute direct time-series
+            statistics. Otherwise, a climatology comparison is used.
 
         Returns
         -------
-        dict; Dictionary of skill metrics.
+        dict
+            Dictionary of skill metrics:
+              - Bias
+              - RMSE
+              - MAE
+              - Corr
+              - SD_Model
+              - SD_Obs
+
+            Returns NaNs for all metrics if time alignment fails and climatology cannot be formed.
+
+        Notes
+        -----
+        - Uses `_safe_load_array_to_memory()` to compute Dask-backed series locally and
+          minimise graph shipping.
+        - Climatology fallback uses `groupby("time.dayofyear").mean("time")` for both series.
         """
         mod = self._safe_load_array_to_memory(mod)
         obs = self._safe_load_array_to_memory(obs)
@@ -1132,7 +1697,30 @@ class SeaIceMetrics:
                 "SD_Model": np.nan, "SD_Obs": np.nan}
 
     def antarctic_year_labels(self, time_da: xr.DataArray) -> xr.DataArray:
-        """Return an 'ayear' label for Jul→Jun years (e.g., 2000.5 dates -> ayear=2000)."""
+        """
+        Construct Antarctic-year labels for a time coordinate (Jul→Jun “years”).
+
+        Antarctic-year (AY) grouping is commonly defined such that AY YYYY runs from
+        July YYYY through June YYYY+1. This helper returns an integer label "ayear"
+        for each timestamp:
+          - months Jan–Jun are assigned to the previous calendar year,
+          - months Jul–Dec are assigned to the current calendar year.
+
+        Parameters
+        ----------
+        time_da : xr.DataArray
+            Time coordinate DataArray supporting `.dt.year` and `.dt.month`.
+
+        Returns
+        -------
+        xr.DataArray
+            Integer DataArray named "ayear" aligned with `time_da`.
+
+        Examples
+        --------
+        - 2000-06-15 -> ayear = 1999
+        - 2000-07-01 -> ayear = 2000
+        """
         year  = time_da.dt.year
         month = time_da.dt.month
         ayear = xr.where(month <= 6, year - 1, year)
@@ -1140,12 +1728,26 @@ class SeaIceMetrics:
 
     def extrema_means_antarctic_year(self, da_ts: xr.DataArray):
         """
-        da_ts: 1-D (time,) fast-ice area time series (km^2).
-        Returns dict with:
-        - max_mean: mean of per-AY maxima
-        - min_mean: mean of per-AY minima
-        - max_ts  : per-AY maxima time series (indexed by 'ayear')
-        - min_ts  : per-AY minima time series (indexed by 'ayear')
+        Compute mean maxima/minima across Antarctic years for a 1D time series.
+
+        Parameters
+        ----------
+        da_ts : xr.DataArray
+            1D time series with dimension "time" (e.g., fast-ice area in km²).
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+              - "max_mean": mean of per-AY maxima (xr.DataArray scalar)
+              - "min_mean": mean of per-AY minima (xr.DataArray scalar)
+              - "max_ts"  : per-AY maxima time series (dims: ayear)
+              - "min_ts"  : per-AY minima time series (dims: ayear)
+
+        Notes
+        -----
+        - Uses `antarctic_year_labels()` and xarray groupby reductions.
+        - For short 1D series, it is acceptable to fully load/compute in memory.
         """
         # for tiny 1D series, it's fine to fully chunk or even compute up front
         # da_ts = da_ts.chunk({"time": -1})

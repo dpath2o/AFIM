@@ -1,4 +1,4 @@
-# AFIM First Principles
+# AFIM Sensitivity Study
 
 This document describes the simulation setup and core methodologies implemented for an Antarctic Fast Ice Modelling (AFIM) sensitivity study and published here: [link to be provided once published]
 
@@ -6,10 +6,10 @@ This document describes the simulation setup and core methodologies implemented 
 
 + **Simulation period** : [1993-01-01 Fri] to [1999-12-31 Tue]
 + **Grid** : $1/4^{\circ}$ global, *tripole* Arakawa-B (`B-grid`)
-+ **Modified Landmask** : a grid cell is determined to contain a (or a number of) sub-grid scale grounded icebergs and a land cell is created where normally an ocean cell would exist [see sea_ice_toolbox.sea_ice_icebergs.modify_landmask_with_grounded_icebergs()](https://github.com/dpath2o/AFIM/blob/1f8881284c82781579cabf898f6776cde7bc18df/src/sea_ice_icebergs.py#L208);
-+ `dt` : 1800 seconds
-+ `kdyn` : revised-EVP
++ **Modified Landmask** : a grid cell is determined to contain a (or a number of) sub-grid scale grounded icebergs and a land cell is created where normally an ocean cell would exist [see sea_ice_toolbox.sea_ice_icebergs.modify_landmask_with_grounded_icebergs()](https://github.com/dpath2o/AFIM/blob/1f8881284c82781579cabf898f6776cde7bc18df/src/sea_ice_icebergs.py#L208)
++ `dt`   : 1800 seconds
 + `ndte` : 240
++ `kdyn` : 1 $\textrightarrow$ EVP solver
 + Initial conditions : None
 
 ### 0.1 forcing:

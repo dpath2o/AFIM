@@ -8,6 +8,16 @@ AFIM (Antarctic Fast Ice and Pack Ice Metrics) is a Python library to analyse an
    :maxdepth: 2
 
    api
+   AFIM_sea_ice_toolbox_JSON_config
+
+AFIM Scientific Studies
+=================================
+
+AFIM studies
+
+.. toctree::
+   :maxdepth: 2
+
    AFIM_sensitivity_methodology
    lateral_drag_form_factor_creation
    

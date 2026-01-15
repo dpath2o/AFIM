@@ -1,17 +1,116 @@
 from __future__ import annotations
-import json, os, shutil, time, logging, re
+import os
 import xarray   as xr
 import pandas   as pd
 import numpy    as np
-import xesmf    as xe
 from pathlib    import Path
-from datetime   import datetime, timedelta
 from typing     import Iterable, List, Optional, Tuple
-from pyresample import geometry, kd_tree
-
+__all__ = ["SeaIceObservations"]
 class SeaIceObservations:
+    """
+    Observational sea-ice I/O and derived diagnostics for AFIM workflows.
+
+    This class centralises reading, standardisation, and metric generation for several
+    observational products used throughout AFIM/SeaIceToolbox analyses:
+
+    - NSIDC (e.g., G02202 v4) sea-ice concentration:
+        * local file discovery and loading over time windows (daily or monthly layouts),
+        * masking of flagged concentration values,
+        * computation of hemispheric sea-ice area (SIA) and extent (SIE) time series.
+
+    - AF2020 (Fraser et al. 2020) landfast sea-ice:
+        * reading FIA CSV time series and constructing DOY climatologies,
+        * regridding original AF2020 raster products to the CICE T-grid with xESMF,
+        * convenience regional fast-ice area time series from AF2020-like gridded datasets.
+
+    - ESA-CCI / AWI CryoSat/Envisat/Sentinel sea-ice thickness (SIT):
+        * robust path discovery across multiple institutional directory layouts,
+        * indexing and de-duplication (one file per day or month),
+        * L2P swath → daily gridded SIT via pyresample neighbour queries with optional
+          Gaussian weighting and explicit uncertainty propagation,
+        * L3 gridded monthly SIT assembly (no resampling), with optional SIC thresholding,
+          QC flag masking, and hemispheric weighted means.
+
+    Expected configuration and dependencies
+    -------------------------------------
+    This class is intended to be used inside the AFIM stack and expects several
+    attributes to exist on `self`:
+
+    Required attributes (typical)
+    - logger : logging.Logger
+        Used for progress and warnings.
+    - dt0_str, dtN_str : str
+        Default analysis window in "YYYY-MM-DD" format.
+    - hemisphere_dict : dict
+        Must include 'abbreviation' (e.g., "SH" or "NH").
+    - NSIDC_dict : dict
+        Paths and dataset conventions for NSIDC loading and metrics. Typical keys:
+            * "D_original"
+            * "G02202_v4_file_format"
+            * "file_versions" (dict ver -> "YYYY-MM-DD" start date, or None)
+            * "SIC_name" (e.g., "cdr_seaice_conc")
+            * "cdr_seaice_conc_flags" (list of flag integer codes)
+            * "P_cell_area" (cell area file path)
+            * "projection_string" (Proj4 string)
+    - AF_FI_dict : dict
+        Paths and naming for AF2020. Typical keys:
+            * "P_AF2020_csv"
+            * "D_AF2020_db_org"
+            * "AF_reG_weights"
+            * "variable_name", "lat_coord_name", "lon_coord_name", "time_coord_name"
+            * "threshold_value"
+            * "P_reG_reg_weights" (optional)
+    - CICE_dict : dict
+        CICE grid conventions and coordinate names (for mapping masks/regridding):
+            * 'spatial_dims', 'three_dims'
+            * 'lon_coord_name', 'lat_coord_name'
+            * 'tcoord_names' (lon, lat)
+            * 'time_dim'
+            * 'P_reG_reg_weights' (optional)
+    - Sea_Ice_Obs_dict : dict
+        Root directories for institutions:
+            * 'ESA-CCI', 'AWI'
+    - icon_thresh : float
+        Sea-ice concentration threshold for extent masking (fraction).
+    - SIC_scale : float
+        Unit scaling between dataset SIC and area weighting.
+    - normalise_longitudes(lon, to=...) : callable
+        Longitude wrapping helper used across multiple routines.
+    - define_cice_grid(...) : callable
+        Must be available for AF2020 conservative regridding to the CICE T-grid.
+    - load_cice_grid(...) / define_cice_grid(...) conventions
+        Must be consistent with your xESMF usage.
+
+    Notes on time and units
+    -----------------------
+    - All internal timestamp comparisons for file filtering are performed in UTC.
+    - NSIDC SIA/SIE are computed using an explicit cell-area product and your
+      configured concentration scaling.
+    - SIT uncertainty propagation uses standard-error style aggregation:
+        SE_cell  = sqrt(sum(w^2 * unc^2)) / sum(w)
+        SE_hemi  = sqrt(sum(W^2 * SE_cell^2)) / sum(W)
+      where W is cos(latitude) and w is neighbour weight.
+
+    Implementation note (RTD/autodoc)
+    --------------------------------
+    Keep docstrings on public methods comprehensive and consistent with your JSON keys.
+    Methods with a leading underscore are treated as internal helpers.
+    """
 
     def __init__(self, **kwargs):
+        """
+        Initialise the observations helper.
+
+        Parameters
+        ----------
+        **kwargs
+            Optional configuration injected into `self` by the surrounding workflow.
+
+        Notes
+        -----
+        - The shown implementation is a no-op; in production you typically assign kwargs
+          onto `self` or inherit from a base class that handles configuration.
+        """
         return
     
     ####################################################################################################
@@ -19,18 +118,42 @@ class SeaIceObservations:
     ####################################################################################################
     def load_local_NSIDC(self, dt0_str=None, dtN_str=None, local_directory=None, monthly_files=False):
         """
-        Load NSIDC sea ice concentration data from local NetCDF files over a date range.
+        Load NSIDC sea-ice concentration NetCDF files from a local directory tree.
 
-        INPUTS:
-           dt0_str         : str, optional; start date in 'YYYY-MM-DD' format. Defaults to self.dt0_str.
-           dtN_str         : str, optional; end date in 'YYYY-MM-DD' format. Defaults to self.dtN_str.
-           local_directory : str or Path, optional; directory containing the NSIDC NetCDF files.
-                             If None, uses self.NSIDC_dict["D_original"].
-           monthly_files   : bool, optional; iff True, loads monthly files; otherwise loads daily files.
+        The loader constructs expected filenames for each day (or month) between
+        `dt0_str` and `dtN_str`, selects the appropriate file version based on your
+        configured version start dates, and uses `xarray.open_mfdataset` to open all
+        available files in one dataset.
 
-        OUTPUTS
-           xarray.Dataset; combined dataset loaded with xarray.open_mfdataset.
+        Parameters
+        ----------
+        dt0_str, dtN_str : str, optional
+            Start/end dates in "YYYY-MM-DD" format. If omitted, defaults to
+            `self.dt0_str` and `self.dtN_str`.
+        local_directory : str or pathlib.Path, optional
+            Root directory containing NSIDC files. If omitted, defaults to
+            `Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)`.
+        monthly_files : bool, default False
+            If True, treat the dataset as monthly and search one file per month.
+            If False, treat the dataset as daily.
+
+        Returns
+        -------
+        xr.Dataset
+            Multi-file dataset combined "by_coords".
+
+        Raises
+        ------
+        FileNotFoundError
+            If no matching files are found within the requested window.
+
+        Notes
+        -----
+        - A small preprocess hook promotes `time` as a coordinate when datasets contain
+          a `tdim` dimension.
+        - Missing files are logged as warnings and skipped.
         """
+        from datetime import datetime
         def promote_time(ds):
             ds = ds[["cdr_seaice_conc"]] if "cdr_seaice_conc" in ds else ds
             if "time" in ds.variables and "tdim" in ds.dims:
@@ -69,28 +192,45 @@ class SeaIceObservations:
                                  preprocess = promote_time)
 
     def NSIDC_coordinate_transformation(self, ds):
+        """
+        Add geographic longitude/latitude coordinates to an NSIDC grid.
+
+        NSIDC concentration products are commonly stored in a Polar Stereographic
+        projection with Cartesian coordinates (e.g., `xgrid`, `ygrid`, in meters).
+        This routine converts the projected coordinates to WGS84 longitude/latitude
+        and attaches them to the dataset.
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Input dataset containing projected coordinate variables. Expected variables:
+            - xgrid : (x) or (y, x) coordinate(s) in meters
+            - ygrid : (y) or (y, x) coordinate(s) in meters
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset with added variables:
+            - lon : (y, x) longitude in degrees east
+            - lat : (y, x) latitude in degrees north
+
+        Raises
+        ------
+        KeyError
+            If xgrid/ygrid variables are missing.
+        AssertionError
+            If xgrid and ygrid shapes are incompatible for transformation.
+        ImportError
+            If pyproj is not installed.
+
+        Notes
+        -----
+        - Uses `self.NSIDC_dict["projection_string"]` (Proj4) for the source CRS.
+        - Uses EPSG specified in `self.sea_ice_dic["projection_wgs84"]` (typically 4326)
+          for the target CRS.
+        - This method assumes x/y describe the native NSIDC grid in meters.
+        """
         from pyproj import CRS, Transformer
-        """
-        Convert NSIDC dataset Cartesian coordinates (xgrid, ygrid) into geographic coordinates (longitude, latitude).
-
-        This method transforms the Cartesian coordinates used in NSIDC datasets into
-        standard geographic coordinates (longitude, latitude) based on the Polar
-        Stereographic projection.
-
-        INPUTS
-            ds (xarray.Dataset): The NSIDC dataset containing Cartesian coordinates.
-
-        OUTPUTS
-            xarray.Dataset: The dataset with added `lon` and `lat` variables representing
-                            geographic coordinates.
-
-        NOTES:
-            - The conversion is done using the Proj4 string specified in `self.NSIDC_dict["projection_string"]`.
-            - The transformed geographic coordinates are added to the dataset as new variables
-              named `lon` and `lat`.
-            - The method assumes the dataset contains `xgrid` and `ygrid` variables, which
-              represent the Cartesian coordinates in meters.
-        """
         x = ds['xgrid'].values
         y = ds['ygrid'].values
         assert x.shape == y.shape, "xgrid and ygrid must have the same shape"
@@ -109,6 +249,51 @@ class SeaIceObservations:
                               monthly_files   = False,
                               P_zarr          = None,
                               overwrite       = False):
+        """
+        Compute and persist NSIDC hemispheric sea-ice area (SIA) and extent (SIE).
+
+        This routine loads NSIDC concentration for the specified window, masks out
+        flagged concentration values, applies a concentration threshold to define
+        "ice-covered" cells, and then computes hemispheric aggregates using the NSIDC
+        cell-area product.
+
+        Parameters
+        ----------
+        dt0_str, dtN_str : str, optional
+            Start/end dates in "YYYY-MM-DD" format. Defaults to `self.dt0_str` and
+            `self.dtN_str`.
+        local_load_dir : str or pathlib.Path, optional
+            Directory containing the NSIDC source NetCDFs. If omitted, uses your
+            configured `self.NSIDC_dict["D_original"]` hemisphere sub-tree.
+        monthly_files : bool, default False
+            If True, compute metrics using monthly inputs; otherwise daily inputs.
+        P_zarr : str or pathlib.Path, optional
+            Output Zarr path. Defaults to `<local_load_dir>/zarr`.
+        overwrite : bool, default False
+            If True, recompute even if the Zarr store already exists.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset with time series:
+            - SIA(time) : sea-ice area (units determined by your scaling)
+            - SIE(time) : sea-ice extent (same area units)
+            plus a time coordinate.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no NSIDC source files are found for the requested window.
+        KeyError
+            If required variables/paths are missing from your NSIDC configuration.
+
+        Notes
+        -----
+        - Flags are defined in `self.NSIDC_dict["cdr_seaice_conc_flags"]` and removed
+          by setting affected concentrations to NaN before aggregation.
+        - Area is loaded from `self.NSIDC_dict["P_cell_area"]`.
+        - Extent mask is `aice > self.icon_thresh`.
+        """
         flags    = self.NSIDC_dict["cdr_seaice_conc_flags"]
         SIC_name = self.NSIDC_dict["SIC_name"]
         dt0_str  = dt0_str if dt0_str is not None else self.dt0_str
@@ -148,26 +333,42 @@ class SeaIceObservations:
                                 start             : str  = "1994-01-01",
                                 end               : str  = "1999-12-31") -> xr.Dataset:
         """
-        Load AF2020 landfast sea ice area time series and compute day-of-year climatology.
+        Load AF2020 landfast sea-ice area (FIA) time series and build a DOY climatology.
+
+        This method reads the AF2020 FIA CSV, standardises sector names, produces a
+        circumpolar daily time series, and computes a day-of-year (DOY) climatology.
+        Optionally, the climatology is repeated over an arbitrary target time range
+        for direct comparison against model series.
 
         Parameters
         ----------
-        repeat_climatology : bool, optional
-            If True, returns climatology repeated over the date range. If False, only returns 1D raw data.
-        start : str, optional
-            Start date for repeated climatology (default: "1994-01-01").
-        end : str, optional
-            End date for repeated climatology (default: "1999-12-31").
-        smooth : int, optional
-            Rolling window size for smoothing the day-of-year climatology (default: 5 days).
+        repeat_climatology : bool, default True
+            If True, returns a repeated climatology series (`FIA_clim_repeat`) over the
+            specified [start, end] window. If False, returns only the raw FIA series
+            and DOY climatology.
+        start, end : str, default ("1994-01-01", "1999-12-31")
+            Date window used when repeating the climatology (daily frequency).
 
         Returns
         -------
         xr.Dataset
-            Dataset with:
-                - 'FIA_obs':           Daily FIA time series [time, region]
-                - 'FIA_clim':          Smoothed climatology [doy, region]
-                - 'FIA_clim_repeat':   Climatology repeated over [start, end] (optional)
+            Variables:
+            - FIA_obs(time, region) : observed FIA time series (typically "circumpolar")
+            - FIA_clim(doy, region) : DOY climatology
+            - FIA_clim_repeat(time, region) : climatology mapped to [start, end] (optional)
+
+        Raises
+        ------
+        FileNotFoundError
+            If the CSV path does not exist.
+        ValueError
+            If expected columns required for climatology construction are missing.
+
+        Notes
+        -----
+        - Units are converted from km² to 10³ km² by dividing by 1000.
+        - Leap-day handling: this implementation drops DOY 366 when repeating unless
+          explicitly handled; ensure consistency with your model calendar.
         """
         from scipy.interpolate import interp1d
         csv_path = self.AF_FI_dict['P_AF2020_csv']
@@ -220,6 +421,25 @@ class SeaIceObservations:
         return ds
 
     def AF2020_interpolate_FIA_clim(self, csv_df, full_doy=np.arange(1, 366)):
+        """
+        Interpolate an AF2020 DOY climatology to a complete 1..365 DOY axis.
+
+        Parameters
+        ----------
+        csv_df : pandas.DataFrame
+            DataFrame containing at least:
+            - 'DOY_start' : day-of-year index values
+            - 'Circumpolar' : FIA values (km²)
+        full_doy : array-like, default np.arange(1, 366)
+            Target DOY coordinate to interpolate onto.
+
+        Returns
+        -------
+        xr.DataArray
+            Interpolated climatology with coordinate:
+            - doy : day-of-year
+            Values are in 10³ km².
+        """
         from scipy.interpolate import interp1d
         df = csv_df.copy()
         if 'Circumpolar' not in df.columns or 'DOY_start' not in df.columns:
@@ -233,19 +453,25 @@ class SeaIceObservations:
 
     def AF2020_clim_to_model_time(self, model: xr.DataArray, clim: xr.DataArray) -> xr.DataArray:
         """
-        Expand a DOY-based climatology to match model time steps.
+        Expand a DOY-based climatology to match a model time axis.
 
         Parameters
         ----------
         model : xr.DataArray
-            Model time series with `time` coordinate.
+            Model time series containing a `time` coordinate (datetime-like).
         clim : xr.DataArray
-            Climatology indexed by DOY and region.
+            Climatology indexed by `doy` (and optionally `region`).
 
         Returns
         -------
         xr.DataArray
-            Climatology repeated over `model.time`, matched by DOY.
+            Climatology values mapped onto `model.time` using each date's day-of-year.
+
+        Notes
+        -----
+        - Leap days: if the observational climatology does not define DOY=366, callers
+          should drop Feb 29 from the model calendar or define a mapping strategy
+          (e.g., nearest/pad) consistent with the analysis.
         """
         # Compute day-of-year for each model date (drop Feb 29 if not in obs)
         doy = xr.DataArray(model['time'].dt.dayofyear, coords={"time": model.time}, dims="time")
@@ -256,19 +482,29 @@ class SeaIceObservations:
 
     def build_AF2020_grid_corners(self, lat_c, lon_c):
         """
-        Construct (ny+1, nx+1) corner arrays from center lat/lon arrays.
-        Assumes a regular 2D rectilinear grid in EPSG:3412 projection.
+        Construct (ny+1, nx+1) corner arrays from (ny, nx) center arrays.
 
-        Parameters:
-        -----------
-        lat_c, lon_c : 2D arrays (ny, nx)
-            Latitude and longitude of pixel centers.
+        This helper builds approximate corner coordinates by padding center fields
+        and averaging surrounding values. Corner arrays are commonly required for
+        conservative remapping in xESMF.
 
-        Returns:
-        --------
-        lat_b, lon_b : 2D arrays (ny+1, nx+1)
-            Latitude and longitude of grid cell corners.
+        Parameters
+        ----------
+        lat_c, lon_c : np.ndarray
+            2D arrays (ny, nx) of center latitude/longitude in degrees.
+
+        Returns
+        -------
+        (lat_b, lon_b) : tuple[np.ndarray, np.ndarray]
+            2D arrays (ny+1, nx+1) of corner latitude/longitude.
+
+        Notes
+        -----
+        - This approach assumes a locally smooth grid. For strongly curvilinear grids,
+          corner construction should ideally use native corner metadata when available.
+        - Output longitudes are wrapped to [0, 360).
         """
+
         ny, nx = lat_c.shape
         lat_padded = np.pad(lat_c, ((1, 1), (1, 1)), mode='edge')
         lon_padded = np.pad(lon_c, ((1, 1), (1, 1)), mode='edge')
@@ -280,6 +516,38 @@ class SeaIceObservations:
         return lat_b, lon_b
 
     def _load_AF2020_FI_org_and_save_zarr(self, P_zarr):
+        """
+        Load original AF2020 FastIce NetCDF rasters, compute persistence, regrid to CICE T-grid, and write Zarr.
+
+        Workflow
+        --------
+        1) Open all AF2020 "FastIce_70_*.nc" rasters (mosaic-window products).
+        2) Build an xESMF conservative regridder from the AF2020 grid to the CICE T-grid,
+           reusing a persistent weights file when available.
+        3) Convert the AF2020 categorical time-series variable to a binary fast-ice mask
+           using a threshold (>=4), then compute a time-mean persistence fraction.
+        4) Regrid persistence to the CICE grid and save a compact dataset to Zarr.
+
+        Parameters
+        ----------
+        P_zarr : pathlib.Path
+            Destination Zarr store path.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing:
+            - FI(nj, ni) : fast-ice persistence fraction on CICE T-grid
+            - FI_t_alt(t_FI_obs) : auxiliary date strings from the original product
+            plus lon/lat coordinates on the CICE T-grid.
+
+        Notes
+        -----
+        - Weight file path is taken from `self.AF_FI_dict["AF_reG_weights"]`.
+        - Target grid is built via `self.define_cice_grid(grid_type="t", ...)`.
+        - Conservative regridding requires valid grid corners on both source and target.
+        """
+        import xesmf as xe
         D_obs  = Path(self.AF_FI_dict['D_AF2020_db_org'])
         P_orgs = sorted(D_obs.glob("FastIce_70_*.nc"))
         self.logger.info(f"Loading original AF2020 NetCDF files: {P_orgs}")
@@ -317,293 +585,77 @@ class SeaIceObservations:
         ds_out.to_zarr(P_zarr, mode="w", consolidated=True)
         return ds_out
 
-    def define_FIP_diff_names(self, 
-                     AF2020            = False,
-                     variable_name     = None,
-                     lon_coord_name    = None,
-                     lat_coord_name    = None,
-                     time_coord_name   = None,
-                     spatial_dim_names = None,
-                     thresh_val        = None):
-        name_space        = {}
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        if AF2020:
-            name_var   = variable_name   if variable_name   is not None else self.AF_FI_dict["variable_name"]
-            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.AF_FI_dict["lat_coord_name"]
-            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.AF_FI_dict["lon_coord_name"]
-            name_dt    = time_coord_name if time_coord_name is not None else self.AF_FI_dict["time_coord_name"]
-            thresh_val = thresh_val      if thresh_val      is not None else self.AF_FI_dict["threshold_value"]
-        else:    
-            name_var   = variable_name   if variable_name   is not None else "aice"
-            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.CICE_dict["tcoord_names"][1]
-            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.CICE_dict["tcoord_names"][0]
-            name_dt    = time_coord_name if time_coord_name is not None else self.CICE_dict["time_dim"]
-            thresh_val = thresh_val      if thresh_val      is not None else self.icon_thresh
-        return {'spatial_dims': spatial_dim_names,
-                'time_dim'    : name_dt,
-                'variable'    : name_var,
-                'latitude'    : name_lat,
-                'longitude'   : name_lon,
-                'thresh_val'  : thresh_val}
-
-    def define_fast_ice_coordinates(self, ds,
-                                    AF2020            = False,
-                                    variable_name     = None,
-                                    lon_coord_name    = None,
-                                    lat_coord_name    = None,
-                                    time_coord_name   = None,
-                                    spatial_dim_names = None,
-                                    thresh_val        = None):
-        names = self.define_FIP_diff_names(AF2020            = AF2020,
-                                           variable_name     = variable_name,
-                                           lon_coord_name    = lon_coord_name,
-                                           lat_coord_name    = lat_coord_name,
-                                           time_coord_name   = time_coord_name,
-                                           spatial_dim_names = spatial_dim_names,
-                                           thresh_val        = thresh_val)
-        if "time" in ds[names['latitude']].dims:
-            lat = ds[names['latitude']].isel(time=0).values
-        else:
-            lat = ds[names['latitude']].values
-        if "time" in ds[names['longitude']].dims:
-            lon = ds[names['longitude']].isel(time=0).values
-        else:
-            lon = ds[names['longitude']].values
-        dt = ds[names['time_dim']].values
-        return {'datetimes'  : dt,
-                'latitudes'  : lat,
-                'longitudes' : lon,
-                'names'      : names}
-
-    def define_fast_ice_mask_da(self, ds,
-                                AF2020            = False,
-                                variable_name     = None,
-                                lon_coord_name    = None,
-                                lat_coord_name    = None,
-                                time_coord_name   = None,
-                                spatial_dim_names = None,
-                                thresh_val        = None):
-        coords  = self.define_fast_ice_coordinates(ds,
-                                                    AF2020            = AF2020,
-                                                    variable_name     = variable_name,
-                                                    lon_coord_name    = lon_coord_name,
-                                                    lat_coord_name    = lat_coord_name,
-                                                    time_coord_name   = time_coord_name,
-                                                    spatial_dim_names = spatial_dim_names,
-                                                    thresh_val        = thresh_val)
-        FI_mask = xr.where(ds[coords['names']['variable']] >= coords['names']['thresh_val'], 1.0, 0.0)
-        return xr.DataArray(FI_mask,
-                            dims   = self.CICE_dict['three_dims'],
-                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], coords['latitudes']),
-                                      self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], coords['longitudes']),
-                                      self.CICE_dict['time_dim']       : (self.CICE_dict['time_dim']    , coords['datetimes'])})
-    
-    def define_regular_G(self, grid_res,
-                         region            = [0,360,-90,0],
-                         spatial_dim_names = ("nj","ni")):
-        lon_min, lon_max, lat_min, lat_max = region
-        lon_regular = np.arange(lon_min, lon_max + grid_res, grid_res)
-        lat_regular = np.arange(lat_min, lat_max + grid_res, grid_res)
-        LON, LAT    = np.meshgrid(lon_regular,lat_regular)
-        return xr.Dataset({self.CICE_dict['lon_coord_name'] : (spatial_dim_names, LON),
-                           self.CICE_dict['lat_coord_name'] : (spatial_dim_names, LAT)})
-
-    def define_reG_regular_weights(self, da,
-                                    G_res             = 0.15,
-                                    region            = [0,360,-90,0],
-                                    AF2020            = False,
-                                    variable_name     = None,
-                                    lon_coord_name    = None,
-                                    lat_coord_name    = None,
-                                    time_coord_name   = None,
-                                    spatial_dim_names = None,
-                                    reG_method        = "bilinear",
-                                    periodic          = False,
-                                    reuse_weights     = True,
-                                    P_weights         = None):
-        coords  = self.define_fast_ice_coordinates(da,
-                                                    AF2020            = AF2020,
-                                                    variable_name     = variable_name,
-                                                    lon_coord_name    = lon_coord_name,
-                                                    lat_coord_name    = lat_coord_name,
-                                                    time_coord_name   = time_coord_name,
-                                                    spatial_dim_names = spatial_dim_names)
-        if AF2020: 
-            P_weights = P_weights if P_weights is not None else self.AF_FI_dict["P_reG_reg_weights"]
-        else:
-            P_weights = P_weights if P_weights is not None else self.CICE_dict["P_reG_reg_weights"]
-        G_src = xr.Dataset({self.CICE_dict['lat_coord_name'] : (coords['names']['spatial_dims'], coords['latitudes']),
-                            self.CICE_dict['lon_coord_name'] : (coords['names']['spatial_dims'], coords['longitudes'])})
-        G_dst = self.define_regular_G(G_res, region=region, spatial_dim_names=coords['names']['spatial_dims'])
-        return xe.Regridder(G_src, G_dst,
-                            method            = reG_method,
-                            periodic          = periodic,
-                            ignore_degenerate = True,
-                            reuse_weights     = reuse_weights,
-                            filename          = P_weights)
-
-    def define_fast_ice_persistence_da(self, fip, reG=False):
-        if reG:
-            G_dst = self.define_regular_G(0.15, region=[0,360,-90,0], spatial_dim_names=self.CICE_dict['spatial_dims'])
-            lats  = G_dst[self.CICE_dict['lat_coord_name']].values
-            lons  = G_dst[self.CICE_dict['lon_coord_name']].values
-        else:
-            lats = fip[self.CICE_dict['lat_coord_name']].values
-            lons = fip[self.CICE_dict['lon_coord_name']].values
-        return xr.DataArray(fip.astype('float32').values,
-                            dims   = self.CICE_dict['spatial_dims'],
-                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], lats),
-                                    self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], lons)})
-
-    def compute_fip_weight(self,
-                           FIP   : xr.Dataset, 
-                           mode  : str = "max",
-                           t     : float = 0.1,
-                           gamma : float = 1.0) -> xr.DataArray:
-        """Return opacity weight in [0,1] where 0 => fully transparent, 1 => opaque."""
-        if "obs" not in FIP:
-            raise KeyError("FIP['obs'] is required")
-        obs = FIP["obs"]
-        mod = FIP.get("mod", None)
-        if mode == "max" and mod is not None:
-            cov = xr.apply_ufunc(np.maximum, obs, mod)
-        elif mode == "mean" and mod is not None:
-            cov = 0.5 * (obs + mod)
-        elif mode == "prod" and mod is not None:
-            cov = xr.apply_ufunc(np.sqrt, obs * mod)  # geometric mean
-        else:
-            cov = obs  # fall back to obs only
-        # Soft ramp: 0 below t, then linear to 1 at 1.0
-        w = (cov - t) / (1 - t)
-        w = w.clip(0, 1)
-        # Optional contrast shaping
-        if gamma != 1.0:
-            w = w ** gamma
-        w.name = "diff_weight"
-        w.attrs.update(dict(long_name="opacity weight", comment=f"weight ~ {mode}(obs,mod), threshold={t}, gamma={gamma}"))
-        return w
-
-    def to_3031_extent(self, lat2d, lon2d, buffer_m=20_000):
+    def AF2020_regional_fast_ice_area(self, ds: xr.Dataset,
+                                        region    = (52.5, 97.5, -70.5, -64),
+                                        lon_name  = "longitude",
+                                        lat_name  = "latitude",
+                                        area_name = "area",
+                                        fast_name = "Fast_Ice_Time_series",
+                                        threshold = 4,
+                                        lon_wrap  = "0-360"):
         """
-        Project a swath's lat/lon to EPSG:3031 and return [xmin, ymin, xmax, ymax] (+buffer).
-        Wrap longitudes to [-180, 180) first to avoid dateline issues.
-        """
-        from pyproj import Transformer
-        lon2d       = self.normalise_longitudes(lon2d, to="-180-180")
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3031", always_xy=True)
-        x, y        = transformer.transform(lon2d.ravel(), lat2d.ravel())
-        x           = np.asarray(x)
-        y           = np.asarray(y)
-        finite      = np.isfinite(x) & np.isfinite(y)
-        xmin, xmax  = x[finite].min(), x[finite].max()
-        ymin, ymax  = y[finite].min(), y[finite].max()
-        return [xmin - buffer_m, ymin - buffer_m, xmax + buffer_m, ymax + buffer_m]
+        Compute a regional fast-ice area time series from a gridded observation product.
 
-    def union_extents(self, extents):
-        xs = [e[0] for e in extents] + [e[2] for e in extents]
-        ys = [e[1] for e in extents] + [e[3] for e in extents]
-        return [min(xs), min(ys), max(xs), max(ys)]
+        This routine is designed for AF2020-like datasets that provide:
+        - curvilinear or projected 2-D lon/lat fields, and
+        - a per-cell area field (m²), and
+        - a fast-ice indicator variable over time.
 
-    def snap_extent_to_grid(self, extent, pixel_size=5_000):
-        xmin, ymin, xmax, ymax = extent
-        xmin = np.floor(xmin / pixel_size) * pixel_size
-        ymin = np.floor(ymin / pixel_size) * pixel_size
-        xmax = np.ceil (xmax / pixel_size) * pixel_size
-        ymax = np.ceil (ymax / pixel_size) * pixel_size
-        return [xmin, ymin, xmax, ymax]
+        The region is defined by a geographic bounding box:
+            region = (lon_min, lon_max, lat_min, lat_max)
 
-    def make_area_definition(self, extent,
-                             pixel_size = 5_000,
-                             area_id    = "epsg3031_5km_union"):
-        from pyresample.geometry import AreaDefinition
-        xmin, ymin, xmax, ymax = extent
-        width                  = int(round((xmax - xmin) / pixel_size))
-        height                 = int(round((ymax - ymin) / pixel_size))
-        xmax                   = xmin + width  * pixel_size
-        ymax                   = ymin + height * pixel_size
-        return AreaDefinition(area_id     = area_id,
-                              description = "Common 5 km EPSG:3031 grid (union of inputs)",
-                              proj_id     = "epsg3031",
-                              projection  = "EPSG:3031",
-                              width       = width,
-                              height      = height,
-                              area_extent = (xmin, ymin, xmax, ymax))
+        Longitude seam-crossing is supported (e.g., lon_min=350, lon_max=20 in 0–360
+        convention). The computation is performed as:
 
-    def grid_coords_from_area(self, area_def, pixel_size=5_000):
-        xmin, ymin, xmax, ymax = area_def.area_extent
-        width, height          = area_def.width, area_def.height
-        x                      = xmin + (np.arange(width) + 0.5) * pixel_size
-        y                      = ymax - (np.arange(height) + 0.5) * pixel_size  # top->down (north->south)
-        return x, y
+            FIA(t) = Σ_{cells in region} [ fast(t,cell) * area(cell) ]
 
-    def resample_swath_to_area(self, src_da, lat2d, lon2d, area_def, 
-                               pixel_size = 5_000,
-                               radius     = 10_000,
-                               fill_value = np.nan):
-        from pyresample.geometry import SwathDefinition
-        from pyresample.kd_tree  import resample_nearest
-        """Nearest-neighbour resample a 2D swath (lat2d, lon2d) to an AreaDefinition grid."""
-        lon2d = self.normalise_longitudes(lon2d, to="-180-180")  # << key fix: wrap before building the swath
-        swath = SwathDefinition(lons=lon2d, lats=lat2d)
-        out2d = resample_nearest(source_geo_def      = swath,
-                                 data                = src_da.values,
-                                 target_geo_def      = area_def,
-                                 radius_of_influence = radius,
-                                 fill_value          = fill_value,
-                                 nprocs              = 0,            # set >0 to parallelise
-                                 reduce_data         = True)
-        x, y = self.grid_coords_from_area(area_def, pixel_size=pixel_size)
-        return xr.DataArray(out2d,
-                            dims   = ("y", "x"),
-                            coords = {"x": ("x", x, {"units": "m", "standard_name": "projection_x_coordinate"}),
-                                      "y": ("y", y, {"units": "m", "standard_name": "projection_y_coordinate"})},
-                            name   = src_da.name,
-                            attrs  = {"crs": "EPSG:3031", "grid_mapping": "spstereo", "res": float(pixel_size ), **src_da.attrs})
+        where `fast(t,cell)` is a boolean mask defined by `ds[fast_name] >= threshold`.
 
-    def _xy_to_lonlat(self, x, y):
-        from pyproj import Transformer
-        T = Transformer.from_crs(3031, 4326, always_xy=True)
-        lon, lat = T.transform(x, y)
-        return lon, lat
+        Parameters
+        ----------
+        ds : xarray.Dataset
+            Dataset containing at minimum:
+            - ds[lon_name]  : 2-D longitude field with a time dimension (time, Y, X) or
+                                broadcastable; only time=0 is used for the static grid.
+            - ds[lat_name]  : 2-D latitude field with a time dimension (time, Y, X) or
+                                broadcastable; only time=0 is used for the static grid.
+            - ds[area_name] : 2-D grid-cell area in m² with a time dimension (time, Y, X)
+                                or broadcastable; only time=0 is used.
+            - ds[fast_name] : fast-ice indicator variable with a time dimension.
+        region : tuple[float, float, float, float], default (52.5, 97.5, -70.5, -64)
+            Geographic region bounds as (lon_min, lon_max, lat_min, lat_max), in degrees.
+        lon_name : str, default "longitude"
+            Name of the longitude variable/coordinate in `ds`.
+        lat_name : str, default "latitude"
+            Name of the latitude variable/coordinate in `ds`.
+        area_name : str, default "area"
+            Name of the per-cell area variable/coordinate in `ds` (assumed m²).
+        fast_name : str, default "Fast_Ice_Time_series"
+            Name of the fast-ice indicator variable in `ds`.
+        threshold : float, default 4
+            Threshold applied to `ds[fast_name]` to produce a boolean fast-ice mask.
+            Cells with `ds[fast_name] >= threshold` are treated as fast ice.
+        lon_wrap : {"0-360", "-180-180"}, default "0-360"
+            Longitude convention used for the region definition and for wrapping `lon2d`.
 
-    def add_lonlat_from_epsg3031(self, ds, 
-                                 x_name    = "x",
-                                 y_name    = "y",
-                                 wrap      = "0..360",       # or "-180..180"
-                                 out_dtype = "float32"):
-        if x_name not in ds.dims or y_name not in ds.dims:
-            raise ValueError(f"Expected dims '{y_name}', '{x_name}' in dataset.")
-        # broadcast 1-D x/y -> 2-D (y,x)
-        X2D, Y2D = xr.broadcast(ds[x_name], ds[y_name])  # shapes (y,x)
-        lon, lat = xr.apply_ufunc(self._xy_to_lonlat, X2D, Y2D,
-                                input_core_dims=[[y_name, x_name], [y_name, x_name]],
-                                output_core_dims=[[y_name, x_name], [y_name, x_name]],
-                                dask="parallelized",
-                                vectorize=False,
-                                output_dtypes=[np.float64, np.float64],)
-        # wrap longitudes & cast 
-        if wrap == "0..360":
-            lon = self.normalise_longitudes(lon, to="0-360")
-        else:
-            lon = self.normalise_longitudes(lon, to="-180-180")
-        if out_dtype:
-            lon = lon.astype(out_dtype)
-            lat = lat.astype(out_dtype)
-        # attach as coordinates (on same (y,x) dims)
-        return ds.assign_coords(lon=lon, lat=lat)
+        Returns
+        -------
+        xarray.DataArray
+            1-D time series of regional fast-ice area in **1e3 km²** (i.e., thousands of km²),
+            named `"FIA_1e3-km2"`. The time coordinate is inherited from `ds[fast_name]`.
 
-    def regional_fast_ice_area(self, ds: xr.Dataset,
-                                region    = (52.5, 97.5, -70.5, -64),
-                                lon_name  = "longitude",
-                                lat_name  = "latitude",
-                                area_name = "area",
-                                fast_name = "Fast_Ice_Time_series",
-                                threshold = 4,
-                                lon_wrap  = "0-360"):
-        """
-        Compute regional fast-ice area (km^2) time series from AF2020-like DS with
-        curvilinear lon/lat and a per-cell area field.
-        region = (lon_min, lon_max, lat_min, lat_max)
+        Notes
+        -----
+        - Lon/lat/area are read from `time=0` only to avoid unnecessary time broadcasting.
+        - The regional mask is optionally cropped to the minimal bounding index range to
+        reduce computation.
+        - If `region` crosses the longitude seam (lon_min > lon_max), the longitude mask
+        is built using an OR condition to include both sides.
+
+        Examples
+        --------
+        >>> fia = obs.AF2020_regional_fast_ice_area(ds, region=(350, 20, -75, -65), lon_wrap="0-360")
+        >>> fia.plot()
         """
         lon_min, lon_max, lat_min, lat_max = region
         # --- 1) Use static lon/lat & area from first time slice (avoid time broadcast)
@@ -656,35 +708,6 @@ class SeaIceObservations:
     ####################################################################################################
     ##                                          CCI SIT         
     ####################################################################################################
-    def _norm_list(self, x: Optional[Iterable[str]]) -> Optional[List[str]]:
-        if x is None: return None
-        out = [str(s).strip() for s in x if s and str(s).strip()]
-        return out or None
-
-    def _days_in_month(self, y: int, m: int) -> int:
-        if m in (1,3,5,7,8,10,12): return 31
-        if m in (4,6,9,11): return 30
-        return 29 if ((y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)) else 28
-
-    def _month_overlap(self, y: int, m: int, t0: pd.Timestamp, t1: pd.Timestamp) -> bool:
-        first = pd.Timestamp(year=y, month=m, day=1, tz="UTC")
-        last  = pd.Timestamp(year=y, month=m, day=self._days_in_month(y,m), tz="UTC")
-        return not (last < t0 or first > t1)
-
-    def _parse_yyyymmdd(self, name: str) -> Optional[pd.Timestamp]:
-        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)", name)
-        if not m: return None
-        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            return pd.Timestamp(year=y, month=mo, day=d, tz="UTC")
-        except Exception:
-            return None
-
-    def _parse_yyyymm(self, name: str) -> Optional[Tuple[int,int]]:
-        m = re.search(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(?!\d)", name)
-        if not m: return None
-        return int(m.group(1)), int(m.group(2))
-
     def build_sea_ice_satellite_paths(self,
                                       dt0_str      : str,
                                       dtN_str      : str,
@@ -897,27 +920,7 @@ class SeaIceObservations:
         return sorted(set(out))
 
     # ------------------------- map grids (LAEA/EASE-like) ------------------------- #
-    def _match_lon_range(self, lon_1d: np.ndarray, grid_lon_2d: np.ndarray) -> np.ndarray:
-        """Map swath longitudes to the same wrap as the target grid."""
-        gmin, gmax = np.nanmin(grid_lon_2d), np.nanmax(grid_lon_2d)
-        grid_is_180 = (gmin >= -180.0) and (gmax <= 180.0)
-        lon_a = ((lon_1d + 180.0) % 360.0) - 180.0   # [-180, 180)
-        lon_b = lon_1d % 360.0                       # [0, 360)
-        lon_b[lon_b < 0] += 360.0
-        # pick the representation whose range best matches the grid
-        if grid_is_180:
-            return lon_a
-        else:
-            return lon_b
-
-    def _get_first(self, ds: xr.Dataset, names) -> Optional[xr.DataArray]:
-        for n in names:
-            if n in ds.variables:
-                return ds[n]
-            if n in ds.coords:
-                return ds.coords[n]
-        return None
-
+    # ------------------------- file path indexing & QA helpers ------------------------- #
     @staticmethod
     def laea_area_def(hem   : str,
                       nx    : int,
@@ -942,6 +945,7 @@ class SeaIceObservations:
         -------
         pyresample.geometry.AreaDefinition
         """
+        from pyresample import geometry
         if geometry is None:
             raise ImportError("pyresample is required: `pip install pyresample`")
         hem       = str(hem).lower()
@@ -972,19 +976,34 @@ class SeaIceObservations:
         """Convenience grid for NH (432×432 @ ~25 km, lon0=0)."""
         return SeaIceObservations.laea_area_def("nh", nx=432, ny=432, dx_km=25.0, lon0=0.0)
 
-    # ------------------------- file path indexing & QA helpers ------------------------- #
+    
     def index_satellite_paths(self, paths: Iterable[Path]) -> pd.DataFrame:
         """
-        Build a tidy index of satellite files with parsed dates for QA/QC and selection.
+        Build a tidy index of candidate satellite files with parsed dates for QA/QC and selection.
+
+        This function inspects each file name and classifies it as:
+        - "daily"   : contains a YYYYMMDD token (date parsed as that day)
+        - "monthly" : contains a YYYYMM token (date set to first of that month)
+        - "unknown" : no parseable token (date set to NaT)
+
+        Parameters
+        ----------
+        paths : iterable of pathlib.Path
+            Input file paths.
 
         Returns
         -------
         pandas.DataFrame
-            Columns:
-              - path: Path
-              - kind: {"daily","monthly","unknown"}
-              - date: UTC Timestamp (daily) or first-of-month (monthly) or NaT
-              - year, month, day: ints or None
+            A stable-sorted table with columns:
+            - path  : Path
+            - kind  : {"daily","monthly","unknown"}
+            - date  : UTC Timestamp (daily) or first-of-month (monthly) or NaT
+            - year, month, day : ints (or None)
+
+        Notes
+        -----
+        Sorting is stable and deterministic to make downstream "first"/"last" selection
+        repeatable.
         """
         rows = []
         for p in map(Path, paths):
@@ -1012,19 +1031,24 @@ class SeaIceObservations:
 
     def dedup_daily_one_file_per_day(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
         """
-        From an indexed DataFrame (see index_satellite_paths), select one file per day.
+        Select exactly one daily file per UTC day from an indexed path table.
 
         Parameters
         ----------
-        df : DataFrame
-            Output of `index_satellite_paths`.
+        df : pandas.DataFrame
+            Output of `index_satellite_paths(...)`.
         prefer : {"first","last"}, default "last"
-            If multiple files map to the same day, choose the first/last after sorting.
+            If multiple files map to the same day, select the first/last after sorting.
 
         Returns
         -------
-        DataFrame
-            Subset of `df` with kind == "daily" and unique 'date'.
+        pandas.DataFrame
+            Subset of `df` restricted to kind == "daily" with unique 'date'.
+
+        Notes
+        -----
+        - Non-daily entries are discarded.
+        - The returned frame preserves the same columns as the input `df`.
         """
         dfd = df[df["kind"] == "daily"].copy()
         if dfd.empty:
@@ -1033,6 +1057,40 @@ class SeaIceObservations:
         pick = {"first": "first", "last": "last"}[prefer]
         dfd  = dfd.groupby("date", as_index=False, sort=True).agg(pick)
         return dfd
+    
+    def dedup_monthly_one_file_per_month(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
+        """
+        Select exactly one file per (year, month) from an indexed path table.
+
+        This is intended for monthly products, but will also accept daily files that encode
+        a YYYYMM token.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Output of `index_satellite_paths(...)`.
+        prefer : {"first","last"}, default "last"
+            If multiple files map to the same (year, month), select the first/last after sorting.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Subset with unique (year, month) combinations.
+
+        Notes
+        -----
+        Rows without parsed (year, month) are dropped.
+        """
+        dfm = df[df["kind"].isin(["monthly","daily"])].copy()
+        if dfm.empty:
+            return dfm
+        # For daily entries we keep (year, month) for grouping
+        dfm["yymm"] = list(zip(dfm["year"], dfm["month"]))
+        dfm = dfm.dropna(subset=["yymm"])
+        dfm = dfm.sort_values(["year","month","path"])
+        pick = {"first":"first","last":"last"}[prefer]
+        dfm = dfm.groupby(["year","month"], as_index=False, sort=True).agg(pick)
+        return dfm
 
     # ------------------------- LEVEL 2 (DAILY UN-GRIDDED) ------------------------- #
     def _l2p_weights(self,
@@ -1045,6 +1103,60 @@ class SeaIceObservations:
                      out_shape : Tuple[int, int],  # (ny, nx)
                      roi_m     : float,
                      sigma_m   : Optional[float] = None):
+        """
+        Combine neighbour swath samples into gridded cell statistics using uniform or Gaussian weights.
+
+        This helper is designed to consume the outputs of:
+            pyresample.kd_tree.get_neighbour_info(...)
+
+        and reduce swath SIT and uncertainty into per-grid-cell:
+        - weighted mean SIT
+        - propagated standard error (SE)
+        - weighted mean of per-sample uncertainty
+        - count of valid contributing neighbours
+
+        Parameters
+        ----------
+        index_array : array-like (masked or ndarray)
+            Neighbour indices from `get_neighbour_info`. Shape is either (k, n_out) or
+            (n_out, k), where k is the number of neighbours and n_out is the number of
+            valid output cells.
+        dist_array : array-like (masked or ndarray)
+            Neighbour distances (meters) aligned with `index_array`.
+        valid_input_index : array-like of int
+            Indices selecting the valid subset of swath input points used by the KD-tree.
+        valid_output_index : array-like of int or bool
+            Output-cell selector from `get_neighbour_info`. If boolean, length must equal
+            ny*nx; if integer, interpreted as flat indices into the target grid.
+        swath_SIT : array-like of float
+            Swath sea-ice thickness samples corresponding to the full swath arrays
+            (pre-filtering). Units: meters.
+        swath_unc : array-like of float
+            Swath uncertainty samples (per-sample standard error or equivalent). Units: meters.
+        out_shape : tuple[int, int]
+            Target grid shape as (ny, nx).
+        roi_m : float
+            Radius of influence used for neighbour selection (meters).
+        sigma_m : float or None, default None
+            If provided, apply Gaussian weights:
+                w = exp(-d^2 / (2*sigma^2))
+            Otherwise, use uniform weights for valid neighbours.
+
+        Returns
+        -------
+        tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]
+            (SIT, SIT_unc, u_cell, n_cell) where:
+            - SIT      : (ny, nx) float32, weighted mean thickness [m]
+            - SIT_unc  : (ny, nx) float32, propagated SE [m]
+            - u_cell   : (ny, nx) float32, weighted mean of per-sample uncertainty [m]
+            - n_cell   : (ny, nx) int32, number of valid neighbours per cell
+
+        Notes
+        -----
+        - Neighbours outside `roi_m` are excluded.
+        - Masked neighbour entries are treated as non-existent.
+        - SE propagation uses: sqrt(sum(w^2 * u^2)) / sum(w).
+        """
         ny, nx = out_shape
         # reduce sources to KD-tree's valid input subset
         src_s = np.asarray(swath_SIT, dtype=np.float64)[valid_input_index]
@@ -1173,6 +1285,7 @@ class SeaIceObservations:
         - Propagated SE follows: sqrt(sum(w^2 * se^2)) / sum(w).
         - Files missing required variables are skipped (warning).
         """
+        from pyresample import geometry, kd_tree
         if geometry is None or kd_tree is None:
             raise ImportError("pyresample is required: `pip install pyresample`")
         if not paths:
@@ -1332,18 +1445,55 @@ class SeaIceObservations:
                                prefer            : str = "last",
                                area_def          = None) -> xr.Dataset:
         """
-        Build a daily gridded SIT dataset for a time window in one call.
+        Create a daily gridded sea-ice thickness (SIT) dataset over a time window in one call.
 
-        This:
-        1) Uses `build_sea_ice_satellite_paths(...)` to find L2P files in [dt0, dtN].
-        2) Indexes & de-duplicates to one file per day (configurable).
-        3) Calls `l2p_to_daily_grid_pyresample(...)` to produce (time,y,x) fields
-           plus hemispheric daily series.
+        This convenience wrapper performs:
+        1) File discovery via `build_sea_ice_satellite_paths(...)` across ESA and/or AWI layouts.
+        2) Indexing and de-duplication to one candidate file per UTC day.
+        3) Swath-to-grid resampling with `l2p_to_daily_grid_pyresample(...)`.
+
+        Parameters
+        ----------
+        dt0_str, dtN_str : str
+            Start/end of the time window (inclusive). Any pandas-parsable date string.
+        hemisphere : {"sh","nh"} or None, optional
+            Hemisphere selector; defaults to `self.hemisphere_dict['abbreviation']` when present.
+        institutions : iterable of str or None, default ("ESA","AWI")
+            Institutions to search (case-insensitive).
+        sensors, levels, versions : iterable of str or None, optional
+            Optional filters passed to `build_sea_ice_satellite_paths(...)`.
+        root_esa, root_awi : pathlib.Path or None, optional
+            Root directories. If None, falls back to configured defaults (module globals or class config).
+        roi_km : float, default 75.0
+            Radius of influence for neighbour search (km).
+        neighbours : int, default 16
+            Maximum neighbours per target grid cell.
+        epsilon : float, default 0.0
+            KD-tree epsilon tolerance (speed/accuracy trade-off).
+        gaussian_sigma_km : float or None, optional
+            If set, apply Gaussian distance weights with this sigma (km). If None, uniform weights.
+        lat_cut : float or None, optional
+            Additional latitude filter applied to swath points (hemisphere-aware).
+        time_at_noon : bool, default True
+            If True, output time coordinate is day+12:00Z; otherwise midnight.
+        prefer : {"first","last"}, default "last"
+            If multiple files map to a day, choose first/last after deterministic sorting.
+        area_def : pyresample.geometry.AreaDefinition or None, optional
+            Target grid. If None, uses internal EASE/LAEA-like convenience grids.
 
         Returns
         -------
         xarray.Dataset
-            See `l2p_to_daily_grid_pyresample` for structure.
+            Daily gridded dataset with dimensions (time, y, x) including:
+            - SIT, SIT_unc, u_cell, n_cell (gridded)
+            - SIT_hem, SIT_hem_unc, SIT_hem_u, SIT_hem_n (hemispheric aggregates)
+
+        See Also
+        --------
+        build_sea_ice_satellite_paths
+        index_satellite_paths
+        dedup_daily_one_file_per_day
+        l2p_to_daily_grid_pyresample
         """
         # prefer configured roots if not supplied
         if root_esa is None:
@@ -1373,33 +1523,6 @@ class SeaIceObservations:
                                                  time_at_noon      = time_at_noon)
 
     # ------------------------- LEVEL 3 (MONTLY GRIDDED) ------------------------- #
-    def dedup_monthly_one_file_per_month(self, df: pd.DataFrame, prefer: str = "last") -> pd.DataFrame:
-        """
-        From an indexed DataFrame (see index_satellite_paths), select one file per month.
-
-        Parameters
-        ----------
-        df : DataFrame
-            Output of `index_satellite_paths`.
-        prefer : {"first","last"}, default "last"
-            If multiple files map to the same (year, month), keep the first/last after sorting.
-
-        Returns
-        -------
-        DataFrame
-            Subset with kind == "monthly" (or daily files that encode YYYYMM) and unique (year, month).
-        """
-        dfm = df[df["kind"].isin(["monthly","daily"])].copy()
-        if dfm.empty:
-            return dfm
-        # For daily entries we keep (year, month) for grouping
-        dfm["yymm"] = list(zip(dfm["year"], dfm["month"]))
-        dfm = dfm.dropna(subset=["yymm"])
-        dfm = dfm.sort_values(["year","month","path"])
-        pick = {"first":"first","last":"last"}[prefer]
-        dfm = dfm.groupby(["year","month"], as_index=False, sort=True).agg(pick)
-        return dfm
-
     def l3c_paths_to_monthly_grid(self,
                                   paths              : list[Path],
                                   hem                : str   | None = None,
@@ -1670,13 +1793,52 @@ class SeaIceObservations:
                                     min_obs            : int = 1,
                                     time_midpoint      : bool = True,) -> xr.Dataset:
         """
-        Build a monthly gridded SIT dataset from L3 products (ESA L3C / AWI l3cp_release)
-        in one call. Mirrors the L2P one-call driver but skips resampling.
+        Create a monthly gridded SIT dataset from Level-3 products (ESA L3C / AWI l3cp_release).
 
-        Steps:
-        1) Find files with `build_sea_ice_satellite_paths(...)`
-        2) Index and de-duplicate to one file per month
-        3) Assemble into (time,y,x) arrays with `l3c_paths_to_monthly_grid(...)`
+        This convenience wrapper performs:
+        1) File discovery via `build_sea_ice_satellite_paths(...)`.
+        2) Indexing and de-duplication to one file per (year, month).
+        3) Assembly into a single (time, y, x) dataset using `l3c_paths_to_monthly_grid(...)`.
+
+        Parameters
+        ----------
+        dt0_str, dtN_str : str
+            Start/end of the time window (inclusive).
+        hemisphere : {"sh","nh"} or None, optional
+            Hemisphere selector; defaults to `self.hemisphere_dict['abbreviation']` when present.
+        institutions, sensors, levels, versions : iterable of str or None, optional
+            Filters passed to `build_sea_ice_satellite_paths(...)`. By default, `levels`
+            targets monthly L3 products (e.g., ("L3C","l3cp_release")).
+        root_esa, root_awi : pathlib.Path or None, optional
+            Root directories. If None, falls back to configured defaults (module globals or class config).
+        prefer : {"first","last"}, default "last"
+            If multiple files map to a month, choose first/last after deterministic sorting.
+        sic_thresh_percent : float or None, default 15.0
+            If set, mask cells with SIC below this threshold (percent).
+        mask_strategy : {"none","quality","status","both"}, default "none"
+            Optional QC masking using quality_flag and/or status_flag when present.
+        include_snow : bool, default True
+            Include snow depth fields when present.
+        include_flags : bool, default True
+            Include flag fields (quality/status/region code) when present.
+        min_obs : int, default 1
+            If a per-cell observation count exists, require count >= min_obs.
+        time_midpoint : bool, default True
+            If time bounds are present, set time coordinate to the midpoint.
+
+        Returns
+        -------
+        xarray.Dataset
+            Monthly gridded dataset with dimensions (time, y, x), including:
+            - SIT, SIT_unc, optional SIC/snow/flags
+            - SIT_hem* aggregates and optional SIC-weighted SIT aggregates (SIT_wgt*)
+
+        See Also
+        --------
+        build_sea_ice_satellite_paths
+        index_satellite_paths
+        dedup_monthly_one_file_per_month
+        l3c_paths_to_monthly_grid
         """
         # default roots from module globals if not specified
         if root_esa is None:

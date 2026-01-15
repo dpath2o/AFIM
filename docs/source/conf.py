@@ -42,3 +42,22 @@ templates_path = ['_templates']
 exclude_patterns = []
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+# -- Autodoc imports ---------------------------------------------------
+autodoc_mock_imports = [ "dask.distributed",
+    # plotting stack (not available on RTD)
+    "pygmt",
+    "geopandas",
+    "PIL",
+    "PIL.Image",
+    "imageio",
+    # regridding stack (xesmf often not installable on RTD)
+    "xesmf",
+    "ESMF",
+    "esmpy",
+    "pyresample",
+    "pyresample.geometry",
+    "pyresample.kd_tree",
+    "pyproj",
+    # ACCESS intake catalog
+    "intake",
+]

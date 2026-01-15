@@ -3,18 +3,91 @@ import xarray as xr
 import numpy  as np
 import pandas as pd
 from pathlib  import Path
-
 __all__ = ["SeaIceGridWork"]
-
 class SeaIceGridWork:
+    """
+    Grid utilities and CICE grid loaders for AFIM sea-ice workflows.
+
+    `SeaIceGridWork` centralizes common spatial operations used across the AFIM
+    toolbox, including longitude normalization, landmask application, construction
+    of cell-corner and face-coordinate geometry, and loading CICE grid metadata
+    (T-grid and U-grid) from the model grid file.
+
+    The class is intended to be mixed into higher-level analysis classes (e.g.,
+    toolbox/plotter/regridder) and therefore typically relies on attributes defined
+    elsewhere, such as:
+    - `self.CICE_dict` : configuration dictionary (paths, dimension names, etc.)
+    - `self.logger`   : logger instance
+    - `self.use_gi`   : bool; whether grounded-iceberg modified landmask is active
+    - `self.P_KMT_org`, `self.P_KMT_mod` : paths to original/modified landmask files
+    - `self.slice_hemisphere(...)` : optional helper to subset to SH/NH
+    - `self.radians_to_degrees(...)` : helper for coordinate conversion
+    - state flags: `self.grid_loaded`, `self.bgrid_loaded`, `self.cgrid_loaded`
+
+    Notes
+    -----
+    - CICE grids are curvilinear; longitudes require seam-aware handling. The class
+    provides robust longitude wrapping and a circular mean for longitudes.
+    - `load_cice_grid` sets multiple datasets as **attributes**; it is a loader with
+    side effects and does not return the grids explicitly.
+    """
 
     def __init__(self, **kwargs):
+        """
+        Initialize the gridwork mixin.
+
+        This initializer is intentionally minimal. In typical AFIM usage, configuration
+        and state (e.g., `self.CICE_dict`, logging, hemisphere settings, and file paths)
+        are injected via `**kwargs` and/or by parent classes.
+
+        Parameters
+        ----------
+        **kwargs
+            Arbitrary keyword arguments forwarded from a parent class initializer.
+
+        Notes
+        -----
+        This method does not validate configuration. Callers should ensure required
+        attributes (e.g., `self.CICE_dict`, `self.logger`) are set prior to invoking
+        grid-dependent methods.
+        """
         return
 
     def normalise_longitudes(self, lon, to="0-360", eps=1e-12):
         """
-        Wrap longitudes to either [0, 360) or (-180, 180].
-        Works with numpy arrays, scalars, and xarray objects.
+        Normalize longitudes to a consistent wrap convention.
+
+        This routine wraps longitude values either to:
+        - ``"0-360"``     : [0, 360)
+        - ``"-180-180"``  : [-180, 180)
+
+        It supports scalars, NumPy arrays, and xarray objects (DataArray / Dataset
+        variables). NaNs are preserved.
+
+        Parameters
+        ----------
+        lon : scalar, numpy.ndarray, or xarray.DataArray
+            Longitude values in degrees east. May be any numeric dtype; NaNs pass through.
+        to : {"0-360", "-180-180"}, default "0-360"
+            Target longitude convention.
+        eps : float, default 1e-12
+            Numerical tolerance used to collapse boundary values (e.g., 360→0, 180→-180)
+            when floating-point rounding produces near-boundary values.
+
+        Returns
+        -------
+        same type as `lon`
+            Longitude values wrapped to the requested convention.
+
+        Raises
+        ------
+        ValueError
+            If `to` is not one of {"0-360", "-180-180"}.
+
+        Notes
+        -----
+        - For the "-180-180" convention, values exactly equal to +180 (within `eps`) are
+        mapped to -180 for consistency with a half-open interval [-180, 180).
         """
         # First get [0, 360)
         lon_wrapped = ((lon % 360) + 360) % 360  # safe for negatives, NaNs pass through
@@ -35,22 +108,93 @@ class SeaIceGridWork:
             return lon_180
         else:
             raise ValueError("to must be '0-360' or '-180-180'")
+        
+    def _xy_to_lonlat(self, x, y):
+        """
+        Convert EPSG:3031 projected coordinates to geographic lon/lat (EPSG:4326).
+
+        Parameters
+        ----------
+        x, y : array-like
+            Projected coordinates in EPSG:3031 meters.
+
+        Returns
+        -------
+        (lon, lat) : tuple of array-like
+            Longitude and latitude in degrees.
+        """
+        from pyproj import Transformer
+        T = Transformer.from_crs(3031, 4326, always_xy=True)
+        lon, lat = T.transform(x, y)
+        return lon, lat
+    
+    def _match_lon_range(self, lon_1d: np.ndarray, grid_lon_2d: np.ndarray) -> np.ndarray:
+        """
+        Map swath longitudes onto the same wrap convention as a target grid.
+
+        Given a 1-D longitude array (often from swath samples) and a target grid longitude
+        field, this chooses between:
+        - [-180, 180) wrapping, or
+        - [0, 360) wrapping,
+        based on the numeric range of the target grid longitudes.
+
+        Parameters
+        ----------
+        lon_1d : numpy.ndarray
+            1-D longitudes of swath samples (degrees east).
+        grid_lon_2d : numpy.ndarray
+            2-D longitudes of the target grid (degrees east).
+
+        Returns
+        -------
+        numpy.ndarray
+            Longitudes mapped to the target grid convention.
+        """
+        gmin, gmax = np.nanmin(grid_lon_2d), np.nanmax(grid_lon_2d)
+        grid_is_180 = (gmin >= -180.0) and (gmax <= 180.0)
+        lon_a = ((lon_1d + 180.0) % 360.0) - 180.0   # [-180, 180)
+        lon_b = lon_1d % 360.0                       # [0, 360)
+        lon_b[lon_b < 0] += 360.0
+        # pick the representation whose range best matches the grid
+        if grid_is_180:
+            return lon_a
+        else:
+            return lon_b
 
     def reapply_landmask(self, DS, apply_unmodified=False):
         """
+        Apply the CICE land mask to all spatial variables in a dataset.
 
-        Apply landmask to all spatial variables in the dataset.
+        This method masks land points by setting values to NaN for all variables that
+        contain both spatial dimensions ``("nj", "ni")``. The mask is constructed from
+        either the original landmask (kmt_org) or the grounded-iceberg modified landmask
+        (kmt_mod), depending on configuration.
 
-        Uses the modified bathymetry (`kmt_mod`) field from the model grid to mask out land cells.
-        Applies this mask to all variables with dimensions `("nj", "ni")`, ensuring that land areas
-        are excluded from any subsequent analysis or output.
+        Parameters
+        ----------
+        DS : xarray.Dataset
+            Dataset containing sea-ice fields. Any variable whose dimensions include
+            both "nj" and "ni" will be masked.
+        apply_unmodified : bool, default False
+            If True, always apply the **original** landmask (`P_KMT_org`) even when
+            `self.use_gi` is True. If False (default) and `self.use_gi` is True, apply
+            the modified landmask (`P_KMT_mod`).
 
-        INPUTS:
-           DS : xarray.Dataset; Dataset containing sea ice fields to be masked.
+        Returns
+        -------
+        xarray.Dataset
+            The same dataset instance with land cells set to NaN for spatial variables.
 
-        OUTPUTS:
-           xarray.Dataset; Same dataset with land cells set to NaN for spatial variables.
+        Side Effects
+        ------------
+        - Opens the landmask dataset from disk via `xarray.open_dataset`.
+        - Modifies `DS` in place by assigning masked variables.
 
+        Notes
+        -----
+        - The landmask is assumed to be encoded such that ocean == 1 and land == 0
+        (or equivalent). The mask applied is ``kmt == 1``.
+        - Non-spatial variables (without both "nj" and "ni") are left unchanged.
         """
         if self.use_gi and not apply_unmodified:
             kmt_mask = xr.open_dataset(self.P_KMT_mod)['kmt'] == 1
@@ -66,8 +210,30 @@ class SeaIceGridWork:
     
     def _circular_mean_lon_deg(self, *lon_deg_arrays):
         """
-        Circular mean for longitudes in degrees. Inputs must be broadcastable to same shape.
-        Returns degrees in [0, 360).
+        Compute a seam-safe circular mean of longitudes in degrees.
+
+        This helper computes the mean longitude using a circular (vector) average:
+        1) wrap all longitudes into [0, 360)
+        2) convert to radians
+        3) average cos/sin components
+        4) convert back to degrees and re-wrap to [0, 360)
+
+        Parameters
+        ----------
+        *lon_deg_arrays : array-like
+            One or more longitude arrays in degrees. Inputs must be broadcastable to a
+            common shape (e.g., multiple (nj, ni) arrays).
+
+        Returns
+        -------
+        numpy.ndarray
+            Circular mean longitude in degrees wrapped to [0, 360), with the broadcasted
+            shape of the input arrays.
+
+        Notes
+        -----
+        This is preferred over arithmetic averaging near the dateline (e.g., averaging
+        359° and 1° should yield 0°, not 180°).
         """
         lon = np.stack(lon_deg_arrays, axis=0)  # (n, ...)
         lon = self.normalise_longitudes(lon, to="0-360")
@@ -79,26 +245,41 @@ class SeaIceGridWork:
 
     def build_grid_faces(self, lon, lat, source_in_radians=False):
         """
-        Build C-grid geometry from *cell-centre* lon/lat arrays.
+        Construct corner and face-coordinate geometry from cell-centre lon/lat fields.
+
+        Given 2-D cell-centre longitudes and latitudes (typically the CICE T-grid
+        centres), this routine constructs:
+        - cell corner coordinates (``lon_b``, ``lat_b``) with shape (nj+1, ni+1)
+        - vertical face-centre coordinates (``lon_e``, ``lat_e``) with shape (nj, ni+1)
+        - horizontal face-centre coordinates (``lon_n``, ``lat_n``) with shape (nj+1, ni)
+
+        Longitudes are handled using a circular mean to avoid dateline artifacts.
 
         Parameters
         ----------
         lon, lat : array-like
-            2D arrays of cell-centre lon/lat, either in degrees or radians.
-            Shape (nj, ni).
-        source_in_radians : bool
-            If True, lon/lat are radians and will be converted to degrees.
+            2-D arrays of cell-centre coordinates with shape (nj, ni). Units are degrees
+            unless `source_in_radians=True`.
+        source_in_radians : bool, default False
+            If True, inputs are in radians and will be converted to degrees before
+            geometry construction.
 
         Returns
         -------
-        lon_b, lat_b : ndarray
-            Corner coordinates, shape (nj+1, ni+1)
-        lon_e, lat_e : ndarray
-            Vertical face centres (E/W faces), shape (nj, ni+1)
-            (dims can be interpreted as (nj, ni_b))
-        lon_n, lat_n : ndarray
-            Horizontal face centres (N/S faces), shape (nj+1, ni)
-            (dims can be interpreted as (nj_b, ni))
+        lon_b, lat_b : numpy.ndarray
+            Corner coordinates with shape (nj+1, ni+1) in degrees.
+        lon_e, lat_e : numpy.ndarray
+            Vertical face-centre coordinates with shape (nj, ni+1) in degrees.
+        lon_n, lat_n : numpy.ndarray
+            Horizontal face-centre coordinates with shape (nj+1, ni) in degrees.
+
+        Notes
+        -----
+        - Interior corners are computed as the mean of the four surrounding cell centres.
+        Longitude uses a circular mean; latitude uses an arithmetic mean.
+        - Edge corners are computed from adjacent two-cell averages (more consistent than
+        copying boundary cells).
+        - The four outermost corners are set to the nearest cell-centre values.
         """
         if source_in_radians:
             lon = self.radians_to_degrees(lon)
@@ -161,6 +342,35 @@ class SeaIceGridWork:
 
 
     def build_grid_corners(self, lat_rads, lon_rads, grid_res=0.25, source_in_radians=True):
+        """
+        Construct corner coordinates from cell-centre coordinates using simple averaging.
+
+        This routine builds (ny+1, nx+1) corner arrays from (ny, nx) cell-centre arrays
+        via arithmetic averaging. It is a legacy/simple alternative to `build_grid_faces`.
+
+        Parameters
+        ----------
+        lat_rads, lon_rads : array-like
+            2-D arrays of cell-centre lat/lon. Interpreted as radians when
+            `source_in_radians=True`, else as degrees.
+        grid_res : float, default 0.25
+            Scaling factor applied to the interior arithmetic mean. Historically, this
+            function used `grid_res` as a multiplier; for conventional corner averaging
+            this should be 0.25.
+        source_in_radians : bool, default True
+            If True, interpret inputs as radians and convert to degrees.
+
+        Returns
+        -------
+        lon_b, lat_b : numpy.ndarray
+            Corner longitudes/latitudes with shape (ny+1, nx+1) in degrees.
+
+        Notes
+        -----
+        - Longitudes are normalized using `normalise_longitudes` after construction.
+        - This method uses arithmetic averaging for longitude and is not seam-safe near
+        the dateline. Prefer `build_grid_faces` when longitude seam handling matters.
+        """
         if source_in_radians:
             lon = self.radians_to_degrees(lon_rads)
             lat = self.radians_to_degrees(lat_rads)
@@ -189,20 +399,80 @@ class SeaIceGridWork:
 
     def load_cice_grid(self, slice_hem=False, build_faces=True):
         """
-        Unified grid loader.
+        Load CICE grid metadata and construct T-grid/U-grid datasets and (optionally) face grids.
 
-        Sets class attributes (no return):
-        - self.G_t : t-grid dataset (centres + corners, mask, angle, area)
-        - self.G_u : legacy u-grid dataset (centres + corners, mask, angle, area)
-        - self.G_e : C-grid vertical-face coords derived from t-grid corners (lon_e/lat_e)
-        - self.G_n : C-grid horizontal-face coords derived from t-grid corners (lon_n/lat_n)
+        This unified loader reads the CICE grid file and associated landmask files, then
+        constructs and stores as attributes:
+
+        - `self.G_t` : T-grid (cell centres) dataset with dims (nj, ni)
+        - `self.G_u` : U-grid (B-grid velocity points) dataset with dims:
+                    centres (nj, ni) and corners (nj_b, ni_b) = (nj+1, ni+1)
+        - `self.G_e` : C-grid vertical face coordinates derived from T-grid corners,
+                    with dims (nj, ni_b) = (nj, ni+1) when `build_faces=True`
+        - `self.G_n` : C-grid horizontal face coordinates derived from T-grid corners,
+                    with dims (nj_b, ni) = (nj+1, ni) when `build_faces=True`
+
+        Landmask handling:
+        - `self.kmt_org` is always loaded (original landmask).
+        - If `self.use_gi` is True, `self.kmt_mod` is loaded (modified landmask including
+        grounded icebergs), and an additional dataset `self.G_GI` is constructed to
+        describe grounded-iceberg cells and their properties.
 
         Parameters
         ----------
-        slice_hem : bool
-            If True, applies self.slice_hemisphere() to all constructed grid datasets.
-        build_faces : bool
-            If True, compute C-grid face coordinate datasets (G_e, G_n).
+        slice_hem : bool, default False
+            If True, apply `self.slice_hemisphere(...)` to all constructed datasets
+            (grids, masks, and grounded-iceberg dataset) to subset to the configured
+            hemisphere.
+        build_faces : bool, default True
+            If True, compute face-coordinate datasets `self.G_e` and `self.G_n` using
+            `build_grid_faces(...)`. If False, these are set to None and `self.cgrid_loaded`
+            is False.
+
+        Returns
+        -------
+        None
+            Grids and masks are stored on the instance as attributes.
+
+        Side Effects
+        ------------
+        - Opens multiple NetCDF files from disk using xarray:
+        - the main CICE grid file (`self.CICE_dict["P_G"]`)
+        - the original landmask (`self.P_KMT_org`)
+        - the modified landmask (`self.P_KMT_mod`) if `self.use_gi` is True
+        - Sets internal state flags:
+        - `self.bgrid_loaded = True`
+        - `self.cgrid_loaded = bool(build_faces)`
+        - `self.grid_loaded  = True`
+
+        Attributes Set
+        --------------
+        G_t : xarray.Dataset
+            Variables: lat, lon, angle, area on (nj, ni).
+        G_u : xarray.Dataset
+            Variables: lat, lon, lat_b, lon_b, angle, area with centre dims (nj, ni) and
+            corner dims (nj_b, ni_b) = (nj+1, ni+1).
+        G_e, G_n : xarray.Dataset or None
+            Face-coordinate datasets created when `build_faces=True`.
+        kmt_org : xarray.Dataset
+            Binary mask dataset on (nj, ni) describing the original ocean/land mask.
+        kmt_mod : xarray.Dataset, optional
+            Binary mask dataset on (nj, ni) describing the modified mask including
+            grounded icebergs (only when `self.use_gi` is True).
+        G_GI : xarray.Dataset, optional
+            Grounded-iceberg diagnostics dataset, including:
+            - `mask(nj,ni)` boolean mask of grounded-iceberg cells
+            - `area/lat/lon(nj,ni)` with NaN outside GI cells
+            - 1-D lists `area_nGI`, `lat_nGI`, `lon_nGI` for GI cell locations
+            Only present when `self.use_gi` is True.
+
+        Notes
+        -----
+        - Longitudes are normalized to 0–360 degrees to avoid seam ambiguity.
+        - Corner/face coordinates are derived from T-grid centres to enable consistent
+        C-grid geometry for plotting and regridding.
+        - The grounded-iceberg 1-D coordinate lists include an index shift in `ni` (westward)
+        to better align with B-grid layout conventions used elsewhere in the toolbox.
         """
         if self.grid_loaded:
             self.logger.info("CICE grid previously loaded ... returning")
@@ -1956,3 +2226,35 @@ class SeaIceGridWork:
         ds_out.to_netcdf(P_out)
         ds_coast.close()
         return ds_out
+    
+    def define_regular_G(self, grid_res,
+                         region            = [0,360,-90,0],
+                         spatial_dim_names = ("nj","ni")):
+        """
+        Create a regular (lat, lon) destination grid as an xarray.Dataset.
+
+        Parameters
+        ----------
+        grid_res : float
+            Grid resolution in degrees.
+        region : list[float], default [0, 360, -90, 0]
+            [lon_min, lon_max, lat_min, lat_max] in degrees.
+        spatial_dim_names : tuple[str, str], default ("nj","ni")
+            Output dimension names.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing 2D lon/lat coordinates on a regular grid.
+
+        Notes
+        -----
+        - Longitudes are generated in the same numeric range as `region`.
+        - Intended as a destination grid for xESMF regridding of persistence-style maps.
+        """
+        lon_min, lon_max, lat_min, lat_max = region
+        lon_regular = np.arange(lon_min, lon_max + grid_res, grid_res)
+        lat_regular = np.arange(lat_min, lat_max + grid_res, grid_res)
+        LON, LAT    = np.meshgrid(lon_regular,lat_regular)
+        return xr.Dataset({self.CICE_dict['lon_coord_name'] : (spatial_dim_names, LON),
+                           self.CICE_dict['lat_coord_name'] : (spatial_dim_names, LAT)})
