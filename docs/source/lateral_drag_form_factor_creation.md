@@ -1,4 +1,4 @@
-# Lateral Drag Form Factor Creation 
+# Lateral Drag Form Factor Creation
 
 This workflow constructs **unitless lateral drag form factors** $(\mathrm{F2}_{x}, \mathrm{F2}_{y})$ on a **T-grid** (intended for use with [CICE](https://cice-consortium-cice.readthedocs.io/en/main/index.html) model) using:
 
@@ -204,5 +204,3 @@ Key tunables include:
 
 - Large $\mathrm{F2}$ values typically occur where the coastline (or dense GI) is geometrically complex within/near a cell, implying stronger parameterised form drag.
 - The result is **cell-based** (T-grid) by construction; conversion to velocity points ($u$/$v$) can be deferred to the dynamical core as needed.
-
----
