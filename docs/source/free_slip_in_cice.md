@@ -43,27 +43,71 @@ This implementation is designed for the **C-grid** momentum discretisation (`gri
 
 ## 2. Background: why free-slip matters
 
-### 2.1 No-slip vs free-slip (conceptual)
+### 2.1 Boundary conditions in CICE with C-grid-consistent velocity nomenclature
 
-Let **u** be the ice velocity and **n** the outward unit normal to a boundary.
+On the C-grid, the sea-ice velocity vector is represented on faces:
 
-- **No-slip**:  
+- **E-faces** (east/west faces): $(u_E, v_E)$, where $u_E$ is the normal (x) component on the E-face and $v_E$ is the tangential (y) component collocated on the same E-face.
+- **N-faces** (north/south faces): $(u_N, v_N)$, where $v_N$ is the normal (y) component on the N-face and $u_N$ is the tangential (x) component collocated on the same N-face.
 
+Let $\mathbf{u}$ be the ice velocity and $\mathbf{n}$ the outward unit normal to a boundary (with $\mathbf{t}$ the unit tangent).
+
+#### Continuous idealisations
+
+- **No-slip**:
   $$
-  \mathbf{u}\cdot\mathbf{n} = 0 \quad \text{and} \quad \mathbf{u}\cdot\mathbf{t} = 0
+  \mathbf{u}\cdot\mathbf{n} = 0
+  \quad \text{and} \quad
+  \mathbf{u}\cdot\mathbf{t} = 0,
+  $$
+  i.e., both the normal and tangential components vanish at the boundary.
+
+- **Free-slip (idealised)**:
+  $$
+  \mathbf{u}\cdot\mathbf{n} = 0
+  \quad \text{and} \quad
+  \frac{\partial (\mathbf{u}\cdot\mathbf{t})}{\partial n} = 0,
+  $$
+  i.e., no penetration, but tangential flow is permitted with zero normal gradient (no imposed boundary-layer shear).
+
+#### Mapping to C-grid face variables (grid-aligned walls)
+
+For boundaries aligned with the grid, the normal/tangential components map directly onto the face velocities:
+
+- **Vertical wall** (boundary normal in $\pm x$):
+  - normal component: $\mathbf{u}\cdot\mathbf{n} \leftrightarrow u_E$
+  - tangential component: $\mathbf{u}\cdot\mathbf{t} \leftrightarrow v_E$
+
+- **Horizontal wall** (boundary normal in $\pm y$):
+  - normal component: $\mathbf{u}\cdot\mathbf{n} \leftrightarrow v_N$
+  - tangential component: $\mathbf{u}\cdot\mathbf{t} \leftrightarrow u_N$
+
+Thus, a practical “C-grid” statement of the two boundary conditions is:
+
+- **No-slip (grid-aligned)**:
+  - vertical wall: $u_E = 0$ and $v_E = 0$
+  - horizontal wall: $v_N = 0$ and $u_N = 0$
+
+- **Free-slip (grid-aligned, idealised)**:
+  - vertical wall: $u_E = 0$ and $\partial v_E/\partial x = 0$
+  - horizontal wall: $v_N = 0$ and $\partial u_N/\partial y = 0$
+
+#### Practical implementation in discrete EVP solvers (where it actually happens)
+
+In EVP-type momentum solvers, the boundary condition is enforced primarily inside the **strain-rate** calculation, because strain rates require neighbour velocities to form finite differences. The numerical distinction is how “missing” neighbour values across land are treated when forming gradients of the tangential component:
+
+- **No-slip implementation (discrete)**  
+  Missing neighbour values across land are effectively taken as **zero** (or the velocity point is masked out). This makes the tangential component drop to zero at the boundary and introduces large boundary shear consistent with a no-slip wall.
+
+- **Free-slip implementation (discrete)**  
+  Missing neighbour values across land are replaced by a **mirror / extrapolated** value from the ocean side such that the tangential **normal derivative is zero**. Operationally, when a finite-difference stencil would reference a land-side neighbour, that neighbour is replaced by the adjacent ocean-side value (a “reflecting” or “zero-gradient” closure), so that
+  $$
+  \frac{\partial v_E}{\partial x}\approx 0 \quad \text{at vertical walls}, 
+  \qquad
+  \frac{\partial u_N}{\partial y}\approx 0 \quad \text{at horizontal walls}.
   $$
 
-  (both normal and tangential components are forced to zero at the boundary).
-
-- **Free-slip** (idealised):  
-
-  $$
-  \mathbf{u}\cdot\mathbf{n} = 0 \quad \text{and} \quad \frac{\partial (\mathbf{u}\cdot\mathbf{t})}{\partial n} = 0
-  $$
-
-  (no penetration, but tangential flow is permitted with zero normal gradient—i.e., no imposed boundary-layer shear).
-
-In discrete sea-ice momentum solvers, the *practical* implementation typically happens inside the **strain-rate** calculation, where derivatives require neighbour velocities. The primary numerical distinction is how “missing” neighbour values across land are handled when forming gradients.
+This is why, in practice, “free-slip vs no-slip” in CICE is best understood as a **strain-rate stencil choice** (or ghost-value closure) rather than an explicit post-hoc modification of $(u_E,v_E,u_N,v_N)$ after the momentum step.
 
 ### 2.2 B-grid vs C-grid note
 
@@ -80,8 +124,8 @@ The free-slip behaviour is controlled through the namelist entry:
 In addition, if LDP is enabled, the following are relevant:
 
 - `coastal_drag = .true.`  
-- `Cs` *(static coefficient, units m s\ :sup:`-2`)*  
-- `u0` *(residual speed, units m s\ :sup:`-1`)*  
+- `Cs` static coefficient, units $m/s^2$  
+- `u0` residual speed, units $m/s$
 - the **form-factor** configuration (F2 file and mapping method)
 
 ### 3.1 Example `ice_in` snippet
@@ -119,7 +163,7 @@ Below is a minimal excerpt consistent with the AFIM configuration you provided (
 
 This section summarises *where* free-slip is applied and how it threads through the solver.
 
-### 4.1 `ice_dyn_evp.F90`
+### 4.1 [`ice_dyn_evp.F90`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_evp.F90#L128)
 
 Key additions/changes (AFIM/CICE\_free-slip branch):
 
@@ -136,22 +180,22 @@ Key additions/changes (AFIM/CICE\_free-slip branch):
 3. **C-grid strain-rate call site**
    In the C-grid EVP pathway, strain rates at the U-point are computed via either:
 
-   - `strain_rates_U_no_slip(...)` *(legacy behaviour)*  
-   - `strain_rates_U_free_slip(...)` *(new behaviour)*  
+   - [`strain_rates_U_no_slip(...)`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L2412) *(default CICE -- no-slip)*  
+   - [`strain_rates_U_free_slip(...)`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L2541) *(new option -- free-slip)*  
 
    depending on `noslip`.
 
 4. **LDP “Ku” update**
-   After `stepu_C`/`stepv_C`, the coastal stress factor is formed on E and N faces:
+   After [`stepu_C`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1102)/[`stepv_C`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1228), the coastal stress factor is formed on E and N faces:
 
    - `KuE = emass * F2E * Cs`
    - `KuN = nmass * F2N * Cs`
 
-   implemented via `coastal_drag_stress_factor(...)`.
+   implemented via [`coastal_drag_stress_factor(...)`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1443).
 
-### 4.2 `ice_grid.F90`
+### 4.2 [`ice_grid.F90`](https://github.com/dpath2o/CICE_free-slip/blob/main/cicecore/cicedyn/infrastructure/ice_grid.F90)
 
-A new routine `load_F2_form_factors()` reads pre-computed form factors from a NetCDF file and maps them onto:
+A new routine [`load_F2_form_factors()`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/infrastructure/ice_grid.F90#L2626) reads pre-computed form factors from a NetCDF file and maps them onto:
 
 - `F2E` *(E-faces)*
 - `F2N` *(N-faces)*
@@ -163,14 +207,14 @@ Key behaviour:
 - Values are scattered to blocks and halo-updated.
 - A fallback **test mode** (`F2_test`) can apply uniform form factors on the domain perimeter.
 
-### 4.3 `ice_dyn_shared.F90`
+### 4.3 [`ice_dyn_shared.F90`](https://github.com/dpath2o/CICE_free-slip/blob/main/cicecore/cicedyn/dynamics/ice_dyn_shared.F90)
 
 This module carries most of the free-slip implementation in practice:
 
 - Defines the `boundary_condition` configuration variable.
-- Implements `strain_rates_U_free_slip(...)`.
+- Implements [`strain_rates_U_free_slip(...)`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L2541).
 - Adds LDP parameters/arrays (`coastal_drag`, `Cs`, `u0`, `KuE/KuN`, `Kux/Kuy`, etc.).
-- Updates `stepu_C` and `stepv_C` to include a LDP contribution in the implicit momentum solve.
+- Updates [`stepu_C`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1102) and [`stepv_C`](https://github.com/dpath2o/CICE_free-slip/blob/5f2fd40b721c03125a37798a6b48a927ea5653e0/cicecore/cicedyn/dynamics/ice_dyn_shared.F90#L1228) to include a LDP contribution in the implicit momentum solve.
 
 ---
 
@@ -192,7 +236,7 @@ These are typically 1 for active ocean/ice velocity points and 0 for land/inacti
 When a neighbour velocity lies across land (mask = 0), the free-slip formulation replaces it with a reflected/copy value from the interior side, e.g. schematically:
 
 - If `epm(i,j) = 1` but `epm(i,j+1) = 0` (north neighbour is land), then  
-  **use `vvelE(i,j)` as the “north neighbour”** when forming \(\partial v/\partial y\).
+  **use `vvelE(i,j)` as the “north neighbour”** when forming $\partial v/\partial y$.
 
 This is implemented by blending masked neighbours, for example (illustrative form):
 
@@ -237,10 +281,10 @@ $$
 
 where:
 
-- $m$ is sea-ice mass per unit area (kg m\ :sup:`-2`), typically \(m = \rho_i\,h\,a\)
+- $m$ is sea-ice mass per unit area (kg/m$^2$), typically $m = \rho_i\,h\,a$
 - $F_2$ is a **dimensionless** form factor representing effective coastline roughness/orientation
-- $C_s$ is a tunable coefficient with units of **acceleration** (m s\ :sup:`-2`)
-- $u_0$ is a small residual speed (m s\ :sup:`-1`) preventing a singularity as \(|u|\to 0\)
+- $C_s$ is a tunable coefficient with units of **acceleration** (m/s$^2$)
+- $u_0$ is a small residual speed (m/s) preventing a singularity as $|u|\to 0$
 
 This formulation transitions between:
 
@@ -252,22 +296,26 @@ This formulation transitions between:
 Implementation pattern:
 
 1. Compute a stress scale on faces:
+   
    $$
    K_u = m\,F_2\,C_s
    $$
+
    where `m` is taken as `emass` or `nmass` (face mass per area).
 
 2. Convert to an implicit drag coefficient:
+   
    $$
    C_\ell = \frac{K_u}{\lvert\mathbf{u}\rvert + u_0}
    $$
-   (units kg m\ :sup:`-2` s\ :sup:`-1`).
+
+   (units kg m$^2 s$^{-1}$).
 
 3. Add $C_\ell$ into the implicit coefficient `cca` in `stepu_C`/`stepv_C`.
 
 4. Export diagnostic stress components:
-   - `Kux = -u * C_ell`
-   - `Kuy = -v * C_ell`
+   - $\mathrm{Kux} = -u * C_{\ell}$
+   - $\mathrm{Kuy} = -v * C_{\ell}$
 
 These outputs are useful for confirming where and how strongly LDP is acting.
 
@@ -283,15 +331,15 @@ $$
 K_u = m\,F_2\,C_s
 $$
 
-- $m$ has units kg m\ :sup:`-2`
+- $m$ has units kg/m$^2$
 - $F_2$ is dimensionless
-- $C_s$ has units m s\ :sup:`-2`
+- $C_s$ has units m/s\ :sup:`-2`
 
 Therefore:
 
-- $K_u$ has units kg m\ :sup:`-1` s\ :sup:`-2` = N m\ :sup:`-2` = Pa
+- $K_u$ has units kg m$^{-1}$ s$^{-2}$ = N m$^{-2}$ = Pa
 
-So **C\_s is an acceleration scale**. You can interpret it as:
+So $C_s$ is an **acceleration scale**, which can be interpreted as:
 
 > the maximum lateral-drag deceleration per unit ice mass, in a cell with $F_2=1$, when the stress is fully “activated”.
 
@@ -317,7 +365,7 @@ $$
 
 For $F_2\approx 1$, this yields a peak drag scale comparable to typical Antarctic wind stresses (~0.1 Pa). This is consistent with the motivation used by [Liu et al.](https://onlinelibrary.wiley.com/doi/abs/10.1029/2022JC018413).
 
-### 7.3 A practical “solve for C\_s” tuning rule
+### 7.3 A practical conceptual $C_s$ tuning rule
 
 If we have a target peak lateral stress magnitude $\tau_*$ (Pa) for a representative coastal cell:
 
@@ -327,15 +375,15 @@ $$
 
 Example:
 
-- $\tau_* = 0.1\,\mathrm{Pa}$
+- $\tau_* = 10\,\mathrm{Pa}$
 - $m = 900\,\mathrm{kg\,m^{-2}}$
-- $F_2 = 0.5$
+- $F_2 = 1$
 
 $$
-C_s \approx \frac{0.1}{900\times 0.5} \approx 2.2\times 10^{-4}\,\mathrm{m\,s^{-2}}
+C_s \approx \frac{10}{900\times 1} \approx 1.1\times 10^{-2}\,\mathrm{m\,s^{-2}}
 $$
 
-This is close to the AFIM configuration values currently being tested (order 10\ :sup:`-4`).
+This is close to the AFIM configuration values currently being tested (order 10$^{-4}$-10$^{-2}).
 
 ---
 
@@ -361,10 +409,13 @@ However, SIA is primarily set by the large-scale balance of surface fluxes and t
 ### 8.2 Area-averaging a line (or narrow-strip) momentum sink
 
 Lateral drag originates from interactions along (or very near) a boundary—effectively a **line** or narrow **strip** process. Models apply momentum tendencies as **area-averaged stresses** over grid cells. If the effective coastal boundary layer has physical width $w$ (km), but the grid spacing is $\Delta$ (km), then the fraction of a coastal cell that “should feel” boundary drag is roughly
+
 $$
 f \sim \frac{w}{\Delta}.
 $$
+
 If the scheme applies drag over the whole cell (or an entire face/control area), maintaining the same **integrated** momentum sink suggests compensating the area-mean stress by approximately $1/f \sim \Delta/w$. Since (to leading order) $\tau \propto C_s$, this implies a heuristic scaling
+
 $$
 C_s(\Delta) \propto \frac{\Delta}{w}.
 $$
@@ -382,11 +433,11 @@ Nevertheless, $F_2$ cannot remove resolution dependence entirely because:
 
 Assume $w = 5\,\mathrm{km}$ for an effective coastal anchor/shear zone. Then:
 
-| Grid spacing $\Delta$ | $\Delta/w$ | Implication for $C_s$ |
-|---:|---:|---|
-| 5 km  | 1   | baseline tuning (e.g., order $10^{-4}$–$10^{-3}$ m s$^{-2}$) |
-| 50 km | 10  | order-of-magnitude larger $C_s$ may be needed |
-| 500 km| 100 | two orders of magnitude larger $C_s$ may be needed |
+| Grid spacing $\Delta$ | $\Delta/w$ | Implication for $C_s$                                        |
+| --------------------: | ---------: | ------------------------------------------------------------ |
+|               5-50 km |    0.001-1 | baseline tuning (e.g., order $10^{-4}$–$10^{-2}$ m s$^{-2}$) |
+|             50-100 km |       1-10 | order-of-magnitude larger $C_s$ may be needed                |
+|            100-500 km |     10-100 | two orders of magnitude larger $C_s$ may be needed           |
 
 If instead $w\sim 0.5\,\mathrm{km}$ (e.g., narrow fjords or strong grounded-iceberg pinning), then:
 - 50 km grid: $\Delta/w\sim 100$
@@ -398,31 +449,38 @@ This provides a practical rationale for the **10–1000×** tuning envelope enco
 
 The following time series illustrate the key empirical behaviour used to guide tuning: FIA increases strongly with $C_s$, while pan-Antarctic SIA remains nearly unchanged over the same year. FIT and SIT provide additional context on thickness responses.
 
-```{figure} ../figures/FIA_TS_LD-Cs_1993-01-01_1993-12-31.png```
----
-name: fig-fia-cs-1993
----
-Pan-Antarctic fast-ice area (FIA) time series (1993) for the $C_s$ sensitivity suite.
 
----
+:::{figure} ../figures/FIA_TS_LD-Cs_1993-01-01_1993-12-31.png
+:alt: Pan-Antarctic fast ice area (FIA) sensitivity to Cs for 1993
+:width: 100%
+:align: center
 
-```{figure} ../figures/SIA_TS_LD-Cs_1993-01-01_1993-12-31.png```
----
-name: fig-sia-cs-1993
----
-Pan-Antarctic sea-ice area (SIA) time series (1993) for the same $C_s$ sensitivity suite. Curves are nearly indistinguishable across $C_s$, indicating weak basin-scale SIA sensitivity.
+Pan-Antarctic fast-ice area (FIA) in 1993 across a sweep of $C_s$. Increasing $C_s$ yields a strong increase in FIA, consistent with stronger lateral drag promoting fast-ice persistence and extent in coastline/GI-adjacent regions.
+:::
 
----
+:::{figure} ../figures/SIA_TS_LD-Cs_1993-01-01_1993-12-31.png
+:alt: Pan-Antarctic sea ice area (SIA) sensitivity to Cs for 1993
+:width: 100%
+:align: center
 
-```{figure} ../figures/FIT_TS_LD-Cs_1993-01-01_1993-12-31.png```
----
-name: fig-fit-cs-1993
+Pan-Antarctic sea-ice area (SIA) in 1993 across the same $C_s$ sweep. In this experiment set, SIA is largely insensitive to $C_s$ (curves overlap closely), indicating that tuning $C_s$ can target fast-ice behaviour without materially degrading basin-scale SIA.
+:::
 
+:::{figure} ../figures/FIT_TS_LD-Cs_1993-01-01_1993-12-31.png
+:alt: Fast ice thickness (FIT) sensitivity to Cs for 1993
+:width: 100%
+:align: center
 
-```{figure} ../figures/SIT_TS_LD-Cs_1993-01-01_1993-12-31.png```
----
-name: fig-sit-cs-1993
+Fast-ice thickness (FIT) in 1993 across the $C_s$ sweep. Thickness responds to $C_s$, reflecting redistribution of fast ice across a changing fast-ice mask and changes in the dynamical/thermodynamic balance under stronger coastal drag.
+:::
 
+:::{figure} ../figures/SIT_TS_LD-Cs_1993-01-01_1993-12-31.png
+:alt: Sea ice thickness (SIT) sensitivity to Cs for 1993
+:width: 100%
+:align: center
+
+Sea-ice thickness (SIT) in 1993 across the $C_s$ sweep. SIT exhibits comparatively weaker sensitivity than FIT in this experiment set, consistent with $C_s$ primarily acting in coastline/GI-adjacent cells rather than over the broader pack.
+:::
 
 ---
 
@@ -437,6 +495,7 @@ The mixed-layer update used in `icepack_ocn_mixed_layer` can be summarised by de
 #### (i) Absorbed shortwave at the ocean surface
 
 The absorbed shortwave flux is
+
 $$
 \mathrm{swabs} =
 (1-\alpha_{\mathrm{v,dir}})\,\mathrm{swvdr} +
@@ -444,19 +503,23 @@ $$
 (1-\alpha_{\mathrm{v,dif}})\,\mathrm{swvdf} +
 (1-\alpha_{\mathrm{ir,dif}})\,\mathrm{swidf},
 $$
+
 where the $\alpha$’s are spectral-band ocean albedos (fractions), and `sw*` are downwelling shortwave components (W m$^{-2}$).
 
 #### (ii) Outgoing longwave
 
 With $T_\mathrm{sfK}=\mathrm{sst}+T_\mathrm{ffresh}$ (Kelvin),
+
 $$
 \mathrm{flwout\_ocn} = -\sigma T_\mathrm{sfK}^4,
 $$
+
 where $\sigma$ is the Stefan–Boltzmann constant.
 
 #### (iii) Sensible and latent turbulent fluxes (bulk-aero form)
 
 Given transfer coefficients `shcoef` and `lhcoef`,
+
 $$
 \mathrm{fsens\_ocn} = \mathrm{shcoef}\,\Delta T,
 \qquad
@@ -468,6 +531,7 @@ $$
 #### (iv) Prognostic SST tendency (primary dependence on `hmix`)
 
 Let $c_p\rho$ be the seawater volumetric heat capacity (J m$^{-3}$ K$^{-1}$), and $\Delta t$ the time step. Icepack updates SST as
+
 $$
 \mathrm{sst} \leftarrow \mathrm{sst} +
 \frac{\Delta t}{c_p\rho\,h_\mathrm{mix}}
@@ -485,6 +549,7 @@ The open-water atmospheric exchange term is multiplied by $(1-a_\mathrm{ice})$, 
 #### (v) Deep-ocean heat flux adjustment
 
 A prescribed “deep ocean” heat flux term `qdp` (W m$^{-2}$) further modifies SST:
+
 $$
 \mathrm{sst} \leftarrow \mathrm{sst} - \frac{\mathrm{qdp}\,\Delta t}{c_p\rho\,h_\mathrm{mix}}.
 $$
@@ -492,11 +557,13 @@ $$
 #### (vi) Freezing/melting potential passed to thermodynamics
 
 Icepack computes the freezing/melting potential (W m$^{-2}$) as
+
 $$
 \mathrm{frzmlt} = \frac{(T_f-\mathrm{sst})\,c_p\rho\,h_\mathrm{mix}}{\Delta t},
 \qquad
 \mathrm{frzmlt} \in [-1000,\,1000],
 $$
+
 and if $\mathrm{sst}\le T_f$ it resets $\mathrm{sst}\leftarrow T_f$.
 
 A useful consequence is that once SST is routinely being driven to $T_f$ each step (i.e., the mixed layer is “pinned” at freezing), $\mathrm{frzmlt}$ tends to reflect the **net cooling flux** required to maintain $T_f$ rather than strongly reflecting $h_\mathrm{mix}$. This helps explain why wintertime growth rates and the timing of the seasonal maximum can be relatively insensitive to `hmix` in heavily ice-covered conditions.
@@ -504,9 +571,11 @@ A useful consequence is that once SST is routinely being driven to $T_f$ each st
 #### (vii) Diagnostic freeze-up timescale
 
 If the mixed layer must cool by $\Delta T$ under a representative net cooling magnitude $|Q|$ (W m$^{-2}$), then a characteristic cooling time is
+
 $$
 t_\mathrm{cool} \sim \frac{c_p\rho\,h_\mathrm{mix}\,\Delta T}{|Q|},
 $$
+
 so, absent strong restoring, freeze-up timing shifts approximately **linearly** with $h_\mathrm{mix}$.
 
 ### 9.2 Practical conceptual model for Southern Ocean SIA sensitivity to `hmix`
@@ -516,14 +585,18 @@ We cannot deduce an exact numerical Southern Ocean sea-ice area (SIA) time serie
 #### (i) What `hmix` controls
 
 The mixed-layer depth enters as thermal inertia through the mixed-layer heat capacity:
+
 $$
 \Delta \mathrm{sst} \propto \frac{\Delta t}{c_p\rho\, h_\mathrm{mix}}\;(\text{net heat flux}).
 $$
+
 Collapsing the terms in the SST update gives the schematic form
+
 $$
 \mathrm{sst}_{n+1}=\mathrm{sst}_n + \frac{\Delta t}{c_p\rho\, h_{\mathrm{mix}}}\Big[(Q_{\mathrm{atm}})(1-a_{\mathrm{ice}}) + Q_{\mathrm{ice\to ocn}}\Big]
 - \frac{\Delta t}{c_p\rho\, h_{\mathrm{mix}}}q_{dp},
 $$
+
 where
 - $Q_{\mathrm{atm}} = f_{\mathrm{sens}}+f_{\mathrm{lat}}+f_{\mathrm{lw,out}}+f_{\mathrm{lw,in}}+f_{\mathrm{sw,abs}}$,
 - $Q_{\mathrm{ice\to ocn}}=f_{hocn}+f_{swthru}$.
@@ -533,14 +606,17 @@ Holding fluxes fixed:
 - larger `hmix` (e.g., 60 m) $\rightarrow$ SST responds **slower** (greater inertia).
 
 The freezing/melting potential is
+
 $$
 \mathrm{frzmlt}=\frac{(T_f-\mathrm{sst})\,c_p\rho\,h_{\mathrm{mix}}}{\Delta t},
 $$
+
 with $\mathrm{sst}$ reset to $T_f$ whenever $\mathrm{sst}\le T_f$. Therefore, **the timing of reaching $T_f$** over open water is the aspect most directly controlled by `hmix`.
 
 #### (ii) A simple scaling for autumn cooling
 
 Take a representative autumn net cooling over open water of $Q_{\mathrm{net}}=-100\ \mathrm{W\,m^{-2}}$ and $\Delta t=86400\ \mathrm{s}$ (daily). With $c_p\rho\approx 4.1\times10^6\ \mathrm{J\,m^{-3}\,K^{-1}}$,
+
 $$
 \Delta T_{\text{day}} \approx \frac{Q_{\text{net}}\Delta t}{c_p\rho\, h_{\mathrm{mix}}}.
 $$
@@ -562,22 +638,28 @@ Thus, if large open-water areas are typically 1–2 K above freezing during autu
 Because Antarctic SIA is strongly shaped by freeze-up timing, winter expansion, and spring retreat, the dominant effect of increasing `hmix` is typically a **damping and phase lag** of the seasonal cycle.
 
 **Autumn / early winter (advance):**
+
 $$
 \mathrm{SIA}_{10m} > \mathrm{SIA}_{20m} > \mathrm{SIA}_{60m}.
 $$
+
 A shallower mixed layer cools to $T_f$ sooner over open water, enabling earlier ice formation and faster areal advance.
 
 **Mid-winter peak (maximum SIA):**
+
 $$
 \mathrm{SIA}^{\max}_{10m} \gtrsim \mathrm{SIA}^{\max}_{20m} \gtrsim \mathrm{SIA}^{\max}_{60m},
 $$
+
 but differences often shrink once SST is pinned near $T_f$ under extensive ice and the atmospheric term is suppressed by $(1-a_{\mathrm{ice}})$.
 
 **Spring / early summer (retreat):**
 Late in the season the ordering can partially reverse:
+
 $$
 \mathrm{SIA}_{60m} \gtrsim \mathrm{SIA}_{20m} \gtrsim \mathrm{SIA}_{10m},
 $$
+
 because a deeper mixed layer warms more slowly above freezing, potentially delaying melt and retreat.
 
 #### (iv) Annual-mean SIA
