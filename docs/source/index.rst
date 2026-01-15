@@ -19,6 +19,7 @@ AFIM studies
    :maxdepth: 2
 
    AFIM_sensitivity_methodology
+   free_slip_in_cice
    lateral_drag_form_factor_creation
    
 
