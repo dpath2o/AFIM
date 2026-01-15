@@ -1,6 +1,6 @@
-# Antarctic Fast Ice Modelling (AFIM) Repository
+# Antarctic Fast Ice Modelling (AFIM)
 
-AFIM Repo is both a Python library for analysing, processing, and visualising sea ice model output, as well as location for distributing relevant information related to specfic studies being carried out. The python library is particularly focused on **fast ice**, but does have scope for generalised **sea ice** as well as **pack ice**. All results and analysis code are built around [CICE](https://github.com/CICE-Consortium/CICE) sea ice model output.
+AFIM is a Python library for analysing, processing, and visualising sea ice model output, particularly focused on **fast ice** and **pack ice** derived from the [CICE](https://github.com/CICE-Consortium/CICE) sea ice model.
 
 This package is actively developed as part of a PhD research project at the University of Tasmania, in partnership with the Australian Antarctic Program Partnership (AAPP), and integrates a number of post-processing utilities for Antarctic sea ice metrics derived from CICE.
 
@@ -18,13 +18,19 @@ There are currently no other open-source tools dedicated to post-processing **CI
 
 + [AFIM table describing the simulation names provided in the results presented below](https://dpath2o.github.io/AFIM/afim_simulation_configs.html)  
 
-## AFIM Lateral Drag Study
+Explore key outputs from AFIM simulations:
 
-+
+| Gallery Type                      | Description                                                                                                             | Link                                                                           |
+|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| **FIP Simulation Tree Gallery**   | Simulation > Region > threshold > figures                                                                               | [View Gallery](https://dpath2o.github.io/AFIM/fip_tree_gallery.html)           |
+| **Intra-model FIP Comparison** | Compare different FIP group types (`FI_BT_bool`, `FI_Ta_roll`, etc.) for a single simulation, region, and `ispd_thresh` | [View Gallery »](https://dpath2o.github.io/AFIM/fip_intra_model_gallery.html)  |
+| **Inter-model FIP Comparison** | Compare multiple simulations for the same region, FIP group, and `ispd_thresh`                                          | [View Gallery »](https://dpath2o.github.io/AFIM/fip_inter_model_gallery.html)  |
+| **FIA Timeseries (1993–1999)** | Smoothed fast ice area (FIA) timeseries across simulations                                                              | [View Timeseries »](https://dpath2o.github.io/AFIM/timeseries_gallery.html)    |
+| **AFIM Archive Status**        | Table of all simulations and their processed outputs (FI/PI/SO, metrics, etc.)                                          | [View Status Table »](https://dpath2o.github.io/AFIM/AFIM_archive_status.html) |
 
 ---
 
-## Toolbox Highlights
+## Highlights
 
 ### `SeaIceToolbox` — Unified API
 

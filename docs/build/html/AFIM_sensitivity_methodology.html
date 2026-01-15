@@ -1,0 +1,383 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Coastal-drag form factors from high-resolution coastline and grounded icebergs" href="lateral_drag_form_factor_creation.html" />
+    <link rel="prev" title="API Reference" href="api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#model-configuration-setup">0. Model Configuration &amp; Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#forcing">0.1 forcing:</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#ocean">ocean</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#atmosphere">atmosphere</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#primary-classification">1. Primary Classification</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fast-ice-definition">1.0 Fast ice definition</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ispd-categories">1.1 <code class="docutils literal notranslate"><span class="pre">ispd</span></code> categories:</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#ispd-b">1.1.1 <code class="docutils literal notranslate"><span class="pre">ispd_B</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#ispd-ta">1.1.2 <code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#ispd-tx">1.1.3 <code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#masking-methods">1.2 masking methods:</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#daily-average-method">1.2.1 daily-average method:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rolling-average-method">1.2.2 rolling-average method:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#persistence-method">1.2.3 persistence method:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#additional-criteria-imposed">1.2.4 Additional criteria imposed:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#re-apply-landmask">1.3.4.1 re-apply landmask:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#hemisphere-masking">1.3.4.2 hemisphere masking:</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#fast-ice-metrics">2. Fast Ice Metrics</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fast-ice-area-fia">2.1 Fast Ice Area (<code class="docutils literal notranslate"><span class="pre">FIA</span></code>)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fast-ice-persistence-fip">2.2 Fast Ice Persistence (<code class="docutils literal notranslate"><span class="pre">FIP</span></code>)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#thresholds">3. Thresholds</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sea-ice-speed-threshold-u-text-thresh">3.1 sea ice speed threshold ( <span class="math notranslate nohighlight">\(u_\text{thresh}\)</span> )</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sea-ice-concentration-threshold-a-text-thresh">3.2 sea ice concentration threshold ( <span class="math notranslate nohighlight">\(a_\text{thresh}\)</span>  )</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#source-files">📁 Source Files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lateral_drag_form_factor_creation.html">Coastal-drag form factors from high-resolution coastline and grounded icebergs</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/AFIM_sensitivity_methodology.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section class="tex2jax_ignore mathjax_ignore" id="methodology-antarctic-land-fast-sea-ice-modelling-and-metrics">
+<h1>Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics<a class="headerlink" href="#methodology-antarctic-land-fast-sea-ice-modelling-and-metrics" title="Link to this heading"></a></h1>
+<p>This document describes the simulation setup and core methodologies implemented in the AFIM (Antarctic Fast Ice Modelling) framework, corresponding to functions and constructs in the repository <a class="reference external" href="https://github.com/dpath2o/AFIM/tree/main/src"><code class="docutils literal notranslate"><span class="pre">src/</span></code></a>.</p>
+<section id="model-configuration-setup">
+<h2>0. Model Configuration &amp; Setup<a class="headerlink" href="#model-configuration-setup" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Simulation period</strong> : [1993-01-01 Fri] to [1999-12-31 Tue]</p></li>
+<li><p><strong>Grid</strong> : <span class="math notranslate nohighlight">\(1/4^{\circ}\)</span> global, tri-polar Arakawa-B; <code class="docutils literal notranslate"><span class="pre">/g/data/ik11/inputs/access-om2/input_20200530/cice_025deg/grid.nc</span></code>;</p></li>
+<li><p><strong>Landmask</strong> : <code class="docutils literal notranslate"><span class="pre">/g/data/ik11/inputs/access-om2/input_20230515_025deg_topog/cice_025deg/kmt.nc</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dt</span></code> : 1800 seconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kdyn</span></code> : revised-EVP</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ndte</span></code> : 240</p></li>
+<li><p>Initial conditions : None</p></li>
+</ul>
+<section id="forcing">
+<h3>0.1 forcing:<a class="headerlink" href="#forcing" title="Link to this heading"></a></h3>
+<section id="ocean">
+<h4>ocean<a class="headerlink" href="#ocean" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.cen.uni-hamburg.de/en/icdc/data/ocean/easy-init-ocean/ecmwf-oras5.html">ECMWF Ocean Re-analysis version 5 (ORAS)</a></p></li>
+<li><p>regridded to the grid file above for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]</p></li>
+</ul>
+</section>
+<section id="atmosphere">
+<h4>atmosphere<a class="headerlink" href="#atmosphere" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ERA5</span></code></p></li>
+<li><p>regridded to the grid file above for 30-year period [1993-01-01 Fri] to [2023-12-31 Sun]</p></li>
+</ul>
+</section>
+</section>
+</section>
+<hr class="docutils" />
+<section id="primary-classification">
+<h2>1. Primary Classification<a class="headerlink" href="#primary-classification" title="Link to this heading"></a></h2>
+<p>When classifying fast ice from numerical model sea ice simulation results, it is common practice to use sea ice concentration (<code class="docutils literal notranslate"><span class="pre">aice</span></code>) and sea ice speed (<code class="docutils literal notranslate"><span class="pre">ispd</span></code>). The former is a tracer variable derived on the spatial grid centre (commonly referred to as the /T-grid/). In contrast, <code class="docutils literal notranslate"><span class="pre">ispd</span></code> is derived from the momentum components (<code class="docutils literal notranslate"><span class="pre">u</span></code>, <code class="docutils literal notranslate"><span class="pre">v</span></code>), which are defined at displaced locations relative to the /T-grid/, forming what is referred to as the Arakawa /B-grid/. <a class="reference external" href="https://raw.githubusercontent.com/dpath2o/AFIM/main/docs/figures/bgrid.png">This figure</a> shows a depiction of the computational <a class="reference external" href="https://doi.org/10.1016/B978-0-12-460817-7.50009-4">Arakawa B-grid</a> in the vicinity of an island. Note that in this depiction, only one grid cell has been masked out as land. This is important, as it motivates the classification strategy: due to computational constraints, a no-slip boundary is imposed on any velocity cell adjacent to land (i.e., touching land). These velocity components are explicitly set to <span class="math notranslate nohighlight">\(0\)</span> by the model. Velocity is defined on staggered /B-grid/ locations, this results in cells near the coast having artificially zero speed regardless of the physical ice state. This introduces ambiguity: a zero speed may result either from a valid physical condition (e.g., grounded ice) or from an imposed boundary condition.</p>
+<p>In <a class="reference external" href="https://github.com/CICE-Consortium/CICE">CICE v6</a>, the momentum equation evolves horizontal velocity components (<span class="math notranslate nohighlight">\(u\)</span>, <span class="math notranslate nohighlight">\(v\)</span>) under various forces:</p>
+<div class="math notranslate nohighlight">
+\[
+\rho h \frac{\partial \vec{u}}{\partial t} = \vec{\tau}_a + \vec{\tau}_o - mf\hat{z} \times \vec{u} - mg\nabla H + \nabla \cdot \boldsymbol{\sigma} - C_d \vec{u}
+\]</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(\vec{u}\)</span> is ice velocity</p></li>
+<li><p><span class="math notranslate nohighlight">\(\vec{\tau}_a\)</span>, <span class="math notranslate nohighlight">\(\vec{\tau}_o\)</span> are wind and ocean stresses</p></li>
+<li><p><span class="math notranslate nohighlight">\(f\)</span> is the Coriolis parameter, <span class="math notranslate nohighlight">\(g\)</span> is gravity</p></li>
+<li><p><span class="math notranslate nohighlight">\(H\)</span> is surface height</p></li>
+<li><p><span class="math notranslate nohighlight">\(\boldsymbol{\sigma}\)</span> is the internal ice stress tensor</p></li>
+<li><p><span class="math notranslate nohighlight">\(C_d\)</span> is the drag coefficient</p></li>
+</ul>
+<p>In mathematical terms, the ice speed is computed as:</p>
+<div class="math notranslate nohighlight">
+\[
+|\vec{u}| = \sqrt{u^2 + v^2}
+\]</div>
+<p>But near land, either <span class="math notranslate nohighlight">\(u = 0\)</span>, <span class="math notranslate nohighlight">\(v = 0\)</span>, or both are imposed, and so <span class="math notranslate nohighlight">\(|\vec{u}| = 0\)</span> even though ice may not be landfast. Because of this, AFIM implements multiple strategies to mitigate false classifications near land by using interpolated speeds or spatially averaged approaches (see Sections 2.1 and 2.2).</p>
+<section id="fast-ice-definition">
+<h3>1.0 Fast ice definition<a class="headerlink" href="#fast-ice-definition" title="Link to this heading"></a></h3>
+<p>A grid cell is classified as fast ice if:</p>
+<div class="math notranslate nohighlight">
+\[
+a \geq a_\text{thresh} \quad \text{and} \quad |\vec{u}| \leq u_\text{thresh}
+\]</div>
+<p>where:</p>
+<ul class="simple">
+<li><p><strong>sea ice concentration threshold</strong>, <span class="math notranslate nohighlight">\(a_\text{thresh} = 0.15\)</span></p></li>
+<li><p><strong>sea ice speed threshold</strong>, <span class="math notranslate nohighlight">\(u_\text{thresh} \in \{10^{-3}, 5 \times 10^{-4}, 2.5 \times 10^{-4}\}~\text{m/s}\)</span></p></li>
+</ul>
+<p>Fast ice is identified from sea ice concentration (<span class="math notranslate nohighlight">\(a\)</span>) and speed (<span class="math notranslate nohighlight">\(|\vec{u}|\)</span>) using multiple thresholding methods.</p>
+<p>Since we are masking (thresholding) values that are two grids (<span class="math notranslate nohighlight">\(a\)</span> is on the /T-grid/ and <span class="math notranslate nohighlight">\(\vec{u}\)</span> is on the /B-grid/) we need to decide on either re-gridding <span class="math notranslate nohighlight">\(a\)</span> to the /B-grid/ or <span class="math notranslate nohighlight">\(\vec{u}\)</span> to the /T-grid/. Since the underlying landmask file that I have been using for simulation is based on the /T-grid/ I choose to re-grid <span class="math notranslate nohighlight">\(u\)</span> and <span class="math notranslate nohighlight">\(v\)</span> sea ice velocity components to the /T-grid/. Other established results (<a class="reference external" href="https://doi.org/10.1002/2016JC012006">Lemieux et.al</a> and <a class="reference external" href="https://doi.org/10.1016/j.ocemod.2021.101920">VanAchter et.al</a>) have used this same approach. However, to be thorough in my reporting and analysis I have chosen to preserve the non-re-gridded ice speeds and hence have created the following four sea ice speed categories.</p>
+</section>
+<section id="ispd-categories">
+<h3>1.1 <code class="docutils literal notranslate"><span class="pre">ispd</span></code> categories:<a class="headerlink" href="#ispd-categories" title="Link to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ispd_B</span></code>  :: no re-gridding</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code> :: spatially-averaged</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code> :: spatially-weighted-average</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ispd_BT</span></code> :: composite-mean of <code class="docutils literal notranslate"><span class="pre">ispd_B</span></code>, <code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code> and <code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code></p></li>
+</ol>
+<section id="ispd-b">
+<h4>1.1.1 <code class="docutils literal notranslate"><span class="pre">ispd_B</span></code><a class="headerlink" href="#ispd-b" title="Link to this heading"></a></h4>
+<p>From <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L228"><code class="docutils literal notranslate"><span class="pre">ispd_B</span></code></a></p>
+<div class="math notranslate nohighlight">
+\[
+|\vec{u}|_B = \sqrt{u^2 + v^2}
+\]</div>
+</section>
+<section id="ispd-ta">
+<h4>1.1.2 <code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code><a class="headerlink" href="#ispd-ta" title="Link to this heading"></a></h4>
+<p>From <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L238"><code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code></a></p>
+<p>To approximate the speed on the T-grid (<span class="math notranslate nohighlight">\(|\vec{u}|_T\)</span>), AFIM applies a spatial average of the B-grid speed <span class="math notranslate nohighlight">\(|\vec{u}|_B\)</span> from the four surrounding corners:</p>
+<div class="math notranslate nohighlight">
+\[
+|\vec{u}|_T(i,j) = \frac{1}{4} \Big[ |\vec{u}|_B(i,j) + |\vec{u}|_B(i+1,j) + |\vec{u}|_B(i,j+1) + |\vec{u}|_B(i+1,j+1) \Big]
+\]</div>
+<p>This is equivalent to averaging the velocity magnitudes from the four B-grid corners around a T-grid center, mitigating the impact of single-point no-slip anomalies.</p>
+</section>
+<section id="ispd-tx">
+<h4>1.1.3 <code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code><a class="headerlink" href="#ispd-tx" title="Link to this heading"></a></h4>
+<p>From <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L190"><code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code></a></p>
+<p>More generally, this type of spatial interpolation is an instance of <strong>bilinear interpolation</strong>, a common spatial re-gridding method in numerical modeling. The bilinear interpolation at a point <span class="math notranslate nohighlight">\((x, y)\)</span> within a cell bounded by <span class="math notranslate nohighlight">\((x_1, y_1)\)</span>, <span class="math notranslate nohighlight">\((x_2, y_2)\)</span>, with values <span class="math notranslate nohighlight">\(Q_{11}\)</span>, <span class="math notranslate nohighlight">\(Q_{21}\)</span>, <span class="math notranslate nohighlight">\(Q_{12}\)</span>, <span class="math notranslate nohighlight">\(Q_{22}\)</span> at each corner, is given by:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\begin{aligned}
+f(x, y) &amp;= \frac{1}{(x_2 - x_1)(y_2 - y_1)} \Big[ \\
+&amp;\quad Q_{11}(x_2 - x)(y_2 - y) + Q_{21}(x - x_1)(y_2 - y) \\
+&amp;\quad + Q_{12}(x_2 - x)(y - y_1) + Q_{22}(x - x_1)(y - y_1) \Big]
+\end{aligned}
+\end{split}\]</div>
+<p>This expression performs linear interpolation in <span class="math notranslate nohighlight">\(x\)</span> followed by <span class="math notranslate nohighlight">\(y\)</span>, and provides smooth, continuous estimates across grid cells while not necessarily conserving quantities like mass or energy. More information on this specific method that I used can be obtained from <a class="reference external" href="https://earthsystemmodeling.org/regrid/">ESMF Regridding Documentation</a> and <a class="reference external" href="https://xesmf.readthedocs.io/en/latest/notebooks/Compare_algorithms.html">xESMF</a>.</p>
+</section>
+</section>
+<section id="masking-methods">
+<h3>1.2 masking methods:<a class="headerlink" href="#masking-methods" title="Link to this heading"></a></h3>
+<p>From the above four <code class="docutils literal notranslate"><span class="pre">ispd</span></code> categories there are then three ways in which to apply the masking/thresholding:</p>
+<ol class="arabic simple">
+<li><p>on daily-averaged <span class="math notranslate nohighlight">\(a\)</span> and <span class="math notranslate nohighlight">\(\vec{u}\)</span>, <strong>or</strong> (see 1.2.1 below)</p></li>
+<li><p>N-day-average <span class="math notranslate nohighlight">\(\bar{a}\)</span> and <span class="math notranslate nohighlight">\(\bar{\vec{u}}\)</span> (see 1.2.2 below)</p></li>
+<li><p>persistence method, which uses daily-averaged <span class="math notranslate nohighlight">\(a\)</span> and <span class="math notranslate nohighlight">\(\vec{u}\)</span> (see 1.2.3 below)</p></li>
+</ol>
+<p>Lastly, I then apply additional mainly geo-spatial criteria (see section 1.2.4 below) to ensure that resulting gridded dataset is southern hemisphere and that landmask file is correctly applied. Then classify/<strong>mask for fast ice using</strong> :</p>
+<div class="math notranslate nohighlight">
+\[
+FImask_{ispd-cat} = \bar{a} \geq a_\text{thresh} \quad \text{and} \quad \bar{u} \leq u_\text{thresh}
+\]</div>
+<p>where <span class="math notranslate nohighlight">\(u_{\text{thresh}}\)</span> is one of the four sea ice speed categories: <code class="docutils literal notranslate"><span class="pre">ispd_B</span></code>, <code class="docutils literal notranslate"><span class="pre">ispd_Ta</span></code>, <code class="docutils literal notranslate"><span class="pre">ispd_Tx</span></code>, or <code class="docutils literal notranslate"><span class="pre">ispd_BT</span></code>.</p>
+<p>This results in eight different fast ice classifications (or conversely <strong>pack ice</strong> classifications). Hence my naming scheme I have chosen to use the following nomenclature for brevity and remaining consistent with the underlying sea ice speed categories:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">B</span></code>, <code class="docutils literal notranslate"><span class="pre">Ta</span></code>, <code class="docutils literal notranslate"><span class="pre">Tx</span></code>, <code class="docutils literal notranslate"><span class="pre">BT</span></code>                     :: <strong>no</strong> temporal-averaging of <span class="math notranslate nohighlight">\(a\)</span> and <span class="math notranslate nohighlight">\(\vec{u}\)</span></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">B_roll</span></code>, <code class="docutils literal notranslate"><span class="pre">Ta_roll</span></code>, <code class="docutils literal notranslate"><span class="pre">Tx_roll</span></code>, <code class="docutils literal notranslate"><span class="pre">BT_roll</span></code> :: rolling-averaging of <span class="math notranslate nohighlight">\(N\)</span>-days on <span class="math notranslate nohighlight">\(\bar{a}\)</span> and <span class="math notranslate nohighlight">\(\bar{\vec{u}}\)</span></p></li>
+</ol>
+<section id="daily-average-method">
+<h4>1.2.1 daily-average method:<a class="headerlink" href="#daily-average-method" title="Link to this heading"></a></h4>
+<p><a class="reference external" href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L434">Full method</a></p>
+</section>
+<section id="rolling-average-method">
+<h4>1.2.2 rolling-average method:<a class="headerlink" href="#rolling-average-method" title="Link to this heading"></a></h4>
+<p>More generally the <span class="math notranslate nohighlight">\(N\)</span>-day-average that <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L540">I employed</a> can be expressed as a rolling average over <span class="math notranslate nohighlight">\(N\)</span>-days (default <span class="math notranslate nohighlight">\(N=15\)</span>):</p>
+<div class="math notranslate nohighlight">
+\[
+\bar{a}(t) = \frac{1}{N} \sum_{\tau = t - N/2}^{t + N/2} a(\tau)
+\]</div>
+</section>
+<section id="persistence-method">
+<h4>1.2.3 persistence method:<a class="headerlink" href="#persistence-method" title="Link to this heading"></a></h4>
+<p>To identify fast ice based not only on instantaneous conditions but also on temporal persistence, AFIM applies a rolling boolean mask (or binary-days mask) as an alternate to the rolling average method described above. The conceptual approach is given in  grid cell is flagged as fast ice if it satisfies the fast ice condition (e.g., <span class="math notranslate nohighlight">\(a \geq 0.15\)</span>, <span class="math notranslate nohighlight">\(|\vec{u}| \leq \varepsilon\)</span>) for at least <span class="math notranslate nohighlight">\(M\)</span> days within a centred window of <span class="math notranslate nohighlight">\(N\)</span> days. This additional method for classifying fast ice was proposed by &#64;adfraser, and that is to use the daily-averaged <span class="math notranslate nohighlight">\(a\)</span> and <span class="math notranslate nohighlight">\(\vec{u}\)</span> to determine if fast ice is <em>present</em> in a grid cell. After <span class="math notranslate nohighlight">\(N\)</span>-days count the precedding <span class="math notranslate nohighlight">\(N\)</span>-days and if <span class="math notranslate nohighlight">\(M\)</span> of those days were classified as fast ice then mark that cell as fast ice for those <span class="math notranslate nohighlight">\(N\)</span>-days.</p>
+<p>Mathematically, define the daily binary mask for fast ice presence as:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+F(t, i, j) = \begin{cases} 1, &amp; \text{if fast ice condition is met at } (i,j) \text{ on day } t \\ 0, &amp; \text{otherwise} \end{cases}
+\end{split}\]</div>
+<p>Then the boolean fast ice mask is:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+F_{\text{bool}}(t, i, j) = \begin{cases} 1, &amp; \displaystyle \sum_{\tau = t - N/2}^{t + N/2} F(\tau, i, j) \geq M \\ 0, &amp; \text{otherwise} \end{cases}
+\end{split}\]</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(N\)</span> is the rolling window length (e.g., 7 days)</p></li>
+<li><p><span class="math notranslate nohighlight">\(M\)</span> is the minimum count threshold (e.g., 6 days)</p></li>
+</ul>
+<p>This persistence filter is applied using xarray’s <code class="docutils literal notranslate"><span class="pre">rolling(...).construct(...).sum(...)</span></code> approach, centred in time, <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L620C1-L626C23">here</a></p>
+</section>
+<section id="additional-criteria-imposed">
+<h4>1.2.4 Additional criteria imposed:<a class="headerlink" href="#additional-criteria-imposed" title="Link to this heading"></a></h4>
+</section>
+<section id="re-apply-landmask">
+<h4>1.3.4.1 re-apply landmask:<a class="headerlink" href="#re-apply-landmask" title="Link to this heading"></a></h4>
+<p>After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: <code class="docutils literal notranslate"><span class="pre">north</span></code> or <code class="docutils literal notranslate"><span class="pre">south</span></code> (default <code class="docutils literal notranslate"><span class="pre">south</span></code>).</p>
+</section>
+<section id="hemisphere-masking">
+<h4>1.3.4.2 hemisphere masking:<a class="headerlink" href="#hemisphere-masking" title="Link to this heading"></a></h4>
+<p>After either doing (or not doing the temporal averaging) the dataset is then sub-set for particular hemisphere: <code class="docutils literal notranslate"><span class="pre">north</span></code> or <code class="docutils literal notranslate"><span class="pre">south</span></code> (default <code class="docutils literal notranslate"><span class="pre">south</span></code>).</p>
+</section>
+</section>
+</section>
+<hr class="docutils" />
+<section id="fast-ice-metrics">
+<h2>2. Fast Ice Metrics<a class="headerlink" href="#fast-ice-metrics" title="Link to this heading"></a></h2>
+<p>Metrics are computed via <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code class="docutils literal notranslate"><span class="pre">compute_fast_ice_metrics.py</span></code></a>, with methods:</p>
+<section id="fast-ice-area-fia">
+<h3>2.1 Fast Ice Area (<code class="docutils literal notranslate"><span class="pre">FIA</span></code>)<a class="headerlink" href="#fast-ice-area-fia" title="Link to this heading"></a></h3>
+<p>From <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py#L620"><code class="docutils literal notranslate"><span class="pre">compute_fast_ice_area</span></code></a>:</p>
+<div class="math notranslate nohighlight">
+\[
+\text{FIA}(t) = \sum_{i,j} A_{i,j} M_{i,j}(t)
+\]</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(M_{i,j}(t)\)</span> is the boolean fast ice mask</p></li>
+<li><p><span class="math notranslate nohighlight">\(A_{i,j}\)</span> is the grid cell area</p></li>
+</ul>
+</section>
+<section id="fast-ice-persistence-fip">
+<h3>2.2 Fast Ice Persistence (<code class="docutils literal notranslate"><span class="pre">FIP</span></code>)<a class="headerlink" href="#fast-ice-persistence-fip" title="Link to this heading"></a></h3>
+<p>From <a class="reference external" href="https://github.com/dpath2o/AFIM/blob/273090c740618e4db7a5d835e614fa855a9fc793/src/sea_ice_processor.py#L636"><code class="docutils literal notranslate"><span class="pre">compute_variable_aggregate</span></code></a></p>
+<p>AFIM computes the temporal mean of fast ice concentration or other variables across a defined time window using a simple arithmetic mean. Let <span class="math notranslate nohighlight">\(a(t)_{ispd-cat}\)</span> represent a variable (e.g., sea ice concentration masked for fast ice category) at time <span class="math notranslate nohighlight">\(t\)</span> defined on a fixed spatial grid. Then the temporal mean over <span class="math notranslate nohighlight">\(T\)</span> time steps is defined by:</p>
+<div class="math notranslate nohighlight">
+\[
+\bar{a_{ispd-cat}} = \frac{1}{T} \sum_{t=1}^{T} a(t)_{ispd-cat}
+\]</div>
+<p>This operation is used within AFIM to collapse a time series into a single climatological estimate, such as the 1993–1999 mean FIA.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="thresholds">
+<h2>3. Thresholds<a class="headerlink" href="#thresholds" title="Link to this heading"></a></h2>
+<section id="sea-ice-speed-threshold-u-text-thresh">
+<h3>3.1 sea ice speed threshold ( <span class="math notranslate nohighlight">\(u_\text{thresh}\)</span> )<a class="headerlink" href="#sea-ice-speed-threshold-u-text-thresh" title="Link to this heading"></a></h3>
+<p>Choosing the appropriate <span class="math notranslate nohighlight">\(u_\text{thresh}\)</span> has a significant effect on the classification of fast ice. These are values that have been used thus far, and their physical representation.</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(10^{-3}~\text{m/s}\)</span>, which translates to roughly 86 meters of <strong>distributed</strong> ice movement with*in** an Antarctic coastal grid cell (see <strong>Grid</strong> under model configuration above)</p></li>
+<li><p><span class="math notranslate nohighlight">\(5 \times 10^{-4}~\text{m/s}\)</span>, which translates to roughly 43 meters of <strong>distributed</strong> ice movement with*in** an Antarctic coastal grid cell (see <strong>Grid</strong> under model configuration above)</p></li>
+<li><p><span class="math notranslate nohighlight">\(2.5 \times 10^{-4}~\text{m/s}\)</span>, which translates to roughly 22 meters of <strong>distributed</strong> ice movement with*in** an Antarctic coastal grid cell (see <strong>Grid</strong> under model configuration above)</p></li>
+</ul>
+</section>
+<section id="sea-ice-concentration-threshold-a-text-thresh">
+<h3>3.2 sea ice concentration threshold ( <span class="math notranslate nohighlight">\(a_\text{thresh}\)</span>  )<a class="headerlink" href="#sea-ice-concentration-threshold-a-text-thresh" title="Link to this heading"></a></h3>
+<p>The selection of <span class="math notranslate nohighlight">\(a\)</span> (sea ice concentration) has been kept at 15% of a grid cell.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="source-files">
+<h2>📁 Source Files<a class="headerlink" href="#source-files" title="Link to this heading"></a></h2>
+<p>All methods above are implemented in:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/src/sea_ice_processor.py"><code class="docutils literal notranslate"><span class="pre">src/sea_ice_processor.py</span></code></a></p></li>
+<li><p><a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/scripts/process_fast_ice/process_fast_ice.py"><code class="docutils literal notranslate"><span class="pre">scripts/process_fast_ice/process_fast_ice.py</span></code></a></p></li>
+<li><p><a class="reference external" href="https://github.com/dpath2o/AFIM/blob/main/scripts/sea_ice_metrics/compute_fast_ice_metrics.py"><code class="docutils literal notranslate"><span class="pre">scripts/sea_ice_metrics/compute_fast_ice_metrics.py</span></code></a></p></li>
+</ul>
+<p>See also: <code class="docutils literal notranslate"><span class="pre">config.json</span></code> files for applied thresholds and flags.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="lateral_drag_form_factor_creation.html" class="btn btn-neutral float-right" title="Coastal-drag form factors from high-resolution coastline and grounded icebergs" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

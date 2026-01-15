@@ -1,0 +1,486 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sea_ice_regridder &mdash; AFIM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AFIM
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../AFIM_sensitivity_methodology.html">Methodology: Antarctic (Land)Fast (Sea) Ice Modelling and Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../lateral_drag_form_factor_creation.html">Coastal-drag form factors from high-resolution coastline and grounded icebergs</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AFIM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">sea_ice_regridder</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for sea_ice_regridder</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">gc</span><span class="o">,</span><span class="w"> </span><span class="nn">re</span><span class="o">,</span><span class="w"> </span><span class="nn">dask</span><span class="o">,</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xarray</span><span class="w">            </span><span class="k">as</span><span class="w"> </span><span class="nn">xr</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w">             </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w">            </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xesmf</span><span class="w">             </span><span class="k">as</span><span class="w"> </span><span class="nn">xe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w">             </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyproj</span><span class="w">              </span><span class="kn">import</span> <span class="n">Transformer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyresample.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">AreaDefinition</span><span class="p">,</span> <span class="n">SwathDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyresample.kd_tree</span><span class="w">  </span><span class="kn">import</span> <span class="n">resample_nearest</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;SeaIceRegridder&quot;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="SeaIceRegridder">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SeaIceRegridder</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_reG_defined</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create/reuse xESMF regridder located sea_ice_regridder.py module&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;reG&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;reG&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">define_reG_weights</span><span class="p">()</span>
+
+<div class="viewcode-block" id="SeaIceRegridder.define_reG_weights">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.define_reG_weights">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">define_reG_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Define and store an xESMF regridder to remap CICE B-grid (U-point) data to the T-grid.</span>
+
+<span class="sd">        This method constructs two CICE grids—one at the U-point (B-grid) and one at the T-point (centered)—using </span>
+<span class="sd">        internally defined grid definitions. It then either reuses existing xESMF regridding weights or creates </span>
+<span class="sd">        them if they do not already exist.</span>
+
+<span class="sd">        The resulting regridder is stored as `self.reG`, and a flag `self.reG_weights_defined` is set to True </span>
+<span class="sd">        upon successful creation or reuse of the regridder.</span>
+
+<span class="sd">        Grid details:</span>
+<span class="sd">        - The source grid (`G_u`) is built using U-point coordinates (`grid_type=&#39;u&#39;`).</span>
+<span class="sd">        - The target grid (`G_t`) is built using T-point coordinates (`grid_type=&#39;t&#39;`) and includes a land-sea mask.</span>
+<span class="sd">        - Both grids include corner information to support conservative or bilinear regridding.</span>
+
+<span class="sd">        Regridding parameters:</span>
+<span class="sd">        - Method: &quot;bilinear&quot;</span>
+<span class="sd">        - Periodic: True (assumes global grid)</span>
+<span class="sd">        - Degenerate cells: ignored</span>
+<span class="sd">        - Extrapolation: nearest-neighbor (source to destination)</span>
+<span class="sd">        - Weight reuse: enabled if existing file is found at path `self.CICE_dict[&quot;P_reG_u2t_weights&quot;]`</span>
+
+<span class="sd">        Logging:</span>
+<span class="sd">        - Logs whether existing weights are reused or new weights are created.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None</span>
+<span class="sd">            The regridder is stored as `self.reG` and is not returned explicitly.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_cice_grid</span><span class="p">()</span>
+        <span class="n">G_u</span>           <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_u</span>
+        <span class="n">G_t</span>           <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">G_t</span>
+        <span class="n">G_t</span><span class="p">[</span><span class="s1">&#39;mask&#39;</span><span class="p">]</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kmt_org</span><span class="p">[</span><span class="s1">&#39;kmt_org&#39;</span><span class="p">]</span>
+        <span class="n">F_weights</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;P_reG_u2t_weights&quot;</span><span class="p">]</span>
+        <span class="n">weights_exist</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">F_weights</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;Reusing&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">weights_exist</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Creating&#39;</span><span class="si">}</span><span class="s2"> regrid weights: </span><span class="si">{</span><span class="n">F_weights</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reG</span> <span class="o">=</span> <span class="n">xe</span><span class="o">.</span><span class="n">Regridder</span><span class="p">(</span><span class="n">G_u</span><span class="p">,</span> <span class="n">G_t</span><span class="p">,</span>
+                                <span class="n">method</span>            <span class="o">=</span> <span class="s2">&quot;bilinear&quot;</span><span class="p">,</span>
+                                <span class="n">periodic</span>          <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+                                <span class="n">ignore_degenerate</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+                                <span class="n">extrap_method</span>     <span class="o">=</span> <span class="s2">&quot;nearest_s2d&quot;</span><span class="p">,</span>
+                                <span class="n">reuse_weights</span>     <span class="o">=</span> <span class="n">weights_exist</span><span class="p">,</span>
+                                <span class="n">filename</span>          <span class="o">=</span> <span class="n">F_weights</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reG_weights_defined</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.reG_bgrid_to_tgrid_xesmf">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.reG_bgrid_to_tgrid_xesmf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reG_bgrid_to_tgrid_xesmf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">da</span><span class="p">,</span> <span class="n">coord_names</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regrid a single B-grid DataArray to the T-grid using pre-defined xESMF regridder.</span>
+
+<span class="sd">        If coord_names are not provided then assumes coordinate names provided in JSON configuration file,</span>
+<span class="sd">        which are like [&quot;ULON&quot;,&quot;ULAT&quot;]</span>
+
+<span class="sd">        INPUTS:</span>
+<span class="sd">        da : xr.DataArray; b-grid variable with coordinates coord_names</span>
+
+<span class="sd">        OUTPUTS:</span>
+<span class="sd">        xr.DataArray; re-gridded DataArray on the T-grid with dimensions (time, nj, ni).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">coord_names</span> <span class="o">=</span> <span class="n">coord_names</span> <span class="k">if</span> <span class="n">coord_names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;bcoord_names&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">coord_names</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">da</span><span class="o">.</span><span class="n">coords</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cannot regrid: as </span><span class="si">{</span><span class="n">coord_names</span><span class="si">}</span><span class="s2"> not found in coordinates.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">coord_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">coord_names</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;LAT&quot;</span> <span class="ow">in</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">():</span>
+                <span class="n">coord_map</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lat&quot;</span>
+            <span class="k">elif</span> <span class="s2">&quot;LON&quot;</span> <span class="ow">in</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">():</span>
+                <span class="n">coord_map</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lon&quot;</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">coord_map</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">!=</span> <span class="p">{</span><span class="s2">&quot;lat&quot;</span><span class="p">,</span> <span class="s2">&quot;lon&quot;</span><span class="p">}:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not identify lat/lon from coord_names: </span><span class="si">{</span><span class="n">coord_names</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">da_tmp</span> <span class="o">=</span> <span class="n">da</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">coord_map</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">da_reG</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reG</span><span class="p">(</span><span class="n">da_tmp</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Regridding failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">da_reG</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.simple_spatial_averaging_bgrid_to_tgrid">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.simple_spatial_averaging_bgrid_to_tgrid">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">simple_spatial_averaging_bgrid_to_tgrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Dask-safe 4-point unweighted average from B-grid to T-grid.</span>
+
+<span class="sd">        Uses efficient array shifting and avoids costly concatenation over new dimensions.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        var : xr.DataArray</span>
+<span class="sd">            2D or 3D (time, nj, ni) array on B-grid.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        xr.DataArray</span>
+<span class="sd">            Averaged field on T-grid with shape (time, nj, ni).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">x_dim</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;x_dim&quot;</span><span class="p">]</span>
+        <span class="n">y_dim</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;y_dim&quot;</span><span class="p">]</span>
+        <span class="n">x_len</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;x_dim_length&quot;</span><span class="p">]</span>
+        <span class="n">y_len</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">CICE_dict</span><span class="p">[</span><span class="s2">&quot;y_dim_length&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;input shape to spatial averaging: </span><span class="si">{</span><span class="n">var</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;  → Slicing corner points for averaging...&quot;</span><span class="p">)</span>
+        <span class="n">v00</span> <span class="o">=</span> <span class="n">var</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)})</span>
+        <span class="n">v01</span> <span class="o">=</span> <span class="n">var</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">)})</span>
+        <span class="n">v10</span> <span class="o">=</span> <span class="n">var</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)})</span>
+        <span class="n">v11</span> <span class="o">=</span> <span class="n">var</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;  → Computing mean of four corners...&quot;</span><span class="p">)</span>
+        <span class="n">avg</span> <span class="o">=</span> <span class="p">(</span><span class="n">v00</span> <span class="o">+</span> <span class="n">v01</span> <span class="o">+</span> <span class="n">v10</span> <span class="o">+</span> <span class="n">v11</span><span class="p">)</span> <span class="o">/</span> <span class="mf">4.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;  → Padding with NaNs to restore original grid size...&quot;</span><span class="p">)</span>
+        <span class="n">pad_y</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">y_len</span> <span class="o">-</span> <span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">y_dim</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">pad_x</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">x_len</span> <span class="o">-</span> <span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">x_dim</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">avg</span> <span class="o">=</span> <span class="n">avg</span><span class="o">.</span><span class="n">pad</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad_y</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad_x</span><span class="p">)},</span> <span class="n">constant_values</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;  → Applying cyclic wrap for last column...&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">x_dim</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">avg</span><span class="p">[{</span><span class="n">x_dim</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">}]</span> <span class="o">=</span> <span class="n">avg</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">x_dim</span><span class="p">:</span> <span class="mi">0</span><span class="p">})</span>
+        <span class="c1"># Force re-slicing to expected grid size to ensure consistency</span>
+        <span class="n">avg</span> <span class="o">=</span> <span class="n">avg</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">y_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">y_len</span><span class="p">),</span> <span class="n">x_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">x_len</span><span class="p">)})</span>
+        <span class="k">if</span> <span class="s2">&quot;time&quot;</span> <span class="ow">in</span> <span class="n">var</span><span class="o">.</span><span class="n">coords</span><span class="p">:</span>
+            <span class="n">avg</span> <span class="o">=</span> <span class="n">avg</span><span class="o">.</span><span class="n">assign_coords</span><span class="p">(</span><span class="n">time</span><span class="o">=</span><span class="n">var</span><span class="p">[</span><span class="s2">&quot;time&quot;</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;  → Time coordinate restored.&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">y_dim</span><span class="p">]</span> <span class="o">==</span> <span class="n">y_len</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">y_dim</span><span class="si">}</span><span class="s2"> mismatch: got </span><span class="si">{</span><span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">y_dim</span><span class="p">]</span><span class="si">}</span><span class="s2">, expected </span><span class="si">{</span><span class="n">y_len</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">assert</span> <span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">x_dim</span><span class="p">]</span> <span class="o">==</span> <span class="n">x_len</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">x_dim</span><span class="si">}</span><span class="s2"> mismatch: got </span><span class="si">{</span><span class="n">avg</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">x_dim</span><span class="p">]</span><span class="si">}</span><span class="s2">, expected </span><span class="si">{</span><span class="n">x_len</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">for</span> <span class="n">dim</span> <span class="ow">in</span> <span class="p">[</span><span class="n">y_dim</span><span class="p">,</span> <span class="n">x_dim</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">dim</span> <span class="ow">in</span> <span class="n">avg</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+                <span class="n">avg</span> <span class="o">=</span> <span class="n">avg</span><span class="o">.</span><span class="n">drop_indexes</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">avg</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.pygmt_regrid">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.pygmt_regrid">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pygmt_regrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">da</span><span class="p">,</span> <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">grid_res</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">region</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">search_radius</span><span class="o">=</span><span class="s2">&quot;200k&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regrid a 2D data array using PyGMT&#39;s nearneighbor interpolation.</span>
+
+<span class="sd">        This method applies PyGMT&#39;s `nearneighbor` algorithm to interpolate scattered</span>
+<span class="sd">        data values (`da`) onto a regular grid based on specified longitude and latitude </span>
+<span class="sd">        arrays. The input is masked to ignore NaNs or non-finite values.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        da : xarray.DataArray</span>
+<span class="sd">            2D array of data values to interpolate (e.g., sea ice thickness).</span>
+<span class="sd">        lon : xarray.DataArray or np.ndarray</span>
+<span class="sd">            Longitude values corresponding to `da`, same shape.</span>
+<span class="sd">        lat : xarray.DataArray or np.ndarray</span>
+<span class="sd">            Latitude values corresponding to `da`, same shape.</span>
+<span class="sd">        grid_res : str or float, optional</span>
+<span class="sd">            Grid spacing for the output grid (e.g., &quot;0.5&quot;, &quot;10m&quot;). Required by PyGMT.</span>
+<span class="sd">        region : list or tuple, optional</span>
+<span class="sd">            Bounding box for the output grid in the form [west, east, south, north].</span>
+<span class="sd">        search_radius : str or float, default &quot;200k&quot;</span>
+<span class="sd">            Search radius for PyGMT&#39;s nearneighbor (e.g., &quot;100k&quot; for 100 km).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        gridded : xarray.DataArray</span>
+<span class="sd">            Gridded output with interpolated values over the defined region.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        - All non-finite values in `da` are excluded prior to interpolation.</span>
+<span class="sd">        - PyGMT must be properly installed and configured with GMT for this to work.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">pygmt</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">da</span><span class="p">)</span>
+        <span class="n">df</span>   <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;longitude&quot;</span><span class="p">:</span> <span class="n">lon</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> 
+                             <span class="s2">&quot;latitude&quot;</span> <span class="p">:</span> <span class="n">lat</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span>
+                             <span class="s2">&quot;z&quot;</span>        <span class="p">:</span> <span class="n">da</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">()})</span>
+        <span class="k">return</span> <span class="n">pygmt</span><span class="o">.</span><span class="n">nearneighbor</span><span class="p">(</span><span class="n">data</span>          <span class="o">=</span> <span class="n">df</span><span class="p">,</span>
+                                  <span class="n">spacing</span>       <span class="o">=</span> <span class="n">grid_res</span><span class="p">,</span>
+                                  <span class="n">region</span>        <span class="o">=</span> <span class="n">region</span><span class="p">,</span>
+                                  <span class="n">search_radius</span> <span class="o">=</span> <span class="n">search_radius</span><span class="p">)</span></div>
+
+
+    <span class="c1">##############################################################</span>
+    <span class="c1">#                         PYRESAMPLE                         #</span>
+    <span class="c1">##############################################################</span>
+
+<div class="viewcode-block" id="SeaIceRegridder.to_3031_extent">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.to_3031_extent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_3031_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lat2d</span><span class="p">,</span> <span class="n">lon2d</span><span class="p">,</span> <span class="n">buffer_m</span><span class="o">=</span><span class="mi">20_000</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Project a swath&#39;s lat/lon to EPSG:3031 and return [xmin, ymin, xmax, ymax] (+buffer).</span>
+<span class="sd">        Wrap longitudes to [-180, 180) first to avoid dateline issues.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">lon2d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalise_longitudes</span><span class="p">(</span><span class="n">lon2d</span><span class="p">,</span> <span class="n">wrap</span><span class="o">=</span><span class="s2">&quot;-180-180&quot;</span><span class="p">)</span>
+        <span class="n">transformer</span> <span class="o">=</span> <span class="n">Transformer</span><span class="o">.</span><span class="n">from_crs</span><span class="p">(</span><span class="s2">&quot;EPSG:4326&quot;</span><span class="p">,</span> <span class="s2">&quot;EPSG:3031&quot;</span><span class="p">,</span> <span class="n">always_xy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">transformer</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">lon2d</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="n">lat2d</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">);</span> <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">finite</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">xmax</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">finite</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">x</span><span class="p">[</span><span class="n">finite</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="n">ymin</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="n">finite</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">y</span><span class="p">[</span><span class="n">finite</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">xmin</span> <span class="o">-</span> <span class="n">buffer_m</span><span class="p">,</span> <span class="n">ymin</span> <span class="o">-</span> <span class="n">buffer_m</span><span class="p">,</span> <span class="n">xmax</span> <span class="o">+</span> <span class="n">buffer_m</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">+</span> <span class="n">buffer_m</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.union_extents">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.union_extents">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">union_extents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extents</span><span class="p">):</span>
+        <span class="n">xs</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">extents</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">extents</span><span class="p">]</span>
+        <span class="n">ys</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">extents</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">extents</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">min</span><span class="p">(</span><span class="n">xs</span><span class="p">),</span> <span class="nb">min</span><span class="p">(</span><span class="n">ys</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">xs</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">ys</span><span class="p">)]</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.snap_extent_to_grid">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.snap_extent_to_grid">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">snap_extent_to_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extent</span><span class="p">,</span> <span class="n">pixel_size</span><span class="p">):</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="n">extent</span>
+        <span class="n">xmin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">xmin</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">ymin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">ymin</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">xmax</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ceil</span> <span class="p">(</span><span class="n">xmax</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">ymax</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ceil</span> <span class="p">(</span><span class="n">ymax</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.make_area_definition">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.make_area_definition">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_area_definition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extent</span><span class="p">,</span> <span class="n">pixel_size</span><span class="o">=</span><span class="mi">5_000</span><span class="p">,</span> <span class="n">area_id</span><span class="o">=</span><span class="s2">&quot;epsg3031_5km_union&quot;</span><span class="p">):</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="n">extent</span>
+        <span class="n">width</span>  <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">((</span><span class="n">xmax</span> <span class="o">-</span> <span class="n">xmin</span><span class="p">)</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">))</span>
+        <span class="n">height</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">((</span><span class="n">ymax</span> <span class="o">-</span> <span class="n">ymin</span><span class="p">)</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">))</span>
+        <span class="n">xmax</span> <span class="o">=</span> <span class="n">xmin</span> <span class="o">+</span> <span class="n">width</span>  <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">ymax</span> <span class="o">=</span> <span class="n">ymin</span> <span class="o">+</span> <span class="n">height</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">area_def</span> <span class="o">=</span> <span class="n">AreaDefinition</span><span class="p">(</span>
+            <span class="n">area_id</span><span class="o">=</span><span class="n">area_id</span><span class="p">,</span>
+            <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Common 5 km EPSG:3031 grid (union of inputs)&quot;</span><span class="p">,</span>
+            <span class="n">proj_id</span><span class="o">=</span><span class="s2">&quot;epsg3031&quot;</span><span class="p">,</span>
+            <span class="n">projection</span><span class="o">=</span><span class="s2">&quot;EPSG:3031&quot;</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span>
+            <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">,</span>
+            <span class="n">area_extent</span><span class="o">=</span><span class="p">(</span><span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">area_def</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.grid_coords_from_area">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.grid_coords_from_area">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">grid_coords_from_area</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">area_def</span><span class="p">,</span> <span class="n">pixel_size</span><span class="o">=</span><span class="mi">5_000</span><span class="p">):</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="n">area_def</span><span class="o">.</span><span class="n">area_extent</span>
+        <span class="n">width</span><span class="p">,</span> <span class="n">height</span> <span class="o">=</span> <span class="n">area_def</span><span class="o">.</span><span class="n">width</span><span class="p">,</span> <span class="n">area_def</span><span class="o">.</span><span class="n">height</span>
+        <span class="c1"># Cell centers</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">xmin</span> <span class="o">+</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">width</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">ymax</span> <span class="o">-</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">height</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">pixel_size</span>  <span class="c1"># top-&gt;down (north-&gt;south)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.resample_swath_to_area">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.resample_swath_to_area">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resample_swath_to_area</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src_da</span><span class="p">,</span> <span class="n">lat2d</span><span class="p">,</span> <span class="n">lon2d</span><span class="p">,</span> <span class="n">area_def</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mi">10_000</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">pixel_size</span><span class="o">=</span><span class="mi">5_000</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Nearest-neighbour resample a 2D swath (lat2d, lon2d) to an AreaDefinition grid.&quot;&quot;&quot;</span>
+        <span class="n">lon2d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalise_longitudes</span><span class="p">(</span><span class="n">lon2d</span><span class="p">,</span> <span class="n">wrap</span><span class="o">=</span><span class="s2">&quot;-180-180&quot;</span><span class="p">)</span>  <span class="c1"># &lt;&lt; key fix: wrap before building the swath</span>
+        <span class="n">swath</span> <span class="o">=</span> <span class="n">SwathDefinition</span><span class="p">(</span><span class="n">lons</span><span class="o">=</span><span class="n">lon2d</span><span class="p">,</span> <span class="n">lats</span><span class="o">=</span><span class="n">lat2d</span><span class="p">)</span>
+        <span class="n">out2d</span> <span class="o">=</span> <span class="n">resample_nearest</span><span class="p">(</span>
+            <span class="n">source_geo_def</span><span class="o">=</span><span class="n">swath</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">src_da</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+            <span class="n">target_geo_def</span><span class="o">=</span><span class="n">area_def</span><span class="p">,</span>
+            <span class="n">radius_of_influence</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span>
+            <span class="n">fill_value</span><span class="o">=</span><span class="n">fill_value</span><span class="p">,</span>
+            <span class="n">nprocs</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>            <span class="c1"># set &gt;0 to parallelise</span>
+            <span class="n">reduce_data</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">grid_coords_from_area</span><span class="p">(</span><span class="n">area_def</span><span class="p">,</span> <span class="n">pixel_size</span><span class="o">=</span><span class="n">pixel_size</span><span class="p">)</span>
+        <span class="n">da_out</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="n">out2d</span><span class="p">,</span>
+            <span class="n">dims</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;y&quot;</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">),</span>
+            <span class="n">coords</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;units&quot;</span><span class="p">:</span> <span class="s2">&quot;m&quot;</span><span class="p">,</span> <span class="s2">&quot;standard_name&quot;</span><span class="p">:</span> <span class="s2">&quot;projection_x_coordinate&quot;</span><span class="p">}),</span>
+                    <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;y&quot;</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;units&quot;</span><span class="p">:</span> <span class="s2">&quot;m&quot;</span><span class="p">,</span> <span class="s2">&quot;standard_name&quot;</span><span class="p">:</span> <span class="s2">&quot;projection_y_coordinate&quot;</span><span class="p">})},</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">src_da</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">attrs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;crs&quot;</span><span class="p">:</span> <span class="s2">&quot;EPSG:3031&quot;</span><span class="p">,</span> <span class="s2">&quot;grid_mapping&quot;</span><span class="p">:</span> <span class="s2">&quot;spstereo&quot;</span><span class="p">,</span> <span class="s2">&quot;res&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">pixel_size</span><span class="p">),</span> <span class="o">**</span><span class="n">src_da</span><span class="o">.</span><span class="n">attrs</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">da_out</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_xy_to_lonlat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">Transformer</span><span class="o">.</span><span class="n">from_crs</span><span class="p">(</span><span class="mi">3031</span><span class="p">,</span> <span class="mi">4326</span><span class="p">,</span> <span class="n">always_xy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="n">T</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span>
+
+<div class="viewcode-block" id="SeaIceRegridder.add_lonlat_from_epsg3031">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.add_lonlat_from_epsg3031">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_lonlat_from_epsg3031</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds</span><span class="p">,</span> 
+                                <span class="n">x_name</span>    <span class="o">=</span> <span class="s2">&quot;x&quot;</span><span class="p">,</span>
+                                <span class="n">y_name</span>    <span class="o">=</span> <span class="s2">&quot;y&quot;</span><span class="p">,</span>
+                                <span class="n">wrap</span>      <span class="o">=</span> <span class="s2">&quot;0..360&quot;</span><span class="p">,</span>       <span class="c1"># or &quot;-180..180&quot;</span>
+                                <span class="n">out_dtype</span> <span class="o">=</span> <span class="s2">&quot;float32&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">x_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds</span><span class="o">.</span><span class="n">dims</span> <span class="ow">or</span> <span class="n">y_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds</span><span class="o">.</span><span class="n">dims</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected dims &#39;</span><span class="si">{</span><span class="n">y_name</span><span class="si">}</span><span class="s2">&#39;, &#39;</span><span class="si">{</span><span class="n">x_name</span><span class="si">}</span><span class="s2">&#39; in dataset.&quot;</span><span class="p">)</span>
+        <span class="c1"># broadcast 1-D x/y -&gt; 2-D (y,x)</span>
+        <span class="n">X2D</span><span class="p">,</span> <span class="n">Y2D</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span><span class="n">ds</span><span class="p">[</span><span class="n">x_name</span><span class="p">],</span> <span class="n">ds</span><span class="p">[</span><span class="n">y_name</span><span class="p">])</span>  <span class="c1"># shapes (y,x)</span>
+        <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">apply_ufunc</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_xy_to_lonlat</span><span class="p">,</span> <span class="n">X2D</span><span class="p">,</span> <span class="n">Y2D</span><span class="p">,</span>
+                                <span class="n">input_core_dims</span><span class="o">=</span><span class="p">[[</span><span class="n">y_name</span><span class="p">,</span> <span class="n">x_name</span><span class="p">],</span> <span class="p">[</span><span class="n">y_name</span><span class="p">,</span> <span class="n">x_name</span><span class="p">]],</span>
+                                <span class="n">output_core_dims</span><span class="o">=</span><span class="p">[[</span><span class="n">y_name</span><span class="p">,</span> <span class="n">x_name</span><span class="p">],</span> <span class="p">[</span><span class="n">y_name</span><span class="p">,</span> <span class="n">x_name</span><span class="p">]],</span>
+                                <span class="n">dask</span><span class="o">=</span><span class="s2">&quot;parallelized&quot;</span><span class="p">,</span>
+                                <span class="n">vectorize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                                <span class="n">output_dtypes</span><span class="o">=</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],)</span>
+        <span class="c1"># wrap longitudes &amp; cast </span>
+        <span class="k">if</span> <span class="n">wrap</span> <span class="o">==</span> <span class="s2">&quot;0..360&quot;</span><span class="p">:</span>
+            <span class="n">lon</span> <span class="o">=</span> <span class="n">lon</span> <span class="o">%</span> <span class="mf">360.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lon</span> <span class="o">=</span> <span class="p">((</span><span class="n">lon</span> <span class="o">+</span> <span class="mf">180.0</span><span class="p">)</span> <span class="o">%</span> <span class="mf">360.0</span><span class="p">)</span> <span class="o">-</span> <span class="mf">180.0</span>
+        <span class="k">if</span> <span class="n">out_dtype</span><span class="p">:</span>
+            <span class="n">lon</span> <span class="o">=</span> <span class="n">lon</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">out_dtype</span><span class="p">)</span>
+            <span class="n">lat</span> <span class="o">=</span> <span class="n">lat</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">out_dtype</span><span class="p">)</span>
+        <span class="c1"># attach as coordinates (on same (y,x) dims)</span>
+        <span class="k">return</span> <span class="n">ds</span><span class="o">.</span><span class="n">assign_coords</span><span class="p">(</span><span class="n">lon</span><span class="o">=</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="o">=</span><span class="n">lat</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SeaIceRegridder.subset_by_lonlat_box">
+<a class="viewcode-back" href="../api.html#sea_ice_regridder.SeaIceRegridder.subset_by_lonlat_box">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">subset_by_lonlat_box</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">da</span><span class="p">:</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">,</span> <span class="n">lon_range</span><span class="p">,</span> <span class="n">lat_range</span><span class="p">,</span>
+                            <span class="n">lon_name</span><span class="o">=</span><span class="s2">&quot;TLON&quot;</span><span class="p">,</span>
+                            <span class="n">lat_name</span><span class="o">=</span><span class="s2">&quot;TLAT&quot;</span><span class="p">,</span>
+                            <span class="n">jdim</span><span class="o">=</span><span class="s2">&quot;nj&quot;</span><span class="p">,</span>
+                            <span class="n">idim</span><span class="o">=</span><span class="s2">&quot;ni&quot;</span><span class="p">,</span>
+                            <span class="n">wrap</span><span class="o">=</span><span class="s2">&quot;-180-180&quot;</span><span class="p">,</span>
+                            <span class="n">crop</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Subset a curvilinear grid by a geographic box. Works with dask.</span>
+<span class="sd">        If the lon_range crosses the seam (e.g. (350, 20) in 0..360), it handles it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># coords (2-D)</span>
+        <span class="n">TLON</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalise_longitudes</span><span class="p">(</span><span class="n">da</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">lon_name</span><span class="p">],</span> <span class="n">wrap</span><span class="p">)</span>
+        <span class="n">TLAT</span> <span class="o">=</span> <span class="n">da</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">lat_name</span><span class="p">]</span>
+        <span class="n">lon_min</span><span class="p">,</span> <span class="n">lon_max</span> <span class="o">=</span> <span class="n">lon_range</span>
+        <span class="n">lat_min</span><span class="p">,</span> <span class="n">lat_max</span> <span class="o">=</span> <span class="n">lat_range</span>
+        <span class="c1"># Longitude mask (handle seam)</span>
+        <span class="k">if</span> <span class="n">wrap</span> <span class="o">==</span> <span class="s2">&quot;0-360&quot;</span><span class="p">:</span>
+            <span class="n">lon_min</span><span class="p">,</span> <span class="n">lon_max</span> <span class="o">=</span> <span class="n">lon_min</span> <span class="o">%</span> <span class="mi">360</span><span class="p">,</span> <span class="n">lon_max</span> <span class="o">%</span> <span class="mi">360</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lon_min</span> <span class="o">=</span> <span class="p">((</span><span class="n">lon_min</span> <span class="o">+</span> <span class="mi">180</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span><span class="p">)</span> <span class="o">-</span> <span class="mi">180</span>
+            <span class="n">lon_max</span> <span class="o">=</span> <span class="p">((</span><span class="n">lon_max</span> <span class="o">+</span> <span class="mi">180</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span><span class="p">)</span> <span class="o">-</span> <span class="mi">180</span>
+        <span class="k">if</span> <span class="n">lon_min</span> <span class="o">&lt;=</span> <span class="n">lon_max</span><span class="p">:</span>
+            <span class="n">mask_lon</span> <span class="o">=</span> <span class="p">(</span><span class="n">TLON</span> <span class="o">&gt;=</span> <span class="n">lon_min</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">TLON</span> <span class="o">&lt;=</span> <span class="n">lon_max</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># crosses dateline / wrap seam</span>
+            <span class="n">mask_lon</span> <span class="o">=</span> <span class="p">(</span><span class="n">TLON</span> <span class="o">&gt;=</span> <span class="n">lon_min</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">TLON</span> <span class="o">&lt;=</span> <span class="n">lon_max</span><span class="p">)</span>
+        <span class="n">mask_lat</span> <span class="o">=</span> <span class="p">(</span><span class="n">TLAT</span> <span class="o">&gt;=</span> <span class="n">lat_min</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">TLAT</span> <span class="o">&lt;=</span> <span class="n">lat_max</span><span class="p">)</span>
+        <span class="n">mask</span>     <span class="o">=</span> <span class="n">mask_lon</span> <span class="o">&amp;</span> <span class="n">mask_lat</span>                      <span class="c1"># (nj, ni)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">da</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>                            <span class="c1"># broadcast over time</span>
+        <span class="k">if</span> <span class="n">crop</span><span class="p">:</span>
+            <span class="n">j_any</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">idim</span><span class="p">)</span>
+            <span class="n">i_any</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">jdim</span><span class="p">)</span>
+            <span class="n">j_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">j_any</span><span class="o">.</span><span class="n">values</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">i_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">i_any</span><span class="o">.</span><span class="n">values</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">j_idx</span><span class="o">.</span><span class="n">size</span> <span class="ow">and</span> <span class="n">i_idx</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+                <span class="n">j0</span><span class="p">,</span> <span class="n">j1</span> <span class="o">=</span> <span class="n">j_idx</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">j_idx</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">i0</span><span class="p">,</span> <span class="n">i1</span> <span class="o">=</span> <span class="n">i_idx</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">i_idx</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">out</span>    <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">isel</span><span class="p">({</span><span class="n">jdim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="n">j0</span><span class="p">,</span> <span class="n">j1</span><span class="p">),</span> <span class="n">idim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="n">i0</span><span class="p">,</span> <span class="n">i1</span><span class="p">)})</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Daniel Atwater.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
