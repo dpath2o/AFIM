@@ -124,339 +124,292 @@ class SeaIceMetrics:
                 del ds[var].encoding['chunks']
         return ds.chunk(None)
 
-    def fast_ice_metrics_data_dict(self, FI_mask, FI_data, A):
+    def metrics_data_dict(self, I_mask, I_data, A, 
+                          ice_type=None, *, 
+                          required=None, 
+                          optional=None):
         """
-        Build a standardised input dictionary for fast-ice (FI) metrics.
-
-        This is a small convenience wrapper to construct the `da_dict` expected by
-        `compute_sea_ice_metrics()` for fast ice. It bundles:
-          - the FI mask,
-          - core state variables (aice, hi),
-          - thermodynamic/dynamic tendency diagnostics (area/volume),
-          - the grid-cell area field.
-
-        Parameters
-        ----------
-        FI_mask : xr.DataArray
-            Fast-ice boolean mask (True/1 where fast ice is present). Typically
-            dims: (time, nj, ni) or (time, y, x) depending on your grid naming.
-        FI_data : xr.Dataset or mapping-like
-            Dataset containing at least:
-              - "aice"   : sea-ice concentration
-              - "hi"     : ice thickness
-              - "dvidtt" : thermodynamic ice volume tendency
-              - "dvidtd" : dynamic ice volume tendency
-              - "daidtt" : thermodynamic ice area tendency
-              - "daidtd" : dynamic ice area tendency
-        A : xr.DataArray
-            Grid-cell area field, typically in m², matching the spatial dims of FI_mask.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-              "FI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
-
-        Notes
-        -----
-        - The returned dictionary is intentionally minimal and matches the fields used by
-          `compute_sea_ice_metrics()`.
+        Build standardised input dictionary for FI/PI/etc metrics, including only vars present in I_data.
         """
-        return {"FI_mask"  : FI_mask,
-                'aice'     : FI_data['aice'],
-                'hi'       : FI_data['hi'],
-                #'strength' : FI_data['strength'],
-                'dvidtt'   : FI_data['dvidtt'],
-                'dvidtd'   : FI_data['dvidtd'],
-                'daidtt'   : FI_data['daidtt'],
-                'daidtd'   : FI_data['daidtd'],
-                'tarea'    : A}
-
-
-    def pack_ice_metrics_data_dict(self, PI_mask, PI_data, A):
-        """
-        Build a standardised input dictionary for pack-ice (PI) metrics.
-
-        Parameters
-        ----------
-        PI_mask : xr.DataArray
-            Pack-ice boolean mask.
-        PI_data : xr.Dataset or mapping-like
-            Dataset containing the same required keys as `fast_ice_metrics_data_dict()`
-            ("aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd").
-        A : xr.DataArray
-            Grid-cell area field.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-              "PI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
-        """
-        return {"PI_mask"  : PI_mask,
-                'aice'     : PI_data['aice'],
-                'hi'       : PI_data['hi'],
-                #'strength' : PI_data['strength'],
-                'dvidtt'   : PI_data['dvidtt'],
-                'dvidtd'   : PI_data['dvidtd'],
-                'daidtt'   : PI_data['daidtt'],
-                'daidtd'   : PI_data['daidtd'],
-                'tarea'    : A}
-
-    def sea_ice_metrics_data_dict(self, SI_mask, SI_data, A):
-        """
-        Build a standardised input dictionary for total sea-ice (SI) metrics.
-
-        Parameters
-        ----------
-        SI_mask : xr.DataArray
-            Total sea-ice boolean mask (e.g., aice > icon_thresh).
-        SI_data : xr.Dataset or mapping-like
-            Dataset containing required keys ("aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd").
-        A : xr.DataArray
-            Grid-cell area field.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-              "SI_mask", "aice", "hi", "dvidtt", "dvidtd", "daidtt", "daidtd", "tarea"
-
-        Notes
-        -----
-        - SI typically has only a daily mask in your workflow; persistence metrics are not
-          computed by `compute_sea_ice_metrics()` unless explicitly implemented elsewhere.
-        """
-        return {"SI_mask"  : SI_mask,
-                'aice'     : SI_data['aice'],
-                'hi'       : SI_data['hi'],
-                #'strength' : SI_data['strength'],
-                'dvidtt'   : SI_data['dvidtt'],
-                'dvidtd'   : SI_data['dvidtd'],
-                'daidtt'   : SI_data['daidtt'],
-                'daidtd'   : SI_data['daidtd'],
-                'tarea'    : A}
-
-    def compute_sea_ice_metrics(self, da_dict,
+        ice_type = ice_type or self.ice_type
+        self._check_ice_type(ice_type)
+        self.define_ice_mask_name(ice_type=ice_type)
+        # Define defaults (you can tune these)
+        required = required or ["aice", "hi", "uvel", "vvel"]             
+        optional = optional or ["strength", "dvidtt", "dvidtd", "daidtt", "daidtd"]
+        # Helper: membership test that works for xr.Dataset and dict-like
+        def _has(var):
+            if isinstance(I_data, xr.Dataset):
+                return var in I_data.data_vars
+            try:
+                return var in I_data
+            except TypeError:
+                return hasattr(I_data, var)
+        def _get(var):
+            if isinstance(I_data, xr.Dataset):
+                return I_data[var]
+            try:
+                return I_data[var]
+            except Exception:
+                return getattr(I_data, var)
+        out = {self.mask_name: I_mask,
+               "tarea"       : A}
+        missing_required = [v for v in required if not _has(v)]
+        if missing_required:
+            raise KeyError(f"metrics_data_dict missing required variables in I_data: {missing_required}")
+        # Add required then optional if present
+        for v in required:
+            out[v] = _get(v)
+        missing_optional = []
+        for v in optional:
+            if _has(v):
+                out[v] = _get(v)
+            else:
+                missing_optional.append(v)
+        # Optional: one log line instead of many KeyErrors
+        if missing_optional:
+            try:
+                self.logger.info(f"metrics_data_dict: skipping missing optional vars: {missing_optional}")
+            except Exception:
+                pass
+        return out
+    
+    def compute_sea_ice_metrics(self, da_dict, P_mets_zarr,
                                 ice_type       = None,
                                 dt0_str        = None,
                                 dtN_str        = None,
-                                P_mets_zarr    = None,
                                 ice_area_scale = None):
-        """
-        Compute sea-ice metrics for FI/PI/SI and optionally write them to a Zarr archive.
-
-        This method ingests a standardised dictionary of fields (mask + state + tendencies
-        + grid area), computes:
-          - hemisphere-integrated time series metrics (area, volume, thickness, rates),
-          - spatial summary diagnostics (temporal mean thickness; spatial rate fields),
-          - inter-comparison skill metrics for ice area versus observations (where available),
-          - seasonal statistics on the area time series (extrema/timing/slopes),
-          - persistence statistics for fast ice (stability index; distance metrics),
-        and assembles the results into a single `xr.Dataset`.
-
-        The output dataset contains:
-          - 1D time series variables (dims: time),
-          - 2D spatial variables (dims: nj, ni),
-          - scalar summary metrics stored as 0D DataArrays and/or attributes.
-
-        Parameters
-        ----------
-        da_dict : dict
-            Dictionary containing the required inputs. Must include:
-              - a mask: one of {"FI_mask","PI_mask","SI_mask"} or an ice-type-specific key
-                resolved from `ice_type` after cleaning.
-              - "aice"   : concentration DataArray
-              - "hi"     : thickness DataArray
-              - "dvidtt" : thermodynamic volume tendency DataArray
-              - "dvidtd" : dynamic volume tendency DataArray
-              - "daidtt" : thermodynamic area tendency DataArray
-              - "daidtd" : dynamic area tendency DataArray
-              - "tarea"  : grid-cell area DataArray
-
-        ice_type : str, optional
-            Ice-type label used to name outputs and choose observational comparisons.
-            This string may include suffixes (e.g., "_roll", "_bin", "_Tb", "_Tx"), which are
-            removed internally to produce `ice_type_clean` in {"FI","PI","SI"}.
-
-            Examples:
-              - "FI_Tb_bin"   -> ice_type_clean="FI"
-              - "PI_Ta_roll"  -> ice_type_clean="PI"
-              - "SI"          -> ice_type_clean="SI"
-
-        dt0_str, dtN_str : str, optional
-            Start/end of the analysis window ("YYYY-MM-DD"). Defaults to `self.dt0_str` and
-            `self.dtN_str`. These are primarily used for metadata and for time-alignment tasks
-            in downstream loaders; the computations here operate on the provided data.
-
-        P_mets_zarr : str or Path, optional
-            Output path for the metrics Zarr store. If None, a default is constructed as:
-                Path(self.D_metrics, f"{ice_type}_mets.zarr")
-
-            If provided (or defaulted), the dataset is written with:
-                consolidated=True, mode="w", zarr_format=2
-
-        ice_area_scale : float, optional
-            Scaling applied in hemisphere area computations (e.g., to convert m² to km² or
-            10^3 km²). Defaults to `self.FIC_scale`.
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset containing computed metrics. Variable naming is prefixed by the cleaned
-            ice type, e.g.:
-              - "FIA", "FIV", "FIT", ... for fast ice
-              - "PIA", "PIV", ... for pack ice
-              - "SIA", "SIV", ... for sea ice
-
-            Scalar summary fields are stored as 0D DataArrays, and simulation configuration
-            metadata may also be included as attributes.
-
-        Raises
-        ------
-        ValueError
-            If `ice_type` cannot be cleaned to one of {"FI","PI","SI"}.
-        KeyError
-            If the required mask key cannot be resolved from `da_dict`.
-        Exception
-            Propagates errors from underlying compute_* methods, I/O, or observation loaders.
-
-        Notes
-        -----
-        Observation handling
-        --------------------
-        - For FI: attempts to load AF2020 fast-ice area observations from `self.AF_FI_dict["P_AF2020_FIA"]`.
-        - For PI/SI: uses `self.compute_NSIDC_metrics()` and compares against NSIDC SIA.
-
-        Robustness
-        ----------
-        - Skill statistics and seasonal statistics are wrapped in try/except blocks to ensure
-          metrics generation does not fail catastrophically if an observational file is missing
-          or a time series is too short for filters.
-        - Persistence metrics are only computed for FI (by design).
-        """
         import re
-        ice_type       = ice_type  or self.ice_type
-        dt0_str        = dt0_str   or self.dt0_str
-        dtN_str        = dtN_str   or self.dtN_str
-        P_mets_zarr    = Path(P_mets_zarr) if P_mets_zarr else Path(self.D_metrics, f"{ice_type}_mets.zarr")
-        ice_area_scale = ice_area_scale if ice_area_scale is not None else self.FIC_scale
-        spatial_dim_names = self.CICE_dict['spatial_dims']
+        ice_type = ice_type or self.ice_type
+        dt0_str  = dt0_str  or self.dt0_str
+        dtN_str  = dtN_str  or self.dtN_str
+        self._check_ice_type(ice_type)
+        self.define_ice_mask_name(ice_type=ice_type)
+        if ice_type == "FI":
+            ice_area_scale = self.FIC_scale
+        else:
+            ice_area_scale = self.SIC_scale
         self.logger.info(f"¡¡¡ COMPUTING ICE METRICS for {ice_type} !!!")
-        ice_type_clean = re.sub(r'(_roll|_bin)?(_BT|_B|_Ta|_Tx)?$', '', ice_type)
-        if ice_type_clean not in ("FI", "PI", "SI"):
-            raise ValueError(f"Unexpected cleaned ice_type: {ice_type_clean}")
-        self.logger.info(f"results will be written to {P_mets_zarr}")
-        mask_name = f"{ice_type_clean}_mask"
-        if mask_name in da_dict:
-            I_mask = da_dict[mask_name]
-        else:
-            candidates = [k for k in ("FI_mask", "PI_mask", "SI_mask") if k in da_dict]
-            if len(candidates) == 1:
-                mask_name = candidates[0]
-                I_mask = da_dict[mask_name]
-                self.logger.warning(f"Mask key {ice_type_clean}_mask not found; inferring {mask_name} from da_dict.")
-            else:
-                raise KeyError(f"Could not resolve ice mask. Expected {ice_type_clean}_mask, or exactly one of FI_mask/PI_mask/SI_mask. Found: {candidates}")
-        I_C       = da_dict['aice']
-        I_T       = da_dict['hi']
-        #I_S       = da_dict['strength']
-        I_TVT     = da_dict['dvidtt']
-        I_MVT     = da_dict['dvidtd']
-        I_TAT     = da_dict['daidtt']
-        I_MAT     = da_dict['daidtd']
-        A         = da_dict['tarea']
-        # --- Time Series Metrics ---
-        IA   = self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale)
-        IV   = self.compute_hemisphere_ice_volume(I_C, I_T, A)
-        IT   = self.compute_hemisphere_ice_thickness(I_C, I_T, A)
-        #IS   = self.compute_hemisphere_ice_strength(I_C, I_T, I_S)
-        ITVR = self.compute_hemisphere_ice_volume_rate(I_C, I_TVT)
-        IMVR = self.compute_hemisphere_ice_volume_rate(I_C, I_MVT)
-        ITAR = self.compute_hemisphere_ice_area_rate(I_TAT, IA, A)
-        IMAR = self.compute_hemisphere_ice_area_rate(I_MAT, IA, A)
-        IP   = self.compute_hemisphere_variable_aggregate(I_C)
-        self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
-        IHI = I_T.mean(dim=self.CICE_dict["time_dim"])
-        #self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
-        #IST = (I_S/I_T).sum(dim=self.CICE_dict["time_dim"]) / 1e6
-        self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
-        ITVR_YR = (I_TVT*1e2).mean(dim=self.CICE_dict["time_dim"]) / 3.65
-        IMVR_YR = (I_MVT*1e2).mean(dim=self.CICE_dict["time_dim"]) / 3.65
-        self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
-        ITAR_YR = (I_TAT*A).mean(dim=self.CICE_dict["time_dim"]) / 31_536_000
-        IMAR_YR = (I_MAT*A).mean(dim=self.CICE_dict["time_dim"]) / 31_536_000
-        self.logger.info("loading data into output dictionary...")
-        METS = {f"{ice_type_clean}A"      : IA.load(),      #1D
-                f"{ice_type_clean}V"      : IV.load(),      #1D
-                f"{ice_type_clean}T"      : IT.load(),      #1D
-                #f"{ice_type_clean}S"      : IS.load(),      #1D
-                f"{ice_type_clean}TVR"    : ITVR.load(),    #1D
-                f"{ice_type_clean}MVR"    : IMVR.load(),    #1D
-                f"{ice_type_clean}TAR"    : ITAR.load(),    #1D
-                f"{ice_type_clean}MAR"    : IMAR.load(),    #1D
-                f"{ice_type_clean}P"      : IP.load(),      #2D
-                f"{ice_type_clean}HI"     : IHI.load(),     #2D
-                #f"{ice_type_clean}ST"     : IST.load(),     #2D
-                f"{ice_type_clean}TVR_YR" : ITVR_YR.load(), #2D
-                f"{ice_type_clean}MVR_YR" : IMVR_YR.load(), #2D
-                f"{ice_type_clean}TAR_YR" : ITAR_YR.load(), #2D
-                f"{ice_type_clean}MAR_YR" : IMAR_YR.load()} #2D
-        # --- Skill Statistics ---
-        try:
-            if ice_type_clean == "FI":
-                self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
-                IA_obs = xr.open_dataset(self.AF_FI_dict['P_AF2020_FIA'], engine="netcdf4")["AF2020"]
-            elif ice_type_clean in ("PI", "SI"):
-                NSIDC = self.compute_NSIDC_metrics()
-                IA_obs = NSIDC['SIA']
-            else:
-                IA_obs = None
-            IA_obs   = IA_obs.load()
-            IA_skill = self.compute_skill_statistics(IA, IA_obs) if IA_obs is not None else {}
-        except Exception as e:
-            self.logger.warning(f"compute_skill_statistics failed: {e}")
-            IA_skill = {}
-        # --- Seasonal Statistics ---
-        try:
-            IA_seasonal = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type_clean}A")
-        except Exception as e:
-            self.logger.warning(f"compute_seasonal_statistics failed: {e}")
-            IA_seasonal = {}
-        # --- Persistence Statistics ---
-        if ice_type_clean == "FI":
+        self.logger.info(f"    results to {P_mets_zarr}")
+        I_mask = da_dict[self.mask_name]
+        # --------- Guard helpers ----------
+        def has(*keys):
+            return all(k in da_dict and da_dict[k] is not None for k in keys)
+        def _all_nan(da):
+            # Conservative: treat "all-NaN" as invalid; works for dask too
             try:
-                IP_stab = self.persistence_stability_index(I_mask, A)
-            except Exception as e:
-                self.logger.warning(f"persistence_stability_index failed: {e}")
-                IP_stab = {}
+                return bool(da.isnull().all().compute())
+            except Exception:
+                try:
+                    return bool(np.all(np.isnan(da)))
+                except Exception:
+                    return False
+        def valid(da):
+            if da is None:
+                return False
+            # if time series or field is entirely NaN, skip
             try:
-                IP_dist = self.persistence_ice_distance_mean_max(IP)
+                return not _all_nan(da)
+            except Exception:
+                return True
+        def maybe_compute(tag, fn, req_keys, *, store, out_key, post=None):
+            """
+            tag      : short log label
+            fn       : callable producing DataArray (or dict)
+            req_keys : list/tuple of keys required in da_dict
+            store    : dict to store computed arrays
+            out_key  : output variable name in METS
+            post     : optional callable to transform result before storing
+            """
+            if not has(*req_keys):
+                self.logger.info(f"skipping {tag}: missing {set(req_keys) - set(da_dict.keys())}")
+                return None
+            # also check basic validity
+            for k in req_keys:
+                if isinstance(da_dict[k], xr.DataArray) and not valid(da_dict[k]):
+                    self.logger.info(f"skipping {tag}: input '{k}' is all-NaN")
+                    return None
+            try:
+                out = fn()
+                if post is not None:
+                    out = post(out)
+                store[out_key] = out.load() if isinstance(out, xr.DataArray) else out
+                return out
             except Exception as e:
-                self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
-                IP_dist = {}
+                self.logger.warning(f"{tag} failed: {e}")
+                return None
+        # --------- Pull what exists (do NOT assume keys) ----------
+        I_C   = da_dict.get("aice")
+        I_T   = da_dict.get("hi")
+        I_S   = da_dict.get("strength")
+        I_TVT = da_dict.get("dvidtt")
+        I_MVT = da_dict.get("dvidtd")
+        I_TAT = da_dict.get("daidtt")
+        I_MAT = da_dict.get("daidtd")
+        A     = da_dict.get("tarea")
+        METS = {}
+        # --------- Time series metrics (conditional) ----------
+        IA = maybe_compute("ice area",
+                           lambda: self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale),
+                            req_keys=("aice", "tarea"),
+                            store=METS,
+                            out_key=f"{ice_type}A")
+
+        IV = maybe_compute("ice volume",
+                            lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
+                            req_keys=("aice", "hi", "tarea"),
+                            store=METS,
+                            out_key=f"{ice_type}V")
+
+        IT = maybe_compute("ice thickness",
+                            lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
+                            req_keys=("aice", "hi", "tarea"),
+                            store=METS,
+                            out_key=f"{ice_type}T")
+
+        IS = maybe_compute("ice strength (1D)",
+                            lambda: self.compute_hemisphere_ice_strength(I_C, I_T, I_S),
+                            req_keys=("aice", "hi", "strength"),
+                            store=METS,
+                            out_key=f"{ice_type}S")
+
+        ITVR = maybe_compute("thermo volume rate (1D)",
+                            lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_TVT),
+                            req_keys=("aice", "dvidtt"),
+                            store=METS,
+                            out_key=f"{ice_type}TVR")
+
+        IMVR = maybe_compute("dynamic volume rate (1D)",
+                            lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_MVT),
+                            req_keys=("aice", "dvidtd"),
+                            store=METS,
+                            out_key=f"{ice_type}MVR")
+        ITAR = maybe_compute("thermo area rate (1D)",
+                            lambda: self.compute_hemisphere_ice_area_rate(I_TAT, IA, A),
+                            req_keys=("daidtt", "tarea"),  # IA is computed object, not dict key
+                            store=METS,
+                            out_key=f"{ice_type}TAR",
+                            post=lambda x: x) if (I_TAT is not None and IA is not None and A is not None) else None
+        if (I_TAT is not None) and (IA is None):
+            self.logger.info("skipping thermo area rate: requires IA to be computed first")
+        IMAR = maybe_compute("dynamic area rate (1D)",
+                            lambda: self.compute_hemisphere_ice_area_rate(I_MAT, IA, A),
+                            req_keys=("daidtd", "tarea"),
+                            store=METS,
+                            out_key=f"{ice_type}MAR") if (I_MAT is not None and IA is not None and A is not None) else None
+        if (I_MAT is not None) and (IA is None):
+            self.logger.info("skipping dynamic area rate: requires IA to be computed first")
+        IP = maybe_compute("persistence aggregate (2D)",
+                            lambda: self.compute_hemisphere_variable_aggregate(I_C),
+                            req_keys=("aice",),
+                            store=METS,
+                            out_key=f"{ice_type}P")
+        # --------- Spatial summary diagnostics (conditional) ----------
+        time_dim = self.CICE_dict["time_dim"]
+        if I_T is not None and valid(I_T):
+            try:
+                self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
+                METS[f"{ice_type}HI"] = I_T.mean(dim=time_dim).load()
+            except Exception as e:
+                self.logger.warning(f"mean thickness failed: {e}")
+        # IST definition uses (I_S / I_T) and sums over time.
+        # Guard against missing or zero thickness.
+        if (I_S is not None) and (I_T is not None) and valid(I_S) and valid(I_T):
+            try:
+                self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
+                IST = (I_S / I_T.where(I_T > 0)).sum(dim=time_dim) / 1e6
+                METS[f"{ice_type}ST"] = IST.load()
+            except Exception as e:
+                self.logger.warning(f"strength temporal-sum failed: {e}")
+        if I_TVT is not None and valid(I_TVT):
+            try:
+                self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
+                METS[f"{ice_type}TVR_YR"] = ((I_TVT * 1e2).mean(dim=time_dim) / 3.65).load()
+            except Exception as e:
+                self.logger.warning(f"TVR_YR failed: {e}")
+        if I_MVT is not None and valid(I_MVT):
+            try:
+                self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
+                METS[f"{ice_type}MVR_YR"] = ((I_MVT * 1e2).mean(dim=time_dim) / 3.65).load()
+            except Exception as e:
+                self.logger.warning(f"MVR_YR failed: {e}")
+        if (I_TAT is not None) and (A is not None) and valid(I_TAT) and valid(A):
+            try:
+                self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
+                METS[f"{ice_type}TAR_YR"] = ((I_TAT * A).mean(dim=time_dim) / 31_536_000).load()
+            except Exception as e:
+                self.logger.warning(f"TAR_YR failed: {e}")
+        if (I_MAT is not None) and (A is not None) and valid(I_MAT) and valid(A):
+            try:
+                self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
+                METS[f"{ice_type}MAR_YR"] = ((I_MAT * A).mean(dim=time_dim) / 31_536_000).load()
+            except Exception as e:
+                self.logger.warning(f"MAR_YR failed: {e}")
+        # --------- Skill / seasonal / persistence (conditional) ----------
+        # Skill and seasonal stats require IA
+        IA_skill = {}
+        IA_seasonal = {}
+        if IA is not None and isinstance(IA, xr.DataArray) and valid(IA):
+            # Skill
+            try:
+                if ice_type == "FI":
+                    self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
+                    IA_obs = xr.open_dataset(self.AF_FI_dict["P_AF2020_FIA"], engine="netcdf4")["AF2020"]
+                elif ice_type in ("PI", "SI"):
+                    NSIDC = self.compute_NSIDC_metrics()
+                    IA_obs = NSIDC["SIA"]
+                else:
+                    IA_obs = None
+
+                if IA_obs is not None:
+                    IA_obs = IA_obs.load()
+                    IA_skill = self.compute_skill_statistics(IA, IA_obs)
+            except Exception as e:
+                self.logger.warning(f"compute_skill_statistics failed: {e}")
+                IA_skill = {}
+            # Seasonal
+            try:
+                IA_seasonal = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type}A")
+            except Exception as e:
+                self.logger.warning(f"compute_seasonal_statistics failed: {e}")
+                IA_seasonal = {}
         else:
-            IP_stab, IP_dist = {}, {}
-        # --- Build Output Dataset ---
+            self.logger.info("skipping skill/seasonal stats: IA not available")
+        # Persistence metrics require FI and (mask or IP)
+        IP_stab, IP_dist = {}, {}
+        if ice_type == "FI":
+            if (I_mask is not None) and (A is not None):
+                try:
+                    IP_stab = self.persistence_stability_index(I_mask, A)
+                except Exception as e:
+                    self.logger.warning(f"persistence_stability_index failed: {e}")
+            else:
+                self.logger.info("skipping persistence_stability_index: missing mask or area")
+
+            if IP is not None:
+                try:
+                    IP_dist = self.persistence_ice_distance_mean_max(IP)
+                except Exception as e:
+                    self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
+            else:
+                self.logger.info("skipping persistence distance: IP not available")
+        # --------- Build output dataset ----------
         DS_METS = xr.Dataset()
         for k, v in METS.items():
             if isinstance(v, xr.DataArray):
                 DS_METS[k] = v
-            elif np.ndim(v) == 2:
-                DS_METS[k] = xr.DataArray(v, dims=('nj', 'ni'))
-            elif np.ndim(v) == 1:
-                DS_METS[k] = xr.DataArray(v, dims=('time',))
             else:
+                # fallback: store scalars as 0D
                 DS_METS[k] = xr.DataArray(v, dims=())
-        # --- Merge Metadata ---
-        summary = {**{f"{ice_type_clean}A_{k}": v for k, v in IA_seasonal.items()},
+        # --------- Merge metadata / summary dict ----------
+        summary = {**{f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()},
                    **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
         for k, v in summary.items():
             if k in self.sim_config:
                 DS_METS.attrs[k] = v
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
-        # --- Save to Zarr ---
+        # --------- Save to Zarr ----------
         if P_mets_zarr:
             DS_METS = self._clean_zarr_chunks(DS_METS)
             DS_METS.to_zarr(P_mets_zarr, mode="w", consolidated=True, zarr_format=2)
@@ -553,13 +506,13 @@ class SeaIceMetrics:
         return ds_out
     
     def load_computed_metrics(self,
-                              fast_ice_class_method : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
-                              BorC2T_type           : str  = None,
-                              ice_type              : str  = None,
-                              ispd_thresh           : str  = None,
-                              zarr_directory        : str  = None,
-                              clip_to_self          : bool = True,
-                              time_dim              : str  = "time"):
+                              class_method   : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
+                              BorC2T_type    : str  = None,
+                              ice_type       : str  = None,
+                              ispd_thresh    : str  = None,
+                              zarr_directory : str  = None,
+                              clip_to_self   : bool = True,
+                              time_dim       : str  = "time"):
         """
         Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
 
@@ -572,7 +525,7 @@ class SeaIceMetrics:
 
         Parameters
         ----------
-        fast_ice_class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
+        class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
             Classification product to load for FI/PI. Used to build `self.FI_class`.
         BorC2T_type : str, optional
             Velocity staggering token(s) used for classification, e.g. "Tb", "Tx", "Tc".
@@ -611,13 +564,12 @@ class SeaIceMetrics:
         ice_type    = ice_type       or self.ice_type
         ispd_thresh = ispd_thresh    or self.ispd_thresh
         D_zarr      = zarr_directory or self.D_zarr
-        self.define_classification_dir(ice_type = ice_type, D_zarr = D_zarr, ispd_thresh = ispd_thresh)
-        if (ice_type == 'FI') or (ice_type =='PI'): 
-            self.define_fast_ice_class_name(BorC2T_type = BorC2T_type, fast_ice_class_method = fast_ice_class_method)
-            P_mets = self.D_class / f"{self.FI_class}_{self.metrics_name}.zarr"
-        else:
-            P_mets = self.D_class / f"{ice_type}_{self.metrics_name}.zarr"
-        ds = xr.open_dataset(P_mets)
+        P_mets_zarr = self.define_metrics_zarr(D_zarr       = D_zarr,
+                                               ice_type     = ice_type,
+                                               ispd_thresh  = ispd_thresh, 
+                                               BorC2T_type  = BorC2T_type,
+                                               class_method = class_method)
+        ds = xr.open_dataset(P_mets_zarr)
         if clip_to_self:
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
         return ds
