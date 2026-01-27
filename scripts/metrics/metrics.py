@@ -6,15 +6,6 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 
-def drop_dupe_time(obj):
-    if "time" not in obj.dims:
-        return obj
-    idx = obj.indexes["time"]
-    keep = ~idx.duplicated()
-    # keep is a numpy/pandas boolean mask aligned to time axis
-    obj = obj.isel(time=keep)
-    return obj.sortby("time")
-
 def main(sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
     load_vars = ['aice','tarea','hi','uvel','vvel','strength','dvidtt','daidtt','dvidtd','daidtd']
@@ -32,9 +23,6 @@ def main(sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, overwri
     tb.define_ice_mask_name(ice_type=ice_type)
     I_day   = tb.load_classified_ice(class_method="raw")[tb.mask_name]
     CICE_SO = tb.load_cice_zarr(slice_hem=True, variables=load_vars)
-    CICE_SO = drop_dupe_time(CICE_SO)
-    I_day   = drop_dupe_time(I_day)
-    CICE_SO, I_day = xr.align(CICE_SO, I_day, join="inner")
     if not ice_type=="SI":
         I_bin = tb.load_classified_ice(class_method="binary-days")[tb.mask_name]
         I_rol = tb.load_classified_ice(class_method="rolling-mean")[tb.mask_name]

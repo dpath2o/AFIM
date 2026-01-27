@@ -123,6 +123,21 @@ class SeaIceMetrics:
             if 'chunks' in ds[var].encoding:
                 del ds[var].encoding['chunks']
         return ds.chunk(None)
+    
+    @staticmethod
+    def thickness_tendency_to_mps(dvt: xr.DataArray) -> xr.DataArray:
+        u = (dvt.attrs.get("units", "") or "").strip().lower()
+        # common cases
+        if u in ["m/s", "m s-1", "m s^-1"]:
+            return dvt
+        if u in ["cm/s", "cm s-1", "cm s^-1"]:
+            return dvt * 0.01
+        if "cm/day" in u or "cm d-1" in u:
+            return dvt * 0.01 / 86400.0
+        if "m/day" in u or "m d-1" in u:
+            return dvt / 86400.0
+        # if unknown, do not silently scale; return as-is and force you to inspect
+        raise ValueError(f"Unrecognized DVT units: '{dvt.attrs.get('units','')}'")
 
     def metrics_data_dict(self, I_mask, I_data, A, 
                           ice_type=None, *, 
@@ -254,31 +269,26 @@ class SeaIceMetrics:
                             req_keys=("aice", "tarea"),
                             store=METS,
                             out_key=f"{ice_type}A")
-
         IV = maybe_compute("ice volume",
                             lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
                             req_keys=("aice", "hi", "tarea"),
                             store=METS,
                             out_key=f"{ice_type}V")
-
         IT = maybe_compute("ice thickness",
                             lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
                             req_keys=("aice", "hi", "tarea"),
                             store=METS,
                             out_key=f"{ice_type}T")
-
         IS = maybe_compute("ice strength (1D)",
                             lambda: self.compute_hemisphere_ice_strength(I_C, I_T, I_S),
                             req_keys=("aice", "hi", "strength"),
                             store=METS,
                             out_key=f"{ice_type}S")
-
         ITVR = maybe_compute("thermo volume rate (1D)",
                             lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_TVT),
                             req_keys=("aice", "dvidtt"),
                             store=METS,
                             out_key=f"{ice_type}TVR")
-
         IMVR = maybe_compute("dynamic volume rate (1D)",
                             lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_MVT),
                             req_keys=("aice", "dvidtd"),
@@ -662,9 +672,11 @@ class SeaIceMetrics:
         self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
                           f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
                           f"  2. Multiply by 100 cm/m, sum over spatial dims, then divide by seconds per day")
-        mask = SIC > sic_threshold
-        DVT  = DVT.where(mask)
-        return (DVT*1e2).sum(dim=spatial_dim_names) / 8.64e4 #m/s
+        mask          = SIC > sic_threshold
+        DVT           = DVT.where(mask)
+        DVT_mps       = self.thickness_tendency_to_mps(DVT.where(mask))
+        SIV_tend_m3_s = (DVT_mps * A).sum(dim=spatial_dim_names)
+        return (SIV_tend_m3_s / 1e9 * 86400.0)
 
     def compute_hemisphere_ice_strength(self, SIC, HI, IS,
                                         spatial_dim_names  : list  = None,
