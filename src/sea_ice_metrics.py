@@ -139,20 +139,68 @@ class SeaIceMetrics:
         # if unknown, do not silently scale; return as-is and force you to inspect
         raise ValueError(f"Unrecognized DVT units: '{dvt.attrs.get('units','')}'")
 
-    def metrics_data_dict(self, I_mask, I_data, A, 
-                          ice_type=None, *, 
-                          required=None, 
-                          optional=None):
+    def metrics_data_dict(self, I_mask, I_data, A,
+                        ice_type=None, *,
+                        required=None,
+                        optional=None):
         """
-        Build standardised input dictionary for FI/PI/etc metrics, including only vars present in I_data.
+        Build a standardised input dictionary for FI/PI/SI metrics.
+
+        This method:
+        - validates required variables exist in `I_data`,
+        - adds optional variables if present,
+        - always includes the ice mask and T-grid area (`tarea`),
+        - and (NEW) auto-adds any referenced cell-area measures (e.g., earea/narea)
+            when a variable declares them via CF `cell_measures`, e.g.:
+                cell_measures: "area: earea"
+            This is needed for lateral-drag stress diagnostics (KuxE/KuxN/KuyE/KuyN).
+
+        Parameters
+        ----------
+        I_mask : xr.DataArray
+            Ice-type mask (e.g., FI/PI/SI), typically with dims (time, nj, ni) or (nj, ni).
+        I_data : xr.Dataset or dict-like
+            Source dataset/dictionary containing model variables.
+        A : xr.DataArray
+            T-grid cell area (m^2), stored into the output dict as "tarea".
+        ice_type : str, optional
+            Ice type key ("FI","PI","SI"). Defaults to `self.ice_type`.
+        required : list[str], optional
+            Required variable names that must exist in `I_data`.
+        optional : list[str], optional
+            Optional variable names to include if present in `I_data`.
+
+        Returns
+        -------
+        dict
+            Dictionary containing mask, tarea, and required/optional fields.
+
+        Raises
+        ------
+        KeyError
+            If any required variables are missing.
+
+        Notes
+        -----
+        - NEW: If a present variable declares an area measure via `cell_measures`,
+        and that area variable exists in `I_data`, it is added automatically.
+        This supports stress diagnostics with earea/narea weights.
         """
+        import re
         ice_type = ice_type or self.ice_type
         self._check_ice_type(ice_type)
         self.define_ice_mask_name(ice_type=ice_type)
-        # Define defaults (you can tune these)
-        required = required or ["aice", "hi", "uvel", "vvel"]             
-        optional = optional or ["strength", "dvidtt", "dvidtd", "daidtt", "daidtd"]
-        # Helper: membership test that works for xr.Dataset and dict-like
+
+        # Defaults (tune as needed)
+        required = required or ["aice", "hi", "uvel", "vvel"]
+        optional = optional or [
+            "strength", "dvidtt", "dvidtd", "daidtt", "daidtd",
+            # NEW: lateral-drag stress outputs (if written by CICE)
+            "KuxE", "KuxN", "KuyE", "KuyN",
+            # NEW: possible area weights (often static 2-D fields)
+            "earea", "narea", "uarea",
+        ]
+
         def _has(var):
             if isinstance(I_data, xr.Dataset):
                 return var in I_data.data_vars
@@ -160,6 +208,7 @@ class SeaIceMetrics:
                 return var in I_data
             except TypeError:
                 return hasattr(I_data, var)
+
         def _get(var):
             if isinstance(I_data, xr.Dataset):
                 return I_data[var]
@@ -167,28 +216,61 @@ class SeaIceMetrics:
                 return I_data[var]
             except Exception:
                 return getattr(I_data, var)
-        out = {self.mask_name: I_mask,
-               "tarea"       : A}
+
+        out = {
+            self.mask_name: I_mask,
+            "tarea": A,
+        }
+
         missing_required = [v for v in required if not _has(v)]
         if missing_required:
             raise KeyError(f"metrics_data_dict missing required variables in I_data: {missing_required}")
-        # Add required then optional if present
+
+        # Add required
         for v in required:
             out[v] = _get(v)
+
+        # Add optional
         missing_optional = []
         for v in optional:
             if _has(v):
                 out[v] = _get(v)
             else:
                 missing_optional.append(v)
-        # Optional: one log line instead of many KeyErrors
+
         if missing_optional:
             try:
                 self.logger.info(f"metrics_data_dict: skipping missing optional vars: {missing_optional}")
             except Exception:
                 pass
+
+        # ------------------------------------------------------------------
+        # NEW: auto-add any referenced area measures from CF cell_measures
+        # ------------------------------------------------------------------
+        try:
+            area_vars_needed = set()
+            pat = re.compile(r"area:\s*([A-Za-z0-9_]+)")
+            for k, da in list(out.items()):
+                if not isinstance(da, xr.DataArray):
+                    continue
+                cm = da.attrs.get("cell_measures", "") or da.attrs.get("cell_measures:area", "")
+                m = pat.search(str(cm))
+                if m:
+                    area_vars_needed.add(m.group(1))
+
+            for avar in sorted(area_vars_needed):
+                if avar in out:
+                    continue
+                if _has(avar):
+                    out[avar] = _get(avar)
+                    self.logger.info(f"metrics_data_dict: auto-added area measure '{avar}' referenced by cell_measures")
+                else:
+                    self.logger.info(f"metrics_data_dict: variable(s) reference area '{avar}' via cell_measures, but '{avar}' not found in I_data")
+        except Exception as e:
+            self.logger.debug(f"metrics_data_dict: cell_measures parsing skipped ({e})")
+
         return out
-    
+
     def compute_sea_ice_metrics(self, da_dict, P_mets_zarr,
                                 ice_type       = None,
                                 dt0_str        = None,
@@ -198,20 +280,27 @@ class SeaIceMetrics:
         ice_type = ice_type or self.ice_type
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
+
         self._check_ice_type(ice_type)
         self.define_ice_mask_name(ice_type=ice_type)
+
         if ice_type == "FI":
             ice_area_scale = self.FIC_scale
         else:
             ice_area_scale = self.SIC_scale
+
+        spatial_dim_names = self.CICE_dict["spatial_dims"]  # NEW: used below for stress aggregation
+
         self.logger.info(f"¡¡¡ COMPUTING ICE METRICS for {ice_type} !!!")
         self.logger.info(f"    results to {P_mets_zarr}")
+
         I_mask = da_dict[self.mask_name]
+
         # --------- Guard helpers ----------
         def has(*keys):
             return all(k in da_dict and da_dict[k] is not None for k in keys)
+
         def _all_nan(da):
-            # Conservative: treat "all-NaN" as invalid; works for dask too
             try:
                 return bool(da.isnull().all().compute())
             except Exception:
@@ -219,27 +308,19 @@ class SeaIceMetrics:
                     return bool(np.all(np.isnan(da)))
                 except Exception:
                     return False
+
         def valid(da):
             if da is None:
                 return False
-            # if time series or field is entirely NaN, skip
             try:
                 return not _all_nan(da)
             except Exception:
                 return True
+
         def maybe_compute(tag, fn, req_keys, *, store, out_key, post=None):
-            """
-            tag      : short log label
-            fn       : callable producing DataArray (or dict)
-            req_keys : list/tuple of keys required in da_dict
-            store    : dict to store computed arrays
-            out_key  : output variable name in METS
-            post     : optional callable to transform result before storing
-            """
             if not has(*req_keys):
                 self.logger.info(f"skipping {tag}: missing {set(req_keys) - set(da_dict.keys())}")
                 return None
-            # also check basic validity
             for k in req_keys:
                 if isinstance(da_dict[k], xr.DataArray) and not valid(da_dict[k]):
                     self.logger.info(f"skipping {tag}: input '{k}' is all-NaN")
@@ -253,6 +334,7 @@ class SeaIceMetrics:
             except Exception as e:
                 self.logger.warning(f"{tag} failed: {e}")
                 return None
+
         # --------- Pull what exists (do NOT assume keys) ----------
         I_C   = da_dict.get("aice")
         I_T   = da_dict.get("hi")
@@ -262,68 +344,191 @@ class SeaIceMetrics:
         I_TAT = da_dict.get("daidtt")
         I_MAT = da_dict.get("daidtd")
         A     = da_dict.get("tarea")
+
+        # NEW: lateral drag stress components (if present)
+        KuxE = da_dict.get("KuxE")
+        KuxN = da_dict.get("KuxN")
+        KuyE = da_dict.get("KuyE")
+        KuyN = da_dict.get("KuyN")
+
         METS = {}
+
         # --------- Time series metrics (conditional) ----------
         IA = maybe_compute("ice area",
-                           lambda: self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale),
-                            req_keys=("aice", "tarea"),
-                            store=METS,
-                            out_key=f"{ice_type}A")
+                        lambda: self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale),
+                        req_keys=("aice", "tarea"),
+                        store=METS,
+                        out_key=f"{ice_type}A")
+
         IV = maybe_compute("ice volume",
-                            lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
-                            req_keys=("aice", "hi", "tarea"),
-                            store=METS,
-                            out_key=f"{ice_type}V")
+                        lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
+                        req_keys=("aice", "hi", "tarea"),
+                        store=METS,
+                        out_key=f"{ice_type}V")
+
         IT = maybe_compute("ice thickness",
-                            lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
-                            req_keys=("aice", "hi", "tarea"),
-                            store=METS,
-                            out_key=f"{ice_type}T")
-        IS = maybe_compute("ice strength (1D)",
-                            lambda: self.compute_hemisphere_ice_strength(I_C, I_T, I_S),
-                            req_keys=("aice", "hi", "strength"),
-                            store=METS,
-                            out_key=f"{ice_type}S")
+                        lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
+                        req_keys=("aice", "hi", "tarea"),
+                        store=METS,
+                        out_key=f"{ice_type}T")
+
+        # FIXED: strength call should include IS and A
+        IS = maybe_compute("ice strength (1D, area-weighted hPa)",
+                        lambda: self.compute_area_weighted_strength_hpa(
+                            SIC=I_C, HI=I_T, IS=I_S, A=A,
+                            spatial_dim_names=spatial_dim_names,
+                            sic_threshold=self.icon_thresh,
+                            hmin=0.05,
+                            assume_IS_units="N/m"),
+                        req_keys=("aice", "hi", "strength", "tarea"),
+                        store=METS,
+                        out_key=f"{ice_type}S")
+
         ITVR = maybe_compute("thermo volume rate (1D)",
-                            lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_TVT),
+                            lambda: self.compute_hemisphere_ice_volume_rate(DVT=I_TVT, IV=IV, A=A, SIC=I_C,
+                                                                            mode="absolute", out_units="per_day"),
                             req_keys=("aice", "dvidtt"),
                             store=METS,
                             out_key=f"{ice_type}TVR")
+
         IMVR = maybe_compute("dynamic volume rate (1D)",
-                            lambda: self.compute_hemisphere_ice_volume_rate(I_C, I_MVT),
+                            lambda: self.compute_hemisphere_ice_volume_rate(DVT=I_MVT, IV=IV, A=A, SIC=I_C,
+                                                                            mode="absolute", out_units="per_day"),
                             req_keys=("aice", "dvidtd"),
                             store=METS,
                             out_key=f"{ice_type}MVR")
+
         ITAR = maybe_compute("thermo area rate (1D)",
-                            lambda: self.compute_hemisphere_ice_area_rate(I_TAT, IA, A),
-                            req_keys=("daidtt", "tarea"),  # IA is computed object, not dict key
+                            lambda: self.compute_hemisphere_ice_area_rate(DAT=I_TAT, IA=IA, A=A,
+                                                                          mode="absolute", out_units="per_day"),
+                            req_keys=("daidtt", "tarea"),
                             store=METS,
                             out_key=f"{ice_type}TAR",
                             post=lambda x: x) if (I_TAT is not None and IA is not None and A is not None) else None
         if (I_TAT is not None) and (IA is None):
             self.logger.info("skipping thermo area rate: requires IA to be computed first")
+
         IMAR = maybe_compute("dynamic area rate (1D)",
-                            lambda: self.compute_hemisphere_ice_area_rate(I_MAT, IA, A),
+                            lambda: self.compute_hemisphere_ice_area_rate(DAT=I_MAT, IA=IA, A=A,
+                                                                          mode="absolute", out_units="per_day"),
                             req_keys=("daidtd", "tarea"),
                             store=METS,
                             out_key=f"{ice_type}MAR") if (I_MAT is not None and IA is not None and A is not None) else None
         if (I_MAT is not None) and (IA is None):
             self.logger.info("skipping dynamic area rate: requires IA to be computed first")
+
         IP = maybe_compute("persistence aggregate (2D)",
-                            lambda: self.compute_hemisphere_variable_aggregate(I_C),
-                            req_keys=("aice",),
-                            store=METS,
-                            out_key=f"{ice_type}P")
+                        lambda: self.compute_hemisphere_variable_aggregate(I_C),
+                        req_keys=("aice",),
+                        store=METS,
+                        out_key=f"{ice_type}P")
+
+        # ------------------------------------------------------------------
+        # NEW PATCH: hemispheric aggregates for lateral-drag stress components
+        # ------------------------------------------------------------------
+        def _parse_area_name_from_cell_measures(da: xr.DataArray) -> str | None:
+            cm = str(da.attrs.get("cell_measures", "") or "")
+            m = re.search(r"area:\s*([A-Za-z0-9_]+)", cm)
+            return m.group(1) if m else None
+
+        def _get_area_for_tau(da: xr.DataArray) -> tuple[xr.DataArray | None, str | None]:
+            # prefer explicit cell_measures area variable (earea/narea/etc)
+            aname = _parse_area_name_from_cell_measures(da)
+            if aname and (aname in da_dict) and (da_dict[aname] is not None):
+                return da_dict[aname], aname
+            # fallback to tarea if nothing else available
+            if A is not None:
+                return A, "tarea"
+            return None, None
+
+        def _mask_for_tau(tau: xr.DataArray) -> xr.DataArray | None:
+            # Use the ice-type mask if available; align to tau
+            if I_mask is None:
+                return None
+            try:
+                m = (I_mask > 0)
+                m, tau_al = xr.align(m, tau, join="inner")
+                return m.astype(bool)
+            except Exception:
+                return (I_mask > 0)
+
+        def _add_stress_agg(tau: xr.DataArray, base_name: str):
+            """
+            Compute and store:
+            <base>_mean (signed), <base>_abs_mean, <base>_valid_area_m2
+            using appropriate area weights if available.
+            """
+            if tau is None or not valid(tau):
+                self.logger.info(f"skipping {base_name}: missing or all-NaN")
+                return
+
+            A_tau, A_name = _get_area_for_tau(tau)
+            if A_tau is None:
+                self.logger.info(f"skipping {base_name}: no area weights available (expected earea/narea or tarea)")
+                return
+
+            m_tau = _mask_for_tau(tau)
+
+            self.logger.info(f"computing **LATERAL-DRAG STRESS AGGREGATE**: {base_name}")
+            self.logger.debug(f"  • using area weights : {A_name}")
+            self.logger.debug(f"  • output units       : Pa")
+            self.logger.debug(f"  • masked by          : {self.mask_name} (>0)")
+
+            try:
+                ds_tau = self.compute_hemisphere_area_weighted_stress(
+                    tau=tau,
+                    A=A_tau,
+                    spatial_dim_names=spatial_dim_names,
+                    mask=m_tau,
+                    out_units="Pa",
+                    return_abs=True,
+                    min_area_m2=0.0,
+                    name=base_name,
+                )
+
+                # rename valid area to avoid collisions
+                ds_tau = ds_tau.rename({"valid_area_m2": f"{base_name}_valid_area_m2"})
+
+                # store each 1D series
+                for v in ds_tau.data_vars:
+                    METS[v] = ds_tau[v].load()
+
+            except Exception as e:
+                self.logger.warning(f"{base_name} stress aggregate failed: {e}")
+
+        # component aggregates
+        _add_stress_agg(KuxE, f"{ice_type}KuxE")
+        _add_stress_agg(KuyE, f"{ice_type}KuyE")
+        _add_stress_agg(KuxN, f"{ice_type}KuxN")
+        _add_stress_agg(KuyN, f"{ice_type}KuyN")
+
+        # magnitude aggregates (more interpretable than signed components)
+        if (KuxE is not None) and (KuyE is not None) and valid(KuxE) and valid(KuyE):
+            try:
+                KuE_mag = np.hypot(KuxE, KuyE)
+                KuE_mag.name = "KuE_mag"
+                _add_stress_agg(KuE_mag, f"{ice_type}KuE_mag")
+            except Exception as e:
+                self.logger.warning(f"{ice_type}KuE_mag failed: {e}")
+
+        if (KuxN is not None) and (KuyN is not None) and valid(KuxN) and valid(KuyN):
+            try:
+                KuN_mag = np.hypot(KuxN, KuyN)
+                KuN_mag.name = "KuN_mag"
+                _add_stress_agg(KuN_mag, f"{ice_type}KuN_mag")
+            except Exception as e:
+                self.logger.warning(f"{ice_type}KuN_mag failed: {e}")
+
         # --------- Spatial summary diagnostics (conditional) ----------
         time_dim = self.CICE_dict["time_dim"]
+
         if I_T is not None and valid(I_T):
             try:
                 self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
                 METS[f"{ice_type}HI"] = I_T.mean(dim=time_dim).load()
             except Exception as e:
                 self.logger.warning(f"mean thickness failed: {e}")
-        # IST definition uses (I_S / I_T) and sums over time.
-        # Guard against missing or zero thickness.
+
         if (I_S is not None) and (I_T is not None) and valid(I_S) and valid(I_T):
             try:
                 self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
@@ -331,36 +536,39 @@ class SeaIceMetrics:
                 METS[f"{ice_type}ST"] = IST.load()
             except Exception as e:
                 self.logger.warning(f"strength temporal-sum failed: {e}")
+
         if I_TVT is not None and valid(I_TVT):
             try:
                 self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}TVR_YR"] = ((I_TVT * 1e2).mean(dim=time_dim) / 3.65).load()
             except Exception as e:
                 self.logger.warning(f"TVR_YR failed: {e}")
+
         if I_MVT is not None and valid(I_MVT):
             try:
                 self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}MVR_YR"] = ((I_MVT * 1e2).mean(dim=time_dim) / 3.65).load()
             except Exception as e:
                 self.logger.warning(f"MVR_YR failed: {e}")
+
         if (I_TAT is not None) and (A is not None) and valid(I_TAT) and valid(A):
             try:
                 self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}TAR_YR"] = ((I_TAT * A).mean(dim=time_dim) / 31_536_000).load()
             except Exception as e:
                 self.logger.warning(f"TAR_YR failed: {e}")
+
         if (I_MAT is not None) and (A is not None) and valid(I_MAT) and valid(A):
             try:
                 self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}MAR_YR"] = ((I_MAT * A).mean(dim=time_dim) / 31_536_000).load()
             except Exception as e:
                 self.logger.warning(f"MAR_YR failed: {e}")
+
         # --------- Skill / seasonal / persistence (conditional) ----------
-        # Skill and seasonal stats require IA
         IA_skill = {}
         IA_seasonal = {}
         if IA is not None and isinstance(IA, xr.DataArray) and valid(IA):
-            # Skill
             try:
                 if ice_type == "FI":
                     self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
@@ -373,57 +581,77 @@ class SeaIceMetrics:
 
                 if IA_obs is not None:
                     IA_obs = IA_obs.load()
-                    IA_skill = self.compute_skill_statistics(IA, IA_obs)
+                    result = self.compute_skill_statistics(IA, IA_obs)
+                    IA_skill = result if isinstance(result, dict) else {}
             except Exception as e:
                 self.logger.warning(f"compute_skill_statistics failed: {e}")
                 IA_skill = {}
-            # Seasonal
+
             try:
-                IA_seasonal = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type}A")
+                result = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type}A")
+                if isinstance(result, tuple):
+                    IA_seasonal = result[0] if isinstance(result[0], dict) else {}
+                elif isinstance(result, dict):
+                    IA_seasonal = result
+                else:
+                    IA_seasonal = {}
             except Exception as e:
                 self.logger.warning(f"compute_seasonal_statistics failed: {e}")
                 IA_seasonal = {}
         else:
             self.logger.info("skipping skill/seasonal stats: IA not available")
-        # Persistence metrics require FI and (mask or IP)
+
         IP_stab, IP_dist = {}, {}
         if ice_type == "FI":
             if (I_mask is not None) and (A is not None):
                 try:
-                    IP_stab = self.persistence_stability_index(I_mask, A)
+                    result = self.persistence_stability_index(I_mask, A)
+                    IP_stab = result if isinstance(result, dict) else {}
                 except Exception as e:
                     self.logger.warning(f"persistence_stability_index failed: {e}")
+                    IP_stab = {}
             else:
                 self.logger.info("skipping persistence_stability_index: missing mask or area")
 
             if IP is not None:
                 try:
-                    IP_dist = self.persistence_ice_distance_mean_max(IP)
+                    result = self.persistence_ice_distance_mean_max(IP)
+                    IP_dist = result if isinstance(result, dict) else {}
                 except Exception as e:
                     self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
+                    IP_dist = {}
             else:
                 self.logger.info("skipping persistence distance: IP not available")
+
         # --------- Build output dataset ----------
         DS_METS = xr.Dataset()
         for k, v in METS.items():
             if isinstance(v, xr.DataArray):
                 DS_METS[k] = v
             else:
-                # fallback: store scalars as 0D
                 DS_METS[k] = xr.DataArray(v, dims=())
+
         # --------- Merge metadata / summary dict ----------
+        IA_seasonal = IA_seasonal if isinstance(IA_seasonal, dict) else {}
+        IP_stab     = IP_stab if isinstance(IP_stab, dict) else {}
+        IP_dist     = IP_dist if isinstance(IP_dist, dict) else {}
+        IA_skill    = IA_skill if isinstance(IA_skill, dict) else {}
+
         summary = {**{f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()},
-                   **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
+                **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
+
         for k, v in summary.items():
             if k in self.sim_config:
                 DS_METS.attrs[k] = v
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
+
         # --------- Save to Zarr ----------
         if P_mets_zarr:
             DS_METS = self._clean_zarr_chunks(DS_METS)
             DS_METS.to_zarr(P_mets_zarr, mode="w", consolidated=True, zarr_format=2)
             self.logger.info(f"Metrics written to {P_mets_zarr}")
+
         return DS_METS
 
     def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str, 
@@ -584,104 +812,693 @@ class SeaIceMetrics:
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
         return ds
 
-    def compute_hemisphere_ice_area_rate(self, DAT, IA, A,
-                                           spatial_dim_names  : list  = None):
+    def compute_hemisphere_area_weighted_stress(
+        self,
+        tau: xr.DataArray,
+        A: xr.DataArray,
+        spatial_dim_names: list | None = None,
+        mask: xr.DataArray | None = None,
+        out_units: str = "Pa",                  # "Pa" | "kPa" | "hPa"
+        return_abs: bool = True,                # if True, also return |tau|
+        min_area_m2: float = 0.0,               # if >0, mask timesteps with too little valid area
+        name: str | None = None,
+    ) -> xr.Dataset:
         """
-        Compute a hemisphere-aggregated ice area tendency rate.
+        Compute a hemispheric, area-weighted aggregate of a stress component (or magnitude).
 
-        This metric converts a dynamic area tendency field (typically in 1/s) into a
-        domain-aggregated rate by:
-          1) multiplying the tendency by grid cell area (m²),
-          2) summing over spatial dimensions, and
-          3) normalising by the instantaneous ice area time series.
+        Designed for stress-like diagnostics such as lateral-drag stresses (e.g., KuxE, KuyN)
+        whose native units are N/m^2 (= Pa). This yields a hemispheric mean stress time series
+        with **sensible physical units** (Pa, hPa, or kPa) and a robust treatment of masks.
+
+        The aggregate is an area-weighted mean over the valid region:
+
+            <tau>_A(t) = sum( tau(t,...) * A(...) ) / sum( A(...) )
+
+        If `return_abs=True`, this also returns the area-weighted mean of |tau|, which is often
+        more interpretable for signed stress components that alternate in sign over space.
+
+        Parameters
+        ----------
+        tau : xr.DataArray
+            Stress component field in N/m^2 (Pa). Must include a time dimension and spatial
+            dimensions in `spatial_dim_names`.
+        A : xr.DataArray
+            Grid-cell area (m^2) corresponding to `tau`'s grid (e.g., earea for E-grid,
+            narea for N-grid). Broadcastable to tau's spatial dims.
+        spatial_dim_names : list[str], optional
+            Spatial dimensions to reduce over (e.g., ["nj", "ni"]). Defaults to
+            `self.CICE_dict["spatial_dims"]`.
+        mask : xr.DataArray, optional
+            Boolean mask (True=keep) broadcastable to tau. Use this to restrict aggregation
+            to a region (e.g., fast-ice mask, SIC threshold mask, coastal mask, etc.).
+            If None, uses all finite tau cells.
+        out_units : {"Pa","hPa","kPa"}, default "Pa"
+            Unit for the returned time series.
+        return_abs : bool, default True
+            If True, return both signed mean stress and mean absolute stress.
+        min_area_m2 : float, default 0.0
+            If >0, timesteps where the valid area sum is <= min_area_m2 are masked (set to NaN).
+            Helpful to prevent noisy values when the valid mask becomes tiny.
+        name : str, optional
+            Name root used for output variables. Defaults to `tau.name` if present, else "tau".
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing:
+            - f"{name}_mean"     : area-weighted mean stress (signed)
+            - f"{name}_abs_mean" : area-weighted mean |stress| (if return_abs=True)
+            - "valid_area_m2"    : total valid area used in weighting
+
+            Units of *_mean variables are Pa/hPa/kPa as requested.
+
+        Notes
+        -----
+        - N/m^2 is exactly Pascal. So converting to hPa uses /100, and to kPa uses /1000.
+        - Prefer |tau| (absolute mean) when comparing “strength” of drag across experiments,
+        because signed components can cancel spatially.
+        - If you want a vector magnitude across components (e.g., sqrt(Kux^2+Kuy^2)), compute
+        that first and pass as `tau`.
+        """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
+
+        nm = name or getattr(tau, "name", None) or "tau"
+
+        self.logger.info(f"Computing **AREA-WEIGHTED STRESS AGGREGATE** for '{nm}'")
+        self.logger.debug(f"  • out_units            : {out_units}")
+        self.logger.debug(f"  • return_abs           : {return_abs}")
+        self.logger.debug(f"  • min_area_m2          : {min_area_m2:.3e} m^2")
+        self.logger.debug(f"  • Spatial dimensions   : {spatial_dim_names}")
+        self.logger.debug(f"  • tau units (attrs)    : {tau.attrs.get('units', 'unknown')}")
+        self.logger.debug(f"  • tau long_name        : {tau.attrs.get('long_name', 'unknown')}")
+
+        self.logger.debug("\n[Stress Aggregation Steps]\n"
+                        "  1. Define valid mask: finite(tau) & optional user mask\n"
+                        "  2. Compute area-weighted mean: sum(tau*A)/sum(A)\n"
+                        "  3. Optionally compute area-weighted mean absolute stress: sum(|tau|*A)/sum(A)\n"
+                        "  4. Convert Pa -> requested units (Pa/hPa/kPa)\n"
+                        "  5. Optionally mask timesteps where valid area is too small")
+
+        # base validity mask
+        valid = np.isfinite(tau)
+        if mask is not None:
+            valid = valid & mask
+
+        w = A.where(valid)
+        valid_area = w.sum(dim=spatial_dim_names)
+
+        # signed mean
+        tau_mean = (tau.where(valid) * w).sum(dim=spatial_dim_names) / valid_area
+
+        # absolute mean
+        if return_abs:
+            tau_abs_mean = (np.abs(tau.where(valid)) * w).sum(dim=spatial_dim_names) / valid_area
+
+        # unit conversion from Pa
+        if out_units not in ("Pa", "hPa", "kPa"):
+            raise ValueError(f"Unknown out_units='{out_units}'. Expected 'Pa', 'hPa', or 'kPa'.")
+
+        if out_units == "hPa":
+            scale = 1.0 / 100.0
+        elif out_units == "kPa":
+            scale = 1.0 / 1000.0
+        else:
+            scale = 1.0
+
+        tau_mean = tau_mean * scale
+        tau_mean.attrs["units"] = out_units
+        tau_mean.attrs["long_name"] = f"Area-weighted mean stress ({nm})"
+        tau_mean.attrs["aggregation"] = f"area_weighted_mean_over={spatial_dim_names}"
+
+        out = {
+            f"{nm}_mean": tau_mean,
+            "valid_area_m2": valid_area,
+        }
+
+        if return_abs:
+            tau_abs_mean = tau_abs_mean * scale
+            tau_abs_mean.attrs["units"] = out_units
+            tau_abs_mean.attrs["long_name"] = f"Area-weighted mean absolute stress ({nm})"
+            tau_abs_mean.attrs["aggregation"] = f"area_weighted_mean_over={spatial_dim_names}"
+            out[f"{nm}_abs_mean"] = tau_abs_mean
+
+        ds_out = xr.Dataset(out)
+
+        if min_area_m2 and float(min_area_m2) > 0.0:
+            self.logger.debug("Applying min_area_m2 gating to output time series")
+            gate = ds_out["valid_area_m2"] > min_area_m2
+            for v in ds_out.data_vars:
+                if v != "valid_area_m2":
+                    ds_out[v] = ds_out[v].where(gate)
+
+        return ds_out
+
+
+    def compute_hemisphere_lateral_drag_stress(
+        self,
+        KuxE: xr.DataArray | None = None,
+        KuxN: xr.DataArray | None = None,
+        KuyE: xr.DataArray | None = None,
+        KuyN: xr.DataArray | None = None,
+        earea: xr.DataArray | None = None,
+        narea: xr.DataArray | None = None,
+        spatial_dim_names: list | None = None,
+        maskE: xr.DataArray | None = None,
+        maskN: xr.DataArray | None = None,
+        out_units: str = "Pa",
+        min_area_m2: float = 0.0,
+    ) -> xr.Dataset:
+        """
+        Convenience wrapper to compute hemispheric aggregates for lateral-drag stress components.
+
+        This computes area-weighted mean and mean-absolute stresses for any subset of:
+        KuxE, KuxN, KuyE, KuyN
+
+        using their appropriate grid-cell area weights:
+        - E-grid stresses weighted by `earea`
+        - N-grid stresses weighted by `narea`
+
+        Parameters
+        ----------
+        KuxE, KuxN, KuyE, KuyN : xr.DataArray, optional
+            Stress component fields (Pa) on E or N grids.
+        earea, narea : xr.DataArray, optional
+            Grid-cell areas (m^2) for E- and N-grids.
+        spatial_dim_names : list[str], optional
+            Spatial reduction dims. Defaults to `self.CICE_dict["spatial_dims"]`.
+        maskE, maskN : xr.DataArray, optional
+            Optional boolean masks for E-grid and N-grid fields.
+        out_units : {"Pa","hPa","kPa"}, default "Pa"
+            Units for output time series.
+        min_area_m2 : float, default 0.0
+            Gating threshold for valid area per timestep.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing time series for each provided field:
+            - <name>_mean
+            - <name>_abs_mean
+            - <name>_valid_area_m2
+
+            Plus, if both x and y are present on the same grid, a magnitude aggregate:
+            - K_uE_mag_mean / abs_mean (from KuxE,KuyE)
+            - K_uN_mag_mean / abs_mean (from KuxN,KuyN)
+
+        Notes
+        -----
+        - For interpretation across experiments, the **absolute mean** and the **magnitude**
+        are usually the most stable.
+        """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
+        self.logger.info("Computing **HEMISPHERE LATERAL-DRAG STRESS AGGREGATES**")
+        self.logger.debug(f"  • out_units          : {out_units}")
+        self.logger.debug(f"  • min_area_m2        : {min_area_m2:.3e} m^2")
+        self.logger.debug(f"  • Spatial dimensions : {spatial_dim_names}")
+
+        out = []
+
+        # --- E grid components ---
+        if (KuxE is not None) and (earea is None):
+            raise ValueError("KuxE provided but earea is None.")
+        if (KuyE is not None) and (earea is None):
+            raise ValueError("KuyE provided but earea is None.")
+
+        if KuxE is not None:
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KuxE, A=earea, spatial_dim_names=spatial_dim_names,
+                mask=maskE, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="KuxE"
+            )
+            ds = ds.rename({"valid_area_m2": "KuxE_valid_area_m2"})
+            out.append(ds)
+
+        if KuyE is not None:
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KuyE, A=earea, spatial_dim_names=spatial_dim_names,
+                mask=maskE, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="KuyE"
+            )
+            ds = ds.rename({"valid_area_m2": "KuyE_valid_area_m2"})
+            out.append(ds)
+
+        if (KuxE is not None) and (KuyE is not None):
+            KmagE = np.hypot(KuxE, KuyE)
+            KmagE.name = "K_uE_mag"
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KmagE, A=earea, spatial_dim_names=spatial_dim_names,
+                mask=maskE, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="K_uE_mag"
+            )
+            ds = ds.rename({"valid_area_m2": "K_uE_mag_valid_area_m2"})
+            out.append(ds)
+
+        # --- N grid components ---
+        if (KuxN is not None) and (narea is None):
+            raise ValueError("KuxN provided but narea is None.")
+        if (KuyN is not None) and (narea is None):
+            raise ValueError("KuyN provided but narea is None.")
+
+        if KuxN is not None:
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KuxN, A=narea, spatial_dim_names=spatial_dim_names,
+                mask=maskN, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="KuxN"
+            )
+            ds = ds.rename({"valid_area_m2": "KuxN_valid_area_m2"})
+            out.append(ds)
+
+        if KuyN is not None:
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KuyN, A=narea, spatial_dim_names=spatial_dim_names,
+                mask=maskN, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="KuyN"
+            )
+            ds = ds.rename({"valid_area_m2": "KuyN_valid_area_m2"})
+            out.append(ds)
+
+        if (KuxN is not None) and (KuyN is not None):
+            KmagN = np.hypot(KuxN, KuyN)
+            KmagN.name = "K_uN_mag"
+            ds = self.compute_hemisphere_area_weighted_stress(
+                tau=KmagN, A=narea, spatial_dim_names=spatial_dim_names,
+                mask=maskN, out_units=out_units, return_abs=True,
+                min_area_m2=min_area_m2, name="K_uN_mag"
+            )
+            ds = ds.rename({"valid_area_m2": "K_uN_mag_valid_area_m2"})
+            out.append(ds)
+
+        if not out:
+            raise ValueError("No stress fields provided. Supply at least one of KuxE/KuxN/KuyE/KuyN.")
+
+        return xr.merge(out)
+
+    def compute_hemisphere_ice_area_rate(self, 
+                                         DAT: xr.DataArray,
+                                         IA: xr.DataArray,
+                                         A: xr.DataArray,
+                                         spatial_dim_names: list | None = None,
+                                         mode: str = "fractional",               # "fractional" (1/s or 1/day) OR "absolute" (km^2/s or km^2/day)
+                                         out_units: str = "per_day",             # "per_day" | "per_second"
+                                         IA_min_m2: float = 5e10,                # denominator floor (m^2) for fractional mode
+                                         mask_invalid: bool = True) -> xr.DataArray:
+        """
+        Compute a hemisphere-aggregated ice-area tendency rate with optional denominator gating.
+
+        This function aggregates a gridded area-tendency field over the hemisphere and returns either:
+
+        (A) an **absolute** integrated tendency:
+                d(Area)/dt  [km^2/s] or [km^2/day]
+
+        (B) a **fractional** tendency (normalised by instantaneous integrated ice area):
+                (1/Area) d(Area)/dt  [1/s] or [1/day]
+
+        The fractional form is often the most comparable across experiments, but it can become
+        numerically unstable when the integrated ice area is small. To mitigate this, a minimum
+        area floor `IA_min_m2` is applied in fractional mode (values are masked where IA <= IA_min_m2).
 
         Parameters
         ----------
         DAT : xr.DataArray
-            Dynamic area tendency field (commonly units of 1/s), with dims including time
-            and spatial dimensions.
+            Local ice-area tendency field, typically in [1/s] (e.g., dynamic area tendency),
+            with dimensions including time and the spatial dimensions in `spatial_dim_names`.
+            NOTE: `DAT` is assumed to act on the same area basis as `A` (grid-cell area).
         IA : xr.DataArray
-            Hemisphere-integrated ice area time series used for normalisation.
-            Must share the same time coordinate as `DAT`.
+            Hemisphere-integrated ice area time series in [m^2], used as the denominator in
+            fractional mode. Must share the same time coordinate as `DAT`.
         A : xr.DataArray
-            Grid cell area (m²), broadcastable to `DAT` spatial dimensions.
+            Grid-cell area in [m^2], broadcastable to the spatial dimensions of `DAT`.
         spatial_dim_names : list[str], optional
-            Names of spatial dimensions to sum over. Defaults to `self.CICE_dict["spatial_dims"]`.
+            Spatial dimensions to sum over (e.g., ["nj", "ni"]). Defaults to `self.CICE_dict["spatial_dims"]`.
+        mode : {"fractional","absolute"}, default "fractional"
+            - "fractional": return (DAT*A).sum / IA  -> [1/s] or [1/day]
+            - "absolute"  : return (DAT*A).sum       -> [m^2/s] converted to [km^2/s] or [km^2/day]
+        out_units : {"per_day","per_second"}, default "per_day"
+            Output time unit scaling. For "per_day", multiplies by 86400.
+        IA_min_m2 : float, default 5e10
+            Minimum integrated ice area (m^2) required to compute fractional rates. Values where
+            IA <= IA_min_m2 are masked (set to NaN) in fractional mode.
+            A typical order-of-magnitude choice is 1e10–1e11 m^2 (~10^4–10^5 km^2).
+        mask_invalid : bool, default True
+            If True, masks non-finite values after calculation (NaN/inf).
 
         Returns
         -------
         xr.DataArray
-            Hemisphere-aggregated area rate time series. Units depend on `DAT` but are
-            commonly interpreted as m/s after normalisation and scaling.
+            Hemisphere-aggregated area tendency rate.
+            Units:
+            - mode="absolute"  : km^2/s or km^2/day
+            - mode="fractional": 1/s   or 1/day
 
         Notes
         -----
-        - The implementation divides by 1e9, which is typically used to convert m² to
-          10^9 m² (i.e., ~10^3 km²) or to keep magnitudes numerically convenient.
-          Ensure this scaling matches your publication units.
+        - This function replaces the previous hard-coded `/1e9` scaling and instead returns
+        physically interpretable units (km^2/time for absolute, 1/time for fractional).
+        - If your `IA` is not in m^2, convert it before calling this function.
+        - If `DAT` is not in 1/s, units will differ accordingly; the calculations here assume
+        the common CICE convention for area tendencies.
         """
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        self.logger.info("Computing **DYNAMIC AREA TENDENCY** for hemisphere")
-        self.logger.debug(f"  • Spatial dimension names           : {spatial_dim_names}")
-        self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
-                          f"  1. multiply dynamic area tendency (1/s) by grid cell area (m^2) and sum\n"
-                          f"  2. divide by ice area and volumetric scaling factor 1e9")
-        return (DAT*A).sum(dim=spatial_dim_names) / IA / 1e9 # m/s
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
+        self.logger.info("Computing **HEMISPHERE ICE-AREA TENDENCY RATE**")
+        self.logger.debug(f"  • mode                          : {mode}")
+        self.logger.debug(f"  • out_units                     : {out_units}")
+        self.logger.debug(f"  • IA_min_m2 (fractional gating) : {IA_min_m2:.3e} m^2")
+        self.logger.debug(f"  • Spatial dimensions            : {spatial_dim_names}")
 
-    def compute_hemisphere_ice_volume_rate(self, SIC, DVT,
-                                           spatial_dim_names  : list  = None,
-                                           sic_threshold      : float = None):
+        # 1) integrate local tendency over area: (1/s)*m^2 -> m^2/s
+        self.logger.debug("\n[Area Tendency Aggregation Steps]\n"
+                        "  1. Multiply DAT by grid-cell area A and sum over spatial dims -> dA/dt in m^2/s\n"
+                        "  2. If mode='fractional', divide by IA (with IA floor) -> fractional rate in 1/s\n"
+                        "  3. Convert to requested output units (per_day vs per_second) and (if absolute) km^2 scaling")
+
+        dA_dt_m2_s = (DAT * A).sum(dim=spatial_dim_names)
+
+        if mode not in ("fractional", "absolute"):
+            raise ValueError(f"Unknown mode='{mode}'. Expected 'fractional' or 'absolute'.")
+
+        if out_units not in ("per_day", "per_second"):
+            raise ValueError(f"Unknown out_units='{out_units}'. Expected 'per_day' or 'per_second'.")
+
+        if mode == "fractional":
+            # denominator gating to avoid blow-ups
+            IA_safe = IA.where(IA > IA_min_m2)
+            rate = dA_dt_m2_s / IA_safe  # 1/s (if DAT is 1/s and IA is m^2)
+            rate.attrs["long_name"] = "Hemisphere fractional ice-area tendency rate"
+            rate.attrs["units"] = "1/s"
+        else:
+            # absolute: convert m^2/s -> km^2/s
+            rate = dA_dt_m2_s / 1e6
+            rate.attrs["long_name"] = "Hemisphere absolute ice-area tendency rate"
+            rate.attrs["units"] = "km^2/s"
+
+        if out_units == "per_day":
+            rate = rate * 86400.0
+            # adjust units string
+            if mode == "fractional":
+                rate.attrs["units"] = "1/day"
+            else:
+                rate.attrs["units"] = "km^2/day"
+
+        if mask_invalid:
+            rate = rate.where(np.isfinite(rate))
+
+        # keep a breadcrumb for provenance
+        rate.attrs["aggregation"] = f"sum_over={spatial_dim_names}"
+        if mode == "fractional":
+            rate.attrs["IA_min_m2"] = float(IA_min_m2)
+
+        return rate
+
+    def compute_hemisphere_ice_volume_rate(self,
+                                        DVT: xr.DataArray,
+                                        IV: xr.DataArray | None,
+                                        A: xr.DataArray,
+                                        SIC: xr.DataArray | None = None,
+                                        spatial_dim_names: list | None = None,
+                                        mode: str = "fractional",           # "fractional" | "absolute"
+                                        out_units: str = "per_day",         # "per_day" | "per_second"
+                                        IV_min_m3: float = 5e10,            # denominator floor (m^3) for fractional mode
+                                        sic_threshold: float | None = None, # optional mask (SIC > thresh)
+                                        mask_invalid: bool = True,
+                                        assume_units: str = "auto"          # "auto" | "cm/day" | "m/day" | "m/s"
+                                        ) -> xr.DataArray:
         """
-        Compute a hemisphere-aggregated ice volume tendency rate.
+        Compute a hemisphere-aggregated ice-volume tendency rate with sensible units and optional
+        denominator gating.
 
-        This metric aggregates a volume tendency field (thermodynamic or dynamic) over a
-        hemisphere by:
-          1) masking to ice-covered cells using `SIC > sic_threshold`,
-          2) converting units as needed (implementation multiplies by 100 cm/m),
-          3) summing over spatial dimensions, and
-          4) dividing by seconds per day to yield a per-second rate.
+        This function aggregates a gridded "volume tendency" field (CICE history typically stores
+        `dvidtt` / `dvidtd` in **cm/day**, representing an equivalent thickness tendency) into:
+
+        (A) an **absolute** integrated volume tendency:
+                dV/dt  [km^3/s] or [km^3/day]
+
+        (B) a **fractional** (normalised) tendency:
+                (1/V) dV/dt  [1/s] or [1/day]
+
+        The fractional form is often the most comparable across experiments, but it can become
+        numerically unstable when the integrated ice volume is small. To mitigate this, a minimum
+        volume floor `IV_min_m3` is applied in fractional mode (values are masked where IV <= IV_min_m3).
 
         Parameters
         ----------
-        SIC : xr.DataArray
-            Sea-ice concentration field used for masking (typically "aice").
         DVT : xr.DataArray
-            Ice volume tendency field (e.g., dvidtt or dvidtd). Must share the same
-            dims/coords as `SIC` (or be broadcastable).
+            Local ice "volume tendency" field. For standard CICE diagnostics:
+            - dvidtt / dvidtd typically have units "cm/day" (equivalent thickness tendency).
+            Must have dims including time and the spatial dims in `spatial_dim_names`.
+        IV : xr.DataArray or None
+            Hemisphere-integrated ice volume time series in [m^3], used as the denominator in
+            fractional mode. Must share the same time coordinate as `DVT`.
+            Required if mode="fractional"; can be None if mode="absolute".
+        A : xr.DataArray
+            Grid-cell area in [m^2], broadcastable to the spatial dimensions of `DVT`.
+            (For CICE dvidtt/dvidtd: thickness tendency * area -> volume tendency.)
+        SIC : xr.DataArray, optional
+            Sea-ice concentration used to mask contributions. If provided, cells with
+            SIC <= sic_threshold are excluded. If None, no SIC masking is applied.
         spatial_dim_names : list[str], optional
-            Names of spatial dimensions to sum over. Defaults to `self.CICE_dict["spatial_dims"]`.
+            Spatial dimensions to sum over (e.g., ["nj","ni"]). Defaults to `self.CICE_dict["spatial_dims"]`.
+        mode : {"fractional","absolute"}, default "fractional"
+            - "fractional": return (dV/dt)/IV   -> [1/s] or [1/day]
+            - "absolute"  : return dV/dt        -> [km^3/s] or [km^3/day]
+        out_units : {"per_day","per_second"}, default "per_day"
+            Output time unit. "per_day" scales by 86400 relative to per-second base.
+        IV_min_m3 : float, default 5e10
+            Minimum integrated ice volume (m^3) required to compute fractional rates.
+            Values where IV <= IV_min_m3 are masked (set to NaN) in fractional mode.
+            Order-of-magnitude guidance:
+            - fast-ice V ~ 1e10–1e11 m^3 (10–100 km^3)
+            - sea-ice V  ~ 1e12–1e13 m^3 (1000–10000 km^3)
         sic_threshold : float, optional
-            Concentration threshold for masking. Defaults to `self.icon_thresh`.
+            SIC threshold for masking. Defaults to `self.icon_thresh` when SIC is provided.
+        mask_invalid : bool, default True
+            If True, mask non-finite results (NaN/inf) after calculation.
+        assume_units : {"auto","cm/day","m/day","m/s"}, default "auto"
+            How to interpret `DVT` units. If "auto", tries to parse `DVT.attrs["units"]`.
+            If parsing fails and you have `self.thickness_tendency_to_mps`, it will be used as fallback.
 
         Returns
         -------
         xr.DataArray
             Hemisphere-aggregated volume tendency rate time series.
+            Units:
+            - mode="absolute"  : km^3/s or km^3/day
+            - mode="fractional": 1/s   or 1/day
 
         Notes
         -----
-        - The conversion factor `*1e2` and division by `8.64e4` (seconds/day) encode
-          specific unit assumptions about `DVT`. Document these assumptions in your
-          paper and adjust if the upstream tendency units change.
+        - For CICE dvidtt/dvidtd (cm/day): the physically consistent absolute tendency is:
+            dV/dt [m^3/day] = (DVT * 1e-2) * A  summed over space
+        then converted to km^3/day by dividing by 1e9.
+        - This function does NOT assume any hard-coded scaling like /1e9*86400 unless justified by units.
         """
-        sic_threshold     = sic_threshold     if sic_threshold     is not None else self.icon_thresh
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        self.logger.info("Computing **DYNAMIC VOLUME TENDENCY** for hemisphere")
-        self.logger.debug(f"  • Using SIC threshold               : {sic_threshold:.2f}\n"
-                          f"  • Spatial dimension names           : {spatial_dim_names}")
-        self.logger.debug("\n[Sea Ice Pressure Computation Steps]\n"
-                          f"  1. Apply SIC mask (SIC > {sic_threshold:.2f})\n"
-                          f"  2. Multiply by 100 cm/m, sum over spatial dims, then divide by seconds per day")
-        mask          = SIC > sic_threshold
-        DVT           = DVT.where(mask)
-        DVT_mps       = self.thickness_tendency_to_mps(DVT.where(mask))
-        SIV_tend_m3_s = (DVT_mps * A).sum(dim=spatial_dim_names)
-        return (SIV_tend_m3_s / 1e9 * 86400.0)
+
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
+
+        if mode not in ("fractional", "absolute"):
+            raise ValueError(f"Unknown mode='{mode}'. Expected 'fractional' or 'absolute'.")
+        if out_units not in ("per_day", "per_second"):
+            raise ValueError(f"Unknown out_units='{out_units}'. Expected 'per_day' or 'per_second'.")
+        if (mode == "fractional") and (IV is None):
+            raise ValueError("mode='fractional' requires IV (hemisphere-integrated volume time series in m^3).")
+
+        sic_threshold = sic_threshold if sic_threshold is not None else getattr(self, "icon_thresh", 0.15)
+
+        self.logger.info("Computing **HEMISPHERE ICE-VOLUME TENDENCY RATE**")
+        self.logger.debug(f"  • mode                           : {mode}")
+        self.logger.debug(f"  • out_units                      : {out_units}")
+        self.logger.debug(f"  • IV_min_m3 (fractional gating)  : {IV_min_m3:.3e} m^3")
+        self.logger.debug(f"  • SIC mask applied?              : {'yes' if SIC is not None else 'no'}")
+        if SIC is not None:
+            self.logger.debug(f"  • sic_threshold                  : {sic_threshold:.2f}")
+        self.logger.debug(f"  • Spatial dimensions             : {spatial_dim_names}")
+
+        self.logger.debug(
+            "\n[Volume Tendency Aggregation Steps]\n"
+            "  1. Convert DVT to thickness tendency in m/s (unit-aware)\n"
+            "  2. Optionally apply SIC mask (SIC > threshold)\n"
+            "  3. Multiply by grid-cell area A and sum over spatial dims -> dV/dt in m^3/s\n"
+            "  4. If mode='fractional', divide by IV (with IV floor) -> fractional rate in 1/s\n"
+            "  5. Convert to requested output units (per_day vs per_second) and (if absolute) km^3 scaling"
+        )
+
+        # ---- unit-aware conversion to m/s ----
+        def _to_m_per_s(da: xr.DataArray) -> xr.DataArray:
+            if assume_units != "auto":
+                u = assume_units.lower()
+            else:
+                u = str(da.attrs.get("units", "")).strip().lower()
+
+            # Common CICE cases
+            if ("cm" in u) and ("/day" in u or "d-1" in u or "day-1" in u):
+                # cm/day -> m/s
+                return da * 1e-2 / 86400.0
+            if ("m" in u) and ("/day" in u or "d-1" in u or "day-1" in u):
+                # m/day -> m/s
+                return da / 86400.0
+            if ("cm" in u) and ("/s" in u or "s-1" in u):
+                # cm/s -> m/s
+                return da * 1e-2
+            if ("m" in u) and ("/s" in u or "s-1" in u):
+                # m/s -> m/s
+                return da
+
+            # Fallback to your existing helper if available
+            if hasattr(self, "thickness_tendency_to_mps"):
+                self.logger.debug("  • units not recognised; falling back to self.thickness_tendency_to_mps(DVT)")
+                return self.thickness_tendency_to_mps(da)
+
+            raise ValueError(f"Could not infer DVT units='{da.attrs.get('units','')}'. "
+                            f"Set assume_units='cm/day'|'m/day'|'m/s' or implement thickness_tendency_to_mps().")
+
+        DVT_mps = _to_m_per_s(DVT)
+
+        # ---- optional SIC mask ----
+        if SIC is not None:
+            mask = (SIC > float(sic_threshold))
+            DVT_mps = DVT_mps.where(mask)
+
+        # ---- integrate: (m/s)*m^2 -> m^3/s ----
+        dV_dt_m3_s = (DVT_mps * A).sum(dim=spatial_dim_names)
+
+        if mode == "fractional":
+            IV_safe = IV.where(IV > float(IV_min_m3))
+            rate = dV_dt_m3_s / IV_safe  # 1/s
+            rate.attrs["long_name"] = "Hemisphere fractional ice-volume tendency rate"
+            rate.attrs["units"] = "1/s"
+            rate.attrs["IV_min_m3"] = float(IV_min_m3)
+        else:
+            # absolute: m^3/s -> km^3/s
+            rate = dV_dt_m3_s / 1e9
+            rate.attrs["long_name"] = "Hemisphere absolute ice-volume tendency rate"
+            rate.attrs["units"] = "km^3/s"
+
+        if out_units == "per_day":
+            rate = rate * 86400.0
+            if mode == "fractional":
+                rate.attrs["units"] = "1/day"
+            else:
+                rate.attrs["units"] = "km^3/day"
+
+        if mask_invalid:
+            rate = rate.where(np.isfinite(rate))
+
+        # provenance breadcrumbs
+        rate.attrs["aggregation"] = f"sum_over={spatial_dim_names}"
+        if SIC is not None:
+            rate.attrs["sic_threshold"] = float(sic_threshold)
+
+        return rate
+
+    def compute_area_weighted_strength_hpa(self,
+                                           SIC: xr.DataArray,
+                                           HI: xr.DataArray,
+                                           IS: xr.DataArray,
+                                           A: xr.DataArray,
+                                           spatial_dim_names: list | None = None,
+                                           sic_threshold: float | None = None,
+                                           hmin: float = 0.05,
+                                           assume_IS_units: str = "N/m",          # "N/m" -> divide by HI to get Pa; "Pa" -> use IS directly
+                                           mask_invalid: bool = True) -> xr.DataArray:
+        """
+        Compute an area-weighted mean ice "pressure-equivalent" in hectopascals (hPa).
+
+        This is a robust hemispheric aggregate designed to avoid two common pathologies:
+        1) **summing** a pressure-like field instead of averaging (domain-size dependence),
+        2) **division-by-small-thickness** spikes (handled via `hmin` and masking).
+
+        The calculation proceeds as:
+        - Define a valid-ice mask: SIC > sic_threshold AND HI > hmin AND finite(IS)
+        - Convert the internal strength variable to a pressure-like field in Pa:
+            * if IS is in N/m, then P = IS / HI  (Pa)
+            * if IS is already in Pa, then P = IS
+        - Compute an area-weighted mean:
+            P_mean = sum(P * A) / sum(A)   over the masked region
+        - Convert Pa -> hPa (divide by 100)
+
+        Parameters
+        ----------
+        SIC : xr.DataArray
+            Sea ice concentration [0–1].
+        HI : xr.DataArray
+            Sea ice thickness [m].
+        IS : xr.DataArray
+            Internal ice strength field. Expected units depend on `assume_IS_units`:
+            - "N/m": common for CICE strength diagnostics; converted to Pa via division by HI.
+            - "Pa" : if your diagnostic is already pressure-like.
+        A : xr.DataArray
+            Grid-cell area [m^2], broadcastable to SIC/HI/IS.
+        spatial_dim_names : list[str], optional
+            Spatial dimensions to reduce over. Defaults to `self.CICE_dict["spatial_dims"]`.
+        sic_threshold : float, optional
+            Concentration threshold for including cells. Defaults to `self.icon_thresh`.
+        hmin : float, default 0.05
+            Minimum thickness (m) required to include a cell. Prevents spikes from dividing by
+            very small HI and excludes near-zero ice.
+        assume_IS_units : {"N/m","Pa"}, default "N/m"
+            Controls conversion to Pa.
+        mask_invalid : bool, default True
+            If True, masks non-finite values after calculation.
+
+        Returns
+        -------
+        xr.DataArray
+            Area-weighted mean pressure-equivalent in hPa.
+
+        Notes
+        -----
+        - This is an *analysis* diagnostic: it translates a CICE internal strength-like quantity
+        into a pressure-equivalent for hemispheric comparison. Interpret with care.
+        - If you want the same mask to be applied across multiple experiments, pass a common mask
+        or use a common SIC/HI selection upstream.
+        """
+        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
+        sic_threshold = sic_threshold if sic_threshold is not None else self.icon_thresh
+
+        self.logger.info("Computing **AREA-WEIGHTED INTERNAL ICE PRESSURE (hPa)**")
+        self.logger.debug(f"  • SIC threshold          : {sic_threshold:.2f}")
+        self.logger.debug(f"  • HI minimum (hmin)      : {hmin:.3f} m")
+        self.logger.debug(f"  • assume_IS_units        : {assume_IS_units}")
+        self.logger.debug(f"  • Spatial dimensions     : {spatial_dim_names}")
+
+        self.logger.debug("\n[Area-Weighted Strength Steps]\n"
+                        f"  1. Build mask: (SIC > {sic_threshold:.2f}) & (HI > {hmin:.3f}) & finite(IS)\n"
+                        "  2. Convert to Pa: P = IS/HI if IS in N/m, else P = IS if already Pa\n"
+                        "  3. Area-weighted mean over mask: sum(P*A)/sum(A)\n"
+                        "  4. Convert Pa -> hPa by dividing by 100")
+
+        mask = (SIC > sic_threshold) & (HI > hmin) & np.isfinite(IS)
+
+        if assume_IS_units not in ("N/m", "Pa"):
+            raise ValueError(f"Unknown assume_IS_units='{assume_IS_units}'. Expected 'N/m' or 'Pa'.")
+
+        if assume_IS_units == "N/m":
+            P_pa = (IS / HI).where(mask)
+        else:
+            P_pa = IS.where(mask)
+
+        w = A.where(mask)
+
+        # avoid 0/0 if mask is empty
+        denom = w.sum(dim=spatial_dim_names)
+        P_pa_mean = (P_pa * w).sum(dim=spatial_dim_names) / denom
+
+        P_hpa = P_pa_mean / 100.0
+        if mask_invalid:
+            P_hpa = P_hpa.where(np.isfinite(P_hpa))
+
+        P_hpa.attrs["long_name"] = "Area-weighted internal ice pressure-equivalent"
+        P_hpa.attrs["units"] = "hPa"
+        P_hpa.attrs["sic_threshold"] = float(sic_threshold)
+        P_hpa.attrs["hmin_m"] = float(hmin)
+        P_hpa.attrs["assume_IS_units"] = assume_IS_units
+        P_hpa.attrs["aggregation"] = f"area_weighted_mean_over={spatial_dim_names}"
+
+        return P_hpa
 
     def compute_hemisphere_ice_strength(self, SIC, HI, IS,
                                         spatial_dim_names  : list  = None,
                                         sic_threshold      : float = None,
-                                        ice_strength_scale : float = 1e5):
+                                        ice_strength_scale : float = 100):
         """
         Compute hemispheric mean sea ice pressure in hectopascals (hPa), based on masked concentration,
         thickness, strength, and area fields.
@@ -1396,90 +2213,213 @@ class SeaIceMetrics:
                 "area_ever_winter"           : ttl_A/area_scale}
 
     def _prepare_BAS_coast(self,
-                           path_coast_shape  : str   =  None,
-                           crs_out           : str   = "EPSG:3031",
-                           target_spacing_km : float = 1.0):
+                        path_coast_shape: str | None = None,
+                        crs_out: str = "EPSG:3031",
+                        target_spacing_km: float = 1.0,
+                        cache_dir: str | None = None,
+                        rebuild_cache: bool = False):
         """
-        Load BAS high-res coastline polygons and build a KD-Tree of densified coastline points in a metric CRS (default EPSG:3031).
-        Caches results on `self` to avoid repeated work.
+        Load BAS high-res coastline and build a KD-tree of densified coastline points in a metric CRS.
 
-        source: https://add-catalogue.data.bas.ac.uk/records/9b4fab56-4999-4fe1-b17f-1466e41151c4.html
+        This implementation is optimised for repeated calls:
+        1) It supports an on-disk cache of densified coastline points (NPZ), keyed by:
+            (shapefile path, shapefile mtime, crs_out, target_spacing_km).
+        2) It uses Shapely 2.x `segmentize()` + `get_coordinates()` to densify in C (fast).
+            If Shapely 2.x isn't available, it falls back to a slower Python interpolation loop.
 
         Parameters
         ----------
-        shp_path : str
-            Path to the polygon shapefile (e.g., ".../add_coastline_high_res_polygon_v7_9.shp").
-        crs_out : str
-            Target projected CRS for metric distances (e.g., EPSG:3031).
-        target_spacing_km : float
-            Approx spacing along the coastline (km) for densification.
+        path_coast_shape : str, optional
+            Path to the BAS polygon coastline shapefile. Defaults to `self.BAS_dict["P_Ant_Cstln"]`.
+        crs_out : str, default "EPSG:3031"
+            Target projected CRS for metric distances.
+        target_spacing_km : float, default 1.0
+            Approx spacing along coastline for densification (km). Clipped to >= 0.1 km (100 m).
+        cache_dir : str, optional
+            Directory to store NPZ cache files. If None, uses:
+            - `self.D_cache/coast_kdtree` if `self.D_cache` exists
+            - else `~/.cache/AFIM/coast_kdtree`
+        rebuild_cache : bool, default False
+            If True, ignore any existing cache and rebuild from shapefile.
 
         Sets
         ----
-        self._coast_kdtree  : scipy.spatial.cKDTree instance in projected coords
-        self._coast_xy_proj : (x_coast, y_coast) ndarray tuple (meters)
-        self._coast_crs     : str of the projected CRS
+        self._coast_kdtree  : scipy.spatial.cKDTree
+        self._coast_xy_proj : tuple(ndarray, ndarray) of coastline points (meters)
+        self._coast_crs     : str (crs_out)
+        self._coast_cache   : str (path to cache file used, if any)
         """
-        import geopandas      as gpd
-        from scipy.spatial    import cKDTree
-        from shapely.geometry import LineString, Polygon, MultiPolygon
-        from shapely.ops      import unary_union
-        P_shp = path_coast_shape if path_coast_shape is not None else self.BAS_dict["P_Ant_Cstln"]
-        self.logger.info(f"Loading coastline polygons: {P_shp}")
+        import os
+        import hashlib
+        from pathlib import Path
+
+        import numpy as np
+        import geopandas as gpd
+        from scipy.spatial import cKDTree
+        from shapely.ops import unary_union
+
+        # --- inputs / paths ---
+        P_shp = Path(path_coast_shape) if path_coast_shape is not None else Path(self.BAS_dict["P_Ant_Cstln"])
+        if not P_shp.exists():
+            raise FileNotFoundError(f"Coastline shapefile not found: {P_shp}")
+
+        spacing_m = max(100.0, float(target_spacing_km) * 1000.0)  # >= 100 m
+
+        # --- determine cache location ---
+        if cache_dir is not None:
+            P_cache_dir = Path(cache_dir)
+        else:
+            if hasattr(self, "D_cache") and self.D_cache is not None:
+                P_cache_dir = Path(self.D_cache) / "coast_kdtree"
+            else:
+                P_cache_dir = Path.home() / ".cache" / "AFIM" / "coast_kdtree"
+        P_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- build cache key (path + mtime + crs + spacing) ---
+        mtime = os.path.getmtime(P_shp)
+        sig = f"{str(P_shp.resolve())}|{int(mtime)}|{crs_out}|{spacing_m:.3f}"
+        h = hashlib.md5(sig.encode("utf-8")).hexdigest()[:12]
+        P_npz = P_cache_dir / f"bas_coast_{h}.npz"
+
+        self.logger.info("Preparing BAS coastline KD-tree")
+        self.logger.debug(f"  • shapefile         : {P_shp}")
+        self.logger.debug(f"  • crs_out           : {crs_out}")
+        self.logger.debug(f"  • target_spacing_km : {target_spacing_km}")
+        self.logger.debug(f"  • spacing_m         : {spacing_m:.1f}")
+        self.logger.debug(f"  • cache_file        : {P_npz}")
+        self.logger.debug(f"  • rebuild_cache     : {rebuild_cache}")
+
+        # --- fast path: load cached points ---
+        if P_npz.exists() and not rebuild_cache:
+            self.logger.info(f"Coast cache hit: {P_npz.name}")
+            z = np.load(P_npz)
+            x_coast = z["x"].astype(float, copy=False)
+            y_coast = z["y"].astype(float, copy=False)
+            kdt = cKDTree(np.column_stack([x_coast, y_coast]))
+
+            self._coast_kdtree  = kdt
+            self._coast_xy_proj = (x_coast, y_coast)
+            self._coast_crs     = crs_out
+            self._coast_cache   = str(P_npz)
+            self.logger.info(f"Loaded coastline points: {x_coast.size:,} (cached)")
+            return
+
+        # --- slow path: read + densify + cache ---
+        self.logger.info(f"Coast cache miss: building from shapefile {P_shp.name}")
         gdf = gpd.read_file(P_shp)
-        # Reproject to metric CRS (EPSG:3031 by default)
+
+        # CRS handling
         if gdf.crs is None:
             self.logger.warning("Input CRS is None; assuming EPSG:4326 (lon/lat).")
             gdf = gdf.set_crs("EPSG:4326", allow_override=True)
         gdf = gdf.to_crs(crs_out)
-        # Merge polygons to avoid duplicate edges (optional but helpful)
-        self.logger.info("Merging polygons and extracting boundaries...")
-        geom = unary_union(gdf.geometry.values)  # MultiPolygon | Polygon
-        if isinstance(geom, Polygon):
-            polygons = [geom]
-        elif isinstance(geom, MultiPolygon):
-            polygons = list(geom.geoms)
-        else:
-            # In case the file already has lines, just take them
-            polygons = []
-        # Convert polygon exteriors to lines (ignore interiors/holes for coastline)
-        lines = []
-        for poly in polygons:
-            try:
-                lines.append(LineString(poly.exterior.coords))
-            except Exception:
-                pass
-        # If there are already line features in the shapefile, add them too
-        lines.extend([g for g in gdf.geometry.values if g.geom_type.lower().endswith("linestring")])
-        if not lines:
-            raise ValueError("No coastline linework could be derived from the polygons/lines in the shapefile.")
-        # Densify lines at ~target spacing
-        spacing_m = max(100.0, float(target_spacing_km) * 1000.0)  # clip at >=100 m
-        pts_x, pts_y = [], []
-        for ln in lines:
-            try:
-                length = ln.length
-                if not np.isfinite(length) or length <= 0:
+
+        # Prefer union of BOUNDARIES (linework) instead of polygon union (usually faster)
+        self.logger.info("Extracting coastline boundary linework...")
+        boundary_series = gdf.geometry.boundary
+
+        # Merge boundaries to remove duplicates (still can be expensive, but less than polygon union)
+        self.logger.info("Merging boundary linework...")
+        boundary_geom = unary_union(boundary_series.values)
+
+        # Densify
+        # Shapely 2 path: segmentize + get_coordinates (fast)
+        try:
+            import shapely  # shapely 2.x provides segmentize/get_coordinates at top-level
+
+            have_segmentize = hasattr(shapely, "segmentize") and hasattr(shapely, "get_coordinates")
+            self.logger.debug(f"  • shapely version   : {getattr(shapely, '__version__', 'unknown')}")
+            self.logger.debug(f"  • segmentize avail? : {have_segmentize}")
+
+            if have_segmentize:
+                self.logger.info("Densifying coastline using shapely.segmentize (fast path)...")
+                densified = shapely.segmentize(boundary_geom, spacing_m)
+                coords = shapely.get_coordinates(densified)  # (N,2)
+                if coords.size == 0:
+                    raise RuntimeError("Shapely densification produced zero coordinates.")
+                x_coast = coords[:, 0].astype(float, copy=False)
+                y_coast = coords[:, 1].astype(float, copy=False)
+            else:
+                raise ImportError("segmentize/get_coordinates not available")
+
+        except Exception as e:
+            # Fallback: Python interpolation along linework (slower)
+            self.logger.warning(f"Falling back to Python densification (shapely2 not available or failed): {e}")
+
+            from shapely.geometry import LineString, MultiLineString, GeometryCollection
+
+            def _iter_lines(g):
+                if g is None:
+                    return
+                gt = getattr(g, "geom_type", "").lower()
+                if gt == "linestring":
+                    yield g
+                elif gt == "multilinestring":
+                    for gg in g.geoms:
+                        yield gg
+                elif gt == "geometrycollection":
+                    for gg in g.geoms:
+                        yield from _iter_lines(gg)
+                else:
+                    # last resort: try boundary
+                    try:
+                        yield from _iter_lines(g.boundary)
+                    except Exception:
+                        return
+
+            xs, ys = [], []
+            n_lines = 0
+            for ln in _iter_lines(boundary_geom):
+                try:
+                    if ln.length <= 0 or not np.isfinite(ln.length):
+                        continue
+                    n_lines += 1
+                    n = max(2, int(np.ceil(ln.length / spacing_m)) + 1)
+                    dists = np.linspace(0.0, float(ln.length), n)
+                    for d in dists:
+                        p = ln.interpolate(d)
+                        x, y = p.coords[0]
+                        xs.append(x)
+                        ys.append(y)
+                except Exception:
                     continue
-                n = max(2, int(np.ceil(length / spacing_m)) + 1)
-                # sample [0,1] along the line
-                for f in np.linspace(0.0, 1.0, n):
-                    p = ln.interpolate(f, normalized=True)
-                    xy = p.coords[0]
-                    pts_x.append(xy[0])
-                    pts_y.append(xy[1])
-            except Exception:
-                continue
-        x_coast = np.asarray(pts_x, dtype=float)
-        y_coast = np.asarray(pts_y, dtype=float)
+
+            if len(xs) == 0:
+                raise RuntimeError("Fallback densification produced zero points.")
+            x_coast = np.asarray(xs, dtype=float)
+            y_coast = np.asarray(ys, dtype=float)
+            self.logger.info(f"Fallback densified {n_lines} lines -> {x_coast.size:,} points")
+
+        # Optional de-duplication (helps reduce KD-tree size if union missed duplicates)
+        # Keep it cheap: round to 1 m and unique.
+        self.logger.debug("De-duplicating coastline points (rounded to 1 m)...")
+        coords_i = np.column_stack([np.round(x_coast, 0), np.round(y_coast, 0)]).astype(np.int64, copy=False)
+        # Unique rows (stable-ish)
+        _, idx = np.unique(coords_i, axis=0, return_index=True)
+        idx.sort()
+        x_coast = x_coast[idx]
+        y_coast = y_coast[idx]
+
         if x_coast.size == 0:
-            raise RuntimeError("Coastline densification produced zero points.")
-        self.logger.info(f"Built coastline point set: {x_coast.size:,} pts @ ~{target_spacing_km} km spacing.")
+            raise RuntimeError("Coastline point set is empty after processing.")
+
+        self.logger.info(f"Built coastline point set: {x_coast.size:,} pts @ ~{target_spacing_km} km spacing")
+
+        # Build KD-tree
         kdt = cKDTree(np.column_stack([x_coast, y_coast]))
-        # Cache
+
+        # Cache to disk
+        try:
+            np.savez_compressed(P_npz, x=x_coast.astype(np.float64), y=y_coast.astype(np.float64))
+            self.logger.info(f"Wrote coast cache: {P_npz}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write coast cache '{P_npz}': {e}")
+
+        # Cache on self
         self._coast_kdtree  = kdt
         self._coast_xy_proj = (x_coast, y_coast)
         self._coast_crs     = crs_out
+        self._coast_cache   = str(P_npz)
 
     def persistence_ice_distance_mean_max(self, ice_prstnc,
                                           persistence_threshold : float = 0.8,
@@ -1562,9 +2502,24 @@ class SeaIceMetrics:
             self.logger.warning("No persistent fast-ice cells found at this threshold.")
             return {"persistence_mean_distance": float('nan'),
                     "persistence_max_distance":  float('nan')}
-        lon = np.asarray(Gt[lon_name].values)
-        lat = np.asarray(Gt[lat_name].values)
-        transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
+        # cache dict on self
+        if not hasattr(self, "_grid_xy_cache"):
+            self._grid_xy_cache = {}
+        # key includes CRS + grid shape + hemisphere slicing state (shape is usually enough)
+        proj_key = (crs_out, lon_name, lat_name, tuple(Gt[lon_name].shape))
+        if proj_key in self._grid_xy_cache:
+            self.logger.debug(f"Using cached projected grid coords for {crs_out}")
+            x_all, y_all = self._grid_xy_cache[proj_key]
+        else:
+            self.logger.info(f"Projecting grid lon/lat -> {crs_out} (cached thereafter)")
+            lon = np.asarray(Gt[lon_name].values)
+            lat = np.asarray(Gt[lat_name].values)
+            transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
+            x_all, y_all = transformer.transform(lon, lat)
+            self._grid_xy_cache[proj_key] = (x_all, y_all)
+        # lon = np.asarray(Gt[lon_name].values)
+        # lat = np.asarray(Gt[lat_name].values)
+        # transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
         x_all, y_all = transformer.transform(lon, lat)
         iy, ix = np.where(prst)  # spat_dims order (nj, ni)
         x_p = x_all[iy, ix]

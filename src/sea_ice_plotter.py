@@ -267,86 +267,256 @@ class SeaIcePlotter:
         #print(f"meridian center computed as {center:.2f}°")
         self.plot_meridian_center = center
         return center
+    
+    def generate_regional_annotation_stats(self, da,
+        region,
+        lon_coord_name,
+        lat_coord_name,
+        var_name,           # decimals for lat/lon in min/max
+        *, aice_da=None, u_da=None, v_da=None,
+        area_unit="1e6km2", # "km2" or "1e6km2"
+        vol_unit="1e3km3",
+        vel_unit="cm/s",
+        loc_ndp=3):
+        def _area_scale(area_m2):
+            if area_unit == "km2":
+                return area_m2 / 1e6, "km^2"
+            elif area_unit == "1e6km2":
+                return area_m2 / 1e12, "10^6 km^2"
+            else:
+                return area_m2, "m^2"
 
-    def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name):
-        """
-        Generate summary statistics (mean, std, min, max) and their locations within a geographic region.
+        def _vol_scale(vol_m3):
+            if vol_unit == "km3":
+                return vol_m3 / 1e9, "km^3"
+            elif vol_unit == "1e3km3":
+                return vol_m3 / 1e12, "10^3 km^3"
+            else:
+                return vol_m3, "m^3"
 
-        This helper function extracts the portion of a 2D `xarray.DataArray` that falls within a given 
-        geographic bounding box, computes spatial statistics on valid (non-NaN) values, and formats 
-        the results for annotation in PyGMT plots.
+        def _fmt_loc(latv, lonv):
+            return f"({latv:.{loc_ndp}f}, {lonv:.{loc_ndp}f})"
 
-        Parameters
-        ----------
-        da : xarray.DataArray
-            2D gridded data array (e.g., fast ice persistence) with latitude and longitude coordinates.
-        region : list or tuple of float
-            Bounding box for the region in the form [lon_min, lon_max, lat_min, lat_max].
-        lon_coord_name : str
-            Name of the longitude coordinate in `da` (e.g., 'TLON').
-        lat_coord_name : str
-            Name of the latitude coordinate in `da` (e.g., 'TLAT').
+        lon = da[lon_coord_name]
+        lat = da[lat_coord_name]
 
-        Returns
-        -------
-        list of str
-            Formatted text lines with:
-            - Mean
-            - Standard deviation
-            - Data extent (number of valid grid cells)
-            - Minimum value and its lat/lon location
-            - Maximum value and its lat/lon location
+        # Basic coordinate sanity
+        if (not np.isfinite(lon).any()) or (not np.isfinite(lat).any()):
+            return ["(no valid lon/lat coords)"]
 
-        Notes
-        -----
-        - Longitude and latitude slices are derived using `np.searchsorted`, assuming monotonic grid coordinates.
-        - Only finite (non-NaN) values are included in statistics.
-        - Output is intended to be used directly in `fig.text()` or `fig.legend()` in PyGMT plotting routines.
+        lon0, lon1, lat0, lat1 = region
 
-        Examples
-        --------
-        >>> stats = self.generate_regional_annotation_stats(FIP_DA, region=[0, 90, -75, -60], lon_coord_name='TLON', lat_coord_name='TLAT')
-        >>> for line in stats:
-        >>>     print(line)
-        Mean: 0.73
-        Std: 0.18
-        Extent: 1246
-        Min:  0.02 at (-68.41, 23.65)
-        Max: 1.00 at (-66.82, 45.12)
-        """
-        # Get the latitude and longitude coordinates (TLAT, TLON)
-        da_lats    = da[lat_coord_name].values
-        da_lons    = da[lon_coord_name].values
-        lon_min_ni = np.searchsorted(da_lons[0, :], region[0])
-        lon_max_ni = np.searchsorted(da_lons[0, :], region[1])        
-        lat_min_nj = np.searchsorted(da_lats[:, 0], region[2])
-        lat_max_nj = np.searchsorted(da_lats[:, 0], region[3])
-        da_sliced  = da.isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        lon_sliced = da[lon_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        lat_sliced = da[lat_coord_name].isel(nj=slice(lat_min_nj, lat_max_nj), ni=slice(lon_min_ni, lon_max_ni))
-        # Get the data, latitudes, and longitudes
-        data       = da_sliced.values.flatten()
-        lat        = lat_sliced.values.flatten()
-        lon        = lon_sliced.values.flatten()
-        valid_mask = ~np.isnan(data)
-        data_valid = data[valid_mask]
-        lat_valid  = lat[valid_mask]
-        lon_valid  = lon[valid_mask]
-        # Calculate statistics
-        spatial_mean   = np.mean(data_valid)
-        spatial_std    = np.std(data_valid)
-        spatial_extent = len(data_valid)
-        data_min       = np.min(data_valid)
-        data_max       = np.max(data_valid)
-        # Get min/max locations (lat, lon)
-        min_index    = np.argmin(data_valid)
-        max_index    = np.argmax(data_valid)
-        min_location = (lat_valid[min_index], lon_valid[min_index])
-        max_location = (lat_valid[max_index], lon_valid[max_index])
-        # Format text to display
-        text  = [f"Mean: {spatial_mean:.2f}", f"Std: {spatial_std:.2f}", f"Extent: {spatial_extent}"]
-        text += [f"Min:  {data_min:.2f} at {min_location}", f"Max: {data_max:.2f} at {max_location}"]
-        return text
+        # Dateline-safe lon mask
+        if lon0 <= lon1:
+            m_lon = (lon >= lon0) & (lon <= lon1)
+        else:
+            m_lon = (lon >= lon0) | (lon <= lon1)
+
+        m_reg = m_lon & (lat >= lat0) & (lat <= lat1)
+
+        # Ensure grid area available
+        if not hasattr(self, "G_t") or ("area" not in self.G_t):
+            self.load_cice_grid()
+        area = self.G_t["area"]
+
+        # Align core fields
+        da2, lon2, lat2, area2, m_reg2 = xr.align(da, lon, lat, area, m_reg, join="inner")
+
+        # -------------------------
+        # aice special case (unchanged logic)
+        # -------------------------
+        if var_name == "aice":
+            da_reg = da2.where(m_reg2)
+
+            thr = float(self.icon_thresh)
+            ice_cells = da_reg > thr
+
+            if int(ice_cells.sum().values) == 0:
+                sie_val, sie_unit = _area_scale(0.0)
+                sia_val, sia_unit = _area_scale(0.0)
+                return [f"SIE: {sie_val:.2f} {sie_unit}",
+                        f"SIA: {sia_val:.2f} {sia_unit}",
+                        "Mean aice (ice cells): NaN",
+                        "Std aice (ice cells): NaN",
+                        f"Cells (aice>{thr:g}): 0"]
+
+            sie_m2 = area2.where(ice_cells).sum(skipna=True)
+            sia_m2 = (da_reg.clip(0, 1) * area2).sum(skipna=True)
+
+            aice_mean = da_reg.where(ice_cells).mean(skipna=True)
+            aice_std  = da_reg.where(ice_cells).std(skipna=True)
+            n_cells   = int(ice_cells.sum().values)
+
+            sie_val, sie_unit = _area_scale(float(sie_m2.values))
+            sia_val, sia_unit = _area_scale(float(sia_m2.values))
+
+            return [
+                f"SIE: {sie_val:.2f} {sie_unit}",
+                f"SIA: {sia_val:.2f} {sia_unit}",
+                f"Mean aice (ice cells): {float(aice_mean.values):.2f}",
+                f"Std aice (ice cells): {float(aice_std.values):.2f}",
+                f"Cells (aice>{float(self.icon_thresh):g}): {n_cells}",
+            ]
+
+        # -------------------------
+        # hi special case
+        # -------------------------
+        if var_name == "hi":
+            hi_reg = da2.where(m_reg2)
+
+            # Prefer defining "ice cells" using aice>icon_thresh for consistency with SIE/SIA/SIV
+            if aice_da is not None:
+                aice2, = xr.align(aice_da, hi_reg, join="inner")[:1]  # align to same grid/time
+                aice_reg = aice2.where(m_reg2)
+
+                thr = float(self.icon_thresh)
+                ice_cells = aice_reg > thr
+
+                if int(ice_cells.sum().values) == 0:
+                    sie_val, sie_unit = _area_scale(0.0)
+                    sia_val, sia_unit = _area_scale(0.0)
+                    siv_val, siv_unit = _vol_scale(0.0)
+                    return [f"SIE: {sie_val:.2f} {sie_unit}",
+                            f"SIA: {sia_val:.2f} {sia_unit}",
+                            f"SIV: {siv_val:.2f} {siv_unit}",
+                            "Mean SIT (SIV/SIA): NaN",
+                            "Median hi (ice cells): NaN",
+                            "P90 hi (ice cells): NaN",
+                            "Max hi: NaN at (NaN, NaN)"]
+
+                sie_m2 = area2.where(ice_cells).sum(skipna=True)
+                sia_m2 = (aice_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
+
+                # Ice volume: hi * aice * area (most defensible for CICE aggregate hi)
+                siv_m3 = (hi_reg.clip(min=0) * aice_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
+
+                sie_val, sie_unit = _area_scale(float(sie_m2.values))
+                sia_val, sia_unit = _area_scale(float(sia_m2.values))
+                siv_val, siv_unit = _vol_scale(float(siv_m3.values))
+
+                mean_sit = float((siv_m3 / (sia_m2 * 1.0)).values)  # m (since siv: m^3, sia: m^2)
+
+                # Distribution over ice cells (unweighted)
+                v = hi_reg.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
+                med = float(v.quantile(0.50).values)
+                p90 = float(v.quantile(0.90).values)
+
+                # Max thickness + location
+                zmax = v.idxmax("z").values
+                lon_s = lon2.stack(z=("nj", "ni"))
+                lat_s = lat2.stack(z=("nj", "ni"))
+                vmax  = float(v.sel(z=zmax).values)
+                max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
+
+                return [
+                    f"SIE: {sie_val:.2f} {sie_unit}",
+                    f"SIA: {sia_val:.2f} {sia_unit}",
+                    f"SIV: {siv_val:.2f} {siv_unit}",
+                    f"Mean SIT (SIV/SIA): {mean_sit:.2f} m",
+                    f"Median hi (ice cells): {med:.2f} m",
+                    f"P90 hi (ice cells): {p90:.2f} m",
+                    f"Max hi: {vmax:.2f} m at {_fmt_loc(*max_loc)}",
+                ]
+            # -------------------------
+            # Special case: ice speed magnitude (ispd)
+            # -------------------------
+            if var_name == "ispd":
+                if aice_da is None:
+                    return ["(need aice_da for ispd stats: mask ice cells)"]
+
+                # Ensure grid area available
+                if not hasattr(self, "G_t") or ("area" not in self.G_t):
+                    self.load_cice_grid()
+                area = self.G_t["area"]
+
+                lon = da[lon_coord_name]
+                lat = da[lat_coord_name]
+
+                lon0, lon1, lat0, lat1 = region
+                if lon0 <= lon1:
+                    m_lon = (lon >= lon0) & (lon <= lon1)
+                else:
+                    m_lon = (lon >= lon0) | (lon <= lon1)
+                m_reg = m_lon & (lat >= lat0) & (lat <= lat1)
+
+                # Align da (speed), aice, area, and region mask
+                da2, a2, area2, m2 = xr.align(da, aice_da, area, m_reg, join="inner")
+
+                da_reg = da2.where(m2)
+                a_reg  = a2.where(m2)
+
+                thr = float(self.icon_thresh)
+                ice_cells = (a_reg > thr) & np.isfinite(da_reg)
+
+                n_cells = int(ice_cells.sum().values)
+                if n_cells == 0:
+                    return [f"Cells (aice>{thr:g}): 0"]
+
+                # area metrics
+                sie_m2 = area2.where(ice_cells).sum(skipna=True)
+                sia_m2 = (a_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
+
+                sie_val, sie_unit = _area_scale(float(sie_m2.values))
+                sia_val, sia_unit = _area_scale(float(sia_m2.values))
+
+                # speed stats (m/s)
+                mean_spd = float(da_reg.where(ice_cells).mean(skipna=True).values)
+                med_spd  = float(da_reg.where(ice_cells).quantile(0.5, skipna=True).values)
+                p90_spd  = float(da_reg.where(ice_cells).quantile(0.9, skipna=True).values)
+
+                # max speed + location
+                v = da_reg.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
+                zmax = v.idxmax("z").values
+
+                lon_s = lon.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
+                lat_s = lat.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
+
+                vmax = float(v.sel(z=zmax).values)
+                max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
+
+                def _fmt_loc(latv, lonv):
+                    return f"({latv:.{loc_ndp}f}, {lonv:.{loc_ndp}f})"
+
+                return [
+                    f"SIE: {sie_val:.2f} {sie_unit}",
+                    f"SIA: {sia_val:.2f} {sia_unit}",
+                    f"Mean speed (ice): {mean_spd:.2f} m/s",
+                    f"Median speed (ice): {med_spd:.2f} m/s",
+                    f"P90 speed (ice): {p90_spd:.2f} m/s",
+                    f"Max speed (ice): {vmax:.2f} m/s at {_fmt_loc(*max_loc)}",
+                    f"Cells (aice>{thr:g}): {n_cells}",
+                ]
+        # -------------------------
+        # Default (other vars): your existing min/max logic is fine
+        # -------------------------
+        da_reg = da2.where(m_reg2)
+        v = da_reg.stack(z=("nj", "ni")).dropna("z")
+        if v.size == 0:
+            return ["(no valid data in region)"]
+
+        mean_v = float(v.mean().values)
+        std_v  = float(v.std().values)
+        n      = int(v.size)
+
+        zmin = v.idxmin("z").values
+        zmax = v.idxmax("z").values
+
+        lon_s = lon2.stack(z=("nj", "ni"))
+        lat_s = lat2.stack(z=("nj", "ni"))
+
+        vmin = float(v.sel(z=zmin).values)
+        vmax = float(v.sel(z=zmax).values)
+
+        min_loc = (float(lat_s.sel(z=zmin).values), float(lon_s.sel(z=zmin).values))
+        max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
+
+        return [
+            f"Mean: {mean_v:.2f}",
+            f"Std: {std_v:.2f}",
+            f"Cells: {n}",
+            f"Min: {vmin:.2f} at {_fmt_loc(*min_loc)}",
+            f"Max: {vmax:.2f} at {_fmt_loc(*max_loc)}",
+        ]
 
     def extract_min_max_dates(self, ts_dict, keys2plot=None, primary_key='FIA', time_coord='time'):
         """
@@ -890,24 +1060,21 @@ class SeaIcePlotter:
             "and da has no nj/ni coords for subsetting."
         )
 
-    def pygmt_da_prep(
-        self,
-        da: xr.DataArray,
-        *,
-        bcoords: bool = False,
-        tcoords: bool = True,
-        lon_coord_name: str | None = None,
-        lat_coord_name: str | None = None,
-        region: tuple[float, float, float, float] | None = None,
-        lon_wrap: str = "auto",   # "auto" | "0-360" | "-180-180"
-        extra_mask=None,
-        mask_zero: bool | None = None,
-        z_clip: tuple[float, float] | None = None,
-        z_range_mask: tuple[float, float] | None = None,
-        dtype: str = "float32",
-        infer_coords: bool = True,
-        return_mask: bool = True,         # NEW
-        return_flat_index: bool = True):
+    def pygmt_da_prep(self, da: xr.DataArray, *,
+                      bcoords           : bool = False,
+                      tcoords           : bool = True,
+                      lon_coord_name    : str | None = None,
+                      lat_coord_name    : str | None = None,
+                      region            : tuple[float, float, float, float] | None = None,
+                      lon_wrap          : str = "auto",   # "auto" | "0-360" | "-180-180"
+                      extra_mask        : xr.DataArray = None,
+                      mask_zero         : bool | None = None,
+                      z_clip            : tuple[float, float] | None = None,
+                      z_range_mask      : tuple[float, float] | None = None,
+                      dtype             : str = "float32",
+                      infer_coords      : bool = True,
+                      return_mask       : bool = True,         # NEW
+                      return_flat_index : bool = True):
         """
         Prepare a 2D DataArray for PyGMT plotting by returning 1D lon/lat/z vectors.
 
@@ -1098,6 +1265,7 @@ class SeaIcePlotter:
         return out
 
     def pygmt_map_plot_one_var(self, da, var_name,
+                               aux_ds         = None,
                                sim_name       = None,
                                plot_regions   = None,
                                regional_dict  = None,
@@ -1112,10 +1280,8 @@ class SeaIcePlotter:
                                cbar_units     = None,
                                extend_cbar    = False,
                                cbar_position  = None,
-                               lon_coord_name = None,
-                               lat_coord_name = None,
-                               use_bcoords    = False,
-                               use_tcoords    = False,
+                               lon_name       = None,
+                               lat_name       = None,
                                fig_size       = None,
                                var_sq_size    = 0.2,
                                GI_sq_size     = 0.1,
@@ -1145,6 +1311,7 @@ class SeaIcePlotter:
             Input 2D (or broadcastable) data array to be plotted, e.g., fast ice persistence.
         var_name : str
             Name of the variable to be plotted. Used to look up color map settings and labels.
+        aux_ds  : optional Dataset containing auxiliaries (e.g. aice) aligned with da
         sim_name : str, optional
             Simulation name used for file naming and figure annotation. Defaults to `self.sim_name`.
         plot_regions : int or None, optional
@@ -1176,9 +1343,9 @@ class SeaIcePlotter:
             Whether to add extension arrows to colorbar.
         cbar_position : str, optional
             PyGMT-compatible position string for placing the colorbar.
-        lon_coord_name : str, optional
+        lon_name : str, optional
             Longitude coordinate name in `da`. Defaults to `self.pygmt_dict`.
-        lat_coord_name : str, optional
+        lat_name : str, optional
             Latitude coordinate name in `da`. Defaults to `self.pygmt_dict`.
         fig_size : float, optional
             Figure width in centimeters for hemispheric plot.
@@ -1236,8 +1403,8 @@ class SeaIcePlotter:
         show_fig    = show_fig      if show_fig      is not None else self.show_fig
         ow_fig      = overwrite_fig if overwrite_fig is not None else self.ow_fig
         time_stamp  = time_stamp    if time_stamp    is not None else self.dt0_str
-        #lon_coord_name = lon_coord_name if lon_coord_name is not None else self.pygmt_dict.get("lon_coord_name", "TLON")
-        #lat_coord_name = lat_coord_name if lat_coord_name is not None else self.pygmt_dict.get("lat_coord_name", "TLAT")
+        lon_name    = lon_name      if lon_name      is not None else self.pygmt_dict.get("lon_coord_name", "TLON")
+        lat_name    = lat_name      if lat_name      is not None else self.pygmt_dict.get("lat_coord_name", "TLAT")
         cmap        = cmap          if cmap          is not None else self.plot_var_dict[var_name]['cmap']
         series      = series        if series        is not None else self.plot_var_dict[var_name]['series']
         reverse     = reverse       if reverse       is not None else self.plot_var_dict[var_name]['reverse']
@@ -1247,27 +1414,35 @@ class SeaIcePlotter:
         cbar_pos    = cbar_position if cbar_position is not None else self.pygmt_dict['cbar_pos'].format(width=fig_size*0.8,height=0.75)
         land_color  = land_color    if land_color    is not None else self.pygmt_dict['land_color']
         water_color = water_color   if water_color   is not None else self.pygmt_dict['water_color']
+        # Accept Dataset directly
+        if isinstance(da, xr.Dataset):
+            ds = da
+            da = ds[var_name]
+        else:
+            ds = aux_ds  # may be None
+        aice_da = None
+        u_da = None
+        v_da = None
+        if aux_ds is not None:
+            if "aice" in aux_ds: aice_da = aux_ds["aice"]
+            if "uvel" in aux_ds: u_da = aux_ds["uvel"]
+            if "vvel" in aux_ds: v_da = aux_ds["vvel"]
         if var_out is None:
             var_out = var_name
         if plot_iceshelves:
-            ANT_IS = self.load_ice_shelves()
+            if not hasattr(self, "_ANT_IS"):
+                self._ANT_IS = self.load_ice_shelves()
+            ANT_IS = self._ANT_IS
         if plot_bathymetry:
-            SO_BATH = self.load_IBCSO_bath()
-        if lon_coord_name is not None or lat_coord_name is not None:
-            plot_data_dict = self.pygmt_da_prep(da,
-                                                bcoords        = False,
-                                                tcoords        = False,
-                                                lon_coord_name = lon_coord_name,
-                                                lat_coord_name = lat_coord_name)
-        else:
-            if use_bcoords and use_tcoords:
-                raise ValueError("Cannot set both use_bcoords and use_tcoords to True")
-            plot_data_dict = self.pygmt_da_prep(da,
-                                                bcoords        = use_bcoords,
-                                                tcoords        = use_tcoords,
-                                                lon_coord_name = None,
-                                                lat_coord_name = None)
-        required_keys = ['lon', 'lat', 'z']
+            if not hasattr(self, "_SO_BATH"):
+                self._SO_BATH = self.load_IBCSO_bath()
+            SO_BATH = self._SO_BATH
+        required_keys  = ['lon', 'lat', 'z']
+        plot_data_dict = self.pygmt_da_prep(da,
+                                            bcoords        = False,
+                                            tcoords        = False,
+                                            lon_coord_name = lon_name,
+                                            lat_coord_name = lat_name)
         try:
             if not isinstance(plot_data_dict, dict):
                 self.logger.warning("plot_data_dict is not a dictionary — skipping plot.")
@@ -1332,26 +1507,8 @@ class SeaIcePlotter:
                     fig.grdimage(grid=SO_BATH, cmap='geo')
                 else:
                     fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30", land=land_color, water=water_color)
-                if "diff" in var_name.lower():
-                    lat        = da[lat_coord_name].values.flatten()
-                    lon        = da[lon_coord_name].values.flatten()
-                    val        = da.values.flatten()
-                    valid_mask = ~np.isnan(val)
-                    lat_valid  = lat[valid_mask]
-                    lon_valid  = lon[valid_mask]
-                    val_valid  = val[valid_mask].astype(int)
-                    label_map  = {1: "simulation", 0: "agreement", 2: "observation"}
-                    labels     = [label_map[v] for v in val_valid]
-                    df         = pd.DataFrame({"longitude" : lon_valid,
-                                            "latitude"  : lat_valid,
-                                            "z"         : val_valid.astype(int)})
-                    pygmt.makecpt(cmap="categorical", series=[0,2,1], color_model="+cagreement,simulation,observation")
-                    fig.plot(data=df, style=f"s{var_sq_size}c", cmap=True)
-                elif "mask" in var_name.lower():
-                    fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill='red', style=f"s{var_sq_size}c")
-                else:
-                    pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
-                    fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['z'], style=f"s{var_sq_size}c", cmap=True)           
+                pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
+                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['z'], style=f"s{var_sq_size}c", cmap=True)           
                 if plot_bathymetry:
                     fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
                 if plot_GI:
@@ -1359,19 +1516,17 @@ class SeaIcePlotter:
                 if plot_iceshelves:
                     fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
                 if add_stat_annot:
-                    annot_text = self.generate_regional_annotation_stats(da, region, lon_coord_name, lat_coord_name)
+                    annot_text = self.generate_regional_annotation_stats(
+                        da, region, lon_name, lat_name, var_name,
+                        area_unit="1e6km2",
+                        aice_da=aice_da,      # <--- optional; used by hi
+                    )
                     for i, line in enumerate(annot_text):
                         try:
                             fig.text(position="TR", text=line, font="12p,Helvetica-Bold,black", justify="LM", no_clip=True, offset=f"-1/{-0.5*i}")
                         except pygmt.exceptions.GMTCLibError as e:
                             self.logger.warning(f"Error in plotting anotation text {e} -- skipping annotation")
-                if "diff" in var_name.lower():
-                    fig.colorbar(position=cbar_pos, frame=["x+l" + cbar_lab])
-                elif "mask" not in var_name.lower():
-                    try:
-                        fig.colorbar(position=cbar_pos, frame=cbar_frame)
-                    except pygmt.exceptions.GMTCLibError as e:
-                        self.logger.warning(f"Error in adding colorbar: {e} — skipping colorbar.")
+                fig.colorbar(position=cbar_pos, frame=cbar_frame)
             if P_png:
                 if not P_png.exists():
                     P_png.parent.mkdir(parents=True, exist_ok=True)
