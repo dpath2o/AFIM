@@ -1983,6 +1983,8 @@ class SeaIcePlotter:
                         xaxis_pri        : str              = None,
                         xaxis_sec        : str              = None,
                         frame_bndy       : str              = "WS",
+                        line_colors      : dict[str, str] | None = None,   # {"sim": "#RRGGBB", ...}
+                        legend_labels    : dict[str, str] | None = None,   # {"sim": "nice label", ...}
                         legend_pos       : str              = None,
                         legend_box       : str              = "+gwhite+p0.5p",
                         fmt_dt_pri       : str              = None,
@@ -2062,6 +2064,9 @@ class SeaIcePlotter:
         fmt_dt_pri = fmt_dt_pri if fmt_dt_pri is not None else "Character"
         fmt_dt_sec = fmt_dt_sec if fmt_dt_sec is not None else "Abbreviated"
         fmt_dt_map = fmt_dt_map if fmt_dt_map is not None else "o"
+        line_colors   = line_colors   or {}
+        legend_labels = legend_labels or {}
+
         # primary_key = primary_key if primary_key is not None else keys2plot[0]
         # if keys2plot is None:
         #     raise("either 'primary_key' or 'keys2plot' must be defined")
@@ -2130,6 +2135,17 @@ class SeaIcePlotter:
                 # removed option to pass 'line_clr' and 'leg_lab' with ts_dict
                 line_color = self.plot_var_dict.get(dict_key, {}).get("line_clr", f"C{i}")
                 leg_lab    = self.plot_var_dict.get(dict_key, {}).get("leg_lab", dict_key )
+                # skip if keys2plot specified
+                if keys2plot is not None and dict_key not in keys2plot:
+                    continue
+                # choose color/label: explicit override > plot_var_dict > default cycle
+                line_color = (line_colors.get(dict_key)
+                              or self.plot_var_dict.get(dict_key, {}).get("line_clr")
+                              or f"C{cnt}")
+                leg_lab    = (legend_labels.get(dict_key)
+                              or self.plot_var_dict.get(dict_key, {}).get("leg_lab")
+                              or dict_key)
+                cnt        += 1
                 self.logger.info(f"   legend label: {leg_lab}")
                 self.logger.info(f"   line color  : {line_color}")
                 if dict_key=="AF2020" and primary_key=="FIA":
@@ -2157,7 +2173,7 @@ class SeaIcePlotter:
                              y     = mean_y,
                              pen   = f"{line_pen},{line_color}",
                              label = leg_lab)
-                else:       
+                else:
                     if dict_key in repeat_keys:
                         # target x-range (union for figure)
                         t_start, t_end = tmin.normalize(), tmax.normalize()
@@ -2227,7 +2243,6 @@ class SeaIcePlotter:
             self.logger.info(f"saved figure to {P_png}")
         if show_fig:
             fig.show()
-        pygmt.clib.Session.__exit__
 
     def pygmt_map_plot_multi_var_8sectors(
         self,
