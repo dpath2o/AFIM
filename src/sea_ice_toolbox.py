@@ -1693,16 +1693,21 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             Sorted list of existing files in the range. Returns ``None`` and logs
             an info message if none are found.
         """
-        dt0 = pd.to_datetime(dt0_str)
-        dtN = pd.to_datetime(dtN_str)
-        files = []
-        for dt in pd.date_range(dt0, dtN, freq="D"):
-            fname = f"iceh.{dt.strftime('%Y-%m-%d')}.nc"
-            fpath = Path(D_iceh) / fname
-            if fpath.exists():
+        import re
+        date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
+        D_iceh  = Path(D_iceh)
+        dt0     = pd.to_datetime(dt0_str).date()
+        dtN     = pd.to_datetime(dtN_str).date()
+        files   = []
+        for fpath in D_iceh.glob("*.nc"):
+            m = date_re.search(fpath.name)
+            if not m:
+                continue
+            fdate = pd.to_datetime(m.group(1)).date()
+            if dt0 <= fdate <= dtN:
                 files.append(fpath)
         if not files:
-            self.logger.info(f"*NO* CICE iceh.YYYY-MM-DD.nc files between the dates of {dt0_str} and {dtN_str} ... None being returned")
+            self.logger.info(f"*NO* CICE daily NetCDF files ending in .YYYY-MM-DD.nc between {dt0_str} and {dtN_str}")
             return None
         return sorted(files)
 
@@ -1790,6 +1795,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
         - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
         """
+        import re
+        date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
         from datetime    import datetime
         from collections import defaultdict
         sim_name = sim_name if sim_name is not None else self.sim_name
@@ -1804,9 +1811,13 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             self.logger.info("No CICE files found. Noting further to do here.")
             return
         for f in P_orgs:
-            dt    = datetime.strptime(f.name, "iceh.%Y-%m-%d.nc")
-            m_str = dt.strftime("%Y-%m")
-            m_grps[m_str].append(f)
+           m = date_re.search(f.name)
+           if not m:
+               self.logger.warning(f"Skipping unrecognized filename: {f.name}")
+               continue
+           dt = datetime.strptime(m.group(1), "%Y-%m-%d")
+           m_str = dt.strftime("%Y-%m")
+           m_grps[m_str].append(f)
         P_iceh_zarr = Path(self.D_zarr, "iceh_daily.zarr")
         for m_str, P_ in m_grps.items():
             P_iceh_zarr_group = Path(P_iceh_zarr, m_str)
@@ -1817,12 +1828,23 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                     continue
             else:
                 self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
+                # CICE_all = xr.open_mfdataset(P_,
+                #                              engine   = netcdf_engine,
+                #                              parallel = True,
+                #                              combine  = "by_coords",
+                #                              cache    = True,
+                #                              chunks   = {})
                 CICE_all = xr.open_mfdataset(P_,
-                                             engine   = netcdf_engine,
-                                             parallel = True,
-                                             combine  = "by_coords",
-                                             cache    = True,
-                                             chunks   = {})
+                                             engine     = netcdf_engine,
+                                             parallel   = True,
+                                             combine    = "nested",
+                                             concat_dim = "time",
+                                             coords     = "minimal",
+                                             data_vars  = "minimal",
+                                             compat     = "override",
+                                             join       = "override",
+                                             cache      = False,
+                                             chunks     = self.CICE_dict["FI_chunks"])
                 CICE_all = CICE_all.chunk(self.CICE_dict['FI_chunks'])
                 self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
                 CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
@@ -1933,7 +1955,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             zarr_months = sorted(D_zarr.glob("iceh_????-??.zarr"))
             for P_zarr in zarr_months:
                 self.monthly_zarr_iceh_time_correction(P_zarr, dry_run=dry_run)
-                
+
     def _get_zarr_group_index(self, zarr_root):
         """
         Index available Zarr groups under a root store and cache the results.
@@ -1971,34 +1993,23 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         avoid repeated filesystem scans and metadata opens.
         """
         key = str(zarr_root)
-
         if not hasattr(self, "_zarr_group_index"):
             self._zarr_group_index = {}
-
         if key in self._zarr_group_index:
             return self._zarr_group_index[key]
-
-        groups = sorted(
-            [p.name for p in zarr_root.glob("????-??")
-            if (zarr_root / p.name / ".zgroup").exists()]
-        )
+        groups = sorted([p.name for p in zarr_root.glob("????-??")
+                         if (zarr_root / p.name / ".zgroup").exists()])
         if not groups:
             raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
-
         # Use consolidated metadata if present; else fall back
         consolidated = (zarr_root / ".zmetadata").exists()
-
         ds0 = xr.open_zarr(zarr_root, group=groups[0], consolidated=consolidated)
         dsN = xr.open_zarr(zarr_root, group=groups[-1], consolidated=consolidated)
-
         available_dt0 = pd.to_datetime(ds0.time.values[0])
         available_dtN = pd.to_datetime(dsN.time.values[-1])
-
         self._zarr_group_index[key] = (groups, available_dt0, available_dtN, consolidated)
-        self.logger.info(
-            f"Indexed Zarr root {zarr_root} (groups={len(groups)}, "
-            f"bounds={available_dt0.date()}..{available_dtN.date()}, consolidated={consolidated})"
-        )
+        self.logger.info(f"Indexed Zarr root {zarr_root} (groups={len(groups)}, "
+                         f"bounds={available_dt0.date()}..{available_dtN.date()}, consolidated={consolidated})")
         return self._zarr_group_index[key]
 
     def load_cice_zarr(self,

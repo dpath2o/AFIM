@@ -1,4 +1,153 @@
 from __future__ import annotations
+from dataclasses import dataclass
+from pathlib import Path
+import glob, re, yaml, os, shutil
+import pandas as pd
+
+@dataclass
+class SimPaths:
+    sim_name   : str
+    root       : Path             # AFIM-registered root for this sim
+    cice_files :  list[Path]      # ordered history files (daily or subdaily)
+    mom_files  : list[Path]       # ordered MOM output files (daily/monthly)
+    grid_files : dict[str, Path]  # optional: ocean_hgrid, cice grid, etc.
+    meta       : dict             # run metadata (commit hashes, start/end, etc.)
+
+class AccessOM3Run:
+    """
+    Adapter for ACCESS-OM3 Payu/NUOPC output structure -> AFIM-consumable paths.
+    Works without copying data (symlinks recommended).
+    """
+
+    def __init__(self, run_dir: str | Path):
+        self.run_dir = Path(run_dir).expanduser().resolve()
+        # If user points at sim top, try to infer work/
+        if (self.run_dir / "work").is_dir():
+            self.work = self.run_dir / "work"
+        else:
+            self.work = self.run_dir
+
+    # -------- discovery --------
+    def discover_cice(self) -> list[Path]:
+        # Common NUOPC-style names you’ve shown: access-om3.cice.h.1day.mean.YYYY-MM-DD.nc
+        patterns = [
+            str(self.work / "access-om3.cice.h.*.nc"),
+            str(self.work / "*cice*.h.*.nc"),
+            str(self.work / "iceh*.nc"),                 # fallback if it exists
+            str(self.work / "history" / "*.nc"),         # some runs keep history/ subdir
+        ]
+        files = []
+        for pat in patterns:
+            files.extend(glob.glob(pat))
+        files = sorted(set(map(str, files)))
+        files = [Path(f) for f in files if Path(f).is_file()]
+        return self._sort_by_date(files)
+
+    def discover_mom(self) -> list[Path]:
+        patterns = [
+            str(self.work / "access-om3.ocean.*.nc"),
+            str(self.work / "*mom*.nc"),
+            str(self.work / "ocean" / "*.nc"),
+        ]
+        files = []
+        for pat in patterns:
+            files.extend(glob.glob(pat))
+        files = sorted(set(map(str, files)))
+        files = [Path(f) for f in files if Path(f).is_file()]
+        return self._sort_by_date(files)
+
+    def discover_grids(self) -> dict[str, Path]:
+        grids = {}
+        # best-effort: grab any obvious grid files sitting in INPUT/ or work/
+        for cand in [
+            self.work / "INPUT" / "ocean_hgrid.nc",
+            self.work / "INPUT" / "cice_grid.nc",
+            self.work / "ocean_hgrid.nc",
+        ]:
+            if cand.is_file():
+                grids[cand.name] = cand
+        return grids
+
+    def infer_time_range(self, files: list[Path]) -> tuple[str | None, str | None]:
+        # Extract YYYY-MM-DD from filename if present
+        dates = []
+        for f in files:
+            m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
+            if m:
+                dates.append(m.group(1))
+        if not dates:
+            return None, None
+        dates = sorted(dates)
+        return dates[0], dates[-1]
+
+    # -------- registration (symlinked AFIM view) --------
+    def register_to_afim(
+        self,
+        sim_name: str,
+        afim_root: str | Path = "/g/data/gv90/da1339/afim_output",
+        mode: str = "symlink",   # "symlink" | "copy" | "none"
+    ) -> SimPaths:
+        afim_root = Path(afim_root).expanduser().resolve()
+        sim_root  = afim_root / sim_name
+        raw_root  = sim_root / "raw"
+        cice_dst  = raw_root / "cice"
+        mom_dst   = raw_root / "mom"
+        meta_dst  = sim_root / "meta"
+        for d in (cice_dst, mom_dst, meta_dst):
+            d.mkdir(parents=True, exist_ok=True)
+
+        cice_files = self.discover_cice()
+        mom_files  = self.discover_mom()
+        grids      = self.discover_grids()
+
+        # Create links/copies if requested
+        if mode in ("symlink", "copy"):
+            self._materialize(cice_files, cice_dst, mode=mode)
+            self._materialize(mom_files,  mom_dst,  mode=mode)
+
+        # Metadata to make later debugging trivial
+        c0, cN = self.infer_time_range(cice_files)
+        m0, mN = self.infer_time_range(mom_files)
+        meta = dict(
+            source_run_dir=str(self.run_dir),
+            source_work_dir=str(self.work),
+            cice_count=len(cice_files),
+            mom_count=len(mom_files),
+            cice_time_range=[c0, cN],
+            mom_time_range=[m0, mN],
+            grids={k: str(v) for k, v in grids.items()},
+            mode=mode,
+        )
+        with open(meta_dst / "runinfo.yaml", "w") as f:
+            yaml.safe_dump(meta, f, sort_keys=False)
+
+        # Return paths pointing at the registered view if we materialized; else original
+        if mode in ("symlink", "copy"):
+            cice_reg = self._sort_by_date(list(cice_dst.glob("*.nc")))
+            mom_reg  = self._sort_by_date(list(mom_dst.glob("*.nc")))
+            root = sim_root
+            return SimPaths(sim_name, root, cice_reg, mom_reg, grids, meta)
+        else:
+            # consume directly from work dir (no archive view)
+            return SimPaths(sim_name, self.work, cice_files, mom_files, grids, meta)
+
+    # -------- internals --------
+    def _materialize(self, src_files: list[Path], dst_dir: Path, mode: str):
+        for src in src_files:
+            dst = dst_dir / src.name
+            if dst.exists():
+                continue
+            if mode == "symlink":
+                os.symlink(src, dst)
+            elif mode == "copy":
+                shutil.copy2(src, dst)
+
+    def _sort_by_date(self, files: list[Path]) -> list[Path]:
+        def key(f: Path):
+            m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
+            return m.group(1) if m else f.name
+        return sorted(files, key=key)
+
 class SeaIceACCESS:
     """
     Interface to the ACCESS-NRI Intake catalog for loading ACCESS-OM* CICE daily output
@@ -281,3 +430,4 @@ class SeaIceACCESS:
                 ds_month.to_zarr(P_zarr, mode="w", consolidated=True)
             except Exception as e:
                 self.logger.error(f"Failed to write {P_zarr}: {e}")
+
