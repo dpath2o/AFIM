@@ -16,6 +16,8 @@ from sea_ice_observations   import SeaIceObservations
 from sea_ice_ACCESS         import SeaIceACCESS
 from sea_ice_gridwork       import SeaIceGridWork
 from sea_ice_regridder      import SeaIceRegridder
+from sea_ice_fast           import SeaIceFast
+from sea_ice_cice           import SeaIceCICE
 
 __all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
 
@@ -161,8 +163,9 @@ class SeaIceToolboxManager:
 
 ####################################################################################################################
 
-class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter, 
-                    SeaIceIcebergs, SeaIceObservations, SeaIceACCESS, SeaIceGridWork, SeaIceRegridder):
+class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
+                    SeaIceIcebergs, SeaIceObservations, SeaIceACCESS,
+                    SeaIceGridWork, SeaIceRegridder, SeaIceFast, SeaIceCICE):
     """
     Unified AFIM toolbox for processing and analysing Antarctic sea ice from CICE.
 
@@ -255,6 +258,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
     - Grids and regridders are not loaded/built until needed (`load_cice_grid`,
     `define_reG_weights`, etc.).
     """
+
     def summary(self):
         """
         Log a concise summary of key configuration and runtime settings.
@@ -272,13 +276,17 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.logger.info(f"Simulation Name     : {self.sim_name}")
         self.logger.info(f"Analysis Start Date : {self.dt0_str}")
         self.logger.info(f"Analysis End Date   : {self.dtN_str}")
+        self.logger.info(f"grid file           : {self.CICE_dict['P_G']}")
+        self.logger.info(f"landmask file       : {self.P_KMT_org}")
+        self.logger.info(f"Using GI?           : {self.use_gi}")
+        if self.use_gi:
+            self.logger.info(f"modified landmask file: {self.P_KMT_mod}")
         self.logger.info(f"Speed Threshold     : {self.ispd_thresh:.1e} m/s")
         self.logger.info(f"BorC-regrid Type(s) : {self.BorC2T_type}")
         self.logger.info(f"Ice Type(s)         : {self.ice_type}")
         self.logger.info(f"Mean Period         : {self.mean_period} days")
         self.logger.info(f"Binary-days Window  : {self.bin_win_days} days")
         self.logger.info(f"Binary-days Min-Days: {self.bin_min_days}")
-        self.logger.info(f"Using GI?           : {self.use_gi}")
         self.logger.info(f"Overwrite Zarr      : {self.overwrite_zarr_group}")
         self.logger.info(f"Save Figures        : {self.save_fig}")
         self.logger.info(f"Show Figures        : {self.show_fig}")
@@ -469,10 +477,10 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.icon_thresh          = ice_concentration_threshold  or self.config.get('ice_conc_thresh', 0.15)
         hemisphere                = hemisphere                   or self.config.get('hemisphere', 'south')
         self.CICE_dict['P_G']     = P_CICE_grid                  or self.CICE_dict['P_G']
-        self.overwrite_zarr_group = overwrite_zarr               
-        self.ow_fig               = overwrite_saved_figs        
-        self.save_fig             = save_new_figs                
-        self.show_fig             = show_figs                    
+        self.overwrite_zarr_group = overwrite_zarr
+        self.ow_fig               = overwrite_saved_figs
+        self.save_fig             = save_new_figs
+        self.show_fig             = show_figs
         self.del_org_cice_iceh_nc = delete_original_cice_iceh_nc
         self.leap_year            = self.config.get("leap_year"         , 1996)
         self.metrics_name         = self.config.get("metrics_name"      , "mets")
@@ -486,12 +494,12 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.D_zarr               = Path(self.D_sim , 'zarr')
         self.D_graph              = Path(self.config['D_dict']['graph'], 'AFIM')
         self.D_tmp                = Path(self.config['D_dict']['tmp'])
-        self.D_metrics            = Path(self.D_zarr, f"ispd_thresh_{self.ispd_thresh_str}", "metrics")  
-        self.sim_config           = self.parse_simulation_metadata(force_recompile=force_recompile_ice_in) 
+        self.D_metrics            = Path(self.D_zarr, f"ispd_thresh_{self.ispd_thresh_str}", "metrics")
+        self.sim_config           = self.parse_simulation_metadata(force_recompile=force_recompile_ice_in)
         self.define_hemisphere(hemisphere)
         self.define_ispd_thresh_dir()
         self.define_ice_class_name()
-        self._check_BorC2T_type(list_of_BorC2T) 
+        self._check_BorC2T_type(list_of_BorC2T)
         self._check_ice_type(ice_type)
         if extra_cice_vars is not None:
             if extra_cice_vars:
@@ -500,9 +508,12 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 self.cice_var_list = self.cice_vars_reqd + extra_cice_vars
         else:
             self.cice_var_list = self.cice_vars_reqd
-        self.FIC_scale           = self.config.get('FIC_scale', 1e9)
-        self.SIC_scale           = self.config.get('SIC_scale', 1e12)
-        self.P_KMT_org           = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
+        self.FIC_scale = self.config.get('FIC_scale', 1e9)
+        self.SIC_scale = self.config.get('SIC_scale', 1e12)
+        if self.CICE_dict['coupled']:
+            self.P_KMT_org = Path(self.CICE_dict['P_KMT'])
+        else:
+            self.P_KMT_org = Path(self.GI_dict["D_GI_thin"],self.GI_dict['KMT_org_fmt'])
         if self.sim_config is not None:
             self.GI_thin             = self.sim_config.get('GI_thin_fact')
             self.GI_version          = self.sim_config.get('GI_version')
@@ -520,7 +531,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                                                                  version   = GI_vers_str,
                                                                                  iteration = self.GI_iteration))
             else:
-                self.use_gi = False
+                self.P_KMT_mod = self.P_KMT_org
+                self.use_gi    = False
         else:
             self.GI_thin             = None
             self.GI_version          = None
@@ -537,6 +549,9 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         SeaIceACCESS.__init__(self, **kwargs)
         self.summary()
 
+    #######################################################################################################
+    #########################################        LOGGING          #####################################
+    #######################################################################################################
     def setup_logging(self, logfile=None, log_level=logging.INFO):
         """
         Configure the toolbox logger with a stream handler and optional file handler.
@@ -596,6 +611,213 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         import inspect
         return inspect.currentframe().f_back.f_code.co_name
 
+    #######################################################################################################
+    #########################################    TRIGONOMETRY       #######################################
+    #######################################################################################################
+    def radians_to_degrees(self, da):
+        """
+        Convert radians to degrees.
+
+        Parameters
+        ----------
+        da : array-like
+            Values in radians (NumPy array, xarray DataArray, or scalar).
+
+        Returns
+        -------
+        same type as `da`
+            Values converted to degrees.
+        """
+        return (da * 180) / np.pi
+
+    def cosine_vector_similarity(self, uo, vo, um, vm, eps=1e-12):
+        """
+        Compute the cosine similarity between two vector fields (e.g., observed vs. modelled velocity vectors).
+
+        This metric quantifies the directional alignment of the two vector fields without considering magnitude. 
+        A value of:
+        - +1.0 means the vectors point in exactly the same direction,
+        -  0.0 means the vectors are orthogonal (90° apart),
+        - -1.0 means the vectors point in opposite directions.
+
+        The cosine similarity is computed as the dot product of the two vectors, divided by the product of their magnitudes.
+
+        Parameters
+        ----------
+        uo, vo : xarray.DataArray
+            Components of the observed vector field (e.g., `u` and `v` velocity components) in units of m/s.
+        um, vm : xarray.DataArray
+            Components of the modelled vector field (same units as `uo`, `vo`).
+        eps : float, optional
+            Small constant to prevent division by zero in regions where either vector magnitude is near-zero. Default is 1e-12.
+
+        Returns
+        -------
+        xarray.DataArray
+            Cosine similarity between vectors, dimensionless, in the range [-1, 1].
+
+        Notes
+        -----
+        - NaNs are returned where either the observed or modelled vector magnitude is near-zero.
+        - This metric is **scale-invariant** — it compares **direction only**, not speed.
+        - Particularly useful for evaluating sea ice drift direction skill, regardless of speed bias.
+        """
+        dot_prod = um * uo + vm * vo
+        obs_mag  = np.sqrt(uo**2 + vo**2)
+        mod_mag  = np.sqrt(um**2 + vm**2)
+        return dot_prod / xr.where((obs_mag * mod_mag) < eps, np.nan, obs_mag * mod_mag)
+
+    def vector_angle_diff(self, uo, vo, um, vm):
+        """
+        Compute the signed angular difference (in radians) between two vector fields.
+
+        This metric measures the angle by which the modelled vector differs from the observed vector.
+        The difference is returned as a signed value in the range [-π, π], where:
+        -  0    indicates perfect alignment,
+        - +pi/2 indicates model is rotated 90° counter-clockwise from observation,
+        - -pi/2 indicates 90° clockwise rotation,
+        - +/-pi indicates vectors are anti-parallel.
+
+        Parameters
+        ----------
+        uo, vo : xarray.DataArray
+            Components of the observed vector field (e.g., `u` and `v` velocity components), in m/s.
+        um, vm : xarray.DataArray
+            Components of the modelled vector field (in m/s).
+
+        Returns
+        -------
+        xarray.DataArray
+            Signed angular difference (model - obs) in radians, bounded in [-pi, pi].
+
+        Notes
+        -----
+        - The angular difference is computed using `arctan2` on the vector components.
+        - Use `np.rad2deg()` to convert output to degrees, if desired.
+        - This metric is useful for directional error analysis in drift or flow fields.
+        """
+        ang_o = np.arctan2(vo, uo)
+        ang_m = np.arctan2(vm, um)
+        d     = ang_m - ang_o
+        return (d + np.pi) % (2 * np.pi) - np.pi
+
+    #######################################################################################################
+    ##################################### SEA-ICE ANALYSIS CONFIG #########################################
+    #######################################################################################################
+    def define_hemisphere(self, hemisphere):
+        """
+        Initialise hemisphere configuration used across grid slicing and plotting.
+
+        Accepts common hemisphere aliases (e.g., "south", "SH", "nh") and maps them to
+        the internal `self.hemisphere_dict` configuration (slicing indices and labels).
+        Also converts `nj_slice` from a (start, stop) tuple into a Python `slice`.
+
+        Parameters
+        ----------
+        hemisphere : str
+            Hemisphere selector. Accepted aliases include:
+            - North: "north", "northern", "nh", "n"
+            - South: "south", "southern", "sh", "s"
+
+        Sets
+        ----
+        hemisphere_dict : dict
+            Hemisphere metadata dictionary loaded from the JSON config, with `nj_slice`
+            stored as a Python `slice`.
+        hemisphere : str
+            Canonical lowercase hemisphere string used internally.
+
+        Raises
+        ------
+        ValueError
+            If `hemisphere` does not match any accepted alias.
+
+        Notes
+        -----
+        Downstream methods rely on `self.hemisphere_dict['nj_slice']` for slicing and
+        `self.hemisphere_dict['abbreviation']` for path construction.
+        """
+        key = hemisphere.lower()
+        if key in ['north', 'northern', 'nh', 'n', 'no']:
+            self.hemisphere_dict = self.hemispheres_dict['north']
+        elif key in ['south', 'southern', 'sh', 's', 'so']:
+            self.hemisphere_dict = self.hemispheres_dict['south']
+        else:
+            raise ValueError(f"Invalid hemisphere '{hemisphere}'. Valid options are: "
+                             "['north', 'south', 'northern', 'southern', 'sh', 'nh', 'SH', 'NH']")
+        start, stop = self.hemisphere_dict['nj_slice']
+        self.hemisphere_dict['nj_slice'] = slice(start, stop)
+        self.hemisphere = key
+        self.logger.info(f"hemisphere initialised: {self.hemisphere_dict['abbreviation']}")
+
+    def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
+        """
+        Translate the ice speed threshold into intuitive grid-scale metrics.
+
+        Computes:
+        - meters per day at the given speed,
+        - the **median** grid-cell edge length south of `lat_thresh` on the model
+            grid (`self.CICE_dict['P_G']`),
+        - displacement as a fraction of a grid cell per day,
+        - days required to traverse a grid cell at the threshold speed.
+
+        Parameters
+        ----------
+        ispd_thresh : float, optional
+            Threshold in m/s. Defaults to ``self.ispd_thresh``.
+        lat_thresh : float, default -60
+            Latitude (degrees) used to select the polar region for the median cell size.
+
+        Returns
+        -------
+        dict
+            Summary metrics with keys:
+            ``{'ice_speed_thresh_m_per_s', 'displacement_m_per_day',
+            'median_grid_cell_length_m', 'percent_displacement_per_day',
+            'days_per_grid_cell'}``.
+
+        Notes
+        -----
+        - Uses CICE grid variables from ``self.CICE_dict['P_G']`` (radians) and
+        converts to degrees for masking.
+        - Logs a human-readable summary via `self.logger`.
+        """
+        ispd_thresh  = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
+        m_per_day    = ispd_thresh * 86400  # meters/day
+        area_da      = xr.open_dataset( self.CICE_dict["P_G"] )['tarea']                         # [m^2]
+        lat_da       = self.radians_to_degrees( xr.open_dataset(self.CICE_dict["P_G"])['tlat'] ) # [degrees]
+        mask         = lat_da < lat_thresh
+        area_vals    = area_da.where(mask).values
+        grid_lengths = np.sqrt(area_vals)
+        grid_lengths = grid_lengths[np.isfinite(grid_lengths)]
+        if len(grid_lengths) == 0:
+            raise ValueError("No valid grid cells found south of the specified latitude.")
+        GC_len_median = np.median(grid_lengths)
+        pct_GC_disp   = m_per_day / GC_len_median
+        days_per_GC   = GC_len_median / m_per_day
+        self.logger.info(f"Ice speed threshold                        : {ispd_thresh:.1e} m/s → {m_per_day:.1f} m/day")
+        self.logger.info(f"Median grid cell length below {lat_thresh}°: {GC_len_median:.1f} m")
+        self.logger.info(f"→ Displacement                             = {pct_GC_disp*100:.2f}% of grid cell per day")
+        self.logger.info(f"→ Days to fully traverse one grid cell     : {days_per_GC:.2f} days")
+        return {"ice_speed_thresh_m_per_s"    : ispd_thresh,
+                "displacement_m_per_day"      : m_per_day,
+                "median_grid_cell_length_m"   : GC_len_median,
+                "percent_displacement_per_day": pct_GC_disp,
+                "days_per_grid_cell"          : days_per_GC}
+
+    def _check_BorC2T_type(self,BorC2T_type):
+        if isinstance(BorC2T_type, str):
+            BorC2T_type = [BorC2T_type]
+        assert all(v in self.valid_BorC2T_types for v in BorC2T_type), f"Invalid BorC2T_type: {BorC2T_type}"
+
+    def _check_ice_type(self,ice_type):
+        if isinstance(ice_type, str):
+            ice_type = [ice_type]
+        assert all(v in self.valid_ice_types for v in ice_type), f"Invalid ice_type: {ice_type}"
+
+    ##########################################################################################################
+    ################################## CICE MODEL CONFIGURATION/DIAGNOSTIRICS ################################
+    ##########################################################################################################
     def parse_simulation_metadata(self, force_recompile=False):
         """
         Parse or load simulation metadata for CICE AFIM runs.
@@ -683,52 +905,202 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             json.dump(result, f, indent=2)
         return result
 
-    def define_hemisphere(self, hemisphere):
-        """
-        Initialise hemisphere configuration used across grid slicing and plotting.
+    ##########################################################################################################
+    #############################     XARRAY/NUMPY DATASET/ARRAY EXTRACTION/WORK     ##########################
+    ##########################################################################################################
+    def align_time_coordinate_of_three_arrays(self, ds1, ds2, ds3, time_coord="time"):
+        for da in [ds1, ds2, ds3]:
+            da[time_coord] = pd.to_datetime(da[time_coord].values).normalize()
+        t_common = np.intersect1d(np.intersect1d(ds1[time_coord].values, ds2[time_coord].values), ds3[time_coord].values)
+        return ds1.sel(time=t_common), ds2.sel(time=t_common), ds3.sel(time=t_common)
 
-        Accepts common hemisphere aliases (e.g., "south", "SH", "nh") and maps them to
-        the internal `self.hemisphere_dict` configuration (slicing indices and labels).
-        Also converts `nj_slice` from a (start, stop) tuple into a Python `slice`.
+    def dict_to_ds(self, data_dict):
+        """
+        Convert a dictionary of DataArrays into an xarray.Dataset.
 
         Parameters
         ----------
-        hemisphere : str
-            Hemisphere selector. Accepted aliases include:
-            - North: "north", "northern", "nh", "n"
-            - South: "south", "southern", "sh", "s"
+        data_dict : dict
+            Mapping of variable name -> xarray.DataArray (or array-like compatible).
 
-        Sets
-        ----
-        hemisphere_dict : dict
-            Hemisphere metadata dictionary loaded from the JSON config, with `nj_slice`
-            stored as a Python `slice`.
-        hemisphere : str
-            Canonical lowercase hemisphere string used internally.
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with keys from `data_dict` as variables.
+        """
+        return xr.Dataset({k: v for k, v in data_dict.items()})
 
-        Raises
-        ------
-        ValueError
-            If `hemisphere` does not match any accepted alias.
+    def create_empty_valid_DS_dictionary(self, valid_zarr_DS_list=None):
+        """
+        Create a nested dictionary template for collecting datasets by category.
+
+        Parameters
+        ----------
+        valid_zarr_DS_list : list[str], optional
+            List of dataset keys to initialise per outer key. Defaults to `self.valid_ice_types`.
+
+        Returns
+        -------
+        collections.defaultdict
+            A defaultdict where each new outer key maps to a dict of empty lists:
+            { <outer_key>: {<ds_key_1>: [], <ds_key_2>: [], ...} }.
 
         Notes
         -----
-        Downstream methods rely on `self.hemisphere_dict['nj_slice']` for slicing and
-        `self.hemisphere_dict['abbreviation']` for path construction.
+        This is a lightweight utility for accumulating per-year/per-month objects before
+        concatenation.
         """
-        key = hemisphere.lower()
-        if key in ['north', 'northern', 'nh', 'n', 'no']:
-            self.hemisphere_dict = self.hemispheres_dict['north']
-        elif key in ['south', 'southern', 'sh', 's', 'so']:
-            self.hemisphere_dict = self.hemispheres_dict['south']
-        else:
-            raise ValueError(f"Invalid hemisphere '{hemisphere}'. Valid options are: "
-                             "['north', 'south', 'northern', 'southern', 'sh', 'nh', 'SH', 'NH']")
-        start, stop = self.hemisphere_dict['nj_slice']
-        self.hemisphere_dict['nj_slice'] = slice(start, stop)
-        self.hemisphere = key
-        self.logger.info(f"hemisphere initialised: {self.hemisphere_dict['abbreviation']}")
+        from collections import defaultdict
+        valid_DS_list = valid_zarr_DS_list if valid_zarr_DS_list is not None else self.valid_ice_types
+        return defaultdict(lambda: {k: [] for k in valid_DS_list})
 
+    def _to_float_scalar(self, x):
+        """
+        Convert a scalar-like value (NumPy/xarray) to a Python float.
+
+        Intended for outputs of reductions (e.g., `.sum()`, `.max()`) or
+        `dask.compute(...)` that yield 0-D arrays.
+
+        Parameters
+        ----------
+        x : Any
+            NumPy scalar, 0-D ndarray, or 0-D xarray object.
+
+        Returns
+        -------
+        float
+            The scalar as a Python float (including NaN if present).
+
+        Notes
+        -----
+        If a higher-dimensional array is passed accidentally, `float(np.asarray(x))`
+        will raise; callers should only pass scalar-like values.
+        """
+        # Accept numpy scalars, xarray 0-d arrays, etc.
+        if hasattr(x, "values"):
+            x = x.values
+        try:
+            return float(x.item())  # numpy scalar or 0-d array
+        except Exception:
+            return float(np.asarray(x))
+
+    def _get_first(self, ds: xr.Dataset, names) -> Optional[xr.DataArray]:
+        """
+        Return the first matching variable or coordinate from a dataset.
+
+        Parameters
+        ----------
+        ds : xarray.Dataset
+            Dataset to search.
+        names : iterable of str
+            Candidate names to check in order.
+
+        Returns
+        -------
+        xarray.DataArray or None
+            The first match found in ds.variables or ds.coords, else None.
+        """
+        for n in names:
+            if n in ds.variables:
+                return ds[n]
+            if n in ds.coords:
+                return ds.coords[n]
+        return None
+
+    def _has(self,var):
+        """
+        Return whether the wrapped input contains a variable/key/attribute named ``var``.
+
+        This helper provides a uniform “does it exist?” check across common container types
+        encountered in the sea-ice workflow (e.g., ``xarray.Dataset`` outputs, dict-like
+        objects, or lightweight objects with attributes).
+
+        Lookup precedence
+        -----------------
+        1. If ``I_data`` is an ``xarray.Dataset``: check ``var`` in ``I_data.data_vars``.
+        2. Otherwise attempt membership: ``var in I_data`` (for dict-like / list-like containers).
+        3. If membership is not supported (raises ``TypeError``): fall back to
+           ``hasattr(I_data, var)``.
+
+        Parameters
+        ----------
+        var : str
+            Variable name to test for.
+
+        Returns
+        -------
+        bool
+            ``True`` if ``var`` is present under the rules above, otherwise ``False``.
+
+        Notes
+        -----
+        - For ``xarray.Dataset``, this checks *data variables only* (not coordinates).
+          If you want coordinates too, consider checking ``(var in I_data.variables)``.
+        - The function relies on an outer-scope variable ``I_data`` (closure). If you
+          refactor to store data on the instance, replace ``I_data`` with ``self.I_data``.
+        """
+        if isinstance(I_data, xr.Dataset):
+            return var in I_data.data_vars
+        try:
+            return var in I_data
+        except TypeError:
+            return hasattr(I_data, var)
+
+    def _get(self,var):
+        """
+        Retrieve a variable/key/attribute named ``var`` from the wrapped input.
+
+        This helper provides a uniform accessor across common container types
+        (e.g., ``xarray.Dataset`` outputs, dict-like objects, or objects with attributes).
+
+        Lookup precedence
+        -----------------
+        1. If ``I_data`` is an ``xarray.Dataset``: return ``I_data[var]`` (typically an
+           ``xarray.DataArray`` or variable-like object).
+        2. Otherwise attempt key access: ``I_data[var]``.
+        3. If key access fails for any reason: fall back to attribute access
+           ``getattr(I_data, var)``.
+
+        Parameters
+        ----------
+        var : str
+            Variable name to retrieve.
+
+        Returns
+        -------
+        Any
+            The retrieved object. For ``xarray.Dataset`` this is usually an
+            ``xarray.DataArray``.
+
+        Raises
+        ------
+        KeyError
+            If ``var`` is not a key in a mapping-like ``I_data`` and attribute fallback
+            does not exist.
+        AttributeError
+            If key access fails and ``I_data`` does not have attribute ``var``.
+        Exception
+            Any exception raised by ``I_data[var]`` may be swallowed and replaced by
+            the attribute fallback attempt.
+
+        Notes
+        -----
+        - Because the fallback catches *all* exceptions from ``I_data[var]``, genuine
+          indexing errors (not just missing keys) will be masked. If you only want to
+          fall back on missing keys, narrow the exception to ``(KeyError, TypeError)``.
+        - The function relies on an outer-scope variable ``I_data`` (closure). If you
+          refactor to store data on the instance, replace ``I_data`` with ``self.I_data``.
+        """
+        if isinstance(I_data, xr.Dataset):
+            return I_data[var]
+        try:
+            return I_data[var]
+        except Exception:
+            return getattr(I_data, var)
+
+    ##########################################################################################################
+    #############################                  MASKING                          ##########################
+    ##########################################################################################################
     @staticmethod
     def _expand_bounds_slice(slc: slice, nb_len: int) -> slice:
         """
@@ -806,6 +1178,59 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         else:
             raise ValueError(f"Unsupported input type: {type(var)}. Must be dict, Dataset, or DataArray.")
 
+    def _region_mask(self, lon : xr.DataArray, lat : xr.DataArray, geo_reg : tuple[float, float, float, float], *,
+                     right_open: bool = True) -> xr.DataArray:
+        """
+        Geographic mask for [lon_min, lon_max, lat_min, lat_max].
+
+        right_open=True makes lon_max exclusive (helps avoid double-counting at boundaries).
+        """
+        lon_min, lon_max, lat_min, lat_max = geo_reg
+        m = (lon >= lon_min) & (lat >= lat_min) & (lat <= lat_max)
+        if right_open:
+            m = m & (lon < lon_max)
+        else:
+            m = m & (lon <= lon_max)
+        return m
+
+    ##########################################################################################################
+    #################################### PATH/DIRECTORY DEFINITIONS #########################################
+    ##########################################################################################################
+    def count_zarr_files(self, path):
+        """
+        Count and log the number of files under a directory tree (e.g., a Zarr store).
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Directory to count files under.
+
+        Notes
+        -----
+        This counts filesystem entries, not Zarr logical arrays. It is useful for quick
+        sanity checks and estimating metadata overhead.
+        """
+        total_files = sum(len(files) for _, _, files in os.walk(path))
+        self.logger.info(f"{path} contains {total_files} files")
+
+    def get_dir_size(self, path):
+        """
+        Compute and log the total on-disk size of a directory tree.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Directory to scan recursively.
+
+        Notes
+        -----
+        - Size is computed from file sizes returned by `Path.rglob` and may be slow on
+        large filesystems.
+        - The result is logged in GiB (1024**3).
+        """
+        size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
+        self.logger.info(f"Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
+
     def define_iceh_dirs(self, D_sim=None, iceh_freq=None):
         """
         Define the NetCDF and Zarr directories for CICE ice history ("iceh") inputs.
@@ -854,7 +1279,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         ispd_thresh        = ispd_thresh or self.ispd_thresh
         ispd_thresh_str    = f"{ispd_thresh:.1e}".replace("e-0", "e-").replace("e+0", "e+")
         self.D_ispd_thresh = Path(D_zarr, self.hemisphere_dict['abbreviation'], f"ispd_thresh_{ispd_thresh_str}")
-        
+
     def define_classification_dir(self, ice_type=None, D_zarr=None, ispd_thresh=None):
         """
         Define the output directory path for a given ice speed threshold.
@@ -874,13 +1299,13 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         D_zarr      = D_zarr      or self.D_zarr
         ice_type    = ice_type    or self.ice_type
         ispd_thresh = ispd_thresh or self.ispd_thresh
-        self._check_ice_type(ice_type) 
+        self._check_ice_type(ice_type)
         if ice_type == "SI":
             self.D_class = Path(D_zarr, self.hemisphere_dict["abbreviation"])
         else:
             self.define_ispd_thresh_dir(D_zarr=D_zarr, ispd_thresh=ispd_thresh)
             self.D_class = self.D_ispd_thresh
-            
+
     def define_classification_zarr(self,
                                    D_zarr       = None,
                                    ice_type     = None,
@@ -912,7 +1337,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.define_ice_class_meth_name(ice_type=ice_type, BorC2T_type=BorC2T_type, class_method=class_method)
         self.D_class_zarr = Path(self.D_class , f"{self.ice_class_meth}.zarr")
         return self.D_class_zarr
-        
+
     def define_metrics_zarr(self,
                             D_zarr       = None,
                             ice_type     = None,
@@ -944,7 +1369,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.define_ice_class_meth_name(ice_type=ice_type, BorC2T_type=BorC2T_type, class_method=class_method)
         self.D_mets_zarr = Path(self.D_class , f"{self.ice_class_meth}_{self.metrics_name}.zarr")
         return self.D_mets_zarr
-            
+
     def define_ice_class_name(self, ice_type=None , BorC2T_type=None):
         """
         Define the classification name string for ice type and vector component type.
@@ -976,7 +1401,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             reG_type = ''.join(BorC2T_type)
         self.ice_class = f"{ice_type}_{reG_type}"
         self.logger.debug(f" self.ice_class defined as {self.ice_class}")
-        
+
     def define_ice_class_meth_name(self, ice_type=None , BorC2T_type=None , class_method = 'binary-days'):
         """
         Define the classification name string for ice type and vector component type.
@@ -1010,7 +1435,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         else:
             self.ice_class_meth = self.ice_class
         self.logger.debug(f" self.ice_class_meth defined as {self.ice_class_meth}")
-        
+
     def define_ice_mask_name(self, ice_type=None):
         ice_type = ice_type or self.ice_type
         self._check_ice_type(ice_type)
@@ -1040,16 +1465,9 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self._check_BorC2T_type(BorC2T_type) 
         self.ispd_name = f"ispd_{BorC2T_type}"
 
-    def _check_BorC2T_type(self,BorC2T_type):
-        if isinstance(BorC2T_type, str):
-            BorC2T_type = [BorC2T_type]
-        assert all(v in self.valid_BorC2T_types for v in BorC2T_type), f"Invalid BorC2T_type: {BorC2T_type}"
-
-    def _check_ice_type(self,ice_type):
-        if isinstance(ice_type, str):
-            ice_type = [ice_type]
-        assert all(v in self.valid_ice_types for v in ice_type), f"Invalid ice_type: {ice_type}"
-
+    ##########################################################################################################
+    ####################################      NORMALISATIONS         #########################################
+    ##########################################################################################################
     def _as_da_mask(self, x):
         """
         Normalize a fast-ice mask input to an xarray.DataArray.
@@ -1119,29 +1537,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         if not isinstance(x, xr.DataArray):
             raise TypeError("A must be an xarray.DataArray or Dataset containing an area variable.")
         return x
-    
-    def _get_first(self, ds: xr.Dataset, names) -> Optional[xr.DataArray]:
-        """
-        Return the first matching variable or coordinate from a dataset.
-
-        Parameters
-        ----------
-        ds : xarray.Dataset
-            Dataset to search.
-        names : iterable of str
-            Candidate names to check in order.
-
-        Returns
-        -------
-        xarray.DataArray or None
-            The first match found in ds.variables or ds.coords, else None.
-        """
-        for n in names:
-            if n in ds.variables:
-                return ds[n]
-            if n in ds.coords:
-                return ds.coords[n]
-        return None
 
     def _norm_list(self, x: Optional[Iterable[str]]) -> Optional[List[str]]:
         """
@@ -1162,36 +1557,9 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         out = [str(s).strip() for s in x if s and str(s).strip()]
         return out or None
 
-    def _to_float_scalar(self, x):
-        """
-        Convert a scalar-like value (NumPy/xarray) to a Python float.
-
-        Intended for outputs of reductions (e.g., `.sum()`, `.max()`) or
-        `dask.compute(...)` that yield 0-D arrays.
-
-        Parameters
-        ----------
-        x : Any
-            NumPy scalar, 0-D ndarray, or 0-D xarray object.
-
-        Returns
-        -------
-        float
-            The scalar as a Python float (including NaN if present).
-
-        Notes
-        -----
-        If a higher-dimensional array is passed accidentally, `float(np.asarray(x))`
-        will raise; callers should only pass scalar-like values.
-        """
-        # Accept numpy scalars, xarray 0-d arrays, etc.
-        if hasattr(x, "values"):
-            x = x.values
-        try:
-            return float(x.item())  # numpy scalar or 0-d array
-        except Exception:
-            return float(np.asarray(x))
-
+    ##########################################################################################################
+    ####################################   DATE/TIME MANIPULATIONS   #########################################
+    ##########################################################################################################
     def define_datetime_vars(self, dt0_str=None, dtN_str=None):
         """
         Define date range attributes from start and end date strings.
@@ -1337,79 +1705,6 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         if not m: return None
         return int(m.group(1)), int(m.group(2))
 
-    def interpret_ice_speed_threshold(self, ispd_thresh=None, lat_thresh=-60):
-        """
-        Translate the ice speed threshold into intuitive grid-scale metrics.
-
-        Computes:
-        - meters per day at the given speed,
-        - the **median** grid-cell edge length south of `lat_thresh` on the model
-            grid (`self.CICE_dict['P_G']`),
-        - displacement as a fraction of a grid cell per day,
-        - days required to traverse a grid cell at the threshold speed.
-
-        Parameters
-        ----------
-        ispd_thresh : float, optional
-            Threshold in m/s. Defaults to ``self.ispd_thresh``.
-        lat_thresh : float, default -60
-            Latitude (degrees) used to select the polar region for the median cell size.
-
-        Returns
-        -------
-        dict
-            Summary metrics with keys:
-            ``{'ice_speed_thresh_m_per_s', 'displacement_m_per_day',
-            'median_grid_cell_length_m', 'percent_displacement_per_day',
-            'days_per_grid_cell'}``.
-
-        Notes
-        -----
-        - Uses CICE grid variables from ``self.CICE_dict['P_G']`` (radians) and
-        converts to degrees for masking.
-        - Logs a human-readable summary via `self.logger`.
-        """
-        ispd_thresh  = ispd_thresh if ispd_thresh is not None else self.ispd_thresh
-        m_per_day    = ispd_thresh * 86400  # meters/day
-        area_da      = xr.open_dataset( self.CICE_dict["P_G"] )['tarea']                         # [m^2]
-        lat_da       = self.radians_to_degrees( xr.open_dataset(self.CICE_dict["P_G"])['tlat'] ) # [degrees]
-        mask         = lat_da < lat_thresh
-        area_vals    = area_da.where(mask).values
-        grid_lengths = np.sqrt(area_vals)
-        grid_lengths = grid_lengths[np.isfinite(grid_lengths)]
-        if len(grid_lengths) == 0:
-            raise ValueError("No valid grid cells found south of the specified latitude.")
-        GC_len_median = np.median(grid_lengths)
-        pct_GC_disp   = m_per_day / GC_len_median
-        days_per_GC   = GC_len_median / m_per_day
-        self.logger.info(f"Ice speed threshold                        : {ispd_thresh:.1e} m/s → {m_per_day:.1f} m/day")
-        self.logger.info(f"Median grid cell length below {lat_thresh}°: {GC_len_median:.1f} m")
-        self.logger.info(f"→ Displacement                             = {pct_GC_disp*100:.2f}% of grid cell per day")
-        self.logger.info(f"→ Days to fully traverse one grid cell     : {days_per_GC:.2f} days")
-        return {"ice_speed_thresh_m_per_s"    : ispd_thresh,
-                "displacement_m_per_day"      : m_per_day,
-                "median_grid_cell_length_m"   : GC_len_median,
-                "percent_displacement_per_day": pct_GC_disp,
-                "days_per_grid_cell"          : days_per_GC}
-
-    def get_dir_size(self, path):
-        """
-        Compute and log the total on-disk size of a directory tree.
-
-        Parameters
-        ----------
-        path : str or pathlib.Path
-            Directory to scan recursively.
-
-        Notes
-        -----
-        - Size is computed from file sizes returned by `Path.rglob` and may be slow on
-        large filesystems.
-        - The result is logged in GiB (1024**3).
-        """
-        size_gb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024**3)
-        self.logger.info(f"Disk-usage (size) of directory {path}: {size_gb:.2f} GB")
-
     def create_monthly_strings(self, dt0_str=None, dtN_str=None):
         """
         Return sorted unique YYYY-MM strings between two dates (inclusive).
@@ -1433,791 +1728,9 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         dts     = pd.date_range(dt0_str, dtN_str, freq="D")
         return sorted(set(dt.strftime("%Y-%m") for dt in dts))
 
-    def create_empty_valid_DS_dictionary(self, valid_zarr_DS_list=None):
-        """
-        Create a nested dictionary template for collecting datasets by category.
-
-        Parameters
-        ----------
-        valid_zarr_DS_list : list[str], optional
-            List of dataset keys to initialise per outer key. Defaults to `self.valid_ice_types`.
-
-        Returns
-        -------
-        collections.defaultdict
-            A defaultdict where each new outer key maps to a dict of empty lists:
-            { <outer_key>: {<ds_key_1>: [], <ds_key_2>: [], ...} }.
-
-        Notes
-        -----
-        This is a lightweight utility for accumulating per-year/per-month objects before
-        concatenation.
-        """
-        from collections import defaultdict
-        valid_DS_list = valid_zarr_DS_list if valid_zarr_DS_list is not None else self.valid_ice_types
-        return defaultdict(lambda: {k: [] for k in valid_DS_list})
-
-    def count_zarr_files(self, path):
-        """
-        Count and log the number of files under a directory tree (e.g., a Zarr store).
-
-        Parameters
-        ----------
-        path : str or pathlib.Path
-            Directory to count files under.
-
-        Notes
-        -----
-        This counts filesystem entries, not Zarr logical arrays. It is useful for quick
-        sanity checks and estimating metadata overhead.
-        """
-        total_files = sum(len(files) for _, _, files in os.walk(path))
-        self.logger.info(f"{path} contains {total_files} files")
-
-    def radians_to_degrees(self, da):
-        """
-        Convert radians to degrees.
-
-        Parameters
-        ----------
-        da : array-like
-            Values in radians (NumPy array, xarray DataArray, or scalar).
-
-        Returns
-        -------
-        same type as `da`
-            Values converted to degrees.
-        """
-        return (da * 180) / np.pi
-
-    def get_static_grid(self, var):
-        """
-        Return a static (time-independent) slice of a grid-like DataArray.
-
-        If the input has a "time" dimension, returns `isel(time=0)`, otherwise returns
-        the object unchanged.
-
-        Parameters
-        ----------
-        var : xarray.DataArray
-            DataArray that may or may not have a "time" dimension.
-
-        Returns
-        -------
-        xarray.DataArray
-            Time-sliced or original DataArray.
-        """
-        if "time" in var.dims:
-            return var.isel(time=0)
-        return var
-
-    def dict_to_ds(self, data_dict):
-        """
-        Convert a dictionary of DataArrays into an xarray.Dataset.
-
-        Parameters
-        ----------
-        data_dict : dict
-            Mapping of variable name -> xarray.DataArray (or array-like compatible).
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with keys from `data_dict` as variables.
-        """
-        return xr.Dataset({k: v for k, v in data_dict.items()})
-
-    #-------------------------------------------------------------------------------------------
-    #                            RE-ORGANISE MODEL OUTPUT DATA
-    #
-    # Why this dramatic size reduction makes sense:
-    # Zarr uses chunked, compressed storage
-    # * original NetCDF files (.nc) are not compressed. Each file is ~238 MB daily.
-    # * Zarr stores data in compressed .zip-like chunks per variable, dramatically reducing file size when the data is sparse, smooth, or redundant.
-    # * Many sea ice variables contain large areas of constant or near-zero values (e.g., aice, hi, frazil, taubx, etc.). These compress extremely well.
-    # * Zarr avoids redundant metadata storage
-    # * Each .nc file stores global attributes, dimensions, and coordinate variables repeatedly.
-    # * Zarr consolidates this across time within a single file structure.
-    # * intelligent chunking: by using chunk={'time': -1, 'nj': 540, 'ni': 1440} you're compressing
-    #   monthly time spans while maintaining spatial chunking appropriate for hemisphere-wide analysis.
-    #-------------------------------------------------------------------------------------------
-    @staticmethod
-    def get_month_range(year_month):
-        from datetime import datetime, timedelta
-        dt0 = datetime.strptime(year_month + "-01", "%Y-%m-%d")
-        dtN = (dt0.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        return [dt0 + timedelta(days=i) for i in range((dtN - dt0).days + 1)]
-
-    @staticmethod
-    def verify_month(args_tuple):
-        zarr_path, nc_dir, done_marker, dry_run = args_tuple
-        year_month = zarr_path.stem.split("_")[1]
-        if done_marker.exists():
-            return f"[SKIP] {year_month}: already verified (.done exists)"
-        dt_list = SeaIceModels.get_month_range(year_month)
-        nc_files = [nc_dir / f"iceh.{dt.strftime('%Y-%m-%d')}.nc" for dt in dt_list]
-        existing_nc_files = [f for f in nc_files if f.exists()]
-        if not existing_nc_files:
-            return f"[SKIP] {year_month}: no NetCDFs remain"
-        try:
-            zarr = xr.open_zarr(zarr_path)
-        except Exception as e:
-            return f"[FAIL] {year_month}: cannot open Zarr: {e}"
-        zarr_dates = pd.to_datetime(zarr["time"].values).normalize()
-        expected_dates = pd.to_datetime([dt.date() for dt in dt_list])
-        all_dates_present = set(expected_dates).issubset(set(zarr_dates))
-        variables_expected = set()
-        for f in existing_nc_files:
-            try:
-                ds = xr.open_dataset(f)
-                variables_expected.update(ds.data_vars)
-            except Exception as e:
-                return f"[FAIL] {year_month}: cannot open NetCDF {f.name}: {e}"
-        variables_missing = [v for v in variables_expected if v not in zarr.data_vars]
-        if not all_dates_present:
-            return f"[FAIL] {year_month}: missing time steps in Zarr"
-        if variables_missing:
-            return f"[FAIL] {year_month}: Zarr missing variables: {variables_missing}"
-        if not dry_run:
-            done_marker.touch()
-        return f"[OK]   {year_month}: verified ({len(existing_nc_files)} files)"
-
-    def verify_zarr_and_cleanup_netcdf(self,
-                                       dry_run     = True,
-                                       delete      = False,
-                                       max_workers = 4):
-        """
-        Verify monthly Zarr groups against expected daily NetCDFs and optionally delete NetCDFs.
-
-        The procedure scans ``{self.D_zarr}/iceh_YYYY-MM.zarr`` directories, and for
-        each month it checks:
-        1) that the Zarr `time` coordinate covers all expected daily dates;
-        2) that Zarr contains the union of variables present in the month’s
-            remaining NetCDFs.
-
-        A log of results is appended to ``{self.D_sim}/cleanup.log``. When
-        `delete=True`, an interactive confirmation is prompted and, if accepted,
-        the verified month’s NetCDFs are removed.
-
-        Parameters
-        ----------
-        dry_run : bool, default True
-            If False, write a ``.done_YYYY-MM`` marker in the Zarr directory after
-            successful verification. When True, do not create markers.
-        delete : bool, default False
-            If True, prompt to delete verified NetCDFs after verification.
-        max_workers : int, default 4
-            Number of processes used for parallel month verification.
-
-        Returns
-        -------
-        None
-            Writes to log and may delete files on user confirmation.
-
-        Notes
-        -----
-        - Verification is parallelised with ``ProcessPoolExecutor``.
-        - Month logic expects Zarr directories named ``iceh_YYYY-MM.zarr`` and daily
-        files at ``{self.D_sim}/history/daily/iceh.YYYY-MM-DD.nc``.
-        - The verification routines are implemented as static helpers (`get_month_range`,
-        `verify_month`).
-        """
-        from datetime import datetime
-        self.D_iceh_nc = Path(self.D_sim,"history","daily")
-        P_clean_log    = Path(self.D_sim,"cleanup.log")
-        zarr_months    = sorted([p for p in self.D_zarr.glob("iceh_????-??.zarr") if p.is_dir()])
-        tasks = []
-        for zarr_path in zarr_months:
-            ym          = zarr_path.stem.split("_")[1]
-            done_marker = self.D_zarr / f".done_{ym}"
-            tasks.append((zarr_path, self.D_iceh_nc, done_marker, dry_run))
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = list(executor.map(SeaIceModels.verify_month, tasks))
-        for res in results:
-            self.logger.info(res)
-        with open(P_clean_log, "a") as logf:
-            logf.write("\n# Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
-            for res in results:
-                logf.write(res + "\n")
-        if delete:
-            self.logger.info("\nDeletion mode active.")
-            verified_months = []
-            total_files = []
-            log_entries = []
-            for zarr_path in zarr_months:
-                ym = zarr_path.stem.split("_")[1]
-                done_marker = self.D_zarr / f".done_{ym}"
-                if not done_marker.exists():
-                    continue  # skip unverified
-                nc_files = list(self.D_iceh_nc.glob(f"iceh.{ym}-??.nc"))
-                if nc_files:
-                    verified_months.append((ym, nc_files))
-                    total_files.extend(nc_files)
-            if not total_files:
-                self.logger.info("No deletable NetCDF files found.")
-            else:
-                self.logger.info(f"\n🔍 {len(total_files)} NetCDF files across {len(verified_months)} verified months are eligible for deletion.")
-                confirm = input("Confirm delete all these files? [y/N] ").strip().lower()
-                if confirm == "y":
-                    for ym, files in verified_months:
-                        for f in files:
-                            try:
-                                f.unlink()
-                                self.logger.info(f"[DELETED] {f.name}")
-                                log_entries.append(f"[DELETED] {f}")
-                            except Exception as e:
-                                self.logger.info(f"[ERROR] Could not delete {f.name}: {e}")
-                                log_entries.append(f"[ERROR] Failed to delete {f}: {e}")
-                    log_entries.append(f"# Deletion complete: {len(total_files)} files removed")
-                else:
-                    self.logger.info("Deletion cancelled.")
-                    log_entries.append("# Deletion prompt declined — no files deleted")
-            with open(P_clean_log, "a") as logf:
-                for entry in log_entries:
-                    logf.write(entry + "\n")
-
-    def get_cice_files_between_dates(self, D_iceh, dt0_str, dtN_str):
-        """
-        List existing daily CICE iceh NetCDF files for a date range.
-
-        Parameters
-        ----------
-        D_iceh : str or pathlib.Path
-            Directory containing daily files named ``iceh.YYYY-MM-DD.nc``.
-        dt0_str, dtN_str : str
-            Inclusive date range in ``YYYY-MM-DD``.
-
-        Returns
-        -------
-        list[pathlib.Path] or None
-            Sorted list of existing files in the range. Returns ``None`` and logs
-            an info message if none are found.
-        """
-        import re
-        date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
-        D_iceh  = Path(D_iceh)
-        dt0     = pd.to_datetime(dt0_str).date()
-        dtN     = pd.to_datetime(dtN_str).date()
-        files   = []
-        for fpath in D_iceh.glob("*.nc"):
-            m = date_re.search(fpath.name)
-            if not m:
-                continue
-            fdate = pd.to_datetime(m.group(1)).date()
-            if dt0 <= fdate <= dtN:
-                files.append(fpath)
-        if not files:
-            self.logger.info(f"*NO* CICE daily NetCDF files ending in .YYYY-MM-DD.nc between {dt0_str} and {dtN_str}")
-            return None
-        return sorted(files)
-
-    def delete_original_cice(self, P_orgs, P_iceh_zarr, m_str):
-        """
-        Delete the original daily NetCDF files for a given month if the monthly Zarr exists.
-
-        Parameters
-        ----------
-        P_orgs : list[pathlib.Path]
-            Paths to the month’s daily ``iceh.YYYY-MM-DD.nc`` files.
-        P_iceh_zarr : str or pathlib.Path
-            Path to the Zarr root (e.g., ``.../iceh_daily.zarr``).
-        m_str : str
-            Month string in ``YYYY-MM`` used as the Zarr group name.
-
-        Behavior
-        --------
-        If ``{P_iceh_zarr}/.zgroup`` exists, the method attempts to delete each
-        file in `P_orgs`. Failures are logged with a warning. If the Zarr store is
-        incomplete (no ``.zgroup``), deletion is skipped with a warning.
-
-        Returns
-        -------
-        None
-        """
-        if Path(P_iceh_zarr, ".zgroup").exists():
-            self.logger.info(f"Deleting original NetCDF files for {m_str}")
-            for f in P_orgs:
-                try:
-                    os.remove(f)
-                    self.logger.debug(f"Deleted: {f}")
-                except Exception as e:
-                    self.logger.warning(f" Could not delete {f}: {e}")
-        else:
-            self.logger.warning(f"Zarr group {P_iceh_zarr} incomplete — skipping deletion of originals")
-
-    def daily_iceh_to_monthly_zarr(self,
-                                   sim_name        = None,
-                                   dt0_str         = None,
-                                   dtN_str         = None,
-                                   D_iceh          = None,
-                                   netcdf_engine   = "scipy",
-                                   overwrite       = None,
-                                   delete_original = None):
-        """
-        Convert daily CICE ``iceh.YYYY-MM-DD.nc`` files into a monthly Zarr store.
-
-        For each month intersecting the requested date window, this method:
-        1) groups existing daily NetCDFs by month,
-        2) opens them with ``xarray.open_mfdataset(..., engine='scipy')``,
-        3) shifts the time coordinate **back by 1 day** (CICE writes 00:00:00 of
-        the following day for daily averages),
-        4) writes to a grouped Zarr store at ``{self.D_zarr}/iceh_daily.zarr``
-        under group ``YYYY-MM`` (consolidated metadata),
-        5) optionally deletes the original NetCDF files if the Zarr group exists.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to ``self.sim_name``.
-        dt0_str, dtN_str : str, optional
-            Date window (inclusive) in ``YYYY-MM-DD``. Defaults to ``self.dt0_str``
-            and ``self.dtN_str`` when omitted.
-        D_iceh : str or pathlib.Path, optional
-            Directory containing the per-day ``iceh.YYYY-MM-DD.nc`` files.
-            Defaults to ``self.D_iceh``.
-        overwrite : bool, optional
-            If False and a monthly group already exists, the group is skipped (but
-            originals may still be deleted if `delete_original` is True).
-            Defaults to ``self.overwrite_zarr_group``.
-        delete_original : bool, optional
-            If True, remove the month’s original NetCDF files **after** successful
-            Zarr write. Defaults to ``self.del_org_cice_iceh_nc``.
-
-        Returns
-        -------
-        None
-            Writes Zarr groups and logs progress; may delete input NetCDFs.
-
-        Notes
-        -----
-        - The time shift of ``-1 day`` aligns Zarr entries with the *date of the
-        average*, not the CICE timestamp.
-        - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
-        - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
-        """
-        import re
-        date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
-        from datetime    import datetime
-        from collections import defaultdict
-        sim_name = sim_name if sim_name is not None else self.sim_name
-        dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
-        dtN_str  = dtN_str  or self.dtN_str
-        D_iceh   = D_iceh   or self.D_iceh
-        overwrite = overwrite if overwrite is not None else self.overwrite_zarr_group
-        delete_nc = delete_original if delete_original is not None else self.del_org_cice_iceh_nc
-        m_grps   = defaultdict(list)
-        P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
-        if not P_orgs:
-            self.logger.info("No CICE files found. Noting further to do here.")
-            return
-        for f in P_orgs:
-           m = date_re.search(f.name)
-           if not m:
-               self.logger.warning(f"Skipping unrecognized filename: {f.name}")
-               continue
-           dt = datetime.strptime(m.group(1), "%Y-%m-%d")
-           m_str = dt.strftime("%Y-%m")
-           m_grps[m_str].append(f)
-        P_iceh_zarr = Path(self.D_zarr, "iceh_daily.zarr")
-        for m_str, P_ in m_grps.items():
-            P_iceh_zarr_group = Path(P_iceh_zarr, m_str)
-            if P_iceh_zarr_group.exists() and not overwrite:
-                self.logger.info(f"Skipping existing {P_iceh_zarr_group}")
-                if delete_nc:
-                    self.delete_original_cice(P_, P_iceh_zarr, m_str)
-                    continue
-            else:
-                self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
-                # CICE_all = xr.open_mfdataset(P_,
-                #                              engine   = netcdf_engine,
-                #                              parallel = True,
-                #                              combine  = "by_coords",
-                #                              cache    = True,
-                #                              chunks   = {})
-                CICE_all = xr.open_mfdataset(P_,
-                                             engine     = netcdf_engine,
-                                             parallel   = True,
-                                             combine    = "nested",
-                                             concat_dim = "time",
-                                             coords     = "minimal",
-                                             data_vars  = "minimal",
-                                             compat     = "override",
-                                             join       = "override",
-                                             cache      = False,
-                                             chunks     = self.CICE_dict["FI_chunks"])
-                CICE_all = CICE_all.chunk(self.CICE_dict['FI_chunks'])
-                self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
-                CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
-                self.logger.info(f"Writing {P_iceh_zarr} and group ('YYYY-MM'): {m_str}")
-                CICE_all.to_zarr(P_iceh_zarr, group=m_str, mode="w", consolidated=True, zarr_format=2)
-                self.get_dir_size(P_iceh_zarr_group)
-                self.count_zarr_files(P_iceh_zarr_group)
-                if delete_nc:
-                    self.delete_original_cice(P_, P_iceh_zarr, m_str)
-
-    def monthly_zarr_iceh_time_correction(self, P_mnthly_zarr, dry_run=True):
-        """
-        Correct the time coordinate in a monthly iceh Zarr store by shifting timestamps back by one day.
-
-        CICE ice history files may encode timestamps at 00:00 that represent averages
-        for the *previous* day. This utility rewrites a monthly Zarr store such that all
-        time entries are shifted by -1 day.
-
-        Parameters
-        ----------
-        P_mnthly_zarr : str or pathlib.Path
-            Path to the monthly Zarr directory to correct (e.g., "iceh_2011-05.zarr").
-        dry_run : bool, default True
-            If True, do not write changes; only log what would be done.
-
-        Notes
-        -----
-        - This method rewrites the store by writing a temporary Zarr and then replacing
-        the original directory. Ensure you have permissions and sufficient disk space.
-        - If timestamps already lie within the expected month bounds inferred from the
-        filename, the store is skipped.
-
-        Warnings
-        --------
-        This method may become obsolete if upstream conversion routines already perform
-        the correct timestamp handling.
-        """
-        from calendar import monthrange
-        import shutil
-        P_mnthly_zarr = Path(P_mnthly_zarr)
-        if not P_mnthly_zarr.exists():
-            self.logger.warning(f"{P_mnthly_zarr} does not exist.")
-            return
-        try:
-            ds = xr.open_zarr(P_mnthly_zarr, consolidated=True)
-        except Exception as e:
-            self.logger.error(f"Failed to open {P_mnthly_zarr}: {e}")
-            return
-        if "time" not in ds:
-            self.logger.warning(f"No 'time' coordinate found in {P_mnthly_zarr.name}")
-            return
-        old_time = ds["time"].values
-        if len(old_time) == 0:
-            self.logger.warning(f"{P_mnthly_zarr.name} has no time entries.")
-            return
-        # Determine expected month from filename
-        try:
-            m_str = P_mnthly_zarr.stem.split("_")[1]
-            y, m = map(int, m_str.split("-"))
-            month_start = np.datetime64(f"{y:04d}-{m:02d}-01")
-            month_end = np.datetime64(f"{y:04d}-{m:02d}-{monthrange(y, m)[1]}")
-        except Exception as e:
-            self.logger.error(f"Could not parse month from {P_mnthly_zarr.name}: {e}")
-            return
-        # Check if all timestamps fall within the expected month
-        time_ok = (old_time[0] >= month_start) and (old_time[-1] <= month_end)
-        if time_ok and np.all((old_time >= month_start) & (old_time <= month_end)):
-            self.logger.info(f"[GOOD] {P_mnthly_zarr.name} time coordinates already valid — skipping")
-            return
-        # Otherwise apply correction
-        new_time = old_time - np.timedelta64(1, "D")
-        self.logger.info(f"Fixing {P_mnthly_zarr.name}: {old_time[0]} → {new_time[0]}")
-        ds["time"] = new_time
-        if dry_run:
-            self.logger.info(f"[dry-run] Would rewrite {P_mnthly_zarr.name} with corrected time index")
-            return
-        tmp_path = P_mnthly_zarr.with_suffix(".tmp.zarr")
-        self.logger.info(f"Writing fixed dataset to temporary path {tmp_path}")
-        ds.to_zarr(tmp_path, mode="w", consolidated=True, zarr_format=2)
-        self.logger.info(f"Replacing original {P_mnthly_zarr.name}")
-        shutil.rmtree(P_mnthly_zarr)
-        tmp_path.rename(P_mnthly_zarr)
-        self.logger.info(f"Time fix applied to {P_mnthly_zarr.name}")
-
-    def correct_timestamp_for_all_monthly_zarr_iceh(self, sim_names=None, dry_run=True):
-        """
-        Apply `monthly_zarr_iceh_time_correction` across all monthly iceh Zarr stores.
-
-        Parameters
-        ----------
-        sim_names : list[str], optional
-            Simulation names to scan under the AFIM output root. If None, defaults to
-            `[self.sim_name]`.
-        dry_run : bool, default True
-            If True, do not write changes; only log what would be done.
-
-        Notes
-        -----
-        Monthly stores are identified using the glob pattern "iceh_????-??.zarr".
-        """
-        sims = sim_names if sim_names is not None else [self.sim_name]
-        for sim in sims:
-            D_zarr = Path(self.D_dict['AFIM_out'],sim,'zarr')
-            if not D_zarr.exists():
-                self.logger.warning(f"Zarr directory not found for {sim}")
-                continue
-            self.logger.info(f"Scanning Zarr files in {D_zarr} ...")
-            zarr_months = sorted(D_zarr.glob("iceh_????-??.zarr"))
-            for P_zarr in zarr_months:
-                self.monthly_zarr_iceh_time_correction(P_zarr, dry_run=dry_run)
-
-    def _get_zarr_group_index(self, zarr_root):
-        """
-        Index available Zarr groups under a root store and cache the results.
-
-        This helper scans for groups of the form "YYYY-MM", determines overall time
-        bounds by opening the first and last group, and detects whether consolidated
-        metadata (`.zmetadata`) exists.
-
-        Parameters
-        ----------
-        zarr_root : str or pathlib.Path
-            Root path to a grouped Zarr store (expects "YYYY-MM" groups underneath).
-
-        Returns
-        -------
-        tuple
-            (groups, available_dt0, available_dtN, consolidated) where:
-            - groups : list[str]
-                Sorted list of available group names.
-            - available_dt0 : pandas.Timestamp
-                Earliest available timestamp in the first group.
-            - available_dtN : pandas.Timestamp
-                Latest available timestamp in the last group.
-            - consolidated : bool
-                True if `.zmetadata` exists at the root.
-
-        Raises
-        ------
-        FileNotFoundError
-            If no valid Zarr groups are found.
-
-        Notes
-        -----
-        Results are cached per `zarr_root` string key in `self._zarr_group_index` to
-        avoid repeated filesystem scans and metadata opens.
-        """
-        key = str(zarr_root)
-        if not hasattr(self, "_zarr_group_index"):
-            self._zarr_group_index = {}
-        if key in self._zarr_group_index:
-            return self._zarr_group_index[key]
-        groups = sorted([p.name for p in zarr_root.glob("????-??")
-                         if (zarr_root / p.name / ".zgroup").exists()])
-        if not groups:
-            raise FileNotFoundError(f"No Zarr groups found in {zarr_root}.")
-        # Use consolidated metadata if present; else fall back
-        consolidated = (zarr_root / ".zmetadata").exists()
-        ds0 = xr.open_zarr(zarr_root, group=groups[0], consolidated=consolidated)
-        dsN = xr.open_zarr(zarr_root, group=groups[-1], consolidated=consolidated)
-        available_dt0 = pd.to_datetime(ds0.time.values[0])
-        available_dtN = pd.to_datetime(dsN.time.values[-1])
-        self._zarr_group_index[key] = (groups, available_dt0, available_dtN, consolidated)
-        self.logger.info(f"Indexed Zarr root {zarr_root} (groups={len(groups)}, "
-                         f"bounds={available_dt0.date()}..{available_dtN.date()}, consolidated={consolidated})")
-        return self._zarr_group_index[key]
-
-    def load_cice_zarr(self,
-                        sim_name  = None,
-                        dt0_str   = None,
-                        dtN_str   = None,
-                        D_alt     = None,
-                        variables = None,
-                        slice_hem = False):
-        """
-        Open and concatenate monthly-grouped CICE ice history Zarr data over a date window.
-
-        This method loads only those monthly Zarr groups that intersect the requested
-        date window, optionally subselects variables, crops each group to the requested
-        time range, and concatenates along time.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        dt0_str, dtN_str : str, optional
-            Requested analysis window in ``YYYY-MM-DD``. Defaults to `self.dt0_str` and
-            `self.dtN_str`. Requests are clamped to available data.
-        D_alt : str or pathlib.Path, optional
-            Alternative simulation directory to use instead of `self.D_sim`.
-        variables : list[str], optional
-            If provided, select only these variables from each monthly group. Groups
-            missing any requested variable are skipped with a warning.
-        slice_hem : bool, default False
-            If True, apply `self.slice_hemisphere(...)` after concatenation.
-
-        Returns
-        -------
-        xarray.Dataset
-            Concatenated dataset cropped to the intersection of requested and available
-            times.
-
-        Raises
-        ------
-        ValueError
-            If no datasets remain after filtering/cropping (e.g., all groups skipped).
-
-        Notes
-        -----
-        - Expects a grouped Zarr store at `self.D_iceh_zarr` with groups named "YYYY-MM".
-        - Uses dask configuration overrides to control slicing and fusion behaviour.
-        """
-        import dask
-        sim_name = sim_name or self.sim_name
-        dt0_str  = dt0_str  or self.dt0_str
-        dtN_str  = dtN_str  or self.dtN_str
-        D_alt    = D_alt    or self.D_sim
-        self.define_iceh_dirs(D_alt)
-        zarr_root = self.D_iceh_zarr
-        available_groups, available_dt0, available_dtN, consolidated = self._get_zarr_group_index(zarr_root)
-        # Clamp user request to data availability
-        user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
-        user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
-        required_groups = [g for g in available_groups
-                           if (pd.to_datetime(f"{g}-01") <= user_dtN) and 
-                           (pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0)]
-        self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()} ({len(required_groups)} groups)")
-        with dask.config.set({
-            "array.slicing.split_large_chunks": True,
-            "array.chunk-size": "256MiB",
-            # Consider turning fuse back on unless you have a specific reason to disable it:
-            # "optimization.fuse.active": True,
-            "optimization.fuse.active": False}):
-            ds_list = []
-            missing_anywhere = set()
-            selected_anywhere = set()
-            for g in required_groups:
-                self.logger.debug(f"  - opening group {g}")
-                ds = xr.open_zarr(zarr_root, group=g, consolidated=consolidated)
-                if variables:
-                    present = [v for v in variables if v in ds.data_vars]  # use data_vars, not coords
-                    missing = [v for v in variables if v not in ds.data_vars]
-                    if missing:
-                        missing_anywhere.update(missing)
-                        self.logger.warning(f"  [{g}] missing requested vars: {missing}")
-                    if not present:
-                        self.logger.warning(f"  > Skipping {g}: none of the requested variables are present.")
-                        continue
-                    selected_anywhere.update(present)
-                    self.logger.info(f"  [{g}] selecting variables present: {present}")
-                    ds = ds[present]
-                ds = ds.sel(time=slice(user_dt0, user_dtN))
-                ds_list.append(ds)
-            if not ds_list:
-                raise ValueError("No datasets to concatenate after filtering/cropping.")
-            ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
-            # Warn once about variables that never appeared in any group
-            if variables:
-                never_found = [v for v in variables if v not in selected_anywhere]
-                if never_found:
-                    self.logger.warning(f"Requested variables not found in ANY group: {never_found}")
-        if slice_hem:
-            self.logger.info("  slicing hemisphere")
-            ds_all = self.slice_hemisphere(ds_all)
-        return ds_all
-
-    @staticmethod
-    def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
-        """
-        Drop duplicate coordinate values along `dim` (keeping the first occurrence).
-        Useful when concatenating yearly groups that may contain duplicated x-indices.
-        """
-        if dim in ds.coords:
-            _, index = np.unique(ds[dim], return_index=True)
-            ds = ds.isel({dim: sorted(index)})
-        return ds
-
-    def load_classified_ice(self,
-                            sim_name     : str   = None,
-                            ice_type     : str   = None,
-                            ispd_thresh  : float = None,
-                            class_method : str   = "binary-days",
-                            BorC2T_type  : str   = None,
-                            variables    : list  = None,
-                            dt0_str      : str   = None,
-                            dtN_str      : str   = None,
-                            D_zarr       : str   = None,
-                            chunks       : dict  = None,
-                            persist      : bool  = False):
-        """
-        Load classified ice products from yearly-grouped Zarr stores.
-
-        Loads fast-ice/pack-ice/sea-ice classification products written as Zarr stores
-        containing per-year groups. Supports daily, rolling-mean, and binary-days
-        products via store naming conventions.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        bin_days : bool, default True
-            If True, load the binary-days product (`*_bin.zarr`).
-        roll_mean : bool, default False
-            If True (and `bin_days` is False), load the rolling-mean product (`*_roll.zarr`).
-        ispd_thresh : float, optional
-            Speed threshold embedded in the Zarr path; defaults to `self.ispd_thresh`.
-        ice_type : str, optional
-            Ice type identifier ('FI', 'PI', or 'SI'). Defaults to `self.ice_type`.
-        BorC2T_type : str, optional
-            Velocity product identifier used in the store name (e.g., 'Ta', 'Tb', 'Tx', 'BT').
-        variables : list[str], optional
-            Variable subset to select after concatenation.
-        dt0_str, dtN_str : str, optional
-            Requested date window. Used here only to select which years to attempt to open.
-        D_zarr : str or pathlib.Path, optional
-            Override base Zarr directory.
-        chunks : dict, optional
-            Chunking mapping applied after concatenation (implementation-dependent).
-        persist : bool, default False
-            If True, Dask persist the concatenated dataset in memory.
-
-        Returns
-        -------
-        xarray.Dataset
-            Concatenated dataset across requested years.
-
-        Raises
-        ------
-        FileNotFoundError
-            If no valid year groups could be opened from the target store.
-
-        Notes
-        -----
-        - Uses `_drop_duplicate_coords` (class-level helper) to avoid coordinate collisions
-        during concat.
-        - This method does not currently crop the returned dataset to dt0/dtN; caller may
-        apply `sel(time=slice(...))` if needed.
-        """
-        from datetime import datetime
-        sim_name     = sim_name     or self.sim_name
-        ispd_thresh  = ispd_thresh  or self.ispd_thresh
-        ice_type     = ice_type     or self.ice_type
-        BorC2T_type  = BorC2T_type  or f"{''.join(self.BorC2T_type)}"
-        D_zarr       = D_zarr       or self.D_zarr
-        dt0_str      = dt0_str      or self.dt0_str
-        dtN_str      = dtN_str      or self.dtN_str
-        chunks       = chunks       or self.CICE_dict["FI_chunks"]
-        P_class_zarr = self.define_classification_zarr(D_zarr       = D_zarr,
-                                                       ice_type     = ice_type,
-                                                       ispd_thresh  = ispd_thresh,
-                                                       BorC2T_type  = BorC2T_type,
-                                                       class_method = class_method)
-        # === Loop over years, not months ===
-        dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
-        dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
-        years    = list(range(dt0.year, dtN.year + 1))
-        datasets = []
-        for yr in years:
-            try:
-                ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
-                ds_yr = SeaIceToolbox._drop_duplicate_coords(ds_yr, dim="ni")
-                datasets.append(ds_yr)
-            except Exception as e:
-                self.logger.warning(f"Skipping year {yr}: {e}")
-        if not datasets:
-            raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
-        ds = xr.concat(datasets, dim="time", coords='minimal')
-        if variables:
-            ds = ds[variables]
-        if persist:
-            ds = ds.persist()
-        return ds 
-
+    ##########################################################################################################
+    ################################### BASIC STATISTICS/CLIMATOLOGY #########################################
+    ##########################################################################################################
     def compute_rolling_mean_on_dataset(self, ds, mean_period=None):
         """
 
@@ -2295,504 +1808,3 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 'max'  : data_max,
                 'std'  : data_std,
                 'mean' : data_mean}
-
-    def align_time_coordinate_of_three_arrays(self, ds1, ds2, ds3, time_coord="time"):
-        for da in [ds1, ds2, ds3]:
-            da[time_coord] = pd.to_datetime(da[time_coord].values).normalize()
-        t_common = np.intersect1d(np.intersect1d(ds1[time_coord].values, ds2[time_coord].values), ds3[time_coord].values)
-        return ds1.sel(time=t_common), ds2.sel(time=t_common), ds3.sel(time=t_common)
-
-    def cosine_vector_similarity(self, uo, vo, um, vm, eps=1e-12):
-        """
-        Compute the cosine similarity between two vector fields (e.g., observed vs. modelled velocity vectors).
-
-        This metric quantifies the directional alignment of the two vector fields without considering magnitude. 
-        A value of:
-        - +1.0 means the vectors point in exactly the same direction,
-        -  0.0 means the vectors are orthogonal (90° apart),
-        - -1.0 means the vectors point in opposite directions.
-
-        The cosine similarity is computed as the dot product of the two vectors, divided by the product of their magnitudes.
-
-        Parameters
-        ----------
-        uo, vo : xarray.DataArray
-            Components of the observed vector field (e.g., `u` and `v` velocity components) in units of m/s.
-        um, vm : xarray.DataArray
-            Components of the modelled vector field (same units as `uo`, `vo`).
-        eps : float, optional
-            Small constant to prevent division by zero in regions where either vector magnitude is near-zero. Default is 1e-12.
-
-        Returns
-        -------
-        xarray.DataArray
-            Cosine similarity between vectors, dimensionless, in the range [-1, 1].
-
-        Notes
-        -----
-        - NaNs are returned where either the observed or modelled vector magnitude is near-zero.
-        - This metric is **scale-invariant** — it compares **direction only**, not speed.
-        - Particularly useful for evaluating sea ice drift direction skill, regardless of speed bias.
-        """
-        dot_prod = um * uo + vm * vo
-        obs_mag  = np.sqrt(uo**2 + vo**2)
-        mod_mag  = np.sqrt(um**2 + vm**2)
-        return dot_prod / xr.where((obs_mag * mod_mag) < eps, np.nan, obs_mag * mod_mag)
-
-    def vector_angle_diff(self, uo, vo, um, vm):
-        """
-        Compute the signed angular difference (in radians) between two vector fields.
-
-        This metric measures the angle by which the modelled vector differs from the observed vector.
-        The difference is returned as a signed value in the range [-π, π], where:
-        -  0    indicates perfect alignment,
-        - +pi/2 indicates model is rotated 90° counter-clockwise from observation,
-        - -pi/2 indicates 90° clockwise rotation,
-        - +/-pi indicates vectors are anti-parallel.
-
-        Parameters
-        ----------
-        uo, vo : xarray.DataArray
-            Components of the observed vector field (e.g., `u` and `v` velocity components), in m/s.
-        um, vm : xarray.DataArray
-            Components of the modelled vector field (in m/s).
-
-        Returns
-        -------
-        xarray.DataArray
-            Signed angular difference (model - obs) in radians, bounded in [-pi, pi].
-
-        Notes
-        -----
-        - The angular difference is computed using `arctan2` on the vector components.
-        - Use `np.rad2deg()` to convert output to degrees, if desired.
-        - This metric is useful for directional error analysis in drift or flow fields.
-        """
-        ang_o = np.arctan2(vo, uo)
-        ang_m = np.arctan2(vm, um)
-        d     = ang_m - ang_o
-        return (d + np.pi) % (2 * np.pi) - np.pi
-    
-    def _region_mask(self, lon : xr.DataArray, lat : xr.DataArray, geo_reg : tuple[float, float, float, float], *,
-                     right_open: bool = True) -> xr.DataArray:
-        """
-        Geographic mask for [lon_min, lon_max, lat_min, lat_max].
-
-        right_open=True makes lon_max exclusive (helps avoid double-counting at boundaries).
-        """
-        lon_min, lon_max, lat_min, lat_max = geo_reg
-        m = (lon >= lon_min) & (lat >= lat_min) & (lat <= lat_max)
-        if right_open:
-            m = m & (lon < lon_max)
-        else:
-            m = m & (lon <= lon_max)
-        return m
-
-    ##########################################################################################
-    #                              FAST ICE SPECIFIC FUNCTIONS                               #
-    ##########################################################################################
-    def coarsen_and_align_simulated_FI_to_observed_FI(self, sim_ds, obs_ds, doy_vals=None, method="mean", obs_time_coord="time"):
-        """
-        Aggregate daily simulated fields onto observational fast-ice time windows.
-
-        This method coarsens daily model output into the same temporal windows used by
-        the AF2020 observational product (typically 24 bins defined by day-of-year start
-        values). For each year and each DOY window, it aggregates model data over the
-        corresponding date range and writes one output timestep per window.
-
-        Parameters
-        ----------
-        sim_ds : xarray.Dataset
-            Daily model output with a "time" coordinate.
-        obs_ds : xarray.Dataset
-            Observational dataset providing the target window definitions via its time
-            coordinate (default name is `obs_time_coord`).
-        doy_vals : list[int], optional
-            Day-of-year start values defining observation windows. If None, uses
-            `self.AF_FI_dict["DOY_vals"]`.
-        method : {"mean","median"}, default "mean"
-            Aggregation method to apply within each window.
-        obs_time_coord : str, default "time"
-            Name of the time coordinate in `obs_ds` used as the output time dimension.
-
-        Returns
-        -------
-        xarray.Dataset
-            Aggregated dataset with one timestep per observation window (per year),
-            concatenated along `obs_time_coord`.
-
-        Raises
-        ------
-        ValueError
-            If no windows intersect the simulation data or `method` is unsupported.
-
-        Notes
-        -----
-        - Window end dates are computed from successive DOY boundaries. The final window
-        extends to the end of the year (accounting for leap years).
-        - The output time stamps correspond to the start date of each window.
-        """
-        if doy_vals is None:
-            doy_vals = self.AF_FI_dict["DOY_vals"]
-        sim_time = sim_ds["time"].values
-        obs_times = pd.to_datetime(obs_ds[obs_time_coord].values)
-        years = np.unique(obs_times.year)
-        grouped = []
-        for year in years:
-            for i, doy_start in enumerate(doy_vals):
-                dt_start = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(doy_start - 1, unit="D")
-                dt_end = pd.Timestamp(f"{year}-01-01") + pd.to_timedelta(
-                    (doy_vals[i+1]-1 if i+1 < len(doy_vals) else 365 + int(pd.Timestamp(f"{year}-12-31").is_leap_year)), unit="D")
-                period_mask = (sim_ds.time >= dt_start) & (sim_ds.time < dt_end)
-                ds_window = sim_ds.sel(time=period_mask)
-                if ds_window.time.size == 0:
-                    self.logger.warning(f"🕳️ No model data in window {dt_start.date()} to {dt_end.date()}")
-                    continue
-                if method == "mean":
-                    ds_agg = ds_window.mean(dim="time")
-                elif method == "median":
-                    ds_agg = ds_window.median(dim="time")
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-                ds_agg = ds_agg.expand_dims({obs_time_coord: [dt_start]})
-                grouped.append(ds_agg)
-        if not grouped:
-            raise ValueError("❌ No observation periods matched simulation data")
-        ds_aligned = xr.concat(grouped, dim=obs_time_coord)
-        self.logger.info(f"✅ Aligned model output to {len(ds_aligned[obs_time_coord])} obs windows")
-        return ds_aligned
-
-    def compute_fipdiff_stats_weighted(self, FIP: xr.Dataset,
-                                       PIXEL                 : float = 5000.0,
-                                       regs_dict             : dict | None = None,
-                                       gi_mask_da            : xr.DataArray | None = None,
-                                       clip01                : bool = True,
-                                       threecat_percent_only : bool = True):
-        regs_dict = regs_dict if regs_dict is not None else self.Ant_8sectors  # adjust name if needed
-        for k in ("mod", "obs", "lon", "lat"):
-            if k not in FIP:
-                raise ValueError("FIP must contain 'mod', 'obs', 'lon', 'lat'.")
-        mod = FIP["mod"].astype("float64")
-        obs = FIP["obs"].astype("float64")
-        if clip01:
-            mod = mod.clip(0.0, 1.0)
-            obs = obs.clip(0.0, 1.0)
-        overlap      = xr.apply_ufunc(np.minimum, mod, obs)
-        model_excess = xr.apply_ufunc(np.maximum, mod - obs, 0.0)
-        obs_excess   = xr.apply_ufunc(np.maximum, obs - mod, 0.0)
-        lon_m = self.normalise_longitudes(FIP["lon"], to="-180-180")
-        lat   = FIP["lat"]
-        cell_area_km2 = (float(PIXEL) * float(PIXEL)) / 1e6
-        if gi_mask_da is not None:
-            valid = (~gi_mask_da.astype(bool).broadcast_like(mod))
-        else:
-            valid = xr.ones_like(mod, dtype=bool)
-        # loop over regional dictionary terms to create rows 
-        rows = []
-        for rname, reg_dict in regs_dict.items():
-            geo_reg = reg_dict["plot_region"]  # must be (lon_min, lon_max, lat_min, lat_max) in -180..180
-            R = self._region_mask(lon_m, lat, geo_reg) & valid
-            A_km2 = float((overlap      * R).sum()) * cell_area_km2
-            M_km2 = float((model_excess * R).sum()) * cell_area_km2
-            O_km2 = float((obs_excess   * R).sum()) * cell_area_km2
-            tot   = A_km2 + M_km2 + O_km2
-            pct_A = 100.0 * A_km2 / tot if tot > 0 else np.nan
-            pct_M = 100.0 * M_km2 / tot if tot > 0 else np.nan
-            pct_O = 100.0 * O_km2 / tot if tot > 0 else np.nan
-            MOD_km2 = float((mod * R).sum()) * cell_area_km2
-            OBS_km2 = float((obs * R).sum()) * cell_area_km2
-            pct_A_of_MOD = 100.0 * A_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
-            pct_M_of_MOD = 100.0 * M_km2 / MOD_km2 if MOD_km2 > 0 else np.nan
-            pct_A_of_OBS = 100.0 * A_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
-            pct_O_of_OBS = 100.0 * O_km2 / OBS_km2 if OBS_km2 > 0 else np.nan
-            rows.append(dict(region                    = rname,
-                             pct_agreement             = pct_A,
-                             pct_model_dominant        = pct_M,
-                             pct_observation_dominant  = pct_O,
-                             model_FIA_km2             = MOD_km2,
-                             obs_FIA_km2               = OBS_km2,
-                             agreement_overlap_km2     = A_km2,
-                             model_excess_km2          = M_km2,
-                             obs_excess_km2            = O_km2,
-                             agreement_pct_of_model    = pct_A_of_MOD,
-                             model_excess_pct_of_model = pct_M_of_MOD,
-                             agreement_pct_of_obs      = pct_A_of_OBS,
-                             obs_excess_pct_of_obs     = pct_O_of_OBS))
-        # create dataframe from dictionary
-        df      = pd.DataFrame(rows).set_index("region")
-        A_sum   = df["agreement_overlap_km2"].sum()
-        M_sum   = df["model_excess_km2"].sum()
-        O_sum   = df["obs_excess_km2"].sum()
-        tot_sum = A_sum + M_sum + O_sum
-        # now sum together for pan-Ant. ... but what about NH??
-        ant_row = dict(pct_agreement             = 100.0 * A_sum / tot_sum if tot_sum > 0 else np.nan,
-                       pct_model_dominant        = 100.0 * M_sum / tot_sum if tot_sum > 0 else np.nan,
-                       pct_observation_dominant  = 100.0 * O_sum / tot_sum if tot_sum > 0 else np.nan,
-                       model_FIA_km2             = df["model_FIA_km2"].sum(),
-                       obs_FIA_km2               = df["obs_FIA_km2"].sum(),
-                       agreement_overlap_km2     = A_sum,
-                       model_excess_km2          = M_sum,
-                       obs_excess_km2            = O_sum,
-                       agreement_pct_of_model    = np.nan,
-                       model_excess_pct_of_model = np.nan,
-                       agreement_pct_of_obs      = np.nan,
-                       obs_excess_pct_of_obs     = np.nan)
-        df_all = pd.concat([df, pd.DataFrame(ant_row, index=["ANT"])])
-        if threecat_percent_only:
-            return df_all[["pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
-        else:
-            return df_all[["model_FIA_km2", "agreement_overlap_km2", "model_excess_km2",
-                           "agreement_pct_of_model", "model_excess_pct_of_model",
-                           "obs_FIA_km2", "agreement_pct_of_obs", "obs_excess_km2", "obs_excess_pct_of_obs",
-                           "pct_agreement", "pct_model_dominant", "pct_observation_dominant"]]
-            
-    def define_FIP_diff_names(self, 
-                     AF2020            = False,
-                     variable_name     = None,
-                     lon_coord_name    = None,
-                     lat_coord_name    = None,
-                     time_coord_name   = None,
-                     spatial_dim_names = None,
-                     thresh_val        = None):
-        """
-        Standardise coordinate/variable naming for fast-ice persistence diagnostics.
-
-        This is a lightweight helper that returns a consistent naming dictionary used by
-        fast-ice mask and coordinate extraction routines for either:
-          - AF2020 observational datasets (AF2020=True), or
-          - model/CICE datasets (AF2020=False).
-
-        Parameters
-        ----------
-        AF2020 : bool, default False
-            If True, derive names and threshold from `self.AF_FI_dict`; otherwise use
-            CICE/model conventions.
-        variable_name, lon_coord_name, lat_coord_name, time_coord_name : str, optional
-            Override defaults for variable and coordinate names.
-        spatial_dim_names : tuple[str, str], optional
-            Override spatial dim names. Defaults to `self.CICE_dict["spatial_dims"]`.
-        thresh_val : float, optional
-            Override the threshold value used to define "fast ice" presence.
-
-        Returns
-        -------
-        dict
-            Keys:
-            - spatial_dims, time_dim, variable, latitude, longitude, thresh_val
-        """
-        name_space        = {}
-        spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict['spatial_dims']
-        if AF2020:
-            name_var   = variable_name   if variable_name   is not None else self.AF_FI_dict["variable_name"]
-            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.AF_FI_dict["lat_coord_name"]
-            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.AF_FI_dict["lon_coord_name"]
-            name_dt    = time_coord_name if time_coord_name is not None else self.AF_FI_dict["time_coord_name"]
-            thresh_val = thresh_val      if thresh_val      is not None else self.AF_FI_dict["threshold_value"]
-        else:    
-            name_var   = variable_name   if variable_name   is not None else "aice"
-            name_lat   = lat_coord_name  if lat_coord_name  is not None else self.CICE_dict["tcoord_names"][1]
-            name_lon   = lon_coord_name  if lon_coord_name  is not None else self.CICE_dict["tcoord_names"][0]
-            name_dt    = time_coord_name if time_coord_name is not None else self.CICE_dict["time_dim"]
-            thresh_val = thresh_val      if thresh_val      is not None else self.icon_thresh
-        return {'spatial_dims': spatial_dim_names,
-                'time_dim'    : name_dt,
-                'variable'    : name_var,
-                'latitude'    : name_lat,
-                'longitude'   : name_lon,
-                'thresh_val'  : thresh_val}
-
-    def define_fast_ice_coordinates(self, ds,
-                                    AF2020            = False,
-                                    variable_name     = None,
-                                    lon_coord_name    = None,
-                                    lat_coord_name    = None,
-                                    time_coord_name   = None,
-                                    spatial_dim_names = None,
-                                    thresh_val        = None):
-        """
-        Extract lat/lon/time arrays and standardised naming for fast-ice mask construction.
-
-        Parameters
-        ----------
-        ds : xr.Dataset
-            Dataset containing the required variable and coordinate fields.
-        AF2020 : bool, default False
-            Switch between AF2020 and CICE/model conventions.
-        (other parameters)
-            Passed through to `define_FIP_diff_names(...)`.
-
-        Returns
-        -------
-        dict
-            Keys:
-            - datetimes : 1D datetime array
-            - latitudes : 2D latitude array
-            - longitudes : 2D longitude array
-            - names : the naming dictionary returned by `define_FIP_diff_names`
-        """
-        names = self.define_FIP_diff_names(AF2020            = AF2020,
-                                           variable_name     = variable_name,
-                                           lon_coord_name    = lon_coord_name,
-                                           lat_coord_name    = lat_coord_name,
-                                           time_coord_name   = time_coord_name,
-                                           spatial_dim_names = spatial_dim_names,
-                                           thresh_val        = thresh_val)
-        if "time" in ds[names['latitude']].dims:
-            lat = ds[names['latitude']].isel(time=0).values
-        else:
-            lat = ds[names['latitude']].values
-        if "time" in ds[names['longitude']].dims:
-            lon = ds[names['longitude']].isel(time=0).values
-        else:
-            lon = ds[names['longitude']].values
-        dt = ds[names['time_dim']].values
-        return {'datetimes'  : dt,
-                'latitudes'  : lat,
-                'longitudes' : lon,
-                'names'      : names}
-
-    def define_fast_ice_mask_da(self, ds,
-                                AF2020            = False,
-                                variable_name     = None,
-                                lon_coord_name    = None,
-                                lat_coord_name    = None,
-                                time_coord_name   = None,
-                                spatial_dim_names = None,
-                                thresh_val        = None):
-        """
-        Construct a binary fast-ice mask DataArray from a dataset.
-
-        A grid cell is classified as fast ice when:
-            ds[variable] >= thresh_val
-        where names/threshold are determined by `define_FIP_diff_names()`.
-
-        Parameters
-        ----------
-        ds : xr.Dataset
-            Input dataset.
-        AF2020 : bool, default False
-            If True, use AF2020 conventions; else CICE/model.
-        (other parameters)
-            Passed through to `define_fast_ice_coordinates(...)`.
-
-        Returns
-        -------
-        xr.DataArray
-            Binary mask with dims given by `self.CICE_dict['three_dims']` and coordinates
-            attached using the configured lat/lon/time coordinate names.
-
-        Notes
-        -----
-        - This routine assumes the mask should always be expressed on the CICE naming
-          conventions (coords from `self.CICE_dict`), even when sourced from AF2020.
-        """
-        coords  = self.define_fast_ice_coordinates(ds,
-                                                    AF2020            = AF2020,
-                                                    variable_name     = variable_name,
-                                                    lon_coord_name    = lon_coord_name,
-                                                    lat_coord_name    = lat_coord_name,
-                                                    time_coord_name   = time_coord_name,
-                                                    spatial_dim_names = spatial_dim_names,
-                                                    thresh_val        = thresh_val)
-        FI_mask = xr.where(ds[coords['names']['variable']] >= coords['names']['thresh_val'], 1.0, 0.0)
-        return xr.DataArray(FI_mask,
-                            dims   = self.CICE_dict['three_dims'],
-                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], coords['latitudes']),
-                                      self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], coords['longitudes']),
-                                      self.CICE_dict['time_dim']       : (self.CICE_dict['time_dim']    , coords['datetimes'])})
-
-    def define_fast_ice_persistence_da(self, fip, reG=False):
-        """
-        Wrap a persistence-like array into a consistently-labelled 2D DataArray.
-
-        Parameters
-        ----------
-        fip : xr.DataArray
-            Persistence field on either the native grid or a regridded regular grid.
-        reG : bool, default False
-            If True, attach coordinates from `define_regular_G(...)` (0.15° global SH);
-            otherwise use fip's existing lat/lon coordinates.
-
-        Returns
-        -------
-        xr.DataArray
-            2D float32 DataArray with spatial dims `self.CICE_dict['spatial_dims']` and
-            lat/lon coordinates attached.
-        """
-        if reG:
-            G_dst = self.define_regular_G(0.15, region=[0,360,-90,0], spatial_dim_names=self.CICE_dict['spatial_dims'])
-            lats  = G_dst[self.CICE_dict['lat_coord_name']].values
-            lons  = G_dst[self.CICE_dict['lon_coord_name']].values
-        else:
-            lats = fip[self.CICE_dict['lat_coord_name']].values
-            lons = fip[self.CICE_dict['lon_coord_name']].values
-        return xr.DataArray(fip.astype('float32').values,
-                            dims   = self.CICE_dict['spatial_dims'],
-                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], lats),
-                                    self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], lons)})
-
-    def compute_fip_weight(self,
-                           FIP   : xr.Dataset, 
-                           mode  : str = "max",
-                           t     : float = 0.1,
-                           gamma : float = 1.0) -> xr.DataArray:
-        """
-        Compute an opacity/weight field from fast-ice persistence coverage.
-
-        This is used for visualisation or for weighting a misfit field, producing
-        values in [0, 1] where:
-          - 0 => fully transparent / no weight (below threshold)
-          - 1 => fully opaque / full weight (high persistence coverage)
-
-        Parameters
-        ----------
-        FIP : xr.Dataset
-            Must include `FIP["obs"]` (observed persistence fraction). May include
-            `FIP["mod"]` (model persistence fraction).
-        mode : {"max","mean","prod","obs"}, default "max"
-            Coverage operator used before thresholding:
-              - "max"  : max(obs, mod)
-              - "mean" : 0.5*(obs + mod)
-              - "prod" : sqrt(obs*mod) (geometric mean)
-              - any other value falls back to obs only
-        t : float, default 0.1
-            Soft threshold. Values below t map to 0; values linearly ramp to 1 by 1.0.
-        gamma : float, default 1.0
-            Contrast shaping exponent (w ** gamma). gamma>1 increases contrast.
-
-        Returns
-        -------
-        xr.DataArray
-            Weight field in [0, 1], named "diff_weight", with descriptive attributes.
-
-        Raises
-        ------
-        KeyError
-            If FIP does not contain an "obs" variable.
-
-        Notes
-        -----
-        - This routine is agnostic to the grid; it simply transforms persistence fractions.
-        """
-        if "obs" not in FIP:
-            raise KeyError("FIP['obs'] is required")
-        obs = FIP["obs"]
-        mod = FIP.get("mod", None)
-        if mode == "max" and mod is not None:
-            cov = xr.apply_ufunc(np.maximum, obs, mod)
-        elif mode == "mean" and mod is not None:
-            cov = 0.5 * (obs + mod)
-        elif mode == "prod" and mod is not None:
-            cov = xr.apply_ufunc(np.sqrt, obs * mod)  # geometric mean
-        else:
-            cov = obs  # fall back to obs only
-        # Soft ramp: 0 below t, then linear to 1 at 1.0
-        w = (cov - t) / (1 - t)
-        w = w.clip(0, 1)
-        # Optional contrast shaping
-        if gamma != 1.0:
-            w = w ** gamma
-        w.name = "diff_weight"
-        w.attrs.update(dict(long_name="opacity weight", comment=f"weight ~ {mode}(obs,mod), threshold={t}, gamma={gamma}"))
-        return w
-            

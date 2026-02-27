@@ -104,7 +104,6 @@ class SeaIceClassification:
       reconstructed rather than averaged/regridded. This typically reduces the systematic
       “west-of-land NaN/zero” artefacts seen in B-grid corner-staggered products.
     """
-    
     def __init__(self, sim_name=None, logger=None, **kwargs):
         """
         Initialise the classifier and attach configuration.
@@ -179,7 +178,7 @@ class SeaIceClassification:
                     mag = mag.chunk({time_dim: tch})
             # centered rolling mean; require full window to avoid edge bias
             out = (mag.rolling({time_dim: mean_period},
-                                center      = True, 
+                                center      = True,
                                 min_periods = mean_period).mean().astype(np.float32))
             return out
         else: # NumPy fallback
@@ -290,7 +289,7 @@ class SeaIceClassification:
         if wrap_x and out.shape[2] > 1:
             out[:, :, -1] = out[:, :, 0]
         return out[:, :y_len, :x_len].astype(np.float32)
-    
+
     def Cavg_meth(self, C_component, direction: str,
                   y_len       : int  | None = None,
                   x_len       : int  | None = None,
@@ -384,7 +383,6 @@ class SeaIceClassification:
                     out = 0.5 * (da + shifted)
                     if out.sizes.get(ydim, 0) > y_len:
                         out = out.isel({ydim: slice(0, y_len)})
-
             # pad to target if needed (rare, but keeps behaviour consistent with Bavg)
             pad_y = max(y_len - int(out.sizes.get(ydim, 0)), 0)
             pad_x = max(x_len - int(out.sizes.get(xdim, 0)), 0)
@@ -397,12 +395,9 @@ class SeaIceClassification:
         a = np.asarray(C_component, dtype="float64")
         if nan_to_zero:
             a = np.nan_to_num(a, nan=0.0)
-
         if a.ndim < 3:
             raise ValueError("Cavg_meth (NumPy): expected array with at least 3 dims (time,y,x)")
-
         T, ny, nx = a.shape[0], a.shape[1], a.shape[2]
-
         if direction == "x":
             if nx == x_len + 1:
                 out = 0.5 * (a[:, :, :-1] + a[:, :, 1:])
@@ -523,7 +518,7 @@ class SeaIceClassification:
         uTx = self.reG(uB_da.fillna(0.0))  # no-slip: NaNs->0
         vTx = self.reG(vB_da.fillna(0.0))
         return xr.apply_ufunc(np.hypot, uTx, vTx, dask="parallelized", output_dtypes=[np.float32])
-    
+
     def C2T(self, uvelE, uvelN, vvelE, vvelN,
             y_len      : int | None = None,
             x_len      : int | None = None,
@@ -592,8 +587,8 @@ class SeaIceClassification:
             raise ValueError("C2T: combine must be 'mean' or 'uv'")
         return velE_T, velN_T
 
-    def _binary_days(self, mask, 
-                     win     : int, 
+    def _binary_days(self, mask,
+                     win     : int,
                      min_days: int,
                      centered: bool = True):
         """
@@ -710,7 +705,7 @@ class SeaIceClassification:
             self.logger.info("       pack ice")
             da_bin = (counts < M).astype("uint8").rename(self.mask_name)
         return da_bin.to_dataset()
-    
+
     def _wrap_x_last_equals_first(self, da: xr.DataArray) -> xr.DataArray:
         xdim = self.CICE_dict["x_dim"]
         if da.sizes.get(xdim, 0) <= 1:
@@ -720,7 +715,7 @@ class SeaIceClassification:
         last_label = da[xdim].isel({xdim: -1})
         first_col  = da.isel({xdim: 0})
         return da.where(da[xdim] != last_label, other=first_col)
-    
+
     def compute_ispdT(self, uvel, vvel=None) -> xr.DataArray:
         """
         Compute T-grid sea-ice speed magnitude (`ispd_T`) using the configured strategy.
@@ -850,7 +845,7 @@ class SeaIceClassification:
         if len(members) == 1:
             return members[0].astype(np.float32)
         return xr.concat(members, dim="__concat_dim__").mean("__concat_dim__", skipna=True).astype(np.float32)
-    
+
     def _apply_thresholds(self,
                           ispd_T   : xr.DataArray,
                           aice     : xr.DataArray,
@@ -899,7 +894,7 @@ class SeaIceClassification:
         # Materialize (your stated design choice)
         DS = DS.compute()
         return DS
-    
+
     def _with_T_coords(self, da: xr.DataArray, name: str | None = None) -> xr.DataArray:
         """
         Attach standard T-grid auxiliary coordinates (lon, lat, angle, area) to a DataArray.
@@ -935,7 +930,7 @@ class SeaIceClassification:
                                        "angle": ((ydim, xdim), self.G_t["angle"].data),
                                        "area" : ((ydim, xdim), self.G_t["area"].data)})
         return da
-    
+
     def _b2t_selection_set(self) -> set[str]:
         """
         Normalise `self.BorC2T_type` into a set of mode tokens.
@@ -1098,7 +1093,7 @@ class SeaIceClassification:
             uvelN = CICE_all['uvelN'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
             vvelE = CICE_all['vvelE'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
             vvelN = CICE_all['vvelN'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
-        else:            
+        else:
             uvel = CICE_all['uvel'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
             vvel = CICE_all['vvel'].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
         # chunking is an art form
@@ -1152,17 +1147,17 @@ class SeaIceClassification:
                      bin_min_days          : int  = None,
                      enable_rolling_output : bool = False,
                      roll_win_days         : int  = None,
-                     time_dim_name         : str  = None): 
+                     time_dim_name         : str  = None):
         """
-        Classify ocean ice as fast ice (FI), pack ice (PI) and both of them as sea ice (SI) 
-        using concentration (+ speed for fast and pack) thresholds with optional persistence/rolling 
+        Classify ocean ice as fast ice (FI), pack ice (PI) and both of them as sea ice (SI)
+        using concentration (+ speed for fast and pack) thresholds with optional persistence/rolling
         products.
 
         Pack ice is defined where concentration exceeds `icon_thresh` and the T-grid
         speed magnitude exceeds the fast-ice speed threshold:
 
             PI := (aice > icon_thresh) AND (ispd_T > ispd_thresh)
-            
+
         Fast ice is defined where concentration exceeds `icon_thresh` and the T-grid
         speed magnitude is small but non-zero:
 
@@ -1393,10 +1388,8 @@ class SeaIceClassification:
         a = np.asarray(aice2d)
         nanmask = ~np.isfinite(a)
         a = np.where(nanmask, 0.0, a)
-
         ice = a > edge_aice_thresh
         openw = ~ice
-
         if exclude_polynyas:
             lbl, n = ndi.label(openw)
             if n == 0:
@@ -1408,20 +1401,15 @@ class SeaIceClassification:
                 ocean_open = np.isin(lbl, b)
         else:
             ocean_open = openw
-
         # distance_transform_edt computes distance to nearest zero.
         # We want distance to ocean_open==True, so ocean cells should be zero.
         dist_cells = ndi.distance_transform_edt(~ocean_open)
-
         miz = ice & (dist_cells <= int(width_cells))
-
         if aice_min is not None:
             miz &= (a >= float(aice_min))
         if aice_max is not None:
             miz &= (a <= float(aice_max))
-
         return miz.astype(np.uint8)
-
 
     def classify_marginal_ice_zone(self,
                                 dt0_str              : str,
@@ -1461,10 +1449,8 @@ class SeaIceClassification:
         """
         time_dim      = time_dim_name or self.CICE_dict["time_dim"]
         roll_win_days = int(roll_win_days or self.mean_period)
-
         # thresholds/defaults
         edge_thr = float(edge_aice_thresh) if edge_aice_thresh is not None else float(self.icon_thresh)
-
         # infer cell_km if not provided (approx; recommend passing cell_km explicitly)
         if cell_km is None:
             # try to infer from T-cell area if available
@@ -1478,58 +1464,44 @@ class SeaIceClassification:
                     cell_km = 5.0
             except Exception:
                 cell_km = 5.0
-
         width_cells = max(1, int(np.round(float(miz_width_km) / float(cell_km))))
-
         # extend for rolling / persistence (edge-distance itself has no temporal window)
         ext_per = 0
         if (bin_win_days is not None) and (bin_min_days is not None):
             ext_per = max(ext_per, int(bin_win_days) // 2)
         if enable_rolling_output:
             ext_per = max(ext_per, roll_win_days // 2)
-
         dt0_ext = pd.to_datetime(dt0_str) - pd.Timedelta(days=ext_per)
         dtN_ext = pd.to_datetime(dtN_str) + pd.Timedelta(days=ext_per)
-
         self.logger.info(f"loading model data between {dt0_ext:%Y-%m-%d} and {dtN_ext:%Y-%m-%d}")
         CICE_all = self.load_cice_zarr(slice_hem=False,
                                     variables=["aice"],
                                     dt0_str=f"{dt0_ext:%Y-%m-%d}",
                                     dtN_str=f"{dtN_ext:%Y-%m-%d}")
-
         aice = CICE_all["aice"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
         aice = self.slice_hemisphere(aice)
-
         # IMPORTANT for distance transforms: you want full spatial context.
         # Rechunk so each time chunk sees the full (y,x) slab.
         ydim, xdim = self.CICE_dict["y_dim"], self.CICE_dict["x_dim"]
         tch = max(8, min(int(bin_win_days or 8), int(roll_win_days or 8)))
         aice = aice.chunk({time_dim: tch, ydim: -1, xdim: -1})
-
         # Compute daily MIZ mask on extended range (vectorized over time)
-        miz_da = xr.apply_ufunc(
-            _miz_mask_from_aice_2d,
-            aice,
-            input_core_dims=[[ydim, xdim]],
-            output_core_dims=[[ydim, xdim]],
-            vectorize=True,
-            dask="parallelized",
-            output_dtypes=[np.uint8],
-            kwargs=dict(edge_aice_thresh=edge_thr,
-                        width_cells=width_cells,
-                        aice_min=aice_min,
-                        aice_max=aice_max,
-                        exclude_polynyas=exclude_polynyas)
-        ).rename("MIZ_mask")
-
+        miz_da = xr.apply_ufunc(_miz_mask_from_aice_2d, aice,
+                                input_core_dims=[[ydim, xdim]],
+                                output_core_dims=[[ydim, xdim]],
+                                vectorize=True,
+                                dask="parallelized",
+                                output_dtypes=[np.uint8],
+                                kwargs=dict(edge_aice_thresh=edge_thr,
+                                            width_cells=width_cells,
+                                            aice_min=aice_min,
+                                            aice_max=aice_max,
+                                            exclude_polynyas=exclude_polynyas)).rename("MIZ_mask")
         MIZ_dly_ext = miz_da.to_dataset()
-
         # chunk/compute like your FI/PI products
         MIZ_dly_ext = MIZ_dly_ext.chunk(self.CICE_dict["FI_chunks"]).compute()
-
         # crop to requested interval
         MIZ_dly = MIZ_dly_ext.sel({time_dim: slice(dt0_str, dtN_str)})
-
         # optional persistence (“binary-days”) on the EXTENDED daily mask, then crop
         MIZ_bin = None
         if (bin_win_days is not None) and (bin_min_days is not None):
@@ -1541,31 +1513,25 @@ class SeaIceClassification:
             MIZ_bin_ext = (rs >= M).astype(np.uint8).rename("MIZ_mask").to_dataset()
             MIZ_bin_ext = MIZ_bin_ext.chunk(self.CICE_dict["FI_chunks"]).compute()
             MIZ_bin = MIZ_bin_ext.sel({time_dim: slice(dt0_str, dtN_str)})
-
         # optional rolling: smooth aice in time then recompute MIZ (helps edge jitter)
         MIZ_roll = None
         if enable_rolling_output:
             self.logger.info(f"computing rolling-aice MIZ (period={roll_win_days})")
             aice_roll = self._rolling_mean(aice, mean_period=roll_win_days)
-
-            miz_roll_da = xr.apply_ufunc(
-                _miz_mask_from_aice_2d,
-                aice_roll,
-                input_core_dims=[[ydim, xdim]],
-                output_core_dims=[[ydim, xdim]],
-                vectorize=True,
-                dask="parallelized",
-                output_dtypes=[np.uint8],
-                kwargs=dict(edge_aice_thresh=edge_thr,
-                            width_cells=width_cells,
-                            aice_min=aice_min,
-                            aice_max=aice_max,
-                            exclude_polynyas=exclude_polynyas)
-            ).rename("MIZ_mask")
-
+            miz_roll_da = xr.apply_ufunc(_miz_mask_from_aice_2d,
+                                         aice_roll,
+                                         input_core_dims=[[ydim, xdim]],
+                                         output_core_dims=[[ydim, xdim]],
+                                         vectorize=True,
+                                         dask="parallelized",
+                                         output_dtypes=[np.uint8],
+                                         kwargs=dict(edge_aice_thresh=edge_thr,
+                                                     width_cells=width_cells,
+                                                     aice_min=aice_min,
+                                                     aice_max=aice_max,
+                                                     exclude_polynyas=exclude_polynyas)).rename("MIZ_mask")
             MIZ_roll_ext = miz_roll_da.to_dataset().chunk(self.CICE_dict["FI_chunks"]).compute()
             MIZ_roll = MIZ_roll_ext.sel({time_dim: slice(dt0_str, dtN_str)})
-
         diag = dict(width_cells=int(width_cells),
                     miz_width_km=float(miz_width_km),
                     cell_km=float(cell_km),
@@ -1573,5 +1539,111 @@ class SeaIceClassification:
                     aice_min=None if aice_min is None else float(aice_min),
                     aice_max=None if aice_max is None else float(aice_max),
                     exclude_polynyas=bool(exclude_polynyas))
-
         return MIZ_dly, MIZ_bin, MIZ_roll, diag
+
+    @staticmethod
+    def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
+        """
+        Drop duplicate coordinate values along `dim` (keeping the first occurrence).
+        Useful when concatenating yearly groups that may contain duplicated x-indices.
+        """
+        if dim in ds.coords:
+            _, index = np.unique(ds[dim], return_index=True)
+            ds = ds.isel({dim: sorted(index)})
+        return ds
+
+    def load_classified_ice(self,
+                            sim_name     : str   = None,
+                            ice_type     : str   = None,
+                            ispd_thresh  : float = None,
+                            class_method : str   = "binary-days",
+                            BorC2T_type  : str   = None,
+                            variables    : list  = None,
+                            dt0_str      : str   = None,
+                            dtN_str      : str   = None,
+                            D_zarr       : str   = None,
+                            chunks       : dict  = None,
+                            persist      : bool  = False):
+        """
+        Load classified ice products from yearly-grouped Zarr stores.
+
+        Loads fast-ice/pack-ice/sea-ice classification products written as Zarr stores
+        containing per-year groups. Supports daily, rolling-mean, and binary-days
+        products via store naming conventions.
+
+        Parameters
+        ----------
+        sim_name : str, optional
+            Simulation name. Defaults to `self.sim_name`.
+        bin_days : bool, default True
+            If True, load the binary-days product (`*_bin.zarr`).
+        roll_mean : bool, default False
+            If True (and `bin_days` is False), load the rolling-mean product (`*_roll.zarr`).
+        ispd_thresh : float, optional
+            Speed threshold embedded in the Zarr path; defaults to `self.ispd_thresh`.
+        ice_type : str, optional
+            Ice type identifier ('FI', 'PI', or 'SI'). Defaults to `self.ice_type`.
+        BorC2T_type : str, optional
+            Velocity product identifier used in the store name (e.g., 'Ta', 'Tb', 'Tx', 'BT').
+        variables : list[str], optional
+            Variable subset to select after concatenation.
+        dt0_str, dtN_str : str, optional
+            Requested date window. Used here only to select which years to attempt to open.
+        D_zarr : str or pathlib.Path, optional
+            Override base Zarr directory.
+        chunks : dict, optional
+            Chunking mapping applied after concatenation (implementation-dependent).
+        persist : bool, default False
+            If True, Dask persist the concatenated dataset in memory.
+
+        Returns
+        -------
+        xarray.Dataset
+            Concatenated dataset across requested years.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no valid year groups could be opened from the target store.
+
+        Notes
+        -----
+        - Uses `_drop_duplicate_coords` (class-level helper) to avoid coordinate collisions
+        during concat.
+        - This method does not currently crop the returned dataset to dt0/dtN; caller may
+        apply `sel(time=slice(...))` if needed.
+        """
+        from datetime import datetime
+        sim_name     = sim_name     or self.sim_name
+        ispd_thresh  = ispd_thresh  or self.ispd_thresh
+        ice_type     = ice_type     or self.ice_type
+        BorC2T_type  = BorC2T_type  or f"{''.join(self.BorC2T_type)}"
+        D_zarr       = D_zarr       or self.D_zarr
+        dt0_str      = dt0_str      or self.dt0_str
+        dtN_str      = dtN_str      or self.dtN_str
+        chunks       = chunks       or self.CICE_dict["FI_chunks"]
+        P_class_zarr = self.define_classification_zarr(D_zarr       = D_zarr,
+                                                       ice_type     = ice_type,
+                                                       ispd_thresh  = ispd_thresh,
+                                                       BorC2T_type  = BorC2T_type,
+                                                       class_method = class_method)
+        # === Loop over years, not months ===
+        dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
+        dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
+        years    = list(range(dt0.year, dtN.year + 1))
+        datasets = []
+        for yr in years:
+            try:
+                ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
+                ds_yr = SeaIceToolbox._drop_duplicate_coords(ds_yr, dim="ni")
+                datasets.append(ds_yr)
+            except Exception as e:
+                self.logger.warning(f"Skipping year {yr}: {e}")
+        if not datasets:
+            raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
+        ds = xr.concat(datasets, dim="time", coords='minimal')
+        if variables:
+            ds = ds[variables]
+        if persist:
+            ds = ds.persist()
+        return ds 

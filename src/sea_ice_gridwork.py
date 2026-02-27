@@ -53,6 +53,27 @@ class SeaIceGridWork:
         """
         return
 
+    def get_static_grid(self, var):
+        """
+        Return a static (time-independent) slice of a grid-like DataArray.
+
+        If the input has a "time" dimension, returns `isel(time=0)`, otherwise returns
+        the object unchanged.
+
+        Parameters
+        ----------
+        var : xarray.DataArray
+            DataArray that may or may not have a "time" dimension.
+
+        Returns
+        -------
+        xarray.DataArray
+            Time-sliced or original DataArray.
+        """
+        if "time" in var.dims:
+            return var.isel(time=0)
+        return var
+
     def normalise_longitudes(self, lon, to="0-360", eps=1e-12):
         """
         Normalize longitudes to a consistent wrap convention.
@@ -410,339 +431,612 @@ class SeaIceGridWork:
                 return m.astype(bool)
         return None
 
-    def load_cice_grid(self,
-                       P_grid      : Path | None = None,
-                       P_mask_org  : Path | None = None,
-                       P_mask_mod  : Path | None = None,
-                       slice_hem   : bool        = False,
-                       build_faces : bool        = True,
-                       nx          : int | None  = None,
-                       ny          : int | None  = None):
+    # def load_cice_grid(self,
+    #                    P_grid      : Path | None = None,
+    #                    P_mask_org  : Path | None = None,
+    #                    P_mask_mod  : Path | None = None,
+    #                    slice_hem   : bool        = False,
+    #                    build_faces : bool        = True,
+    #                    nx          : int | None  = None,
+    #                    ny          : int | None  = None):
+    #     """
+    #     Load CICE grid metadata and construct T-grid/U-grid datasets and (optionally) face grids.
+
+    #     This unified loader reads the CICE grid file and associated landmask files, then
+    #     constructs and stores as attributes:
+
+    #     - `self.G_t` : T-grid (cell centres) dataset with dims (nj, ni)
+    #     - `self.G_u` : U-grid (B-grid velocity points) dataset with dims:
+    #                 centres (nj, ni) and corners (nj_b, ni_b) = (nj+1, ni+1)
+    #     - `self.G_e` : C-grid vertical face coordinates derived from T-grid corners,
+    #                 with dims (nj, ni_b) = (nj, ni+1) when `build_faces=True`
+    #     - `self.G_n` : C-grid horizontal face coordinates derived from T-grid corners,
+    #                 with dims (nj_b, ni) = (nj+1, ni) when `build_faces=True`
+
+    #     Landmask handling:
+    #     - `self.kmt_org` is always loaded (original landmask).
+    #     - If `self.use_gi` is True, `self.kmt_mod` is loaded (modified landmask including
+    #     grounded icebergs), and an additional dataset `self.G_GI` is constructed to
+    #     describe grounded-iceberg cells and their properties.
+
+    #     Parameters
+    #     ----------
+    #     slice_hem : bool, default False
+    #         If True, apply `self.slice_hemisphere(...)` to all constructed datasets
+    #         (grids, masks, and grounded-iceberg dataset) to subset to the configured
+    #         hemisphere.
+    #     build_faces : bool, default True
+    #         If True, compute face-coordinate datasets `self.G_e` and `self.G_n` using
+    #         `build_grid_faces(...)`. If False, these are set to None and `self.cgrid_loaded`
+    #         is False.
+
+    #     Returns
+    #     -------
+    #     None
+    #         Grids and masks are stored on the instance as attributes.
+
+    #     Side Effects
+    #     ------------
+    #     - Opens multiple NetCDF files from disk using xarray:
+    #     - the main CICE grid file (`self.CICE_dict["P_G"]`)
+    #     - the original landmask (`self.P_KMT_org`)
+    #     - the modified landmask (`self.P_KMT_mod`) if `self.use_gi` is True
+    #     - Sets internal state flags:
+    #     - `self.bgrid_loaded = True`
+    #     - `self.cgrid_loaded = bool(build_faces)`
+    #     - `self.grid_loaded  = True`
+
+    #     Attributes Set
+    #     --------------
+    #     G_t : xarray.Dataset
+    #         Variables: lat, lon, angle, area on (nj, ni).
+    #     G_u : xarray.Dataset
+    #         Variables: lat, lon, lat_b, lon_b, angle, area with centre dims (nj, ni) and
+    #         corner dims (nj_b, ni_b) = (nj+1, ni+1).
+    #     G_e, G_n : xarray.Dataset or None
+    #         Face-coordinate datasets created when `build_faces=True`.
+    #     kmt_org : xarray.Dataset
+    #         Binary mask dataset on (nj, ni) describing the original ocean/land mask.
+    #     kmt_mod : xarray.Dataset, optional
+    #         Binary mask dataset on (nj, ni) describing the modified mask including
+    #         grounded icebergs (only when `self.use_gi` is True).
+    #     G_GI : xarray.Dataset, optional
+    #         Grounded-iceberg diagnostics dataset, including:
+    #         - `mask(nj,ni)` boolean mask of grounded-iceberg cells
+    #         - `area/lat/lon(nj,ni)` with NaN outside GI cells
+    #         - 1-D lists `area_nGI`, `lat_nGI`, `lon_nGI` for GI cell locations
+    #         Only present when `self.use_gi` is True.
+
+    #     Notes
+    #     -----
+    #     - Longitudes are normalized to 0–360 degrees to avoid seam ambiguity.
+    #     - Corner/face coordinates are derived from T-grid centres to enable consistent
+    #     C-grid geometry for plotting and regridding.
+    #     - The grounded-iceberg 1-D coordinate lists include an index shift in `ni` (westward)
+    #     to better align with B-grid layout conventions used elsewhere in the toolbox.
+    #     """
+    #     if self.grid_loaded:
+    #         self.logger.info(f"Grid {P_G} previously loaded ... returning with previously loaded grid.")
+    #         return
+    #     P_G       = P_grid     if P_grid     is not None else self.CICE_dict["P_G"]
+    #     P_kmt_org = P_mask_org if P_mask_org is not None else self.P_KMT_org
+    #     P_kmt_mod = P_mask_mod if P_mask_mod is not None else self.P_KMT_mod
+    #     nx        = nx         if nx         is not None else self.CICE_dict["x_dim_length"]
+    #     ny        = ny         if ny         is not None else self.CICE_dict["y_dim_length"]
+    #     lon, lat, anglet_rad, dx_m, dy_m, area_m2, G_kind, ds = self.load_super_grid(P_grid = P_G,
+    #                                                                                  nx_in  = nx,
+    #                                                                                  ny_in  = ny)
+    #     lon_b, lat_b, lon_e, lat_e, lon_n, lat_n              = self.build_grid_faces(lon,lat)
+    #     nat_dim = self.CICE_dict["spatial_dims"]      # e.g. ("nj","ni")
+    #     ext_dim = tuple(f"{d}_b" for d in nat_dim)    # e.g. ("nj_b","ni_b")
+    #     kmt_org = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_org))
+    #     kmt_mod = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_mod)) if self.use_gi else kmt_org
+    #     TLON    = self.normalise_longitudes(self.radians_to_degrees(lon.data), to="0-360")
+    #     TAREA   = area_m2
+    #     T_ANGLE = self.radians_to_degrees(anglet.data)
+    #     if G_kind=="cice":
+    #         ULAT = 
+    #         # corners + faces from u-grid centres
+    #         ULON_b, ULAT_b, lon_e, lat_e, lon_n, lat_n = self.build_grid_faces(TLON, TLAT, source_in_radians=False)
+    #         # --- U grid (legacy / B-grid velocity points)
+    #         ULAT    = self.radians_to_degrees(xr.open_dataset(P_G)['ulat'])
+    #         ULON    = self.normalise_longitudes(self.radians_to_degrees(xr.open_dataset(P_G)['ulon']), to="0-360")
+    #         UAREA   = xr.open_dataset(P_G)['uarea']
+    #         U_ANGLE = T_ANGLE
+    #     # dims
+    #     nj, ni     = TLAT.shape
+    #     coords_nat = {nat_dim[0]: np.arange(nj),
+    #                   nat_dim[1]: np.arange(ni)}
+    #     coords_ext = {nat_dim[0]: np.arange(nj),
+    #                   nat_dim[1]: np.arange(ni),
+    #                   ext_dim[0]: np.arange(nj + 1),
+    #                   ext_dim[1]: np.arange(ni + 1)}
+    #     # landmasks
+    #     self.kmt_org = xr.Dataset(data_vars = {"kmt_org": (nat_dim, kmt_org, {"units"    : "binary", 
+    #                                                                           "long_name": "original landmask on t-grid"})},
+    #                               coords    = coords_nat)
+    #     # Grounded icebergs
+    #     if self.use_gi:
+    #         self.kmt_mod = xr.Dataset(data_vars = {"kmt_mod": (nat_dim, kmt_mod, {"units"    : "binary", 
+    #                                                                             "long_name": "modified landmask on t-grid (grounded icebergs)"})},
+    #                                 coords    = coords_nat)
+    #         # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
+    #         GI_mask = (kmt_org == 1) & (kmt_mod == 0)
+    #         # 2-D fields with same shape as GI_mask (NaN outside GI)
+    #         GI_area = np.where(GI_mask, TAREA, np.nan).astype("float32")
+    #         GI_lat  = np.where(GI_mask, TLAT,  np.nan).astype("float32")
+    #         GI_lon  = np.where(GI_mask, TLON,  np.nan).astype("float32")
+    #         self.G_GI = xr.Dataset(data_vars={"mask": (nat_dim, GI_mask.astype("uint8"), {"units": "binary",
+    #                                                                                       "long_name": "grounded iceberg mask on t-grid"}),
+    #                                           "area": (nat_dim, GI_area, {"units": "m2",
+    #                                                                       "long_name": "t-cell area at grounded iceberg locations (NaN elsewhere)"}),
+    #                                           "lat":  (nat_dim, GI_lat,  {"units": "degrees_north",
+    #                                                                       "long_name": "latitude at grounded iceberg locations (NaN elsewhere)"}),
+    #                                           "lon":  (nat_dim, GI_lon,  {"units": "degrees_east",
+    #                                                                       "long_name": "longitude at grounded iceberg locations (NaN elsewhere)"})},
+    #                                coords = coords_nat)
+    #         # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
+    #         nj_idx, ni_idx = np.where(GI_mask)
+    #         ni_idx_shifted = ni_idx - 1
+    #         valid          = ni_idx_shifted >= 0
+    #         nj_idx         = nj_idx[valid]
+    #         ni_idx         = ni_idx_shifted[valid]
+    #         # Save 1D arrays with iceberg IDs
+    #         self.G_GI             = self.G_GI.assign_coords(nGI=np.arange(nj_idx.size))
+    #         self.G_GI["area_nGI"] = (("nGI",), TAREA[nj_idx, ni_idx].astype("float32"))
+    #         self.G_GI["lat_nGI"]  = (("nGI",), TLAT[nj_idx, ni_idx].astype("float32"))
+    #         self.G_GI["lon_nGI"]  = (("nGI",), TLON[nj_idx, ni_idx].astype("float32"))
+    #         self.G_GI["area_nGI"].attrs.update({"units": "m2", "long_name": "t-cell area (1D list) at GI cells"})
+    #         self.G_GI["lat_nGI"].attrs.update({"units": "degrees_north", "long_name": "GI latitude (1D list)"})
+    #         self.G_GI["lon_nGI"].attrs.update({"units": "degrees_east",  "long_name": "GI longitude (1D list)"})
+    #     # --- build datasets
+    #     self.G_t = xr.Dataset(data_vars = {"lat"    : (nat_dim, TLAT, {"units": "degrees"}),
+    #                                        "lon"    : (nat_dim, TLON, {"units": "degrees"}),
+    #                                        "angle"  : (nat_dim, T_ANGLE, {"units": "degrees"}),
+    #                                        "area"   : (nat_dim, TAREA, {"units": "m^2"})},
+    #                         coords    = coords_nat)
+    #     self.G_u = xr.Dataset(data_vars = {"lat"    : (nat_dim, ULAT, {"units": "degrees"}),
+    #                                        "lon"    : (nat_dim, ULON, {"units": "degrees"}),
+    #                                        "lat_b"  : (ext_dim, ULAT_b, {"units": "degrees"}),
+    #                                        "lon_b"  : (ext_dim, ULON_b, {"units": "degrees"}),
+    #                                        "angle"  : (nat_dim, U_ANGLE, {"units": "degrees"}),
+    #                                        "area"   : (nat_dim, UAREA, {"units": "m^2"})},
+    #                         coords    = coords_ext)
+    #     if build_faces:
+    #         # Use ext_dim/nat_dim naming so shapes are explicit:
+    #         # lon_e/lat_e: (nj, ni_b) == (nat_dim[0], ext_dim[1])
+    #         # lon_n/lat_n: (nj_b, ni) == (ext_dim[0], nat_dim[1])
+    #         self.G_e = xr.Dataset(data_vars = {"lat": ((nat_dim[0], ext_dim[1]), lat_e, {"units": "degrees"}),
+    #                                            "lon": ((nat_dim[0], ext_dim[1]), lon_e, {"units": "degrees"})},
+    #                               coords    = coords_ext)
+    #         self.G_n = xr.Dataset(data_vars = {"lat": ((ext_dim[0], nat_dim[1]), lat_n, {"units": "degrees"}),
+    #                                            "lon": ((ext_dim[0], nat_dim[1]), lon_n, {"units": "degrees"})},
+    #                               coords    = coords_ext)
+    #     else:
+    #         self.G_e = None
+    #         self.G_n = None
+    #     if slice_hem:
+    #         self.G_t = self.slice_hemisphere(self.G_t)
+    #         self.G_u = self.slice_hemisphere(self.G_u)
+    #         if self.G_e is not None:
+    #             self.G_e = self.slice_hemisphere(self.G_e)
+    #         if self.G_n is not None:
+    #             self.G_n = self.slice_hemisphere(self.G_n)
+    #         if self.use_gi and hasattr(self, "G_GI") and (self.G_GI is not None):
+    #             self.G_GI = self.slice_hemisphere(self.G_GI)
+    #         if hasattr(self, "kmt_org") and (self.kmt_org is not None):
+    #             self.kmt_org = self.slice_hemisphere(self.kmt_org)
+    #         if self.use_gi and hasattr(self, "kmt_mod") and (self.kmt_mod is not None):
+    #             self.kmt_mod = self.slice_hemisphere(self.kmt_mod)
+    #     # flags for downstream
+    #     self.bgrid_loaded = True
+    #     self.cgrid_loaded = bool(build_faces)
+    #     self.grid_loaded  = True
+
+    # def load_super_grid(self,
+    #                     P_grid            = None,
+    #                     lon_type          = '0-360',
+    #                     nx_in: int | None = None,
+    #                     ny_in: int | None = None):
+    #     """
+    #     Open either a CICE grid OR a MOM6 supergrid (ocean_hgrid.nc) and return the
+    #     T-grid geometry needed for F2 computations.
+
+    #     Returns
+    #     -------
+    #     tlon, tlat : (ny,nx) degrees
+    #     anglet_rad         : (ny,nx) radians, local i-axis angle relative to east
+    #     dx_m, dy_m          : (ny,nx) meters, cell metric lengths along local x/y
+    #     ds                  : opened dataset handle
+    #     grid_kind           : "cice" or "mom6_supergrid"
+    #     """
+    #     if P_grid is None:
+    #         P_grid = self.CICE_dict.get("P_G", None)
+    #     if P_grid is None:
+    #         raise ValueError("P_grid is None and self.CICE_dict['P_G'] is not set.")
+    #     self.logger.info(f"Opening grid for F2: {P_grid}")
+    #     ds         = xr.open_dataset(P_grid, decode_times=False)
+    #     is_G_super = ("nxp" in ds.sizes) and ("nyp" in ds.sizes) and ("x" in ds.variables) and ("y" in ds.variables)
+    #     # -------------------------
+    #     # MOM6 supergrid path
+    #     # -------------------------
+    #     if is_G_super:
+    #         grid_kind = "mom6_supergrid"
+    #         # supergrid lon/lat in degrees (usually)
+    #         x_deg = self._infer_deg_from_grid_units(ds["x"].values, "x")
+    #         y_deg = self._infer_deg_from_grid_units(ds["y"].values, "y")
+    #         # Model-grid nx,ny from supergrid dims (nxp=2*nx+1, nyp=2*ny+1)
+    #         nxp = int(ds.sizes["nxp"])
+    #         nyp = int(ds.sizes["nyp"])
+    #         nx  = (nxp - 1) // 2
+    #         ny  = (nyp - 1) // 2
+    #         # sanity
+    #         if (2 * nx + 1) != nxp or (2 * ny + 1) != nyp:
+    #             raise RuntimeError(f"Unexpected supergrid dims: nxp={nxp}, nyp={nyp} not of form 2*nx+1,2*ny+1")
+    #         if nx is not None and nx != int(nx_in):
+    #             raise RuntimeError(f"Supergrid-derived nx={nx} != nx={nx}")
+    #         if ny is not None and ny != int(ny_in):
+    #             raise RuntimeError(f"Supergrid-derived ny={ny} != ny={ny}")
+    #         # T-cell centers live at odd indices (1,3,5,...)
+    #         tlon = x_deg[1::2, 1::2]
+    #         tlat = y_deg[1::2, 1::2]
+    #         # Normalize lon for Antarctic transforms
+    #         tlon = self.normalise_longitudes(tlon, to=lon_type)
+    #         # Angle of local x-direction relative to east (deg -> rad)
+    #         if "angle_dx" in ds.variables:
+    #             ang_deg = self._infer_deg_from_grid_units(ds["angle_dx"].values, "angle_dx")
+    #             anglet_rad = np.deg2rad(ang_deg[1::2, 1::2])
+    #         else:
+    #             # Last-resort: compute from coordinate finite-differences (rarely needed)
+    #             self.logger.warning("angle_dx not found in supergrid; estimating angle from x/y differences.")
+    #             # approximate angle at T centers using forward diff in i on supergrid center row
+    #             # NOTE: this is crude and assumes degrees->meters conversion negligible at small scale; prefer angle_dx.
+    #             dxlon = x_deg[1::2, 2::2] - x_deg[1::2, 0::2]
+    #             dylat = y_deg[1::2, 2::2] - y_deg[1::2, 0::2]
+    #             anglet_rad = np.arctan2(dylat, dxlon)  # radians in degree-space; not ideal
+    #             anglet_rad = anglet_rad[:, :nx]        # keep (ny,nx)
+    #         # dx: ds["dx"] dims (nyp, nx) = (2*ny+1, 2*nx)
+    #         # model-cell dx at T center = sum of two supergrid segments across the cell
+    #         dx_s = ds["dx"].values
+    #         dx_m = self._to_meters(dx_s, ds["dx"].attrs.get("units"), name="dx")
+    #         dx_m = dx_m[1::2, 0::2] + dx_m[1::2, 1::2]     # (ny,nx)
+    #         # dy: ds["dy"] dims (ny, nxp) = (2*ny, 2*nx+1)
+    #         # model-cell dy at T center = sum of two supergrid segments across the cell
+    #         dy_s = ds["dy"].values
+    #         dy_m = self._to_meters(dy_s, ds["dy"].attrs.get("units"), name="dy")
+    #         dy_m = dy_m[0::2, 1::2] + dy_m[1::2, 1::2]     # (ny,nx)
+    #         # area(ny,nx) with (2*NY, 2*NX): sum 2x2 → (NY,NX)
+    #         if "area" in ds.variables:
+    #             a = ds["area"].astype("float64").values
+    #             if a.shape == (2*ny, 2*nx):
+    #                 area_m2 = (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2])
+    #             else:
+    #                 area_m2 = np.full((ny, nx), np.nan, dtype="float64")
+    #         else:
+    #             area_m2 = np.full((ny, nx), np.nan, dtype="float64")
+    #         # final shape check
+    #         if tlon.shape != (ny, nx) or dx_m.shape != (ny, nx) or dy_m.shape != (ny, nx):
+    #             raise RuntimeError(f"Derived shapes mismatch: tlon={tlon.shape}, dx={dx_m.shape}, dy={dy_m.shape}, expected {(ny,nx)}")
+    #         return (tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds)
+    #     # -------------------------
+    #     # CICE grid path (your current logic)
+    #     # -------------------------
+    #     else:
+    #         grid_kind = "cice"
+    #         def pick(*names):
+    #             for n in names:
+    #                 if n in ds.variables:
+    #                     return n
+    #             return None
+    #         v_tlon = pick("tlon", "TLON", "t_lon", "lon_t")
+    #         v_tlat = pick("tlat", "TLAT", "t_lat", "lat_t")
+    #         v_angt = pick("anglet", "angleT", "ANGLET", "angle_t")
+    #         v_hte  = pick("hte", "HTE", "dxT", "dxt")
+    #         v_htn  = pick("htn", "HTN", "dyT", "dyt")
+    #         for v, nm in [(v_tlon, "tlon"), (v_tlat, "tlat"), (v_angt, "anglet"), (v_hte, "hte"), (v_htn, "htn")]:
+    #             if v is None:
+    #                 raise KeyError(f"Could not find required grid variable '{nm}' in {P_grid}")
+    #             tlon = ds[v_tlon].values
+    #             tlat = ds[v_tlat].values
+    #             angt = ds[v_angt].values
+    #             hte  = ds[v_hte].values
+    #             htn  = ds[v_htn].values
+    #             tlon = self._infer_deg_from_grid_units(tlon, "tlon")
+    #             tlat = self._infer_deg_from_grid_units(tlat, "tlat")
+    #             tlon = self.normalise_longitudes(tlon, to=lon_type)
+    #             angt_arr = np.asarray(angt, dtype="float64")
+    #             finite = np.isfinite(angt_arr)
+    #         if finite.any():
+    #             amax = np.nanmax(np.abs(angt_arr[finite]))
+    #             if amax > (2.0 * np.pi + 1e-6) and amax <= 360.0:
+    #                 anglet_rad = np.deg2rad(angt_arr)
+    #             else:
+    #                 anglet_rad = angt_arr
+    #         else:
+    #             anglet_rad = angt_arr
+    #             dx_m = self._to_meters(hte, ds[v_hte].attrs.get("units"), name=v_hte)
+    #             dy_m = self._to_meters(htn, ds[v_htn].attrs.get("units"), name=v_htn)
+    #         for v in ("tarea", "TAREA", "area"):
+    #             if v in ds.variables and ds2[v].ndim == 2:
+    #                 area_m2 = np.asarray(ds2[v].values, dtype="float64")
+    #                 break
+    #         if area_m2 is None:
+    #             area_m2 = np.asarray(dx_m, dtype="float64") * np.asarray(dy_m, dtype="float64")
+    #             #return tlon, tlat, anglet_rad, dx_m, dy_m, ds, grid_kind
+    #         return (tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds)
+
+    def _open_tgrid_geometry(self, P_grid=None, lon_type="0-360", nx=None, ny=None, nx_in=None, ny_in=None):
         """
-        Load CICE grid metadata and construct T-grid/U-grid datasets and (optionally) face grids.
+        Core geometry loader used by BOTH load_super_grid() and load_cice_grid().
 
-        This unified loader reads the CICE grid file and associated landmask files, then
-        constructs and stores as attributes:
-
-        - `self.G_t` : T-grid (cell centres) dataset with dims (nj, ni)
-        - `self.G_u` : U-grid (B-grid velocity points) dataset with dims:
-                    centres (nj, ni) and corners (nj_b, ni_b) = (nj+1, ni+1)
-        - `self.G_e` : C-grid vertical face coordinates derived from T-grid corners,
-                    with dims (nj, ni_b) = (nj, ni+1) when `build_faces=True`
-        - `self.G_n` : C-grid horizontal face coordinates derived from T-grid corners,
-                    with dims (nj_b, ni) = (nj+1, ni) when `build_faces=True`
-
-        Landmask handling:
-        - `self.kmt_org` is always loaded (original landmask).
-        - If `self.use_gi` is True, `self.kmt_mod` is loaded (modified landmask including
-        grounded icebergs), and an additional dataset `self.G_GI` is constructed to
-        describe grounded-iceberg cells and their properties.
-
-        Parameters
-        ----------
-        slice_hem : bool, default False
-            If True, apply `self.slice_hemisphere(...)` to all constructed datasets
-            (grids, masks, and grounded-iceberg dataset) to subset to the configured
-            hemisphere.
-        build_faces : bool, default True
-            If True, compute face-coordinate datasets `self.G_e` and `self.G_n` using
-            `build_grid_faces(...)`. If False, these are set to None and `self.cgrid_loaded`
-            is False.
-
-        Returns
-        -------
-        None
-            Grids and masks are stored on the instance as attributes.
-
-        Side Effects
-        ------------
-        - Opens multiple NetCDF files from disk using xarray:
-        - the main CICE grid file (`self.CICE_dict["P_G"]`)
-        - the original landmask (`self.P_KMT_org`)
-        - the modified landmask (`self.P_KMT_mod`) if `self.use_gi` is True
-        - Sets internal state flags:
-        - `self.bgrid_loaded = True`
-        - `self.cgrid_loaded = bool(build_faces)`
-        - `self.grid_loaded  = True`
-
-        Attributes Set
-        --------------
-        G_t : xarray.Dataset
-            Variables: lat, lon, angle, area on (nj, ni).
-        G_u : xarray.Dataset
-            Variables: lat, lon, lat_b, lon_b, angle, area with centre dims (nj, ni) and
-            corner dims (nj_b, ni_b) = (nj+1, ni+1).
-        G_e, G_n : xarray.Dataset or None
-            Face-coordinate datasets created when `build_faces=True`.
-        kmt_org : xarray.Dataset
-            Binary mask dataset on (nj, ni) describing the original ocean/land mask.
-        kmt_mod : xarray.Dataset, optional
-            Binary mask dataset on (nj, ni) describing the modified mask including
-            grounded icebergs (only when `self.use_gi` is True).
-        G_GI : xarray.Dataset, optional
-            Grounded-iceberg diagnostics dataset, including:
-            - `mask(nj,ni)` boolean mask of grounded-iceberg cells
-            - `area/lat/lon(nj,ni)` with NaN outside GI cells
-            - 1-D lists `area_nGI`, `lat_nGI`, `lon_nGI` for GI cell locations
-            Only present when `self.use_gi` is True.
-
-        Notes
-        -----
-        - Longitudes are normalized to 0–360 degrees to avoid seam ambiguity.
-        - Corner/face coordinates are derived from T-grid centres to enable consistent
-        C-grid geometry for plotting and regridding.
-        - The grounded-iceberg 1-D coordinate lists include an index shift in `ni` (westward)
-        to better align with B-grid layout conventions used elsewhere in the toolbox.
+        Returns: tlon,tlat (deg), anglet_rad (rad), dx_m,dy_m (m), area_m2 (m^2), grid_kind, ds
         """
-        if self.grid_loaded:
-            self.logger.info(f"Grid {P_G} previously loaded ... returning with previously loaded grid.")
-            return
-        P_G       = P_grid     if P_grid     is not None else self.CICE_dict["P_G"]
-        P_kmt_org = P_mask_org if P_mask_org is not None else self.P_KMT_org
-        P_kmt_mod = P_mask_mod if P_mask_mod is not None else self.P_KMT_mod
-        nx        = nx         if nx         is not None else self.CICE_dict["x_dim_length"]
-        ny        = ny         if ny         is not None else self.CICE_dict["y_dim_length"]
-        lon, lat, anglet_rad, dx_m, dy_m, area_m2, G_kind, ds = self.load_super_grid(P_grid = P_G,
-                                                                                     nx_in  = nx,
-                                                                                     ny_in  = ny)
-        lon_b, lat_b, lon_e, lat_e, lon_n, lat_n              = self.build_grid_faces(lon,lat)
-        nat_dim = self.CICE_dict["spatial_dims"]      # e.g. ("nj","ni")
-        ext_dim = tuple(f"{d}_b" for d in nat_dim)    # e.g. ("nj_b","ni_b")
-        kmt_org = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_org))
-        kmt_mod = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_mod)) if self.use_gi else kmt_org
-        TLON    = self.normalise_longitudes(self.radians_to_degrees(lon.data), to="0-360")
-        TAREA   = area_m2
-        T_ANGLE = self.radians_to_degrees(anglet.data)
-        if G_kind=="cice":
-            ULAT = 
-            # corners + faces from u-grid centres
-            ULON_b, ULAT_b, lon_e, lat_e, lon_n, lat_n = self.build_grid_faces(TLON, TLAT, source_in_radians=False)
-            # --- U grid (legacy / B-grid velocity points)
-            ULAT    = self.radians_to_degrees(xr.open_dataset(P_G)['ulat'])
-            ULON    = self.normalise_longitudes(self.radians_to_degrees(xr.open_dataset(P_G)['ulon']), to="0-360")
-            UAREA   = xr.open_dataset(P_G)['uarea']
-            U_ANGLE = T_ANGLE
-        # dims
-        nj, ni     = TLAT.shape
-        coords_nat = {nat_dim[0]: np.arange(nj),
-                      nat_dim[1]: np.arange(ni)}
-        coords_ext = {nat_dim[0]: np.arange(nj),
-                      nat_dim[1]: np.arange(ni),
-                      ext_dim[0]: np.arange(nj + 1),
-                      ext_dim[1]: np.arange(ni + 1)}
-        # landmasks
-        self.kmt_org = xr.Dataset(data_vars = {"kmt_org": (nat_dim, kmt_org, {"units"    : "binary", 
-                                                                              "long_name": "original landmask on t-grid"})},
-                                  coords    = coords_nat)
-        # Grounded icebergs
-        if self.use_gi:
-            self.kmt_mod = xr.Dataset(data_vars = {"kmt_mod": (nat_dim, kmt_mod, {"units"    : "binary", 
-                                                                                "long_name": "modified landmask on t-grid (grounded icebergs)"})},
-                                    coords    = coords_nat)
-            # Difference: grounded icebergs are cells that changed from ocean (1) to land (0)
-            GI_mask = (kmt_org == 1) & (kmt_mod == 0)
-            # 2-D fields with same shape as GI_mask (NaN outside GI)
-            GI_area = np.where(GI_mask, TAREA, np.nan).astype("float32")
-            GI_lat  = np.where(GI_mask, TLAT,  np.nan).astype("float32")
-            GI_lon  = np.where(GI_mask, TLON,  np.nan).astype("float32")
-            self.G_GI = xr.Dataset(data_vars={"mask": (nat_dim, GI_mask.astype("uint8"), {"units": "binary",
-                                                                                          "long_name": "grounded iceberg mask on t-grid"}),
-                                              "area": (nat_dim, GI_area, {"units": "m2",
-                                                                          "long_name": "t-cell area at grounded iceberg locations (NaN elsewhere)"}),
-                                              "lat":  (nat_dim, GI_lat,  {"units": "degrees_north",
-                                                                          "long_name": "latitude at grounded iceberg locations (NaN elsewhere)"}),
-                                              "lon":  (nat_dim, GI_lon,  {"units": "degrees_east",
-                                                                          "long_name": "longitude at grounded iceberg locations (NaN elsewhere)"})},
-                                   coords = coords_nat)
-            # Get coordinates of affected cells (shifted west by one ni index to match B-grid layout)
-            nj_idx, ni_idx = np.where(GI_mask)
-            ni_idx_shifted = ni_idx - 1
-            valid          = ni_idx_shifted >= 0
-            nj_idx         = nj_idx[valid]
-            ni_idx         = ni_idx_shifted[valid]
-            # Save 1D arrays with iceberg IDs
-            self.G_GI             = self.G_GI.assign_coords(nGI=np.arange(nj_idx.size))
-            self.G_GI["area_nGI"] = (("nGI",), TAREA[nj_idx, ni_idx].astype("float32"))
-            self.G_GI["lat_nGI"]  = (("nGI",), TLAT[nj_idx, ni_idx].astype("float32"))
-            self.G_GI["lon_nGI"]  = (("nGI",), TLON[nj_idx, ni_idx].astype("float32"))
-            self.G_GI["area_nGI"].attrs.update({"units": "m2", "long_name": "t-cell area (1D list) at GI cells"})
-            self.G_GI["lat_nGI"].attrs.update({"units": "degrees_north", "long_name": "GI latitude (1D list)"})
-            self.G_GI["lon_nGI"].attrs.update({"units": "degrees_east",  "long_name": "GI longitude (1D list)"})
-        # --- build datasets
-        self.G_t = xr.Dataset(data_vars = {"lat"    : (nat_dim, TLAT, {"units": "degrees"}),
-                                           "lon"    : (nat_dim, TLON, {"units": "degrees"}),
-                                           "angle"  : (nat_dim, T_ANGLE, {"units": "degrees"}),
-                                           "area"   : (nat_dim, TAREA, {"units": "m^2"})},
-                            coords    = coords_nat)
-        self.G_u = xr.Dataset(data_vars = {"lat"    : (nat_dim, ULAT, {"units": "degrees"}),
-                                           "lon"    : (nat_dim, ULON, {"units": "degrees"}),
-                                           "lat_b"  : (ext_dim, ULAT_b, {"units": "degrees"}),
-                                           "lon_b"  : (ext_dim, ULON_b, {"units": "degrees"}),
-                                           "angle"  : (nat_dim, U_ANGLE, {"units": "degrees"}),
-                                           "area"   : (nat_dim, UAREA, {"units": "m^2"})},
-                            coords    = coords_ext)
-        if build_faces:
-            # Use ext_dim/nat_dim naming so shapes are explicit:
-            # lon_e/lat_e: (nj, ni_b) == (nat_dim[0], ext_dim[1])
-            # lon_n/lat_n: (nj_b, ni) == (ext_dim[0], nat_dim[1])
-            self.G_e = xr.Dataset(data_vars = {"lat": ((nat_dim[0], ext_dim[1]), lat_e, {"units": "degrees"}),
-                                               "lon": ((nat_dim[0], ext_dim[1]), lon_e, {"units": "degrees"})},
-                                  coords    = coords_ext)
-            self.G_n = xr.Dataset(data_vars = {"lat": ((ext_dim[0], nat_dim[1]), lat_n, {"units": "degrees"}),
-                                               "lon": ((ext_dim[0], nat_dim[1]), lon_n, {"units": "degrees"})},
-                                  coords    = coords_ext)
-        else:
-            self.G_e = None
-            self.G_n = None
-        if slice_hem:
-            self.G_t = self.slice_hemisphere(self.G_t)
-            self.G_u = self.slice_hemisphere(self.G_u)
-            if self.G_e is not None:
-                self.G_e = self.slice_hemisphere(self.G_e)
-            if self.G_n is not None:
-                self.G_n = self.slice_hemisphere(self.G_n)
-            if self.use_gi and hasattr(self, "G_GI") and (self.G_GI is not None):
-                self.G_GI = self.slice_hemisphere(self.G_GI)
-            if hasattr(self, "kmt_org") and (self.kmt_org is not None):
-                self.kmt_org = self.slice_hemisphere(self.kmt_org)
-            if self.use_gi and hasattr(self, "kmt_mod") and (self.kmt_mod is not None):
-                self.kmt_mod = self.slice_hemisphere(self.kmt_mod)
-        # flags for downstream
-        self.bgrid_loaded = True
-        self.cgrid_loaded = bool(build_faces)
-        self.grid_loaded  = True
+        # allow both spellings
+        if nx is None:
+            nx = nx_in
+        if ny is None:
+            ny = ny_in
 
-    def load_super_grid(self,
-                        P_grid            = None,
-                        lon_type          = '0-360',
-                        nx_in: int | None = None,
-                        ny_in: int | None = None):
-        """
-        Open either a CICE grid OR a MOM6 supergrid (ocean_hgrid.nc) and return the
-        T-grid geometry needed for F2 computations.
-
-        Returns
-        -------
-        tlon, tlat : (ny,nx) degrees
-        anglet_rad         : (ny,nx) radians, local i-axis angle relative to east
-        dx_m, dy_m          : (ny,nx) meters, cell metric lengths along local x/y
-        ds                  : opened dataset handle
-        grid_kind           : "cice" or "mom6_supergrid"
-        """
         if P_grid is None:
             P_grid = self.CICE_dict.get("P_G", None)
         if P_grid is None:
             raise ValueError("P_grid is None and self.CICE_dict['P_G'] is not set.")
-        self.logger.info(f"Opening grid for F2: {P_grid}")
-        ds         = xr.open_dataset(P_grid, decode_times=False)
-        is_G_super = ("nxp" in ds.sizes) and ("nyp" in ds.sizes) and ("x" in ds.variables) and ("y" in ds.variables)
-        # -------------------------
-        # MOM6 supergrid path
-        # -------------------------
-        if is_G_super:
+
+        self.logger.info(f"Opening grid geometry: {P_grid}")
+        ds = xr.open_dataset(P_grid, decode_times=False)
+
+        # detect MOM6 supergrid (ocean_hgrid.nc)
+        is_super = ("nxp" in ds.sizes) and ("nyp" in ds.sizes) and ("x" in ds.variables) and ("y" in ds.variables)
+
+        if is_super:
             grid_kind = "mom6_supergrid"
-            # supergrid lon/lat in degrees (usually)
+
             x_deg = self._infer_deg_from_grid_units(ds["x"].values, "x")
             y_deg = self._infer_deg_from_grid_units(ds["y"].values, "y")
-            # Model-grid nx,ny from supergrid dims (nxp=2*nx+1, nyp=2*ny+1)
+
             nxp = int(ds.sizes["nxp"])
             nyp = int(ds.sizes["nyp"])
-            nx  = (nxp - 1) // 2
-            ny  = (nyp - 1) // 2
-            # sanity
-            if (2 * nx + 1) != nxp or (2 * ny + 1) != nyp:
-                raise RuntimeError(f"Unexpected supergrid dims: nxp={nxp}, nyp={nyp} not of form 2*nx+1,2*ny+1")
-            if nx is not None and nx != int(nx_in):
-                raise RuntimeError(f"Supergrid-derived nx={nx} != nx={nx}")
-            if ny is not None and ny != int(ny_in):
-                raise RuntimeError(f"Supergrid-derived ny={ny} != ny={ny}")
-            # T-cell centers live at odd indices (1,3,5,...)
-            tlon = x_deg[1::2, 1::2]
+            nx_d = (nxp - 1) // 2
+            ny_d = (nyp - 1) // 2
+            if (2 * nx_d + 1) != nxp or (2 * ny_d + 1) != nyp:
+                raise RuntimeError(f"Unexpected supergrid dims: nxp={nxp}, nyp={nyp}")
+
+            if nx is not None and int(nx) != nx_d:
+                raise RuntimeError(f"Supergrid-derived nx={nx_d} != requested nx={nx}")
+            if ny is not None and int(ny) != ny_d:
+                raise RuntimeError(f"Supergrid-derived ny={ny_d} != requested ny={ny}")
+
+            tlon = self.normalise_longitudes(x_deg[1::2, 1::2], to=lon_type)
             tlat = y_deg[1::2, 1::2]
-            # Normalize lon for Antarctic transforms
-            tlon = self.normalise_longitudes(tlon, to=lon_type)
-            # Angle of local x-direction relative to east (deg -> rad)
+
+            # local x-axis angle
             if "angle_dx" in ds.variables:
                 ang_deg = self._infer_deg_from_grid_units(ds["angle_dx"].values, "angle_dx")
                 anglet_rad = np.deg2rad(ang_deg[1::2, 1::2])
             else:
-                # Last-resort: compute from coordinate finite-differences (rarely needed)
-                self.logger.warning("angle_dx not found in supergrid; estimating angle from x/y differences.")
-                # approximate angle at T centers using forward diff in i on supergrid center row
-                # NOTE: this is crude and assumes degrees->meters conversion negligible at small scale; prefer angle_dx.
+                self.logger.warning("angle_dx missing; estimating angle from x/y finite diffs (crude).")
                 dxlon = x_deg[1::2, 2::2] - x_deg[1::2, 0::2]
                 dylat = y_deg[1::2, 2::2] - y_deg[1::2, 0::2]
-                anglet_rad = np.arctan2(dylat, dxlon)  # radians in degree-space; not ideal
-                anglet_rad = anglet_rad[:, :nx]        # keep (ny,nx)
-            # dx: ds["dx"] dims (nyp, nx) = (2*ny+1, 2*nx)
-            # model-cell dx at T center = sum of two supergrid segments across the cell
-            dx_s = ds["dx"].values
-            dx_m = self._to_meters(dx_s, ds["dx"].attrs.get("units"), name="dx")
-            dx_m = dx_m[1::2, 0::2] + dx_m[1::2, 1::2]     # (ny,nx)
-            # dy: ds["dy"] dims (ny, nxp) = (2*ny, 2*nx+1)
-            # model-cell dy at T center = sum of two supergrid segments across the cell
-            dy_s = ds["dy"].values
-            dy_m = self._to_meters(dy_s, ds["dy"].attrs.get("units"), name="dy")
-            dy_m = dy_m[0::2, 1::2] + dy_m[1::2, 1::2]     # (ny,nx)
-            # area(ny,nx) with (2*NY, 2*NX): sum 2x2 → (NY,NX)
+                anglet_rad = np.arctan2(dylat, dxlon)[:, :nx_d]
+
+            # metrics (meters)
+            dx_m = self._to_meters(ds["dx"].values, ds["dx"].attrs.get("units"), name="dx")
+            dy_m = self._to_meters(ds["dy"].values, ds["dy"].attrs.get("units"), name="dy")
+
+            # collapse supergrid segments -> model-cell metrics
+            dx_m = dx_m[1::2, 0::2] + dx_m[1::2, 1::2]          # (ny,nx)
+            dy_m = dy_m[0::2, 1::2] + dy_m[1::2, 1::2]          # (ny,nx)
+
+            # area: sum 2x2 supergrid cells to T-cell
             if "area" in ds.variables:
                 a = ds["area"].astype("float64").values
-                if a.shape == (2*ny, 2*nx):
-                    area_m2 = (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2])
+                if a.shape == (2 * ny_d, 2 * nx_d):
+                    area_m2 = a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]
                 else:
-                    area_m2 = np.full((ny, nx), np.nan, dtype="float64")
+                    self.logger.warning(f"Unexpected area shape {a.shape}; expected {(2*ny_d,2*nx_d)}")
+                    area_m2 = np.full((ny_d, nx_d), np.nan, dtype="float64")
             else:
-                area_m2 = np.full((ny, nx), np.nan, dtype="float64")
-            # final shape check
-            if tlon.shape != (ny, nx) or dx_m.shape != (ny, nx) or dy_m.shape != (ny, nx):
-                raise RuntimeError(f"Derived shapes mismatch: tlon={tlon.shape}, dx={dx_m.shape}, dy={dy_m.shape}, expected {(ny,nx)}")
-            return (tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds)
+                area_m2 = np.full((ny_d, nx_d), np.nan, dtype="float64")
+
+            return tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds
+
         # -------------------------
-        # CICE grid path (your current logic)
+        # CICE grid path
         # -------------------------
+        grid_kind = "cice"
+
+        def pick(*names):
+            for n in names:
+                if n in ds.variables:
+                    return n
+            return None
+
+        v_tlon = pick("tlon", "TLON", "t_lon", "lon_t")
+        v_tlat = pick("tlat", "TLAT", "t_lat", "lat_t")
+        v_angt = pick("anglet", "angleT", "ANGLET", "angle_t")
+        v_hte  = pick("hte", "HTE", "dxT", "dxt")
+        v_htn  = pick("htn", "HTN", "dyT", "dyt")
+
+        for v, nm in [(v_tlon, "tlon"), (v_tlat, "tlat"), (v_angt, "anglet"), (v_hte, "hte"), (v_htn, "htn")]:
+            if v is None:
+                raise KeyError(f"Could not find required grid variable '{nm}' in {P_grid}")
+
+        tlon = self._infer_deg_from_grid_units(ds[v_tlon].values, "tlon")
+        tlat = self._infer_deg_from_grid_units(ds[v_tlat].values, "tlat")
+        tlon = self.normalise_longitudes(tlon, to=lon_type)
+
+        angt = np.asarray(ds[v_angt].values, dtype="float64")
+        finite = np.isfinite(angt)
+        if finite.any() and np.nanmax(np.abs(angt[finite])) <= (2.0 * np.pi + 1e-6):
+            anglet_rad = angt
         else:
-            grid_kind = "cice"
-            def pick(*names):
-                for n in names:
-                    if n in ds.variables:
-                        return n
-                return None
-            v_tlon = pick("tlon", "TLON", "t_lon", "lon_t")
-            v_tlat = pick("tlat", "TLAT", "t_lat", "lat_t")
-            v_angt = pick("anglet", "angleT", "ANGLET", "angle_t")
-            v_hte  = pick("hte", "HTE", "dxT", "dxt")
-            v_htn  = pick("htn", "HTN", "dyT", "dyt")
-            for v, nm in [(v_tlon, "tlon"), (v_tlat, "tlat"), (v_angt, "anglet"), (v_hte, "hte"), (v_htn, "htn")]:
-                if v is None:
-                    raise KeyError(f"Could not find required grid variable '{nm}' in {P_grid}")
-                tlon = ds[v_tlon].values
-                tlat = ds[v_tlat].values
-                angt = ds[v_angt].values
-                hte  = ds[v_hte].values
-                htn  = ds[v_htn].values
-                tlon = self._infer_deg_from_grid_units(tlon, "tlon")
-                tlat = self._infer_deg_from_grid_units(tlat, "tlat")
-                tlon = self.normalise_longitudes(tlon, to=lon_type)
-                angt_arr = np.asarray(angt, dtype="float64")
-                finite = np.isfinite(angt_arr)
-            if finite.any():
-                amax = np.nanmax(np.abs(angt_arr[finite]))
-                if amax > (2.0 * np.pi + 1e-6) and amax <= 360.0:
-                    anglet_rad = np.deg2rad(angt_arr)
-                else:
-                    anglet_rad = angt_arr
+            # assume degrees if not radians
+            anglet_rad = np.deg2rad(angt)
+
+        dx_m = self._to_meters(ds[v_hte].values, ds[v_hte].attrs.get("units"), name=v_hte)
+        dy_m = self._to_meters(ds[v_htn].values, ds[v_htn].attrs.get("units"), name=v_htn)
+
+        area_m2 = None
+        for v in ("tarea", "TAREA", "area"):
+            if v in ds.variables and ds[v].ndim == 2:
+                area_m2 = np.asarray(ds[v].values, dtype="float64")
+                break
+        if area_m2 is None:
+            area_m2 = np.asarray(dx_m, dtype="float64") * np.asarray(dy_m, dtype="float64")
+
+        # optional sanity
+        if (nx is not None and tlon.shape[1] != int(nx)) or (ny is not None and tlon.shape[0] != int(ny)):
+            self.logger.warning(f"CICE tlon shape {tlon.shape} does not match requested (ny,nx)=({ny},{nx})")
+
+        return tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds
+
+    def load_super_grid(self, P_grid=None, lon_type="0-360", nx=None, ny=None, nx_in=None, ny_in=None):
+        """
+        Backwards-compatible public wrapper. Do NOT change return signature (F2 builders rely on it). :contentReference[oaicite:10]{index=10}
+        """
+        return self._open_tgrid_geometry(P_grid=P_grid, lon_type=lon_type, nx=nx, ny=ny, nx_in=nx_in, ny_in=ny_in)
+
+    def load_cice_grid(self, P_grid=None, P_mask_org=None, P_mask_mod=None, slice_hem=False, build_faces=True, nx=None, ny=None):
+        """
+        Canonical attribute builder. Must keep self.G_t/self.G_u/self.G_e/self.G_n stable for downstream. :contentReference[oaicite:11]{index=11}
+        """
+        if getattr(self, "grid_loaded", False):
+            self.logger.info("Grid previously loaded; returning.")
+            return
+
+        P_G       = P_grid     if P_grid     is not None else self.CICE_dict["P_G"]
+        P_kmt_org = P_mask_org if P_mask_org is not None else self.P_KMT_org
+        P_kmt_mod = P_mask_mod if P_mask_mod is not None else self.P_KMT_mod if self.use_gi else self.P_KMT_org
+        nx        = nx if nx is not None else self.CICE_dict["x_dim_length"]
+        ny        = ny if ny is not None else self.CICE_dict["y_dim_length"]
+        tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds = self._open_tgrid_geometry(P_grid=P_G, lon_type="0-360", nx=nx, ny=ny)
+        # T grid (degrees + degrees)
+        TLON = self.normalise_longitudes(np.asarray(tlon, dtype="float64"), to="0-360")
+        TLAT = np.asarray(tlat, dtype="float64")
+        TAREA = np.asarray(area_m2, dtype="float64")
+        T_ANGLE = np.rad2deg(np.asarray(anglet_rad, dtype="float64"))
+        # corners/faces from T
+        lon_b, lat_b, lon_e, lat_e, lon_n, lat_n = self.build_grid_faces(TLON, TLAT, source_in_radians=False)
+        # dims
+        nat_dim = tuple(self.CICE_dict["spatial_dims"])  # ("nj","ni")
+        ext_dim = tuple(f"{d}_b" for d in nat_dim)       # ("nj_b","ni_b")
+        nj, ni = TLAT.shape
+        coords_nat = {nat_dim[0]: np.arange(nj), nat_dim[1]: np.arange(ni)}
+        coords_ext = {**coords_nat, ext_dim[0]: np.arange(nj + 1), ext_dim[1]: np.arange(ni + 1)}
+
+        # ocean masks
+        kmt_org = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_org))
+        kmt_mod = self._infer_ocean_mask_from_grid_ds(xr.open_dataset(P_kmt_mod)) if self.use_gi else kmt_org
+
+        self.kmt_org = xr.Dataset(
+            data_vars={"kmt_org": (nat_dim, kmt_org, {"units": "binary", "long_name": "original landmask on t-grid"})},
+            coords=coords_nat,
+        )
+        if self.use_gi:
+            self.kmt_mod = xr.Dataset(
+                data_vars={"kmt_mod": (nat_dim, kmt_mod, {"units": "binary", "long_name": "modified landmask on t-grid (grounded icebergs)"})},
+                coords=coords_nat,
+            )
+
+        # -------------------------
+        # U grid: from file if present, else synthesise from T-corners
+        # -------------------------
+        if (grid_kind == "cice") and ("ulat" in ds.variables) and ("ulon" in ds.variables):
+            ULAT = self._infer_deg_from_grid_units(ds["ulat"].values, "ulat")
+            ULON = self.normalise_longitudes(self._infer_deg_from_grid_units(ds["ulon"].values, "ulon"), to="0-360")
+            if "uarea" in ds.variables and ds["uarea"].ndim == 2:
+                UAREA = np.asarray(ds["uarea"].values, dtype="float64")
             else:
-                anglet_rad = angt_arr
-                dx_m = self._to_meters(hte, ds[v_hte].attrs.get("units"), name=v_hte)
-                dy_m = self._to_meters(htn, ds[v_htn].attrs.get("units"), name=v_htn)
-            for v in ("tarea", "TAREA", "area"):
-                if v in ds.variables and ds2[v].ndim == 2:
-                    area_m2 = np.asarray(ds2[v].values, dtype="float64")
-                    break
-            if area_m2 is None:
-                area_m2 = np.asarray(dx_m, dtype="float64") * np.asarray(dy_m, dtype="float64")
-                #return tlon, tlat, anglet_rad, dx_m, dy_m, ds, grid_kind
-            return (tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, grid_kind, ds)
+                UAREA = TAREA
+            if "angle" in ds.variables and ds["angle"].ndim == 2:
+                U_ANGLE = self._infer_deg_from_grid_units(ds["angle"].values, "angle")
+            else:
+                U_ANGLE = T_ANGLE
+            ULON_b = lon_b
+            ULAT_b = lat_b
+        else:
+            # synthesise a B-grid-like u point at SW corner of each T cell (shape ny,nx)
+            ULON_b = lon_b
+            ULAT_b = lat_b
+            ULON = lon_b[:-1, :-1]
+            ULAT = lat_b[:-1, :-1]
+            UAREA = TAREA
+            U_ANGLE = T_ANGLE
+
+        # -------------------------
+        # Grounded iceberg mask dataset
+        # -------------------------
+        if self.use_gi:
+            GI_mask = (kmt_org == 1) & (kmt_mod == 0)
+            GI_area = np.where(GI_mask, TAREA, np.nan).astype("float32")
+            GI_lat  = np.where(GI_mask, TLAT,  np.nan).astype("float32")
+            GI_lon  = np.where(GI_mask, TLON,  np.nan).astype("float32")
+            self.G_GI = xr.Dataset(
+                data_vars={
+                    "mask": (nat_dim, GI_mask.astype("uint8"), {"units": "binary", "long_name": "grounded iceberg mask on t-grid"}),
+                    "area": (nat_dim, GI_area, {"units": "m2", "long_name": "t-cell area at grounded iceberg locations (NaN elsewhere)"}),
+                    "lat":  (nat_dim, GI_lat,  {"units": "degrees_north", "long_name": "latitude at grounded iceberg locations (NaN elsewhere)"}),
+                    "lon":  (nat_dim, GI_lon,  {"units": "degrees_east", "long_name": "longitude at grounded iceberg locations (NaN elsewhere)"}),
+                },
+                coords=coords_nat,
+            )
+
+        # -------------------------
+        # Final datasets (keep existing names + add aliases)
+        # -------------------------
+        self.G_t = xr.Dataset(
+            data_vars={
+                "lat":   (nat_dim, TLAT,    {"units": "degrees"}),
+                "lon":   (nat_dim, TLON,    {"units": "degrees"}),
+                "angle": (nat_dim, T_ANGLE, {"units": "degrees"}),
+                "area":  (nat_dim, TAREA,   {"units": "m^2"}),
+                "tarea": (nat_dim, TAREA,   {"units": "m^2", "long_name": "Alias of area for compatibility"}),
+            },
+            coords=coords_nat,
+        )
+
+        self.G_u = xr.Dataset(
+            data_vars={
+                "lat":   (nat_dim, ULAT,    {"units": "degrees"}),
+                "lon":   (nat_dim, ULON,    {"units": "degrees"}),
+                "lat_b": (ext_dim, ULAT_b,  {"units": "degrees"}),
+                "lon_b": (ext_dim, ULON_b,  {"units": "degrees"}),
+                "angle": (nat_dim, U_ANGLE, {"units": "degrees"}),
+                "area":  (nat_dim, UAREA,   {"units": "m^2"}),
+                "uarea": (nat_dim, UAREA,   {"units": "m^2", "long_name": "Alias of area for compatibility"}),
+            },
+            coords=coords_ext,
+        )
+
+        if build_faces:
+            self.G_e = xr.Dataset(
+                data_vars={"lat": ((nat_dim[0], ext_dim[1]), lat_e, {"units": "degrees"}),
+                           "lon": ((nat_dim[0], ext_dim[1]), lon_e, {"units": "degrees"})},
+                coords=coords_ext,
+            )
+            self.G_n = xr.Dataset(
+                data_vars={"lat": ((ext_dim[0], nat_dim[1]), lat_n, {"units": "degrees"}),
+                           "lon": ((ext_dim[0], nat_dim[1]), lon_n, {"units": "degrees"})},
+                coords=coords_ext,
+            )
+        else:
+            self.G_e = None
+            self.G_n = None
+
+        if slice_hem:
+            self.G_t = self.slice_hemisphere(self.G_t)
+            self.G_u = self.slice_hemisphere(self.G_u)
+            if self.G_e is not None: self.G_e = self.slice_hemisphere(self.G_e)
+            if self.G_n is not None: self.G_n = self.slice_hemisphere(self.G_n)
+            if self.use_gi and getattr(self, "G_GI", None) is not None:
+                self.G_GI = self.slice_hemisphere(self.G_GI)
+            self.kmt_org = self.slice_hemisphere(self.kmt_org)
+            if self.use_gi and getattr(self, "kmt_mod", None) is not None:
+                self.kmt_mod = self.slice_hemisphere(self.kmt_mod)
+
+        self.bgrid_loaded = True
+        self.cgrid_loaded = bool(build_faces)
+        self.grid_loaded  = True
 
     def compute_regular_grid_area(self, da):
         """
@@ -818,7 +1112,7 @@ class SeaIceGridWork:
         a = np.asarray(arr, dtype="float64")
         finite = np.isfinite(a)
         if not finite.any():
-           p return a
+           return a
         amax = np.nanmax(np.abs(a[finite]))
         # Heuristic: radians for lon/lat/angle typically within ~2*pi
         if amax <= (2.0 * np.pi + 1e-6):
@@ -1123,9 +1417,9 @@ class SeaIceGridWork:
         from pyproj import CRS, Transformer, Geod
         from scipy.spatial import cKDTree
         from scipy.ndimage import binary_dilation
-        tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, G_kind, ds_grid = self.load_super_grid(P_grid      = P_grid,
-                                                                                              nx = nx,
-                                                                                              ny = ny)
+        tlon, tlat, anglet_rad, dx_m, dy_m, area_m2, G_kind, ds_grid = self.load_super_grid(P_grid = P_grid,
+                                                                                            nx     = nx,
+                                                                                            ny     = ny)
         self.logger.info(f"Grid kind for F2: {G_kind}, shape={tlon.shape}")
         # If a separate mask/topog file is provided, merge it in for _infer_ocean_mask_from_grid_ds
         mask_ds = ds_grid
@@ -1826,8 +2120,8 @@ class SeaIceGridWork:
     def build_F2_GI_from_df(self, df, P_grid : str,
                             P_mask               : str   = None,
                             P_topog              : str   = None,
-                            nx          : int   = 1440,
-                            ny          : int   = 1152,
+                            nx                   : int   = 1440,
+                            ny                   : int   = 1152,
                             lat_subset_max       : float = -30.0,
                             restrict_to_ocean    : bool  = True,
                             method               : str   = "simple-geometry",
@@ -1844,9 +2138,9 @@ class SeaIceGridWork:
         from pyproj import Transformer
         from scipy.spatial import cKDTree
         # ---- grid geometry on T
-        tlon, tlat, ang_rad, dx_m, dy_m, area_m2, G_kind, ds_grid = self.load_super_grid(P_grid      = Pgrid,
-                                                                                         nx = nx,
-                                                                                         ny = ny)
+        tlon, tlat, ang_rad, dx_m, dy_m, area_m2, G_kind, ds_grid = self.load_super_grid(P_grid = P_grid,
+                                                                                         nx     = nx,
+                                                                                         ny     = ny)
         nj, ni = tlat.shape
         # ---- base area
         if base_area_m2 is None:
@@ -2198,7 +2492,7 @@ class SeaIceGridWork:
             ds_coast.close()
 
     def define_regular_G(self, grid_res,
-                         region            = [0,360,<-90,0],
+                         region            = [0,360,-90,0],
                          spatial_dim_names = ("nj","ni")):
         """
         Create a regular (lat, lon) destination grid as an xarray.Dataset.

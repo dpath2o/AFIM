@@ -123,7 +123,7 @@ class SeaIceMetrics:
             if 'chunks' in ds[var].encoding:
                 del ds[var].encoding['chunks']
         return ds.chunk(None)
-    
+
     @staticmethod
     def thickness_tendency_to_mps(dvt: xr.DataArray) -> xr.DataArray:
         u = (dvt.attrs.get("units", "") or "").strip().lower()
@@ -139,10 +139,10 @@ class SeaIceMetrics:
         # if unknown, do not silently scale; return as-is and force you to inspect
         raise ValueError(f"Unrecognized DVT units: '{dvt.attrs.get('units','')}'")
 
-    def metrics_data_dict(self, I_mask, I_data, A,
-                        ice_type=None, *,
-                        required=None,
-                        optional=None):
+    def metrics_data_dict(self, I_mask, I_data, A, *,
+                          ice_type = None,
+                          required = None,
+                          optional = None):
         """
         Build a standardised input dictionary for FI/PI/SI metrics.
 
@@ -190,60 +190,32 @@ class SeaIceMetrics:
         ice_type = ice_type or self.ice_type
         self._check_ice_type(ice_type)
         self.define_ice_mask_name(ice_type=ice_type)
-
         # Defaults (tune as needed)
         required = required or ["aice", "hi", "uvel", "vvel"]
-        optional = optional or [
-            "strength", "dvidtt", "dvidtd", "daidtt", "daidtd",
-            # NEW: lateral-drag stress outputs (if written by CICE)
-            "KuxE", "KuxN", "KuyE", "KuyN",
-            # NEW: possible area weights (often static 2-D fields)
-            "earea", "narea", "uarea",
-        ]
-
-        def _has(var):
-            if isinstance(I_data, xr.Dataset):
-                return var in I_data.data_vars
-            try:
-                return var in I_data
-            except TypeError:
-                return hasattr(I_data, var)
-
-        def _get(var):
-            if isinstance(I_data, xr.Dataset):
-                return I_data[var]
-            try:
-                return I_data[var]
-            except Exception:
-                return getattr(I_data, var)
-
-        out = {
-            self.mask_name: I_mask,
-            "tarea": A,
-        }
-
-        missing_required = [v for v in required if not _has(v)]
+        optional = optional or ["strength", "dvidtt", "dvidtd", "daidtt", "daidtd",
+                                # NEW: lateral-drag stress outputs (if written by CICE)
+                                "KuxE", "KuxN", "KuyE", "KuyN",
+                                # NEW: possible area weights (often static 2-D fields)
+                                "earea", "narea", "uarea"]
+        out = {self.mask_name: I_mask, "tarea": A}
+        missing_required = [v for v in required if not self._has(v)]
         if missing_required:
             raise KeyError(f"metrics_data_dict missing required variables in I_data: {missing_required}")
-
         # Add required
         for v in required:
-            out[v] = _get(v)
-
+            out[v] = self._get(v)
         # Add optional
         missing_optional = []
         for v in optional:
-            if _has(v):
-                out[v] = _get(v)
+            if self._has(v):
+                out[v] = self._get(v)
             else:
                 missing_optional.append(v)
-
         if missing_optional:
             try:
                 self.logger.info(f"metrics_data_dict: skipping missing optional vars: {missing_optional}")
             except Exception:
                 pass
-
         # ------------------------------------------------------------------
         # NEW: auto-add any referenced area measures from CF cell_measures
         # ------------------------------------------------------------------
@@ -257,18 +229,16 @@ class SeaIceMetrics:
                 m = pat.search(str(cm))
                 if m:
                     area_vars_needed.add(m.group(1))
-
             for avar in sorted(area_vars_needed):
                 if avar in out:
                     continue
-                if _has(avar):
-                    out[avar] = _get(avar)
+                if self._has(avar):
+                    out[avar] = self._get(avar)
                     self.logger.info(f"metrics_data_dict: auto-added area measure '{avar}' referenced by cell_measures")
                 else:
                     self.logger.info(f"metrics_data_dict: variable(s) reference area '{avar}' via cell_measures, but '{avar}' not found in I_data")
         except Exception as e:
             self.logger.debug(f"metrics_data_dict: cell_measures parsing skipped ({e})")
-
         return out
 
     def compute_sea_ice_metrics(self, da_dict, P_mets_zarr,
@@ -280,26 +250,19 @@ class SeaIceMetrics:
         ice_type = ice_type or self.ice_type
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
-
         self._check_ice_type(ice_type)
         self.define_ice_mask_name(ice_type=ice_type)
-
         if ice_type == "FI":
             ice_area_scale = self.FIC_scale
         else:
             ice_area_scale = self.SIC_scale
-
         spatial_dim_names = self.CICE_dict["spatial_dims"]  # NEW: used below for stress aggregation
-
         self.logger.info(f"¡¡¡ COMPUTING ICE METRICS for {ice_type} !!!")
         self.logger.info(f"    results to {P_mets_zarr}")
-
         I_mask = da_dict[self.mask_name]
-
         # --------- Guard helpers ----------
         def has(*keys):
             return all(k in da_dict and da_dict[k] is not None for k in keys)
-
         def _all_nan(da):
             try:
                 return bool(da.isnull().all().compute())
@@ -308,7 +271,6 @@ class SeaIceMetrics:
                     return bool(np.all(np.isnan(da)))
                 except Exception:
                     return False
-
         def valid(da):
             if da is None:
                 return False
@@ -316,7 +278,6 @@ class SeaIceMetrics:
                 return not _all_nan(da)
             except Exception:
                 return True
-
         def maybe_compute(tag, fn, req_keys, *, store, out_key, post=None):
             if not has(*req_keys):
                 self.logger.info(f"skipping {tag}: missing {set(req_keys) - set(da_dict.keys())}")
@@ -334,7 +295,6 @@ class SeaIceMetrics:
             except Exception as e:
                 self.logger.warning(f"{tag} failed: {e}")
                 return None
-
         # --------- Pull what exists (do NOT assume keys) ----------
         I_C   = da_dict.get("aice")
         I_T   = da_dict.get("hi")
@@ -344,34 +304,28 @@ class SeaIceMetrics:
         I_TAT = da_dict.get("daidtt")
         I_MAT = da_dict.get("daidtd")
         A     = da_dict.get("tarea")
-
         # NEW: lateral drag stress components (if present)
         KuxE = da_dict.get("KuxE")
         KuxN = da_dict.get("KuxN")
         KuyE = da_dict.get("KuyE")
         KuyN = da_dict.get("KuyN")
-
         METS = {}
-
         # --------- Time series metrics (conditional) ----------
         IA = maybe_compute("ice area",
                         lambda: self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale),
                         req_keys=("aice", "tarea"),
                         store=METS,
                         out_key=f"{ice_type}A")
-
         IV = maybe_compute("ice volume",
                         lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
                         req_keys=("aice", "hi", "tarea"),
                         store=METS,
                         out_key=f"{ice_type}V")
-
         IT = maybe_compute("ice thickness",
                         lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
                         req_keys=("aice", "hi", "tarea"),
                         store=METS,
                         out_key=f"{ice_type}T")
-
         # FIXED: strength call should include IS and A
         IS = maybe_compute("ice strength (1D, area-weighted hPa)",
                         lambda: self.compute_area_weighted_strength_hpa(
