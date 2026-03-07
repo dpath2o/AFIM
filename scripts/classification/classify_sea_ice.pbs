@@ -34,6 +34,7 @@ CMD=(python3 classify_sea_ice.py "$SIM_NAME" \
 [ -n "${BorC2T_TYPE}" ] && CMD+=(--BorC2T_type ${BorC2T_TYPE})
 [ "${OVERWRITE_ZARR}" = true ] && CMD+=(--overwrite_zarr)
 [ "${DELETE_ORIGINAL_ICEH}" = true ] && CMD+=(--delete_original_iceh)
+[ "${ROLL_MEAN}" = true ] && CMD+=(--rolling_mean)
 
 echo "Running: ${CMD[*]}"
 "${CMD[@]}"

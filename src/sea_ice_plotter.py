@@ -918,16 +918,12 @@ class SeaIcePlotter:
         is_categorical = ("diff_cat" in name) or (fv in {"0 1 2", "0 1 2 "})
         return not is_categorical
 
-    def _resolve_lonlat_2d(
-        self,
-        da2: xr.DataArray,
-        *,
-        bcoords: bool = False,
-        tcoords: bool = True,
-        lon_coord_name: str | None = None,
-        lat_coord_name: str | None = None,
-        infer_if_missing: bool = True,
-    ):
+    def _resolve_lonlat_2d(self, da2: xr.DataArray, *,
+                           bcoords          : bool       = False,
+                           tcoords          : bool       = True,
+                           lon_coord_name   : str | None = None,
+                           lat_coord_name   : str | None = None,
+                           infer_if_missing : bool       = True):
         """
         Resolve 2D longitude/latitude arrays matching a 2D DataArray.
 
@@ -984,14 +980,12 @@ class SeaIcePlotter:
         # Ensure clean 2D view, and standard ordering if possible
         if da2.ndim != 2:
             raise ValueError(f"Expected 2D DataArray; got dims={da2.dims}, shape={da2.shape}")
-
         # ---- 1) Explicit coords ----
         if (lon_coord_name is not None) or (lat_coord_name is not None):
             if lon_coord_name is None or lat_coord_name is None:
                 raise ValueError("Provide both lon_coord_name and lat_coord_name.")
             lon_da = da2[lon_coord_name]
             lat_da = da2[lat_coord_name]
-
             if lon_da.ndim == 2 and lat_da.ndim == 2:
                 # align dims if needed
                 if lon_da.dims != da2.dims:
@@ -999,22 +993,17 @@ class SeaIcePlotter:
                     lon_da = da2[lon_coord_name]
                     lat_da = da2[lat_coord_name]
                 return np.asarray(lon_da.data), np.asarray(lat_da.data)
-
             if lon_da.ndim == 1 and lat_da.ndim == 1:
                 lon2d, lat2d = np.meshgrid(np.asarray(lon_da.data), np.asarray(lat_da.data), indexing="xy")
                 return lon2d, lat2d
-
             raise ValueError(f"Mixed/unsupported explicit coord dims: lon={lon_da.ndim}, lat={lat_da.ndim}")
-
         # ---- 2) Infer coords from da2 ----
         if infer_if_missing:
             # common patterns
-            cand_pairs = [
-                ("lon", "lat"),
-                ("longitude", "latitude"),
-                ("TLON", "TLAT"),
-                ("ULON", "ULAT"),
-            ]
+            cand_pairs = [("lon", "lat"),
+                          ("longitude", "latitude"),
+                          ("TLON", "TLAT"),
+                          ("ULON", "ULAT")]
             for xnm, ynm in cand_pairs:
                 if (xnm in da2.coords) and (ynm in da2.coords):
                     lon_da = da2.coords[xnm]
@@ -1028,53 +1017,45 @@ class SeaIcePlotter:
                     if lon_da.ndim == 1 and lat_da.ndim == 1:
                         lon2d, lat2d = np.meshgrid(np.asarray(lon_da.data), np.asarray(lat_da.data), indexing="xy")
                         return lon2d, lat2d
-
         # ---- 3) B/T grid coords ----
         if bcoords and tcoords:
             raise ValueError("Cannot set both bcoords and tcoords True.")
         if not (bcoords or tcoords):
             raise ValueError("Must set bcoords or tcoords, or provide lon/lat coords on da.")
-
         # Only load grid if we need it
         # (adjust to your class: load_bgrid may load both; otherwise add load_tgrid, etc.)
         self.load_bgrid(slice_hem=True)
-
         if bcoords:
             lon2d_full = np.asarray(self.G_u["lon"].values)
             lat2d_full = np.asarray(self.G_u["lat"].values)
         else:
             lon2d_full = np.asarray(self.G_t["lon"].values)
             lat2d_full = np.asarray(self.G_t["lat"].values)
-
         if lon2d_full.shape == da2.shape:
             return lon2d_full, lat2d_full
-
         # subset lon/lat to match da2 using nj/ni index coords
         if ("nj" in da2.coords) and ("ni" in da2.coords):
             nj_idx = np.asarray(da2["nj"].values, dtype=int)
             ni_idx = np.asarray(da2["ni"].values, dtype=int)
             return lon2d_full[np.ix_(nj_idx, ni_idx)], lat2d_full[np.ix_(nj_idx, ni_idx)]
-
-        raise ValueError(
-            f"Grid lon/lat shape {lon2d_full.shape} does not match da shape {da2.shape}, "
-            "and da has no nj/ni coords for subsetting."
-        )
+        raise ValueError(f"Grid lon/lat shape {lon2d_full.shape} does not match da shape {da2.shape}, "
+                         "and da has no nj/ni coords for subsetting.")
 
     def pygmt_da_prep(self, da: xr.DataArray, *,
-                      bcoords           : bool = False,
-                      tcoords           : bool = True,
-                      lon_coord_name    : str | None = None,
-                      lat_coord_name    : str | None = None,
+                      bcoords           : bool                                     = False,
+                      tcoords           : bool                                     = True,
+                      lon_coord_name    : str | None                               = None,
+                      lat_coord_name    : str | None                               = None,
                       region            : tuple[float, float, float, float] | None = None,
-                      lon_wrap          : str = "auto",   # "auto" | "0-360" | "-180-180"
-                      extra_mask        : xr.DataArray = None,
-                      mask_zero         : bool | None = None,
-                      z_clip            : tuple[float, float] | None = None,
-                      z_range_mask      : tuple[float, float] | None = None,
-                      dtype             : str = "float32",
-                      infer_coords      : bool = True,
-                      return_mask       : bool = True,         # NEW
-                      return_flat_index : bool = True):
+                      lon_wrap          : str                                      = "auto",   # "auto" | "0-360" | "-180-180"
+                      extra_mask        : xr.DataArray                             = None,
+                      mask_zero         : bool | None                              = None,
+                      z_clip            : tuple[float, float] | None               = None,
+                      z_range_mask      : tuple[float, float] | None               = None,
+                      dtype             : str                                      = "float32",
+                      infer_coords      : bool                                     = True,
+                      return_mask       : bool                                     = True,
+                      return_flat_index : bool                                     = True):
         """
         Prepare a 2D DataArray for PyGMT plotting by returning 1D lon/lat/z vectors.
 
@@ -1171,75 +1152,55 @@ class SeaIcePlotter:
         da2 = da.squeeze(drop=True)
         if da2.ndim != 2:
             raise ValueError(f"Expected 2D DataArray after squeeze; got dims={da2.dims}, shape={da2.shape}")
-
         # prefer canonical order if present
         if ("nj" in da2.dims) and ("ni" in da2.dims) and (da2.dims != ("nj", "ni")):
             da2 = da2.transpose("nj", "ni")
-
-        lon2d, lat2d = self._resolve_lonlat_2d(
-            da2,
-            bcoords=bcoords,
-            tcoords=tcoords,
-            lon_coord_name=lon_coord_name,
-            lat_coord_name=lat_coord_name,
-            infer_if_missing=infer_coords,
-        )
-        
+        lon2d, lat2d = self._resolve_lonlat_2d(da2,
+                                               bcoords          = bcoords,
+                                               tcoords          = tcoords,
+                                               lon_coord_name   = lon_coord_name,
+                                               lat_coord_name   = lat_coord_name,
+                                               infer_if_missing = infer_coords)
         # ---- NEW: harmonise lon convention with region ----
         if lon_wrap == "auto":
             if region is not None:
                 xmin, xmax, _, _ = region
-
                 # If region uses negative longitudes, force lon to -180..180
                 if (xmin < 0.0) or (xmax < 0.0):
                     lon2d = self.normalise_longitudes(lon2d, to="-180-180")
-
                 # If region is clearly 0..360-ish, force lon to 0..360
                 elif (xmin >= 0.0) and (xmax > 180.0):
                     lon2d = self.normalise_longitudes(lon2d, to="0-360")
                 # else: leave as-is
         else:
             lon2d = self.normalise_longitudes(lon2d, to=lon_wrap)
-
         # materialize Z
         z_data = da2.data
         if self._is_dask_array(z_data):
             z2d = da2.astype(dtype).compute().values
         else:
             z2d = np.asarray(z_data, dtype=dtype)
-
         if z_clip is not None:
             z2d = np.clip(z2d, z_clip[0], z_clip[1])
-
         # base mask
         m = np.isfinite(z2d)
-
         if mask_zero is None:
             mask_zero = self._auto_mask_zero(da2)
         if mask_zero:
             m &= ~np.isclose(z2d, 0.0, atol=1e-8)
-
         if z_range_mask is not None:
             lo, hi = z_range_mask
             m &= (z2d >= lo) & (z2d <= hi)
-
         # ---- region mask (DATELINE-SAFE) ----
         if region is not None:
             xmin, xmax, ymin, ymax = region
-
-            lat_ok = (lat2d >= ymin) & (lat2d <= ymax)
-
+            lat_ok                 = (lat2d >= ymin) & (lat2d <= ymax)
             # handle regions that cross the dateline by allowing xmin > xmax
             if xmin <= xmax:
                 lon_ok = (lon2d >= xmin) & (lon2d <= xmax)
             else:
                 lon_ok = (lon2d >= xmin) | (lon2d <= xmax)
-
             m &= lon_ok & lat_ok
-        # if region is not None:
-        #     xmin, xmax, ymin, ymax = region
-        #     m &= (lon2d >= xmin) & (lon2d <= xmax) & (lat2d >= ymin) & (lat2d <= ymax)
-
         if extra_mask is not None:
             em = extra_mask(da2) if callable(extra_mask) else extra_mask
             if isinstance(em, xr.DataArray):
@@ -1249,19 +1210,17 @@ class SeaIcePlotter:
             if em.shape != z2d.shape:
                 raise ValueError(f"extra_mask shape mismatch: {em.shape} vs {z2d.shape}")
             m &= em
-
         lon1 = np.asarray(lon2d, dtype=dtype)[m].ravel()
         lat1 = np.asarray(lat2d, dtype=dtype)[m].ravel()
         z1   = np.asarray(z2d,  dtype=dtype)[m].ravel()
-
-        out = {"lon": lon1, "lat": lat1, "z": z1, "shape": z2d.shape}
-
+        out  = {"lon"   : lon1,
+                "lat"   : lat1,
+                "z"     : z1,
+                "shape" : z2d.shape}
         if return_mask:
             out["mask2d"] = m
-
         if return_flat_index:
             out["flat_idx"] = np.flatnonzero(m.ravel())
-
         return out
 
     def pygmt_map_plot_one_var(self, da, var_name,
@@ -1545,8 +1504,6 @@ class SeaIcePlotter:
 
     def pygmt_fastice_panel(self,
                             fast_ice_variable : str   = "FIA",   # "FIA"|"fia" or "FIT"|"fit" or "FIS|fis"
-                            ice_class         : str   = None,    # "FI_BT" ... see SeaIceToolbox for more help
-                            class_type        : str   = "bin",   # 'bin', 'roll' or None
                             sim_name          : str   = None,
                             roll_days         : int   = 0,
                             # Generic (can be overridden)
@@ -1582,7 +1539,7 @@ class SeaIcePlotter:
                             font_annot_pri    : str   = "24p,Times-Roman",
                             font_annot_sec    : str   = "16p,Times-Roman",
                             font_lab          : str   = "22p,Times-Bold",
-                            line_pen         : str    = "2p",
+                            line_pen          : str    = "2p",
                             grid_pen_pri      : str   = ".5p",
                             grid_pen_sec      : str   = ".25p",
                             fmt_geo_map       : str   = "D:mm",
@@ -1607,7 +1564,7 @@ class SeaIcePlotter:
         var = fast_ice_variable.lower()
         if var not in ("fia", "fit", "fis", "fimar", "fimvr", "fitar", "fitvr"):
             raise ValueError(f"`fast_ice_variable` must be one of ['FIA','FIT','FIS','FIMAR','FIMVR','FITAR','FITVR']; got {fast_ice_variable}")
-        # -------------------------------------------------------------------------
+        # -----------------------------------------------------------------------
         # Per-variable defaults (you can push more things in here if you like)
         # -------------------------------------------------------------------------
         cfg = self.pygmt_FI_panel[var]
@@ -1615,7 +1572,6 @@ class SeaIcePlotter:
         # Resolve user overrides or fall back to defaults
         # -------------------------------------------------------------------------
         sim_name       = sim_name       if sim_name       is not None else self.sim_name
-        ice_class      = ice_class      if ice_class      is not None else self.ice_class
         show_fig       = show_fig       if show_fig       is not None else self.show_fig
         save_fig       = save_fig       if save_fig       is not None else self.save_fig
         ow_fig         = overwrite_fig  if overwrite_fig  is not None else self.ow_fig
@@ -1638,21 +1594,17 @@ class SeaIcePlotter:
         # Paths / loads
         # -------------------------------------------------------------------------
         ANT_IS      = self.load_ice_shelves()
-        ice_classes = [ice_class, f"{ice_class}_roll", f"{ice_class}_bin"]
+        ice_methods = ["rolling-mean", "binary-days"]
         ts_dict     = {}
         if var=='fia':
             ts_dict["AF2020"] = xr.open_dataset(self.AF_FI_dict['P_AF2020_FIA'])["AF2020"]
-        for iclass in ice_classes:
-            P_mets          = Path(self.D_ispd_thresh, f"{iclass}_mets.zarr")
-            ts_dict[iclass] = xr.open_dataset(P_mets)[cfg["top_name"]]
+        for imeth in ice_methods:
+            mets = self.load_computed_metrics(class_method=imeth)
+            if imeth=="binary-days":
+                da_spat = mets[cfg["bottom_name"]]
+            ts_dict[imeth] = self.load_computed_metrics(class_method=imeth)[cfg["top_name"]]
         tmin, tmax = self.extract_min_max_dates(ts_dict)
-        # prioritise binary-days classification, then rolling-mean
-        P_spat = Path(self.D_ispd_thresh, f"{ice_class}_{class_type}_mets.zarr") if class_type is not None else Path(self.D_ispd_thresh, f"{ice_class}_mets.zarr")
-        try:
-            da_spat = xr.open_dataset(P_spat)[cfg["bottom_name"]]
-        except Exception:
-            raise KeyError(f"could not load {P_spat}: {e}")
-        df_spat = self.pygmt_da_prep(da_spat)
+        df_spat    = self.pygmt_da_prep(da_spat)
         if plot_GI:
             plot_GI_dict = self.load_GI_lon_lats()
         # -------------------------------------------------------------------------
@@ -1704,7 +1656,7 @@ class SeaIcePlotter:
                 fig.coast(water=water_clr)
                 fig.plot(x     = df_spat["lon"],
                          y     = df_spat["lat"],
-                         fill  = df_spat["data"],
+                         fill  = df_spat["z"],
                          style = spat_var_style,
                          cmap  = True)
                 if plot_GI:
@@ -1717,7 +1669,9 @@ class SeaIcePlotter:
             fig.colorbar(position=cbar_pos, frame=cbar_frame)
         # Save / Show
         if save_fig:
-            F_png = f"{cfg['top_name']}_{cfg['bottom_name']}_{sim_name}_ispd_thresh{self.ispd_thresh_str}_{tmin.strftime('%Y')}-{tmax.strftime('%Y')}.png"
+            F_pre = f"{cfg['top_name']}_{cfg['bottom_name']}_{sim_name}"
+            F_suf = f"ispd_thresh{self.ispd_thresh_str}_{tmin.strftime('%Y')}-{tmax.strftime('%Y')}"
+            F_png = f"{F_pre}_{F_suf}.png"
             P_png = P_png if P_png is not None else Path(self.D_graph, sim_name, F_png)
             P_png.parent.mkdir(parents=True, exist_ok=True)
             if not P_png.exists() or ow_fig:

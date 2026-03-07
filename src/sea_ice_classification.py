@@ -892,6 +892,9 @@ class SeaIceClassification:
             if c in DS.coords or c in DS.data_vars:
                 DS = DS.drop_vars(c)
         # Materialize (your stated design choice)
+        DS = DS.reset_coords(drop=True)
+        for v in DS.variables:
+            DS[v].encoding.pop("chunks", None)
         DS = DS.compute()
         return DS
 
@@ -1541,8 +1544,8 @@ class SeaIceClassification:
                     exclude_polynyas=bool(exclude_polynyas))
         return MIZ_dly, MIZ_bin, MIZ_roll, diag
 
-    @staticmethod
-    def _drop_duplicate_coords(ds: xr.Dataset, dim: str = "ni") -> xr.Dataset:
+    def _drop_duplicate_coords(self, ds: xr.Dataset,
+                               dim: str = "ni") -> xr.Dataset:
         """
         Drop duplicate coordinate values along `dim` (keeping the first occurrence).
         Useful when concatenating yearly groups that may contain duplicated x-indices.
@@ -1635,7 +1638,7 @@ class SeaIceClassification:
         for yr in years:
             try:
                 ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
-                ds_yr = SeaIceToolbox._drop_duplicate_coords(ds_yr, dim="ni")
+                ds_yr = self._drop_duplicate_coords(ds_yr, dim="ni")
                 datasets.append(ds_yr)
             except Exception as e:
                 self.logger.warning(f"Skipping year {yr}: {e}")

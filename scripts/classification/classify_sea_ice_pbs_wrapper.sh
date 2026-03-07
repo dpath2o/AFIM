@@ -11,6 +11,7 @@ DRY_RUN=false
 NC_ENG="netcdf4"
 OVERWRITE_ZARR=false
 DELETE_ORIGINAL_ICEH=false
+ROLL_MEAN=false
 
 P_JSON="/home/581/da1339/AFIM/src/AFIM/src/JSONs/sea_ice_config.json"
 
@@ -31,6 +32,7 @@ print_help() {
   echo "  -E END_DATE        End date YYYY-MM-DD (forced to last of month) (required)"
   echo "  -x NC_ENG          NetCDF engine for xarray (default: netcdf4)"
   echo "  -J P_JSON          Path to AFIM config JSON (default: $P_JSON)"
+  echo "  -r                 enable rolling-mean classification (default: false)"
   echo "  -z                 Overwrite zarrs"
   echo "  -y                 Process yearly loop (else monthly)"
   echo "  -k                 Delete original daily ice history files after monthly zarr creation"
@@ -40,7 +42,7 @@ print_help() {
 }
 
 # --- Parse options ---
-while getopts "s:i:t:g:S:E:x:J:zkynh" opt; do
+while getopts "s:i:t:g:S:E:x:J:rzkynh" opt; do
   case ${opt} in
     s) SIM_NAME="$OPTARG" ;;
     i) ICE_TYPE="$OPTARG" ;;
@@ -50,6 +52,7 @@ while getopts "s:i:t:g:S:E:x:J:zkynh" opt; do
     E) END_DATE="$OPTARG" ;;
     x) NC_ENG="$OPTARG" ;;
     J) P_JSON="$OPTARG" ;;
+    r) ROLL_MEAN=true ;;
     z) OVERWRITE_ZARR=true ;;
     k) DELETE_ORIGINAL_ICEH=true ;;
     y) YEARLY=true ;;
@@ -110,6 +113,7 @@ while [[ "$current_period" < "$end_period" || "$current_period" == "$end_period"
   [ "${#BorC2T_TYPE_LIST[@]}" -gt 0 ] && VAR_PASS+=",BorC2T_TYPE=${BorC2T_TYPE_LIST[*]}"
   [ "${OVERWRITE_ZARR}" = true ] && VAR_PASS+=",OVERWRITE_ZARR=true"
   [ "${DELETE_ORIGINAL_ICEH}" = true ] && VAR_PASS+=",DELETE_ORIGINAL_ICEH=true"
+  [ "${ROLL_MEAN}" = true ] && VAR_PASS+=",ROLL_MEAN=true"
 
   JOB_NAME="${SIM_NAME}_${ICE_TYPE}_${ISPD_THRESH}_${JOB_SUFFIX}"
   QSUB_CMD="qsub -N ${JOB_NAME} -v \"${VAR_PASS}\" ${PBS_SCRIPT}"

@@ -7,6 +7,7 @@ ICE_TYPE="FI"
 BORC2T_TYPE="Tc"
 START_DATE="1993-01-01"
 END_DATE="1999-12-31"
+ROLL_MEAN=false
 OVERWRITE_ZARR=false
 OVERWRITE_PNG=false
 DRY_RUN=false
@@ -25,6 +26,7 @@ print_help() {
   echo "  -S START_DATE      Start date YYYY-MM-DD (default: 1993-01-01)"
   echo "  -E END_DATE        End date YYYY-MM-DD (default: 1999-12-31)"
   echo "  -J P_JSON          Path to AFIM config JSON (default: $P_JSON)"
+  echo "  -r                 enable rolling-mean metrics (default: false)"
   echo "  -z                 Overwrite existing Zarr output"
   echo "  -p                 Overwrite existing PNG output"
   echo "  -n                 Dry run: print the qsub command without submitting"
@@ -33,7 +35,7 @@ print_help() {
 }
 
 # --- Parse arguments ---
-while getopts "s:t:i:g:S:E:J:zpnh" opt; do
+while getopts "s:t:i:g:S:E:J:rzpnh" opt; do
   case ${opt} in
     s) SIM_NAME="$OPTARG" ;;
     t) ISPD_THRESH="$OPTARG" ;;
@@ -42,6 +44,7 @@ while getopts "s:t:i:g:S:E:J:zpnh" opt; do
     S) START_DATE="$OPTARG" ;;
     E) END_DATE="$OPTARG" ;;
     J) P_JSON="$OPTARG" ;;
+    r) ROLL_MEAN=true ;;
     z) OVERWRITE_ZARR=true ;;
     p) OVERWRITE_PNG=true ;;
     n) DRY_RUN=true ;;
@@ -82,6 +85,7 @@ export ice_type="${ICE_TYPE}"
 export borc2t_type="${BORC2T_TYPE}"
 export start_date="${START_DATE}"
 export end_date="${END_DATE}"
+export rolling_mean=${ROLL_MEAN}
 export overwrite_zarr=${OVERWRITE_ZARR}
 export overwrite_png=${OVERWRITE_PNG}
 export P_JSON="${P_JSON}"

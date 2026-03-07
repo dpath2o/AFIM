@@ -3,26 +3,25 @@ import xarray as xr
 import numpy  as np
 import pandas as pd
 from pathlib  import Path
+import os
 __all__ = ["SeaIceCICE"]
 class SeaIceCICE:
 
     def __init__():
         return
 
-    @staticmethod
-    def get_month_range(year_month):
+    def get_month_range(self, year_month):
         from datetime import datetime, timedelta
         dt0 = datetime.strptime(year_month + "-01", "%Y-%m-%d")
         dtN = (dt0.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         return [dt0 + timedelta(days=i) for i in range((dtN - dt0).days + 1)]
 
-    @staticmethod
-    def verify_month(args_tuple):
+    def verify_month(self,args_tuple):
         zarr_path, nc_dir, done_marker, dry_run = args_tuple
         year_month = zarr_path.stem.split("_")[1]
         if done_marker.exists():
             return f"[SKIP] {year_month}: already verified (.done exists)"
-        dt_list = SeaIceModels.get_month_range(year_month)
+        dt_list = self.get_month_range(year_month)
         nc_files = [nc_dir / f"iceh.{dt.strftime('%Y-%m-%d')}.nc" for dt in dt_list]
         existing_nc_files = [f for f in nc_files if f.exists()]
         if not existing_nc_files:
@@ -100,7 +99,7 @@ class SeaIceCICE:
             done_marker = self.D_zarr / f".done_{ym}"
             tasks.append((zarr_path, self.D_iceh_nc, done_marker, dry_run))
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = list(executor.map(SeaIceModels.verify_month, tasks))
+            results = list(executor.map(self.verify_month, tasks))
         for res in results:
             self.logger.info(res)
         with open(P_clean_log, "a") as logf:
@@ -202,16 +201,26 @@ class SeaIceCICE:
         -------
         None
         """
-        if Path(P_iceh_zarr, ".zgroup").exists():
-            self.logger.info(f"Deleting original NetCDF files for {m_str}")
-            for f in P_orgs:
-                try:
-                    os.remove(f)
-                    self.logger.debug(f"Deleted: {f}")
-                except Exception as e:
-                    self.logger.warning(f" Could not delete {f}: {e}")
-        else:
-            self.logger.warning(f"Zarr group {P_iceh_zarr} incomplete — skipping deletion of originals")
+        grp = Path(P_iceh_zarr, m_str)
+        # 1) require the month group to exist
+        if not (grp / ".zgroup").exists():
+            self.logger.warning(f"Zarr group {grp} missing/incomplete — skipping deletion")
+            return
+        # 2) verify open/read works (basic sanity)
+        try:
+            ds = xr.open_zarr(P_iceh_zarr, group=m_str, consolidated=True)
+            ntime = ds.sizes.get("time", 0)
+            ds.close()
+        except Exception as e:
+            self.logger.warning(f"Could not open Zarr group {m_str}; skipping deletion: {e}")
+            return
+        # 3) only then delete
+        self.logger.info(f"Deleting original NetCDF files for {m_str} (ntime={ntime})")
+        for f in P_orgs:
+            try:
+                Path(f).unlink()
+            except Exception as e:
+                self.logger.warning(f" Could not delete {f}: {e}")
 
     def daily_iceh_to_monthly_zarr(self,
                                    sim_name        = None,

@@ -30,6 +30,7 @@ echo "ice type         : $ice_type"
 echo "BorC2T type      : $borc2t_type"
 echo "start date       : $start_date"
 echo "end date         : $end_date"
+echo "Rolling mean     : $rolling_mean"
 echo "Overwrite zarr   : $overwrite_zarr"
 echo "Overwrite png    : $overwrite_png"
 
@@ -42,5 +43,6 @@ python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/metrics.py \
   --BorC2T_type "$borc2t_type" \
   --start_date "$start_date" \
   --end_date "$end_date" \
+  $( [ "$rolling_mean"   = true ] && echo "--rolling_mean") \
   $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
   $( [ "$overwrite_png"  = true ] && echo "--overwrite_png" )

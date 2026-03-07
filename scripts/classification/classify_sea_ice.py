@@ -8,9 +8,20 @@ import xarray as xr
 sys.path.insert(0, "/home/581/da1339/AFIM/src/AFIM/src")
 from sea_ice_toolbox import SeaIceToolboxManager  # noqa: E402
 
-
 DEFAULT_P_JSON = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/sea_ice_config.json"
 
+def _prep_for_zarr(ds: xr.Dataset) -> xr.Dataset:
+    # 1) drop all non-dimension coordinates (this removes NLAT/NLON/etc if they are coords)
+    ds = ds.reset_coords(drop=True)
+    # 2) if any of these exist as data_vars, drop them too (belt + braces)
+    drop_vars = ["NLAT","NLON","ELAT","ELON","ULAT","ULON","TLAT","TLON",
+                 "ANGLE","ANGLET","tarea","uarea","HTE","HTN",
+                 "dxt","dyt","dxu","dyu","dxe","dyn","dxn","dye"]
+    ds = ds.drop_vars([v for v in drop_vars if v in ds], errors="ignore")
+    # 3) clear conflicting encoding (esp. 'chunks') that can trigger the overlap error
+    for v in ds.variables:
+        ds[v].encoding.pop("chunks", None)
+    return ds
 
 def run_loop(sim_name,
              ispd_thresh          = None,
@@ -63,18 +74,23 @@ def run_loop(sim_name,
             I_bin_yr = xr.concat(I_bin_mo, dim="time").chunk(tb.CICE_dict["FI_chunks"])
         if len(I_roll_mo) > 0:
             I_roll_yr = xr.concat(I_roll_mo, dim="time").chunk(tb.CICE_dict["FI_chunks"])
-        P_zarr = tb.define_classification_zarr(class_method="raw")
-        P_zarr_bin = tb.define_classification_zarr(class_method="binary-days")
+        P_zarr      = tb.define_classification_zarr(class_method="raw")
+        P_zarr_bin  = tb.define_classification_zarr(class_method="binary-days")
         P_zarr_roll = tb.define_classification_zarr(class_method="rolling-mean")
-        toz = dict(group=yr_str, mode="w", consolidated=False, zarr_format=2)
-        tb.logger.info(f"Writing raw: {P_zarr}")
-        I_yr.to_zarr(P_zarr, **toz)
-        if I_bin_yr is not None:
-            tb.logger.info(f"Writing binary-days: {P_zarr_bin}")
-            I_bin_yr.to_zarr(P_zarr_bin, **toz)
-        if I_roll_yr is not None:
-            tb.logger.info(f"Writing rolling-mean: {P_zarr_roll}")
-            I_roll_yr.to_zarr(P_zarr_roll, **toz)
+        toz         = dict(group        = yr_str,
+                           mode         = "w",
+                           consolidated = True,
+                           zarr_format  = 2,
+                           safe_chunks  = True,
+                           align_chunks = True)
+        tb.logger.info(f"writing {P_zarr}")
+        _prep_for_zarr(I_yr).to_zarr(P_zarr, **toz)
+        if I_bin_yr:
+            tb.logger.info(f"writing {P_zarr_bin}")
+            _prep_for_zarr(I_bin_yr).to_zarr(P_zarr_bin, **toz)
+        if I_roll_yr:
+            tb.logger.info(f"writing {P_zarr_roll}")
+            _prep_for_zarr(I_roll_yr).to_zarr(P_zarr_roll, **toz)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run ice classification loop over time.")

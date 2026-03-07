@@ -1007,7 +1007,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                 return ds.coords[n]
         return None
 
-    def _has(self,var):
+    def _has(self, ds, var):
         """
         Return whether the wrapped input contains a variable/key/attribute named ``var``.
 
@@ -1017,15 +1017,16 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
         Lookup precedence
         -----------------
-        1. If ``I_data`` is an ``xarray.Dataset``: check ``var`` in ``I_data.data_vars``.
-        2. Otherwise attempt membership: ``var in I_data`` (for dict-like / list-like containers).
-        3. If membership is not supported (raises ``TypeError``): fall back to
-           ``hasattr(I_data, var)``.
+        1. If ``ds`` is an ``xarray.Dataset``: check ``var`` in ``ds.data_vars``.
+        2. Otherwise attempt membership: ``var in ds`` (for dict-like / list-like containers).
+        3. If membership is not supported (raises ``TypeError``): fall back to ``hasattr(I_data, var)``.
 
         Parameters
         ----------
+        ds  : xr.Dataset
+              dataset to test var
         var : str
-            Variable name to test for.
+              variable name to test for.
 
         Returns
         -------
@@ -1036,17 +1037,17 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         -----
         - For ``xarray.Dataset``, this checks *data variables only* (not coordinates).
           If you want coordinates too, consider checking ``(var in I_data.variables)``.
-        - The function relies on an outer-scope variable ``I_data`` (closure). If you
-          refactor to store data on the instance, replace ``I_data`` with ``self.I_data``.
+        - The function relies on an outer-scope variable ``ds`` (closure). If you
+          refactor to store data on the instance, replace ``ds`` with ``self.ds``.
         """
-        if isinstance(I_data, xr.Dataset):
-            return var in I_data.data_vars
+        if isinstance(ds, xr.Dataset):
+            return var in ds.data_vars
         try:
-            return var in I_data
+            return var in ds
         except TypeError:
-            return hasattr(I_data, var)
+            return hasattr(ds, var)
 
-    def _get(self,var):
+    def _get(self, ds, var):
         """
         Retrieve a variable/key/attribute named ``var`` from the wrapped input.
 
@@ -1055,11 +1056,11 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
 
         Lookup precedence
         -----------------
-        1. If ``I_data`` is an ``xarray.Dataset``: return ``I_data[var]`` (typically an
+        1. If ``ds`` is an ``xarray.Dataset``: return ``ds[var]`` (typically an
            ``xarray.DataArray`` or variable-like object).
-        2. Otherwise attempt key access: ``I_data[var]``.
+        2. Otherwise attempt key access: ``ds[var]``.
         3. If key access fails for any reason: fall back to attribute access
-           ``getattr(I_data, var)``.
+           ``getattr(ds, var)``.
 
         Parameters
         ----------
@@ -1075,28 +1076,28 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         Raises
         ------
         KeyError
-            If ``var`` is not a key in a mapping-like ``I_data`` and attribute fallback
+            If ``var`` is not a key in a mapping-like ``ds`` and attribute fallback
             does not exist.
         AttributeError
-            If key access fails and ``I_data`` does not have attribute ``var``.
+            If key access fails and ``ds`` does not have attribute ``var``.
         Exception
-            Any exception raised by ``I_data[var]`` may be swallowed and replaced by
+            Any exception raised by ``ds[var]`` may be swallowed and replaced by
             the attribute fallback attempt.
 
         Notes
         -----
-        - Because the fallback catches *all* exceptions from ``I_data[var]``, genuine
+        - Because the fallback catches *all* exceptions from ``ds[var]``, genuine
           indexing errors (not just missing keys) will be masked. If you only want to
           fall back on missing keys, narrow the exception to ``(KeyError, TypeError)``.
-        - The function relies on an outer-scope variable ``I_data`` (closure). If you
-          refactor to store data on the instance, replace ``I_data`` with ``self.I_data``.
+        - The function relies on an outer-scope variable ``ds`` (closure). If you
+          refactor to store data on the instance, replace ``ds`` with ``self.ds``.
         """
-        if isinstance(I_data, xr.Dataset):
-            return I_data[var]
+        if isinstance(ds, xr.Dataset):
+            return ds[var]
         try:
-            return I_data[var]
+            return ds[var]
         except Exception:
-            return getattr(I_data, var)
+            return getattr(ds, var)
 
     ##########################################################################################################
     #############################                  MASKING                          ##########################

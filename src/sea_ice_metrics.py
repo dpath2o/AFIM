@@ -198,17 +198,17 @@ class SeaIceMetrics:
                                 # NEW: possible area weights (often static 2-D fields)
                                 "earea", "narea", "uarea"]
         out = {self.mask_name: I_mask, "tarea": A}
-        missing_required = [v for v in required if not self._has(v)]
+        missing_required = [v for v in required if not self._has(I_data, v)]
         if missing_required:
             raise KeyError(f"metrics_data_dict missing required variables in I_data: {missing_required}")
         # Add required
         for v in required:
-            out[v] = self._get(v)
+            out[v] = self._get(I_data, v)
         # Add optional
         missing_optional = []
         for v in optional:
-            if self._has(v):
-                out[v] = self._get(v)
+            if self._has(I_data, v):
+                out[v] = self._get(I_data, v)
             else:
                 missing_optional.append(v)
         if missing_optional:
@@ -232,8 +232,8 @@ class SeaIceMetrics:
             for avar in sorted(area_vars_needed):
                 if avar in out:
                     continue
-                if self._has(avar):
-                    out[avar] = self._get(avar)
+                if self._has(I_data, avar):
+                    out[avar] = self._get(I_data, avar)
                     self.logger.info(f"metrics_data_dict: auto-added area measure '{avar}' referenced by cell_measures")
                 else:
                     self.logger.info(f"metrics_data_dict: variable(s) reference area '{avar}' via cell_measures, but '{avar}' not found in I_data")
@@ -464,7 +464,6 @@ class SeaIceMetrics:
                 _add_stress_agg(KuE_mag, f"{ice_type}KuE_mag")
             except Exception as e:
                 self.logger.warning(f"{ice_type}KuE_mag failed: {e}")
-
         if (KuxN is not None) and (KuyN is not None) and valid(KuxN) and valid(KuyN):
             try:
                 KuN_mag = np.hypot(KuxN, KuyN)
@@ -472,17 +471,14 @@ class SeaIceMetrics:
                 _add_stress_agg(KuN_mag, f"{ice_type}KuN_mag")
             except Exception as e:
                 self.logger.warning(f"{ice_type}KuN_mag failed: {e}")
-
         # --------- Spatial summary diagnostics (conditional) ----------
         time_dim = self.CICE_dict["time_dim"]
-
         if I_T is not None and valid(I_T):
             try:
                 self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
                 METS[f"{ice_type}HI"] = I_T.mean(dim=time_dim).load()
             except Exception as e:
                 self.logger.warning(f"mean thickness failed: {e}")
-
         if (I_S is not None) and (I_T is not None) and valid(I_S) and valid(I_T):
             try:
                 self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
@@ -490,35 +486,30 @@ class SeaIceMetrics:
                 METS[f"{ice_type}ST"] = IST.load()
             except Exception as e:
                 self.logger.warning(f"strength temporal-sum failed: {e}")
-
         if I_TVT is not None and valid(I_TVT):
             try:
                 self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}TVR_YR"] = ((I_TVT * 1e2).mean(dim=time_dim) / 3.65).load()
             except Exception as e:
                 self.logger.warning(f"TVR_YR failed: {e}")
-
         if I_MVT is not None and valid(I_MVT):
             try:
                 self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}MVR_YR"] = ((I_MVT * 1e2).mean(dim=time_dim) / 3.65).load()
             except Exception as e:
                 self.logger.warning(f"MVR_YR failed: {e}")
-
         if (I_TAT is not None) and (A is not None) and valid(I_TAT) and valid(A):
             try:
                 self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}TAR_YR"] = ((I_TAT * A).mean(dim=time_dim) / 31_536_000).load()
             except Exception as e:
                 self.logger.warning(f"TAR_YR failed: {e}")
-
         if (I_MAT is not None) and (A is not None) and valid(I_MAT) and valid(A):
             try:
                 self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
                 METS[f"{ice_type}MAR_YR"] = ((I_MAT * A).mean(dim=time_dim) / 31_536_000).load()
             except Exception as e:
                 self.logger.warning(f"MAR_YR failed: {e}")
-
         # --------- Skill / seasonal / persistence (conditional) ----------
         IA_skill = {}
         IA_seasonal = {}
@@ -554,7 +545,6 @@ class SeaIceMetrics:
                 IA_seasonal = {}
         else:
             self.logger.info("skipping skill/seasonal stats: IA not available")
-
         IP_stab, IP_dist = {}, {}
         if ice_type == "FI":
             if (I_mask is not None) and (A is not None):
@@ -576,7 +566,6 @@ class SeaIceMetrics:
                     IP_dist = {}
             else:
                 self.logger.info("skipping persistence distance: IP not available")
-
         # --------- Build output dataset ----------
         DS_METS = xr.Dataset()
         for k, v in METS.items():
@@ -584,28 +573,23 @@ class SeaIceMetrics:
                 DS_METS[k] = v
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
-
         # --------- Merge metadata / summary dict ----------
         IA_seasonal = IA_seasonal if isinstance(IA_seasonal, dict) else {}
         IP_stab     = IP_stab if isinstance(IP_stab, dict) else {}
         IP_dist     = IP_dist if isinstance(IP_dist, dict) else {}
         IA_skill    = IA_skill if isinstance(IA_skill, dict) else {}
-
-        summary = {**{f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()},
-                **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
-
+        summary     = {**{f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()},
+                       **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
         for k, v in summary.items():
             if k in self.sim_config:
                 DS_METS.attrs[k] = v
             else:
                 DS_METS[k] = xr.DataArray(v, dims=())
-
         # --------- Save to Zarr ----------
         if P_mets_zarr:
             DS_METS = self._clean_zarr_chunks(DS_METS)
             DS_METS.to_zarr(P_mets_zarr, mode="w", consolidated=True, zarr_format=2)
             self.logger.info(f"Metrics written to {P_mets_zarr}")
-
         return DS_METS
 
     def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str, 
@@ -766,17 +750,13 @@ class SeaIceMetrics:
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
         return ds
 
-    def compute_hemisphere_area_weighted_stress(
-        self,
-        tau: xr.DataArray,
-        A: xr.DataArray,
-        spatial_dim_names: list | None = None,
-        mask: xr.DataArray | None = None,
-        out_units: str = "Pa",                  # "Pa" | "kPa" | "hPa"
-        return_abs: bool = True,                # if True, also return |tau|
-        min_area_m2: float = 0.0,               # if >0, mask timesteps with too little valid area
-        name: str | None = None,
-    ) -> xr.Dataset:
+    def compute_hemisphere_area_weighted_stress(self, tau: xr.DataArray, A: xr.DataArray,
+                                                spatial_dim_names: list | None         = None,
+                                                mask             : xr.DataArray | None = None,
+                                                out_units        : str                 = "Pa", # "Pa" | "kPa" | "hPa"
+                                                return_abs       : bool                = True, # if True, also return |tau|
+                                                min_area_m2      : float               = 0.0,  # if >0, mask timesteps with too little valid area
+                                                name             : str | None          = None) -> xr.Dataset:
         """
         Compute a hemispheric, area-weighted aggregate of a stress component (or magnitude).
 
@@ -835,9 +815,7 @@ class SeaIceMetrics:
         that first and pass as `tau`.
         """
         spatial_dim_names = spatial_dim_names if spatial_dim_names is not None else self.CICE_dict["spatial_dims"]
-
-        nm = name or getattr(tau, "name", None) or "tau"
-
+        nm                = name or getattr(tau, "name", None) or "tau"
         self.logger.info(f"Computing **AREA-WEIGHTED STRESS AGGREGATE** for '{nm}'")
         self.logger.debug(f"  • out_units            : {out_units}")
         self.logger.debug(f"  • return_abs           : {return_abs}")
@@ -845,83 +823,65 @@ class SeaIceMetrics:
         self.logger.debug(f"  • Spatial dimensions   : {spatial_dim_names}")
         self.logger.debug(f"  • tau units (attrs)    : {tau.attrs.get('units', 'unknown')}")
         self.logger.debug(f"  • tau long_name        : {tau.attrs.get('long_name', 'unknown')}")
-
         self.logger.debug("\n[Stress Aggregation Steps]\n"
-                        "  1. Define valid mask: finite(tau) & optional user mask\n"
-                        "  2. Compute area-weighted mean: sum(tau*A)/sum(A)\n"
-                        "  3. Optionally compute area-weighted mean absolute stress: sum(|tau|*A)/sum(A)\n"
-                        "  4. Convert Pa -> requested units (Pa/hPa/kPa)\n"
-                        "  5. Optionally mask timesteps where valid area is too small")
-
+                          "  1. Define valid mask: finite(tau) & optional user mask\n"
+                          "  2. Compute area-weighted mean: sum(tau*A)/sum(A)\n"
+                          "  3. Optionally compute area-weighted mean absolute stress: sum(|tau|*A)/sum(A)\n"
+                          "  4. Convert Pa -> requested units (Pa/hPa/kPa)\n"
+                          "  5. Optionally mask timesteps where valid area is too small")
         # base validity mask
         valid = np.isfinite(tau)
         if mask is not None:
             valid = valid & mask
-
-        w = A.where(valid)
+        w          = A.where(valid)
         valid_area = w.sum(dim=spatial_dim_names)
-
         # signed mean
         tau_mean = (tau.where(valid) * w).sum(dim=spatial_dim_names) / valid_area
-
         # absolute mean
         if return_abs:
             tau_abs_mean = (np.abs(tau.where(valid)) * w).sum(dim=spatial_dim_names) / valid_area
-
         # unit conversion from Pa
         if out_units not in ("Pa", "hPa", "kPa"):
             raise ValueError(f"Unknown out_units='{out_units}'. Expected 'Pa', 'hPa', or 'kPa'.")
-
         if out_units == "hPa":
             scale = 1.0 / 100.0
         elif out_units == "kPa":
             scale = 1.0 / 1000.0
         else:
             scale = 1.0
-
         tau_mean = tau_mean * scale
         tau_mean.attrs["units"] = out_units
         tau_mean.attrs["long_name"] = f"Area-weighted mean stress ({nm})"
         tau_mean.attrs["aggregation"] = f"area_weighted_mean_over={spatial_dim_names}"
-
-        out = {
-            f"{nm}_mean": tau_mean,
-            "valid_area_m2": valid_area,
-        }
-
+        out = {f"{nm}_mean"    : tau_mean, 
+               "valid_area_m2" : valid_area}
         if return_abs:
-            tau_abs_mean = tau_abs_mean * scale
-            tau_abs_mean.attrs["units"] = out_units
-            tau_abs_mean.attrs["long_name"] = f"Area-weighted mean absolute stress ({nm})"
+            tau_abs_mean                      = tau_abs_mean * scale
+            tau_abs_mean.attrs["units"]       = out_units
+            tau_abs_mean.attrs["long_name"]   = f"Area-weighted mean absolute stress ({nm})"
             tau_abs_mean.attrs["aggregation"] = f"area_weighted_mean_over={spatial_dim_names}"
-            out[f"{nm}_abs_mean"] = tau_abs_mean
-
+            out[f"{nm}_abs_mean"]             = tau_abs_mean
         ds_out = xr.Dataset(out)
-
         if min_area_m2 and float(min_area_m2) > 0.0:
             self.logger.debug("Applying min_area_m2 gating to output time series")
             gate = ds_out["valid_area_m2"] > min_area_m2
             for v in ds_out.data_vars:
                 if v != "valid_area_m2":
                     ds_out[v] = ds_out[v].where(gate)
-
         return ds_out
 
-
-    def compute_hemisphere_lateral_drag_stress(
-        self,
-        KuxE: xr.DataArray | None = None,
-        KuxN: xr.DataArray | None = None,
-        KuyE: xr.DataArray | None = None,
-        KuyN: xr.DataArray | None = None,
-        earea: xr.DataArray | None = None,
-        narea: xr.DataArray | None = None,
-        spatial_dim_names: list | None = None,
-        maskE: xr.DataArray | None = None,
-        maskN: xr.DataArray | None = None,
-        out_units: str = "Pa",
-        min_area_m2: float = 0.0,
-    ) -> xr.Dataset:
+    def compute_hemisphere_lateral_drag_stress(self,
+                                               KuxE              : xr.DataArray | None = None,
+                                               KuxN              : xr.DataArray | None = None,
+                                               KuyE              : xr.DataArray | None = None,
+                                               KuyN              : xr.DataArray | None = None,
+                                               earea             : xr.DataArray | None = None,
+                                               narea             : xr.DataArray | None = None,
+                                               spatial_dim_names : list | None         = None,
+                                               maskE             : xr.DataArray | None = None,
+                                               maskN             : xr.DataArray | None = None,
+                                               out_units         : str                 = "Pa",
+                                               min_area_m2       : float               = 0.0) -> xr.Dataset:
         """
         Convenience wrapper to compute hemispheric aggregates for lateral-drag stress components.
 
@@ -969,93 +929,97 @@ class SeaIceMetrics:
         self.logger.debug(f"  • out_units          : {out_units}")
         self.logger.debug(f"  • min_area_m2        : {min_area_m2:.3e} m^2")
         self.logger.debug(f"  • Spatial dimensions : {spatial_dim_names}")
-
         out = []
-
         # --- E grid components ---
         if (KuxE is not None) and (earea is None):
             raise ValueError("KuxE provided but earea is None.")
         if (KuyE is not None) and (earea is None):
             raise ValueError("KuyE provided but earea is None.")
-
         if KuxE is not None:
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KuxE, A=earea, spatial_dim_names=spatial_dim_names,
-                mask=maskE, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="KuxE"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KuxE,
+                                                              A                 = earea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskE,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "KuxE")
             ds = ds.rename({"valid_area_m2": "KuxE_valid_area_m2"})
             out.append(ds)
-
         if KuyE is not None:
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KuyE, A=earea, spatial_dim_names=spatial_dim_names,
-                mask=maskE, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="KuyE"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KuyE,
+                                                              A                 = earea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskE,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "KuyE")
             ds = ds.rename({"valid_area_m2": "KuyE_valid_area_m2"})
             out.append(ds)
-
         if (KuxE is not None) and (KuyE is not None):
             KmagE = np.hypot(KuxE, KuyE)
             KmagE.name = "K_uE_mag"
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KmagE, A=earea, spatial_dim_names=spatial_dim_names,
-                mask=maskE, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="K_uE_mag"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KmagE,
+                                                              A                 = earea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskE,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "K_uE_mag")
             ds = ds.rename({"valid_area_m2": "K_uE_mag_valid_area_m2"})
             out.append(ds)
-
         # --- N grid components ---
         if (KuxN is not None) and (narea is None):
             raise ValueError("KuxN provided but narea is None.")
         if (KuyN is not None) and (narea is None):
             raise ValueError("KuyN provided but narea is None.")
-
         if KuxN is not None:
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KuxN, A=narea, spatial_dim_names=spatial_dim_names,
-                mask=maskN, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="KuxN"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KuxN,
+                                                              A                 = narea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskN,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "KuxN")
             ds = ds.rename({"valid_area_m2": "KuxN_valid_area_m2"})
             out.append(ds)
-
         if KuyN is not None:
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KuyN, A=narea, spatial_dim_names=spatial_dim_names,
-                mask=maskN, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="KuyN"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KuyN,
+                                                              A                 = narea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskN,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "KuyN")
             ds = ds.rename({"valid_area_m2": "KuyN_valid_area_m2"})
             out.append(ds)
-
         if (KuxN is not None) and (KuyN is not None):
             KmagN = np.hypot(KuxN, KuyN)
             KmagN.name = "K_uN_mag"
-            ds = self.compute_hemisphere_area_weighted_stress(
-                tau=KmagN, A=narea, spatial_dim_names=spatial_dim_names,
-                mask=maskN, out_units=out_units, return_abs=True,
-                min_area_m2=min_area_m2, name="K_uN_mag"
-            )
+            ds = self.compute_hemisphere_area_weighted_stress(tau               = KmagN,
+                                                              A                 = narea,
+                                                              spatial_dim_names = spatial_dim_names,
+                                                              mask              = maskN,
+                                                              out_units         = out_units,
+                                                              return_abs        = True,
+                                                              min_area_m2       = min_area_m2,
+                                                              name              = "K_uN_mag")
             ds = ds.rename({"valid_area_m2": "K_uN_mag_valid_area_m2"})
             out.append(ds)
-
         if not out:
             raise ValueError("No stress fields provided. Supply at least one of KuxE/KuxN/KuyE/KuyN.")
-
         return xr.merge(out)
 
-    def compute_hemisphere_ice_area_rate(self, 
-                                         DAT: xr.DataArray,
-                                         IA: xr.DataArray,
-                                         A: xr.DataArray,
-                                         spatial_dim_names: list | None = None,
-                                         mode: str = "fractional",               # "fractional" (1/s or 1/day) OR "absolute" (km^2/s or km^2/day)
-                                         out_units: str = "per_day",             # "per_day" | "per_second"
-                                         IA_min_m2: float = 5e10,                # denominator floor (m^2) for fractional mode
-                                         mask_invalid: bool = True) -> xr.DataArray:
+    def compute_hemisphere_ice_area_rate(self, DAT: xr.DataArray, IA: xr.DataArray, A: xr.DataArray,
+                                         spatial_dim_names : list | None = None,
+                                         mode              : str         = "fractional", # "fractional" (1/s or 1/day) OR "absolute" (km^2/s or km^2/day)
+                                         out_units         : str         = "per_day",    # "per_day" | "per_second"
+                                         IA_min_m2         : float       = 5e10,         # denominator floor (m^2) for fractional mode
+                                         mask_invalid      : bool        = True) -> xr.DataArray:
         """
         Compute a hemisphere-aggregated ice-area tendency rate with optional denominator gating.
 
@@ -1118,21 +1082,16 @@ class SeaIceMetrics:
         self.logger.debug(f"  • out_units                     : {out_units}")
         self.logger.debug(f"  • IA_min_m2 (fractional gating) : {IA_min_m2:.3e} m^2")
         self.logger.debug(f"  • Spatial dimensions            : {spatial_dim_names}")
-
         # 1) integrate local tendency over area: (1/s)*m^2 -> m^2/s
         self.logger.debug("\n[Area Tendency Aggregation Steps]\n"
                         "  1. Multiply DAT by grid-cell area A and sum over spatial dims -> dA/dt in m^2/s\n"
                         "  2. If mode='fractional', divide by IA (with IA floor) -> fractional rate in 1/s\n"
                         "  3. Convert to requested output units (per_day vs per_second) and (if absolute) km^2 scaling")
-
         dA_dt_m2_s = (DAT * A).sum(dim=spatial_dim_names)
-
         if mode not in ("fractional", "absolute"):
             raise ValueError(f"Unknown mode='{mode}'. Expected 'fractional' or 'absolute'.")
-
         if out_units not in ("per_day", "per_second"):
             raise ValueError(f"Unknown out_units='{out_units}'. Expected 'per_day' or 'per_second'.")
-
         if mode == "fractional":
             # denominator gating to avoid blow-ups
             IA_safe = IA.where(IA > IA_min_m2)
@@ -1144,7 +1103,6 @@ class SeaIceMetrics:
             rate = dA_dt_m2_s / 1e6
             rate.attrs["long_name"] = "Hemisphere absolute ice-area tendency rate"
             rate.attrs["units"] = "km^2/s"
-
         if out_units == "per_day":
             rate = rate * 86400.0
             # adjust units string
@@ -1152,15 +1110,12 @@ class SeaIceMetrics:
                 rate.attrs["units"] = "1/day"
             else:
                 rate.attrs["units"] = "km^2/day"
-
         if mask_invalid:
             rate = rate.where(np.isfinite(rate))
-
         # keep a breadcrumb for provenance
         rate.attrs["aggregation"] = f"sum_over={spatial_dim_names}"
         if mode == "fractional":
             rate.attrs["IA_min_m2"] = float(IA_min_m2)
-
         return rate
 
     def compute_hemisphere_ice_volume_rate(self,

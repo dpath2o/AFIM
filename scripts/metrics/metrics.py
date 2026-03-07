@@ -9,7 +9,7 @@ import pandas as pd  # kept (present in current file)
 import pygmt          # kept (present in current file)
 # AFIM dev path (kept consistent with current codebase usage)
 sys.path.insert(0, "/home/581/da1339/AFIM/src/AFIM/src")
-from sea_ice_toolbox import SeaIceToolboxManager
+from sea_ice_toolbox import SeaIceToolboxManager, SeaIceToolbox
 DEFAULT_P_JSON = "/home/581/da1339/AFIM/src/AFIM/src/JSONs/sea_ice_config.json"
 
 def safe_compute_sea_ice_metrics(tb, I_dict, P_mets_zarr):
@@ -48,7 +48,7 @@ def safe_compute_sea_ice_metrics(tb, I_dict, P_mets_zarr):
             tb.logger.info(f"Minimal (empty) metrics written to {P_mets_zarr}")
         return DS_METS
 
-def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, compute_rolling_mean, overwrite_zarr, overwrite_png):
+def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, rolling_mean, overwrite_zarr, overwrite_png):
     print(f"ice_type passed is: {ice_type}")
     print(f"P_JSON: {P_JSON}")
     load_vars = ["aice", "tarea", "hi", "uvel", "vvel", "strength",
@@ -58,7 +58,7 @@ def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str,
     P_log = Path(Path.home(), "logs", f"metrics_{sim_name}_ispd_thresh{ispd_thresh}.log")
     mgr   = SeaIceToolboxManager(P_log=P_log)
     tb    = mgr.get_toolbox(sim_name             = sim_name,
-                            P_json               = P_JSON, 
+                            P_json               = P_JSON,
                             dt0_str              = dt0_str,
                             dtN_str              = dtN_str,
                             ice_type             = ice_type,
@@ -72,20 +72,20 @@ def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str,
     CICE_SO = tb.load_cice_zarr(slice_hem=True, variables=load_vars)
     if ice_type != "SI":
         I_bin = tb.load_classified_ice(class_method="binary-days")[tb.mask_name]
-        if compute_rolling_mean:
+        if rolling_mean:
             I_rol = tb.load_classified_ice(class_method="rolling-mean")[tb.mask_name]
     A = CICE_SO["tarea"].isel(time=0)
     # Apply mask(s)
     I_daily = CICE_SO.where(I_day)
     if ice_type != "SI":
         I_binly = CICE_SO.where(I_bin)
-        if compute_rolling_mean:
+        if rolling_mean:
             I_rolly = CICE_SO.where(I_rol)
     # Build dict(s)
     I_dy = tb.metrics_data_dict(I_day, I_daily, A)
     if ice_type != "SI":
         I_bn = tb.metrics_data_dict(I_bin, I_binly, A)
-        if compute_rolling_mean:
+        if rolling_mean:
             I_rl = tb.metrics_data_dict(I_rol, I_rolly, A)
     # Compute metrics
     tb.define_metrics_zarr(class_method="raw")
@@ -93,7 +93,7 @@ def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str,
     if ice_type != "SI":
         tb.define_metrics_zarr(class_method="binary-days")
         safe_compute_sea_ice_metrics(tb, I_bn, tb.D_mets_zarr)
-        if compute_rolling_mean:
+        if rolling_mean:
             tb.define_metrics_zarr(class_method="rolling-mean")
             safe_compute_sea_ice_metrics(tb, I_rl, tb.D_mets_zarr)
 
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     parser.add_argument("--BorC2T_type", default="Tc", help="must be Tc, Ta, Tb, Tx, B or BT")
     parser.add_argument("--start_date", default="1994-01-01", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end_date", default="1999-12-31", help="End date (YYYY-MM-DD)")
-    parser.add_argument("--compute_rolling_mean", action="store_true", help="whether to compute rolling-mean metrics in which case rolling-mean classification has to have been done")
+    parser.add_argument("--rolling_mean", action="store_true", help="whether to compute rolling-mean metrics in which case rolling-mean classification has to have been done")
     parser.add_argument("--overwrite_zarr", action="store_true", help="this will clobber existing metrics")
     parser.add_argument("--overwrite_png", action="store_true", help="pretty sure I can get rid of this ...")
     args = parser.parse_args()
@@ -120,6 +120,6 @@ if __name__ == "__main__":
          args.BorC2T_type,
          args.start_date,
          args.end_date,
-         args.compute_rolling_mean,
+         args.rolling_mean,
          args.overwrite_zarr,
          args.overwrite_png)
