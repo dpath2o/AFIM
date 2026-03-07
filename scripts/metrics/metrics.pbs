@@ -4,6 +4,7 @@
 #PBS -l walltime=3:00:00
 #PBS -l ncpus=24
 #PBS -l mem=190GB
+#PBS -l jobfs=5GB
 #PBS -j oe
 #PBS -l storage=gdata/xp65+gdata/gv90+gdata/ik11+scratch/gv90
 #PBS -v ENVFILE
@@ -33,6 +34,10 @@ echo "end date         : $end_date"
 echo "Rolling mean     : $rolling_mean"
 echo "Overwrite zarr   : $overwrite_zarr"
 echo "Overwrite png    : $overwrite_png"
+
+export DASK_TEMPORARY_DIRECTORY="/scratch/gv90/${USER}/dask_tmp/${PBS_JOBID}"
+export TMPDIR="/scratch/gv90/${USER}/tmp/${PBS_JOBID}"
+mkdir -p "$DASK_TEMPORARY_DIRECTORY" "$TMPDIR"
 
 # --- Launch computation ---
 python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/metrics.py \

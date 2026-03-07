@@ -49,6 +49,8 @@ def safe_compute_sea_ice_metrics(tb, I_dict, P_mets_zarr):
         return DS_METS
 
 def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str, rolling_mean, overwrite_zarr, overwrite_png):
+    D_dask = os.environ.get("DASK_TEMPORARY_DIRECTORY",
+			   f"/scratch/gv90/{os.environ.get('USER', 'da1339')}/dask_tmp")
     print(f"ice_type passed is: {ice_type}")
     print(f"P_JSON: {P_JSON}")
     load_vars = ["aice", "tarea", "hi", "uvel", "vvel", "strength",
@@ -56,7 +58,12 @@ def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type, dt0_str, dtN_str,
                  "KuxE", "KuxN", "KuyE", "KuyN",
                  "earea", "narea", "uarea"]
     P_log = Path(Path.home(), "logs", f"metrics_{sim_name}_ispd_thresh{ispd_thresh}.log")
-    mgr   = SeaIceToolboxManager(P_log=P_log)
+    mgr   = SeaIceToolboxManager(P_log     = P_log,
+				 n_workers = 1,
+				 n_threads = 4,
+    				 mem_lim   = "48GB",
+    				 process   = False,
+				 D_dask    = D_dask)
     tb    = mgr.get_toolbox(sim_name             = sim_name,
                             P_json               = P_JSON,
                             dt0_str              = dt0_str,

@@ -1555,6 +1555,57 @@ class SeaIceClassification:
             ds = ds.isel({dim: sorted(index)})
         return ds
 
+    def _normalise_concat_coords(self, ds: xr.Dataset,
+                                 dim: str = "ni",
+                                 drop_coords: list | None = None) -> xr.Dataset:
+        """
+        Normalise non-essential spatial coords before concatenation of yearly groups.
+
+        This protects against cases where some yearly Zarr groups carry auxiliary
+        coordinates (for example NLON/NLAT) and others do not, which causes
+        xarray.concat(..., coords="minimal") to raise:
+
+            ValueError: coordinate 'NLON' not present in all datasets
+
+        Parameters
+        ----------
+        ds : xr.Dataset
+            Dataset for a single year/group.
+        dim : str, default "ni"
+            Optional dimension along which duplicate coordinate values should be
+            removed, keeping first occurrence.
+        drop_coords : list[str], optional
+            Explicit list of coord names to drop before concat. If None, uses a
+            conservative default set of known non-essential geolocation coords.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset with problematic auxiliary coords removed and duplicate concat
+            coordinates cleaned.
+        """
+        # 1) drop duplicate concat coord values, if present
+        if dim in ds.coords:
+            _, index = np.unique(ds[dim], return_index=True)
+            ds = ds.isel({dim: sorted(index)})
+        # 2) drop auxiliary geolocation coords that are not needed for concat
+        default_drop = ["NLON", "NLAT",
+                        "ULON", "ULAT",
+                        "TLON", "TLAT",
+                        "elon", "elat",
+                        "nlon", "nlat",
+                        "ulat", "ulon",
+                        "tlat", "tlon"]
+        cfg_drop = []
+        if hasattr(self, "CICE_dict") and isinstance(self.CICE_dict, dict):
+            cfg_drop = list(self.CICE_dict.get("drop_coords", []))
+        drop_now = drop_coords or list(dict.fromkeys(default_drop + cfg_drop))
+        present  = [c for c in drop_now if c in ds.coords]
+        if present:
+            self.logger.debug(f"Dropping auxiliary coords before concat: {present}")
+            ds = ds.drop_vars(present, errors="ignore")
+        return ds
+
     def load_classified_ice(self,
                             sim_name     : str   = None,
                             ice_type     : str   = None,
@@ -1638,15 +1689,31 @@ class SeaIceClassification:
         for yr in years:
             try:
                 ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
-                ds_yr = self._drop_duplicate_coords(ds_yr, dim="ni")
+                # normalise coords so yearly groups are concat-compatible
+                ds_yr = self._normalise_concat_coords(ds_yr, dim="ni")
                 datasets.append(ds_yr)
             except Exception as e:
                 self.logger.warning(f"Skipping year {yr}: {e}")
         if not datasets:
-            raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
-        ds = xr.concat(datasets, dim="time", coords='minimal')
+            raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {P_class_zarr}")
+        ds = xr.concat(datasets,
+                       dim           = "time",
+                       coords        = "minimal",
+                       compat        = "override",
+                       combine_attrs = "override")
+        # datasets = []
+        # for yr in years:
+        #     try:
+        #         ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
+        #         ds_yr = self._drop_duplicate_coords(ds_yr, dim="ni")
+        #         datasets.append(ds_yr)
+        #     except Exception as e:
+        #         self.logger.warning(f"Skipping year {yr}: {e}")
+        # if not datasets:
+        #     raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
+        # ds = xr.concat(datasets, dim="time", coords='minimal')
         if variables:
             ds = ds[variables]
         if persist:
             ds = ds.persist()
-        return ds 
+        return ds
