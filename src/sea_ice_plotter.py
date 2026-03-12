@@ -3,6 +3,7 @@ import xarray as xr
 import pandas as pd
 import numpy  as np
 from pathlib  import Path
+from contextlib import nullcontext
 __all__ = ["SeaIcePlotter"]
 class SeaIcePlotter:
     """
@@ -1682,47 +1683,70 @@ class SeaIcePlotter:
         if show_fig:
             fig.show()
 
-    def pygmt_FIP_figure(self,
-                         plot_data     = None,                # xr.DataArray (single or precomputed diff/diff_cat)
-                         *,
-                         obs           = None,                # For "diff" mode (continuous + alpha): supply obs+mod instead of plot_data
-                         mod           = None,
-                         show_fig      = False,
-                         P_png         = None,
-                         region        = (0, 360, -90, -62),
-                         projection    = "S0.0/-90.0/50/20c",
-                         # Base map
-                         basemap_frame = ("af",),
-                         land_color    = "#666666",
-                         water_color   = "#BABCDE",
-                         shoreline_pen = "1/0.25p",
-                         # Symbols
-                         G_pt_marker   = "c",
-                         G_pt_size     = "0.05",
-                         G_pt_unit     = "c",
-                         # CPT selection:
-                         mode          = "auto",                # "auto" | "single" | "diff"
-                         color_mode    = "auto",          # "auto" | "continuous" | "categorical"
-                         cmap          = None,                  # path to CPT for single-source continuous, else None -> self.pygmt_dict["FIP_CPT"]
-                         series        = [0,1],
-                         # Continuous diff tri-color:
-                         tricolor        = True,
-                         P_tricolor_cpt  = None,
-                         tricolor_kwargs = None,       # dict forwarded to tricolor_cpt_and_alpha
-                         # Categorical diff:
-                         P_cat_cpt       = None,
-                         cat_labels      = ("Agreement", "Model-dominant", "Obs.-dominant"),
-                         cat_colors      = ("#FDAE61", "#2CA25F", "#2171B5"),   # (0,1,2) colors
-                         # Colorbar:
-                         cbar_pos        = "JBC+w15c/1c+mc+h",
-                         cbar_frame      = ("xa0.2f0.05+lFast Ice Persistence",),
-                         cat_cbar_frame  = ("+lFIP difference category",),
-                         # Transparency options:
-                         transparency        = None,          # scalar percent or 1D array percent (already masked)
-                         weight_da           = None,             # xr.DataArray in [0,1] used to derive transparency if set
-                         transparency_from   = "auto",   # "auto" | "none" | "weight" | "alpha"
-                         n_transparency_bins = 5,      # number of passes (bins) if using array transparency
-                         # GI overlay:
+    def add_fip_shared_colorbar(self, fig, cmap_use, *,
+                                cbar_bframe  = 'n',
+                                fig_width    = "24c",
+                                cbar_width   = "12c",
+                                cbar_yoffset = "0.8c",
+                                label_yshift = "-0.45c",
+                                left_label   = "model-dominant",
+                                mid_label    = "agreement",
+                                right_label  = "obs-dominant"):
+        # centered shared colorbar
+        fig.colorbar(cmap=cmap_use, position=f"JBC+w{cbar_width}/0.45c+h+o0c/{cbar_yoffset}", frame=["xa1f0.25"])
+        # full-width invisible strip under the bar
+        fig.shift_origin(yshift=label_yshift)
+        fig.basemap(region=[0, 1, 0, 1], projection=f"X{fig_width}/0.8c", frame=cbar_bframe)
+        # if cbar is 12c in a 24c-wide figure, bar spans x=[0.25, 0.75]
+        fig.text(x       = [0.25, 0.50, 0.75],
+                 y       = [0.18, 0.18, 0.18],
+                 text    = [left_label, mid_label, right_label],
+                 justify = "TC",
+                 no_clip = True,
+                 font    = "12p,NewCenturySchlbk-Bold")
+
+    def _format_subplot_projection(self, proj_template, MC):
+        proj = proj_template.format(MC=MC, fig_size="?")
+        # important: strip any hard-coded unit attached to the placeholder
+        proj = proj.replace("?i", "?").replace("?c", "?")
+        return proj
+
+    def pygmt_FIP_figure(self, plot_data=None, *,
+                         obs                 = None,
+                         mod                 = None,
+                         fig                 = None,
+                         panel               = None,
+                         add_colorbar        = True,
+                         return_cmap         = False,
+                         panel_title         = None,
+                         show_fig            = False,
+                         P_png               = None,
+                         region              = (0, 360, -90, -62),
+                         projection          = "S0.0/-90.0/50/?",
+                         basemap_frame       = ("af",),
+                         land_color          = "#666666",
+                         water_color         = "#BABCDE",
+                         shoreline_pen       = "1/0.25p",
+                         G_pt_marker         = "c",
+                         G_pt_size           = "0.05",
+                         G_pt_unit           = "c",
+                         mode                = "auto",
+                         color_mode          = "auto",
+                         cmap                = None,
+                         series              = [0, 1],
+                         tricolor            = True,
+                         P_tricolor_cpt      = None,
+                         tricolor_kwargs     = None,
+                         P_cat_cpt           = None,
+                         cat_labels          = ("Agreement", "Model-dominant", "Obs-dominant"),
+                         cat_colors          = ("#FDAE61", "#2CA25F", "#2171B5"),
+                         cbar_pos            = "JBC+w15c/0.45c+mc+h",
+                         cbar_frame          = ("xa1f0.5",),
+                         cat_cbar_frame      = ("+lFIP difference category",),
+                         transparency        = None,
+                         weight_da           = None,
+                         transparency_from   = "auto",
+                         n_transparency_bins = 5,
                          plot_GI             = False,
                          GI_color            = "#E349D0",
                          GI_marker           = "s",
@@ -1730,41 +1754,32 @@ class SeaIcePlotter:
                          GI_pt_unit          = "c",
                          plot_bathymetry     = False):
         """
-        A single entry point for:
-        - single-source FIP (continuous)
-        - diff continuous (tri-color + alpha)
-        - diff categorical (0/1/2)
-
-        Notes:
-        - Uses binned transparency for robustness (multiple fig.plot calls).
-        - If obs/mod provided and tricolor=True: computes z,t internally.
+        expressly for plotting a map of fast ice persistence that is either a
+        difference (model - observations), or a fast ice persistence map of either
+        model or observation data. If a difference map then it can either be a
+        continuous colourbar or a categorical colourbar.
         """
         import pygmt
         if plot_GI:
             self.load_cice_grid(slice_hem=True)
         if plot_bathymetry:
             SO_BATH = self.load_IBCSO_bath()
-        # ---- decide mode / color_mode ----
         if mode == "auto":
             mode = "diff" if (obs is not None and mod is not None) else "single"
         if color_mode == "auto":
             if mode == "diff":
-                # if user gave diff_cat, treat as categorical
                 if isinstance(plot_data, xr.DataArray) and ("diff_cat" in (plot_data.name or "").lower()):
                     color_mode = "categorical"
                 else:
-                    color_mode = "continuous" if tricolor else "continuous"
+                    color_mode = "continuous"
             else:
                 color_mode = "continuous"
-        # ---- build x,y,z,t (transparency) ----
         t = None
         if mode == "diff" and (obs is not None and mod is not None) and color_mode == "continuous":
-            # compute tri-color z and alpha-derived transparency
-            obs2, mod2         = xr.align(obs, mod, join="exact")
-            P_tricolor_cpt     = P_tricolor_cpt or (Path(self.D_graph) / "_cpt" / "FIP_tricolor.cpt")
-            tricolor_kwargs    = tricolor_kwargs or {}
+            obs2, mod2 = xr.align(obs, mod, join="exact")
+            P_tricolor_cpt = P_tricolor_cpt or (Path(self.D_graph) / "CPTs" / "FIP_tricolor.cpt")
+            tricolor_kwargs = tricolor_kwargs or {}
             cpt_path, z2d, t2d = self.tricolor_cpt_and_alpha(P_tricolor_cpt, obs2.values, mod2.values, **tricolor_kwargs)
-            # put z into a DataArray to reuse prep/masking
             z_da = xr.DataArray(z2d, dims=obs2.dims, coords=obs2.coords, name="FIP_diff")
             prep = self.pygmt_da_prep(z_da,
                                       lon_coord_name="lon",
@@ -1773,21 +1788,18 @@ class SeaIcePlotter:
                                       mask_zero=False,
                                       return_mask=True,
                                       return_flat_index=True)
-            x, y, z, mask2d = prep['lon'], prep['lat'], prep['z'], prep['mask2d']
-            t               = t2d.ravel()[prep["flat_idx"]].astype(float)
-            cmap_use        = cpt_path
-            # transparency precedence:
-            if transparency_from in ("auto", "alpha"):
-                pass  # keep t from alpha
-            elif transparency_from == "weight":
-                t = None  # will be replaced below from weight_da
+            x, y, z, mask2d = prep["lon"], prep["lat"], prep["z"], prep["mask2d"]
+            t = t2d.ravel()[prep["flat_idx"]].astype(float)
+            cmap_use = str(cpt_path)
+            if transparency_from == "weight":
+                t = None
             elif transparency_from == "none":
                 t = None
-        else: # single-source OR categorical OR precomputed diff
+        else:
             if plot_data is None:
                 raise ValueError("plot_data must be provided unless using obs+mod continuous diff mode.")
             if not isinstance(plot_data, xr.DataArray):
-                raise TypeError("For this refactor, pass an xarray.DataArray for plot_data.")
+                raise TypeError("plot_data must be an xarray.DataArray.")
             prep = self.pygmt_da_prep(plot_data,
                                       lon_coord_name="lon",
                                       lat_coord_name="lat",
@@ -1795,98 +1807,148 @@ class SeaIcePlotter:
                                       mask_zero=False,
                                       return_mask=True,
                                       return_flat_index=True)
-            x, y, z, mask2d = prep['lon'], prep['lat'], prep['z'], prep['mask2d']
-            # choose cmap
+            x, y, z, mask2d = prep["lon"], prep["lat"], prep["z"], prep["mask2d"]
             if mode == "single":
                 cmap_use = cmap or self.pygmt_dict.get("FIP_CPT", None)
-                series   = series or self.plot_var_dict['FIP']['series']
-                P_out = Path(self.D_graph) / "CPTs" / "FIP_pygmt_AF2020.cpt"
-                pygmt.makecpt(cmap=cmap_use, series=series, output=str(P_out))
-                cmap_use = str(P_out)
                 if cmap_use is None:
-                    raise ValueError("No CPT found: set cmap=... or define self.pygmt_dict['FIP_CPT'].")
+                    raise ValueError("No CPT found for single-source mode.")
             else:
-                # diff mode but not obs/mod continuous:
                 if color_mode == "continuous":
-                    cmap_use = cmap or self.pygmt_dict.get("FIP_DIFF_CPT", None)
-                    if cmap_use is None and tricolor:
+                    cmap_use = cmap
+                    if cmap_use is None:
                         P_master = Path(self.D_graph) / "CPTs" / "FIP_tricolor_master.cpt"
                         master = self.write_tricolour_cpt(P_master, vmin=-1.0, vmid=0.0, vmax=1.0)
                         P_out = Path(self.D_graph) / "CPTs" / "FIP_tricolor_0p01.cpt"
-                        pygmt.makecpt(cmap=master, series=[-1, 1, 0.01], output=str(P_out))
+                        pygmt.makecpt(cmap=str(master), series=[-1, 1, 0.01], output=str(P_out))
                         cmap_use = str(P_out)
                 else:
-                    # categorical: build categorical CPT file (0..3 bins) so codes 0/1/2 map cleanly
                     P_cat_cpt = P_cat_cpt or (Path(self.D_graph) / "CPTs" / "FIP_diff_cat.cpt")
                     P_cat_cpt = Path(P_cat_cpt)
                     P_cat_cpt.parent.mkdir(parents=True, exist_ok=True)
-                    # Use makecpt so labels are embedded (+c...) and CPT is categorical. :contentReference[oaicite:1]{index=1}
                     pygmt.makecpt(cmap=",".join(cat_colors),
                                   series=[0, 2, 1],
                                   categorical=True,
                                   color_model="R+c" + ",".join(cat_labels),
                                   output=str(P_cat_cpt))
                     cmap_use = str(P_cat_cpt)
-        # derive transparency from weight if requested
         if transparency_from in ("auto", "weight") and (weight_da is not None) and (t is None):
             w2 = weight_da.squeeze(drop=True).values
-            # apply same 2D mask used above
-            if "mask2d" not in locals():
-                raise RuntimeError("Internal: mask2d not defined for weight mapping.")
             wv = np.asarray(w2[mask2d], dtype=float)
             wv = np.clip(wv, 0.0, 1.0)
-            t  = (1.0 - wv) * 100.0
-        # if caller provided transparency explicitly, override
+            t = (1.0 - wv) * 100.0
         if transparency is not None:
             t = transparency
-        # ---- plotting ----
-        fig = pygmt.Figure()
-        with pygmt.config(FONT_TITLE           = "22p,Bookman-Demi",
+        created_here = fig is None
+        if created_here:
+            fig = pygmt.Figure()
+        frame = list(basemap_frame)
+        if panel_title is not None:
+            frame = list(frame) + [f"+t{panel_title}"]
+        panel_ctx = fig.set_panel(panel=panel) if panel is not None else nullcontext()
+        self.logger.info(panel)
+        self.logger.info(panel_ctx)
+        with pygmt.config(FONT_TITLE           = "18p,Bookman-Demi",
                           FONT_ANNOT_PRIMARY   = "16p,NewCenturySchlbk-Roman",
                           FONT_ANNOT_SECONDARY = "16p,NewCenturySchlbk-Bold",
                           FONT_LABEL           = "16p,NewCenturySchlbk-Bold",
                           COLOR_FOREGROUND     = "black"):
-            fig.basemap(region=region, projection=projection, frame=list(basemap_frame))
-            if plot_bathymetry:
-                fig.grdimage(grid=SO_BATH, cmap="geo")
-            else:
-                fig.coast(region=region, projection=projection, land=land_color, water=water_color)
-            # draw points, optionally with binned transparency
-            style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}"
-            if t is None:
-                fig.plot(x=x, y=y, style=style, fill=z, cmap=cmap_use)
-            else:
-                # robust: bin transparency to N levels (scalar -t each pass)
-                t = np.asarray(t, dtype=float)
-                good = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(t)
-                xg, yg, zg, tg = x[good], y[good], z[good], t[good]
-                # drop fully transparent
-                keep = tg < 100.0
-                xg, yg, zg, tg = xg[keep], yg[keep], zg[keep], tg[keep]
-                # bins in transparency space (0..100)
-                edges = np.linspace(0.0, 100.0, int(n_transparency_bins) + 1)
-                bin_idx = np.digitize(tg, edges, right=False) - 1
-                bin_idx = np.clip(bin_idx, 0, len(edges) - 2)
-                for b in range(len(edges) - 1):
-                    sel = bin_idx == b
-                    if not np.any(sel):
-                        continue
-                    tau = float(0.5 * (edges[b] + edges[b + 1]))  # representative scalar transparency
-                    fig.plot(x=xg[sel], y=yg[sel], style=style, fill=zg[sel], cmap=cmap_use, transparency=tau)
-            # colorbar
-            if color_mode == "categorical":
-                fig.colorbar(position=cbar_pos, frame=list(cat_cbar_frame), cmap=cmap_use)
-            else:
-                fig.colorbar(position=cbar_pos, frame=list(cbar_frame), cmap=cmap_use)
-            # GI overlay
-            if plot_GI:
-                fig.plot(x=self.G_GI["lon"].values.ravel(),
-                         y=self.G_GI["lat"].values.ravel(),
-                         fill=GI_color,
-                         style=f"{GI_marker}{GI_size}{GI_pt_unit}")
-            fig.coast(region=region, projection=projection, shorelines=shoreline_pen)
-        if P_png:
+            with panel_ctx:
+                fig.basemap(region=region, projection=projection, frame=frame)
+                if plot_bathymetry:
+                    fig.grdimage(grid=SO_BATH, cmap="geo")
+                else:
+                    fig.coast(region=region, projection=projection, land=land_color, water=water_color)
+                style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}"
+                if t is None:
+                    fig.plot(x=x, y=y, style=style, fill=z, cmap=cmap_use)
+                else:
+                    t              = np.asarray(t, dtype=float)
+                    good           = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(t)
+                    xg, yg, zg, tg = x[good], y[good], z[good], t[good]
+                    keep           = tg < 100.0
+                    xg, yg, zg, tg = xg[keep], yg[keep], zg[keep], tg[keep]
+                    edges          = np.linspace(0.0, 100.0, int(n_transparency_bins) + 1)
+                    bin_idx        = np.digitize(tg, edges, right=False) - 1
+                    bin_idx        = np.clip(bin_idx, 0, len(edges) - 2)
+                    for b in range(len(edges) - 1):
+                        sel = bin_idx == b
+                        if not np.any(sel):
+                            continue
+                        tau = float(0.5 * (edges[b] + edges[b + 1]))
+                        fig.plot(x=xg[sel], y=yg[sel], style=style, fill=zg[sel], cmap=cmap_use, transparency=tau)
+                if plot_GI:
+                    fig.plot(x     = self.G_GI["lon"].values.ravel(),
+                             y     = self.G_GI["lat"].values.ravel(),
+                             fill  = GI_color,
+                             style = f"{GI_marker}{GI_size}{GI_pt_unit}")
+                fig.coast(region=region, projection=projection, shorelines=shoreline_pen)
+                if add_colorbar:
+                    if color_mode == "categorical":
+                        fig.colorbar(position=cbar_pos, frame=list(cat_cbar_frame), cmap=cmap_use)
+                    else:
+                        fig.colorbar(position=cbar_pos, frame=list(cbar_frame), cmap=cmap_use)
+        if created_here and P_png:
             fig.savefig(P_png)
+        if created_here and show_fig:
+            fig.show()
+        if return_cmap:
+            return fig, cmap_use
+        return fig
+
+    def pygmt_FIP_diff_four_panel(self, da_diff, *, sector_names,
+                                  weight_da=None,
+                                  fig_size=("24c", "17c"),
+                                  margins=["0.15c", "0.15c"],
+                                  basemap_frame = "af",
+                                  G_pt_size="0.08",
+                                  plot_GI=True,
+                                  GI_color="#0072B2",
+                                  GI_size="0.08",
+                                  P_png=None,
+                                  show_fig=False,
+                                  cbar_width="12c",
+                                  cbar_bframe = 'n',
+                                  left_label="model-dominant",   # correct for diff = mod - obs
+                                  mid_label="agreement",
+                                  right_label="obs-dominant"):
+        import pygmt
+        fig = pygmt.Figure()
+        cmap_use = None
+        with fig.subplot(nrows=2, ncols=2, figsize=fig_size, margins=margins, frame="lrtb", autolabel=False):
+            for i, reg_name in enumerate(sector_names):
+                reg_vals = self.Ant_8sectors[reg_name]
+                region = reg_vals["plot_region"]
+                MC = self.get_meridian_center_from_geographic_extent(region)
+                # Use subplot-sized width, not a fixed 20c width.
+                projection = self._format_subplot_projection(reg_vals["projection"], MC)
+                fig, cmap_use = self.pygmt_FIP_figure(plot_data       = da_diff,
+                                                      mode            = "diff",
+                                                      color_mode      = "continuous",
+                                                      weight_da       = weight_da,
+                                                      region          = region,
+                                                      projection      = projection,
+                                                      G_pt_size       = G_pt_size,
+                                                      plot_GI         = plot_GI,
+                                                      plot_bathymetry = False,
+                                                      GI_color        = GI_color,
+                                                      GI_size         = GI_size,
+                                                      basemap_frame   = (basemap_frame,),
+                                                      fig             = fig,
+                                                      panel           = [i // 2, i % 2],
+                                                      panel_title     = reg_name,
+                                                      add_colorbar    = False,
+                                                      return_cmap     = True)
+        self.add_fip_shared_colorbar(fig, cmap_use,
+                                     cbar_bframe = cbar_bframe,
+                                     fig_width   = fig_size[0],
+                                     cbar_width  = cbar_width,
+                                     left_label  = left_label,
+                                     mid_label   = mid_label,
+                                     right_label = right_label)
+        if P_png is not None:
+            P_png = Path(P_png)
+            P_png.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(P_png, dpi=300)
         if show_fig:
             fig.show()
         return fig

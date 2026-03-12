@@ -16,7 +16,7 @@ class SeaIceCICE:
         dtN = (dt0.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         return [dt0 + timedelta(days=i) for i in range((dtN - dt0).days + 1)]
 
-    def verify_month(self,args_tuple):
+    def verify_month(self, args_tuple):
         zarr_path, nc_dir, done_marker, dry_run = args_tuple
         year_month = zarr_path.stem.split("_")[1]
         if done_marker.exists():
@@ -49,96 +49,187 @@ class SeaIceCICE:
             done_marker.touch()
         return f"[OK]   {year_month}: verified ({len(existing_nc_files)} files)"
 
+    # def verify_zarr_and_cleanup_netcdf(self,
+    #                                    dry_run     = True,
+    #                                    delete      = False,
+    #                                    max_workers = 4):
+    #     """
+    #     Verify monthly Zarr groups against expected daily NetCDFs and optionally delete NetCDFs.
+
+    #     The procedure scans ``{self.D_zarr}/iceh_YYYY-MM.zarr`` directories, and for
+    #     each month it checks:
+    #     1) that the Zarr `time` coordinate covers all expected daily dates;
+    #     2) that Zarr contains the union of variables present in the month’s
+    #         remaining NetCDFs.
+
+    #     A log of results is appended to ``{self.D_sim}/cleanup.log``. When
+    #     `delete=True`, an interactive confirmation is prompted and, if accepted,
+    #     the verified month’s NetCDFs are removed.
+
+    #     Parameters
+    #     ----------
+    #     dry_run : bool, default True
+    #         If False, write a ``.done_YYYY-MM`` marker in the Zarr directory after
+    #         successful verification. When True, do not create markers.
+    #     delete : bool, default False
+    #         If True, prompt to delete verified NetCDFs after verification.
+    #     max_workers : int, default 4
+    #         Number of processes used for parallel month verification.
+
+    #     Returns
+    #     -------
+    #     None
+    #         Writes to log and may delete files on user confirmation.
+
+    #     Notes
+    #     -----
+    #     - Verification is parallelised with ``ProcessPoolExecutor``.
+    #     - Month logic expects Zarr directories named ``iceh_YYYY-MM.zarr`` and daily
+    #     files at ``{self.D_sim}/history/daily/iceh.YYYY-MM-DD.nc``.
+    #     - The verification routines are implemented as static helpers (`get_month_range`,
+    #     `verify_month`).
+    #     """
+    #     from datetime import datetime
+    #     self.D_iceh_nc = Path(self.D_sim,"history","daily")
+    #     P_clean_log    = Path(self.D_sim,"cleanup.log")
+    #     zarr_months    = sorted([p for p in self.D_zarr.glob("iceh_????-??.zarr") if p.is_dir()])
+    #     tasks = []
+    #     for zarr_path in zarr_months:
+    #         ym          = zarr_path.stem.split("_")[1]
+    #         done_marker = self.D_zarr / f".done_{ym}"
+    #         tasks.append((zarr_path, self.D_iceh_nc, done_marker, dry_run))
+    #     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+    #         results = list(executor.map(self.verify_month, tasks))
+    #     for res in results:
+    #         self.logger.info(res)
+    #     with open(P_clean_log, "a") as logf:
+    #         logf.write("\n# Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+    #         for res in results:
+    #             logf.write(res + "\n")
+    #     if delete:
+    #         self.logger.info("\nDeletion mode active.")
+    #         verified_months = []
+    #         total_files = []
+    #         log_entries = []
+    #         for zarr_path in zarr_months:
+    #             ym = zarr_path.stem.split("_")[1]
+    #             done_marker = self.D_zarr / f".done_{ym}"
+    #             if not done_marker.exists():
+    #                 continue  # skip unverified
+    #             nc_files = list(self.D_iceh_nc.glob(f"iceh.{ym}-??.nc"))
+    #             if nc_files:
+    #                 verified_months.append((ym, nc_files))
+    #                 total_files.extend(nc_files)
+    #         if not total_files:
+    #             self.logger.info("No deletable NetCDF files found.")
+    #         else:
+    #             self.logger.info(f"\n🔍 {len(total_files)} NetCDF files across {len(verified_months)} verified months are eligible for deletion.")
+    #             confirm = input("Confirm delete all these files? [y/N] ").strip().lower()
+    #             if confirm == "y":
+    #                 for ym, files in verified_months:
+    #                     for f in files:
+    #                         try:
+    #                             f.unlink()
+    #                             self.logger.info(f"[DELETED] {f.name}")
+    #                             log_entries.append(f"[DELETED] {f}")
+    #                         except Exception as e:
+    #                             self.logger.info(f"[ERROR] Could not delete {f.name}: {e}")
+    #                             log_entries.append(f"[ERROR] Failed to delete {f}: {e}")
+    #                 log_entries.append(f"# Deletion complete: {len(total_files)} files removed")
+    #             else:
+    #                 self.logger.info("Deletion cancelled.")
+    #                 log_entries.append("# Deletion prompt declined — no files deleted")
+    #         with open(P_clean_log, "a") as logf:
+    #             for entry in log_entries:
+    #                 logf.write(entry + "\n")
+
     def verify_zarr_and_cleanup_netcdf(self,
                                        dry_run     = True,
                                        delete      = False,
                                        max_workers = 4):
         """
-        Verify monthly Zarr groups against expected daily NetCDFs and optionally delete NetCDFs.
-
-        The procedure scans ``{self.D_zarr}/iceh_YYYY-MM.zarr`` directories, and for
-        each month it checks:
-        1) that the Zarr `time` coordinate covers all expected daily dates;
-        2) that Zarr contains the union of variables present in the month’s
-            remaining NetCDFs.
-
-        A log of results is appended to ``{self.D_sim}/cleanup.log``. When
-        `delete=True`, an interactive confirmation is prompted and, if accepted,
-        the verified month’s NetCDFs are removed.
-
-        Parameters
-        ----------
-        dry_run : bool, default True
-            If False, write a ``.done_YYYY-MM`` marker in the Zarr directory after
-            successful verification. When True, do not create markers.
-        delete : bool, default False
-            If True, prompt to delete verified NetCDFs after verification.
-        max_workers : int, default 4
-            Number of processes used for parallel month verification.
-
-        Returns
-        -------
-        None
-            Writes to log and may delete files on user confirmation.
+        Verify monthly grouped Zarr against expected daily NetCDFs and optionally delete NetCDFs.
 
         Notes
         -----
-        - Verification is parallelised with ``ProcessPoolExecutor``.
-        - Month logic expects Zarr directories named ``iceh_YYYY-MM.zarr`` and daily
-        files at ``{self.D_sim}/history/daily/iceh.YYYY-MM-DD.nc``.
-        - The verification routines are implemented as static helpers (`get_month_range`,
-        `verify_month`).
+        `max_workers` is kept for API compatibility but not used in this serial implementation.
         """
+        import re
         from datetime import datetime
-        self.D_iceh_nc = Path(self.D_sim,"history","daily")
-        P_clean_log    = Path(self.D_sim,"cleanup.log")
-        zarr_months    = sorted([p for p in self.D_zarr.glob("iceh_????-??.zarr") if p.is_dir()])
-        tasks = []
-        for zarr_path in zarr_months:
-            ym          = zarr_path.stem.split("_")[1]
-            done_marker = self.D_zarr / f".done_{ym}"
-            tasks.append((zarr_path, self.D_iceh_nc, done_marker, dry_run))
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = list(executor.map(self.verify_month, tasks))
-        for res in results:
-            self.logger.info(res)
+        del max_workers  # unused in this safer serial implementation
+        date_re = re.compile(r"iceh\.(\d{4}-\d{2}-\d{2})\.nc$")
+        self.define_toolbox_paths()
+        D_iceh_nc  = Path(self.D_iceh["nc"]["daily"])
+        P_iceh_zarr = Path(self.D_iceh["zarr"]["daily"])
+        P_clean_log = Path(self.D_sim, "cleanup.log")
+        if not P_iceh_zarr.exists():
+            raise FileNotFoundError(f"Grouped Zarr root not found: {P_iceh_zarr}")
+        zarr_months     = sorted(p.name for p in P_iceh_zarr.iterdir()
+                                 if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}", p.name))
+        results         = []
+        verified_months = []
+        for ym in zarr_months:
+            done_marker = P_iceh_zarr / f".done_{ym}"
+            nc_files = sorted(D_iceh_nc.glob(f"iceh.{ym}-??.nc"))
+            if not nc_files:
+                msg = f"[SKIP] {ym}: no NetCDF files remain to verify"
+                self.logger.info(msg)
+                results.append(msg)
+                continue
+            try:
+                ds             = xr.open_zarr(P_iceh_zarr, group=ym, consolidated=False)
+                zarr_times     = pd.to_datetime(ds["time"].values).normalize()
+                expected_times = pd.to_datetime([pd.to_datetime(date_re.search(f.name).group(1)) - pd.Timedelta(days=1)
+                                                 for f in nc_files if date_re.search(f.name)]).normalize()
+                missing_times  = sorted(set(expected_times) - set(zarr_times))
+                extra_times    = sorted(set(zarr_times) - set(expected_times))
+                expected_vars  = set()
+                for f in nc_files:
+                    with xr.open_dataset(f, engine="netcdf4") as ds_nc:
+                        expected_vars.update(ds_nc.data_vars)
+                missing_vars = sorted(v for v in expected_vars if v not in ds.data_vars)
+                if not missing_times and not missing_vars:
+                    msg = (f"[OK] {ym}: verified "
+                           f"{len(expected_times)} daily times and {len(expected_vars)} variables")
+                    verified_months.append((ym, nc_files))
+                    if not dry_run:
+                        done_marker.touch()
+                else:
+                    msg = (f"[FAIL] {ym}: "
+                           f"missing_times={len(missing_times)}, "
+                           f"extra_times={len(extra_times)}, "
+                           f"missing_vars={missing_vars}")
+            except Exception as e:
+                msg = f"[ERROR] {ym}: {e}"
+            self.logger.info(msg)
+            results.append(msg)
         with open(P_clean_log, "a") as logf:
             logf.write("\n# Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
             for res in results:
                 logf.write(res + "\n")
         if delete:
-            self.logger.info("\nDeletion mode active.")
-            verified_months = []
-            total_files = []
+            if not verified_months:
+                self.logger.info("No verified NetCDF files found for deletion.")
+                return
+            total_files = [f for _, files in verified_months for f in files]
+            self.logger.info(f"{len(total_files)} NetCDF files across {len(verified_months)} verified months "
+                             f"are eligible for deletion.")
+            confirm = input("Confirm delete all these files? [y/N] ").strip().lower()
             log_entries = []
-            for zarr_path in zarr_months:
-                ym = zarr_path.stem.split("_")[1]
-                done_marker = self.D_zarr / f".done_{ym}"
-                if not done_marker.exists():
-                    continue  # skip unverified
-                nc_files = list(self.D_iceh_nc.glob(f"iceh.{ym}-??.nc"))
-                if nc_files:
-                    verified_months.append((ym, nc_files))
-                    total_files.extend(nc_files)
-            if not total_files:
-                self.logger.info("No deletable NetCDF files found.")
+            if confirm == "y":
+                for ym, files in verified_months:
+                    for f in files:
+                        try:
+                            f.unlink()
+                            self.logger.info(f"[DELETED] {f}")
+                            log_entries.append(f"[DELETED] {f}")
+                        except Exception as e:
+                            self.logger.info(f"[ERROR] Failed to delete {f}: {e}")
+                            log_entries.append(f"[ERROR] Failed to delete {f}: {e}")
+                log_entries.append(f"# Deletion complete: {len(total_files)} files removed")
             else:
-                self.logger.info(f"\n🔍 {len(total_files)} NetCDF files across {len(verified_months)} verified months are eligible for deletion.")
-                confirm = input("Confirm delete all these files? [y/N] ").strip().lower()
-                if confirm == "y":
-                    for ym, files in verified_months:
-                        for f in files:
-                            try:
-                                f.unlink()
-                                self.logger.info(f"[DELETED] {f.name}")
-                                log_entries.append(f"[DELETED] {f}")
-                            except Exception as e:
-                                self.logger.info(f"[ERROR] Could not delete {f.name}: {e}")
-                                log_entries.append(f"[ERROR] Failed to delete {f}: {e}")
-                    log_entries.append(f"# Deletion complete: {len(total_files)} files removed")
-                else:
-                    self.logger.info("Deletion cancelled.")
-                    log_entries.append("# Deletion prompt declined — no files deleted")
+                self.logger.info("Deletion cancelled.")
+                log_entries.append("# Deletion prompt declined — no files deleted")
             with open(P_clean_log, "a") as logf:
                 for entry in log_entries:
                     logf.write(entry + "\n")
@@ -222,6 +313,110 @@ class SeaIceCICE:
             except Exception as e:
                 self.logger.warning(f" Could not delete {f}: {e}")
 
+    # def daily_iceh_to_monthly_zarr(self,
+    #                                sim_name        = None,
+    #                                dt0_str         = None,
+    #                                dtN_str         = None,
+    #                                D_iceh          = None,
+    #                                netcdf_engine   = "scipy",
+    #                                overwrite       = None,
+    #                                delete_original = None):
+    #     """
+    #     Convert daily CICE ``iceh.YYYY-MM-DD.nc`` files into a monthly Zarr store.
+
+    #     For each month intersecting the requested date window, this method:
+    #     1) groups existing daily NetCDFs by month,
+    #     2) opens them with ``xarray.open_mfdataset(..., engine='scipy')``,
+    #     3) shifts the time coordinate **back by 1 day** (CICE writes 00:00:00 of
+    #     the following day for daily averages),
+    #     4) writes to a grouped Zarr store at ``{self.D_zarr}/iceh_daily.zarr``
+    #     under group ``YYYY-MM`` (consolidated metadata),
+    #     5) optionally deletes the original NetCDF files if the Zarr group exists.
+
+    #     Parameters
+    #     ----------
+    #     sim_name : str, optional
+    #         Simulation name. Defaults to ``self.sim_name``.
+    #     dt0_str, dtN_str : str, optional
+    #         Date window (inclusive) in ``YYYY-MM-DD``. Defaults to ``self.dt0_str``
+    #         and ``self.dtN_str`` when omitted.
+    #     D_iceh : str or pathlib.Path, optional
+    #         Directory containing the per-day ``iceh.YYYY-MM-DD.nc`` files.
+    #         Defaults to ``self.D_iceh``.
+    #     overwrite : bool, optional
+    #         If False and a monthly group already exists, the group is skipped (but
+    #         originals may still be deleted if `delete_original` is True).
+    #         Defaults to ``self.overwrite_zarr_group``.
+    #     delete_original : bool, optional
+    #         If True, remove the month’s original NetCDF files **after** successful
+    #         Zarr write. Defaults to ``self.del_org_cice_iceh_nc``.
+
+    #     Returns
+    #     -------
+    #     None
+    #         Writes Zarr groups and logs progress; may delete input NetCDFs.
+
+    #     Notes
+    #     -----
+    #     - The time shift of ``-1 day`` aligns Zarr entries with the *date of the
+    #     average*, not the CICE timestamp.
+    #     - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
+    #     - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
+    #     """
+    #     import re
+    #     date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
+    #     from datetime    import datetime
+    #     from collections import defaultdict
+    #     sim_name = sim_name if sim_name is not None else self.sim_name
+    #     dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
+    #     dtN_str  = dtN_str  or self.dtN_str
+    #     D_iceh   = D_iceh   or self.D_iceh
+    #     overwrite = overwrite if overwrite is not None else self.overwrite_zarr_group
+    #     delete_nc = delete_original if delete_original is not None else self.del_org_cice_iceh_nc
+    #     m_grps   = defaultdict(list)
+    #     P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
+    #     if not P_orgs:
+    #         self.logger.info("No CICE files found. Noting further to do here.")
+    #         return
+    #     for f in P_orgs:
+    #        m = date_re.search(f.name)
+    #        if not m:
+    #            self.logger.warning(f"Skipping unrecognized filename: {f.name}")
+    #            continue
+    #        dt = datetime.strptime(m.group(1), "%Y-%m-%d")
+    #        m_str = dt.strftime("%Y-%m")
+    #        m_grps[m_str].append(f)
+    #     P_iceh_zarr = Path(self.D_zarr, "iceh_daily.zarr")
+    #     for m_str, P_ in m_grps.items():
+    #         P_iceh_zarr_group = Path(P_iceh_zarr, m_str)
+    #         if P_iceh_zarr_group.exists() and not overwrite:
+    #             self.logger.info(f"Skipping existing {P_iceh_zarr_group}")
+    #             if delete_nc:
+    #                 self.delete_original_cice(P_, P_iceh_zarr, m_str)
+    #                 continue
+    #         else:
+    #             self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
+    #             CICE_all = xr.open_mfdataset(P_,
+    #                                          engine     = netcdf_engine,
+    #                                          parallel   = True,
+    #                                          combine    = "nested",
+    #                                          concat_dim = "time",
+    #                                          coords     = "minimal",
+    #                                          data_vars  = "minimal",
+    #                                          compat     = "override",
+    #                                          join       = "override",
+    #                                          cache      = False,
+    #                                          chunks     = self.CICE_dict["FI_chunks"])
+    #             CICE_all = CICE_all.chunk(self.CICE_dict['FI_chunks'])
+    #             self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
+    #             CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
+    #             self.logger.info(f"Writing {P_iceh_zarr} and group ('YYYY-MM'): {m_str}")
+    #             CICE_all.to_zarr(P_iceh_zarr, group=m_str, mode="w", consolidated=True, zarr_format=2)
+    #             self.get_dir_size(P_iceh_zarr_group)
+    #             self.count_zarr_files(P_iceh_zarr_group)
+    #             if delete_nc:
+    #                 self.delete_original_cice(P_, P_iceh_zarr, m_str)
+
     def daily_iceh_to_monthly_zarr(self,
                                    sim_name        = None,
                                    dt0_str         = None,
@@ -231,100 +426,63 @@ class SeaIceCICE:
                                    overwrite       = None,
                                    delete_original = None):
         """
-        Convert daily CICE ``iceh.YYYY-MM-DD.nc`` files into a monthly Zarr store.
-
-        For each month intersecting the requested date window, this method:
-        1) groups existing daily NetCDFs by month,
-        2) opens them with ``xarray.open_mfdataset(..., engine='scipy')``,
-        3) shifts the time coordinate **back by 1 day** (CICE writes 00:00:00 of
-        the following day for daily averages),
-        4) writes to a grouped Zarr store at ``{self.D_zarr}/iceh_daily.zarr``
-        under group ``YYYY-MM`` (consolidated metadata),
-        5) optionally deletes the original NetCDF files if the Zarr group exists.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to ``self.sim_name``.
-        dt0_str, dtN_str : str, optional
-            Date window (inclusive) in ``YYYY-MM-DD``. Defaults to ``self.dt0_str``
-            and ``self.dtN_str`` when omitted.
-        D_iceh : str or pathlib.Path, optional
-            Directory containing the per-day ``iceh.YYYY-MM-DD.nc`` files.
-            Defaults to ``self.D_iceh``.
-        overwrite : bool, optional
-            If False and a monthly group already exists, the group is skipped (but
-            originals may still be deleted if `delete_original` is True).
-            Defaults to ``self.overwrite_zarr_group``.
-        delete_original : bool, optional
-            If True, remove the month’s original NetCDF files **after** successful
-            Zarr write. Defaults to ``self.del_org_cice_iceh_nc``.
-
-        Returns
-        -------
-        None
-            Writes Zarr groups and logs progress; may delete input NetCDFs.
-
-        Notes
-        -----
-        - The time shift of ``-1 day`` aligns Zarr entries with the *date of the
-        average*, not the CICE timestamp.
-        - Output chunks are set via ``self.CICE_dict['FI_chunks']`` after open.
-        - The Zarr root is ``{self.D_zarr}/iceh_daily.zarr`` with one subgroup per month.
+        Convert daily CICE iceh.YYYY-MM-DD.nc files into a grouped monthly Zarr store.
         """
         import re
-        date_re = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
-        from datetime    import datetime
+        from datetime import datetime
         from collections import defaultdict
-        sim_name = sim_name if sim_name is not None else self.sim_name
-        dt0_str  = dt0_str  if dt0_str  is not None else self.dt0_str
-        dtN_str  = dtN_str  or self.dtN_str
-        D_iceh   = D_iceh   or self.D_iceh
-        overwrite = overwrite if overwrite is not None else self.overwrite_zarr_group
+        date_re   = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
+        sim_name  = sim_name        if sim_name        is not None else self.sim_name
+        dt0_str   = dt0_str         if dt0_str         is not None else self.dt0_str
+        dtN_str   = dtN_str         if dtN_str         is not None else self.dtN_str
+        overwrite = overwrite       if overwrite       is not None else self.overwrite_zarr_group
         delete_nc = delete_original if delete_original is not None else self.del_org_cice_iceh_nc
-        m_grps   = defaultdict(list)
-        P_orgs   = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
+        self.define_toolbox_paths()
+        D_iceh      = Path(D_iceh) if D_iceh is not None else Path(self.D_iceh["nc"]["daily"])
+        P_iceh_zarr = Path(self.D_iceh["zarr"]["daily"])
+        P_iceh_zarr.mkdir(parents=True, exist_ok=True)
+        m_grps = defaultdict(list)
+        P_orgs = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
         if not P_orgs:
-            self.logger.info("No CICE files found. Noting further to do here.")
+            self.logger.info("No CICE files found. Nothing further to do here.")
             return
         for f in P_orgs:
-           m = date_re.search(f.name)
-           if not m:
-               self.logger.warning(f"Skipping unrecognized filename: {f.name}")
-               continue
-           dt = datetime.strptime(m.group(1), "%Y-%m-%d")
-           m_str = dt.strftime("%Y-%m")
-           m_grps[m_str].append(f)
-        P_iceh_zarr = Path(self.D_zarr, "iceh_daily.zarr")
-        for m_str, P_ in m_grps.items():
-            P_iceh_zarr_group = Path(P_iceh_zarr, m_str)
-            if P_iceh_zarr_group.exists() and not overwrite:
-                self.logger.info(f"Skipping existing {P_iceh_zarr_group}")
+            m = date_re.search(f.name)
+            if not m:
+                self.logger.warning(f"Skipping unrecognized filename: {f.name}")
+                continue
+            dt = datetime.strptime(m.group(1), "%Y-%m-%d")
+            m_str = dt.strftime("%Y-%m")
+            m_grps[m_str].append(f)
+        for m_str, P_ in sorted(m_grps.items()):
+            P_ = sorted(P_)
+            group_path = P_iceh_zarr / m_str
+            if group_path.exists() and not overwrite:
+                self.logger.info(f"Skipping existing group {group_path}")
                 if delete_nc:
                     self.delete_original_cice(P_, P_iceh_zarr, m_str)
-                    continue
-            else:
-                self.logger.info(f"Loading NetCDF files for {m_str} via xarray mfdataset ...")
-                CICE_all = xr.open_mfdataset(P_,
-                                             engine     = netcdf_engine,
-                                             parallel   = True,
-                                             combine    = "nested",
-                                             concat_dim = "time",
-                                             coords     = "minimal",
-                                             data_vars  = "minimal",
-                                             compat     = "override",
-                                             join       = "override",
-                                             cache      = False,
-                                             chunks     = self.CICE_dict["FI_chunks"])
-                CICE_all = CICE_all.chunk(self.CICE_dict['FI_chunks'])
-                self.logger.info(f"Subtracting one day from original dataset as CICE reports one day ahead for daily-averages")
-                CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
-                self.logger.info(f"Writing {P_iceh_zarr} and group ('YYYY-MM'): {m_str}")
-                CICE_all.to_zarr(P_iceh_zarr, group=m_str, mode="w", consolidated=True, zarr_format=2)
-                self.get_dir_size(P_iceh_zarr_group)
-                self.count_zarr_files(P_iceh_zarr_group)
-                if delete_nc:
-                    self.delete_original_cice(P_, P_iceh_zarr, m_str)
+                continue
+            self.logger.info(f"Loading NetCDF files for {m_str} with xarray.open_mfdataset(...)")
+            CICE_all = xr.open_mfdataset(P_,
+                                         engine     = netcdf_engine,
+                                         parallel   = True,
+                                         combine    = "nested",
+                                         concat_dim = "time",
+                                         coords     = "minimal",
+                                         data_vars  = "minimal",
+                                         compat     = "override",
+                                         join       = "override",
+                                         cache      = False,
+                                         chunks     = self.CICE_dict["FI_chunks"])
+            CICE_all = CICE_all.chunk(self.CICE_dict["FI_chunks"])
+            self.logger.info("Shifting time coordinate back by 1 day (CICE daily-average convention)")
+            CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
+            self.logger.info(f"Writing group {m_str} into {P_iceh_zarr}")
+            self._write_grouped_zarr(CICE_all, store=P_iceh_zarr, group=m_str, overwrite_group=overwrite, consolidated=False)
+            self.get_dir_size(group_path)
+            self.count_zarr_files(group_path)
+            if delete_nc:
+                self.delete_original_cice(P_, P_iceh_zarr, m_str)
 
     def monthly_zarr_iceh_time_correction(self, P_mnthly_zarr, dry_run=True):
         """
@@ -484,100 +642,174 @@ class SeaIceCICE:
         return self._zarr_group_index[key]
 
     def load_cice_zarr(self,
-                        sim_name  = None,
-                        dt0_str   = None,
-                        dtN_str   = None,
-                        D_alt     = None,
-                        variables = None,
-                        slice_hem = False):
+                       sim_name  = None,
+                       dt0_str   = None,
+                       dtN_str   = None,
+                       D_alt     = None,
+                       variables = None,
+                       slice_hem = False):
         """
-        Open and concatenate monthly-grouped CICE ice history Zarr data over a date window.
-
-        This method loads only those monthly Zarr groups that intersect the requested
-        date window, optionally subselects variables, crops each group to the requested
-        time range, and concatenates along time.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        dt0_str, dtN_str : str, optional
-            Requested analysis window in ``YYYY-MM-DD``. Defaults to `self.dt0_str` and
-            `self.dtN_str`. Requests are clamped to available data.
-        D_alt : str or pathlib.Path, optional
-            Alternative simulation directory to use instead of `self.D_sim`.
-        variables : list[str], optional
-            If provided, select only these variables from each monthly group. Groups
-            missing any requested variable are skipped with a warning.
-        slice_hem : bool, default False
-            If True, apply `self.slice_hemisphere(...)` after concatenation.
-
-        Returns
-        -------
-        xarray.Dataset
-            Concatenated dataset cropped to the intersection of requested and available
-            times.
-
-        Raises
-        ------
-        ValueError
-            If no datasets remain after filtering/cropping (e.g., all groups skipped).
-
-        Notes
-        -----
-        - Expects a grouped Zarr store at `self.D_iceh_zarr` with groups named "YYYY-MM".
-        - Uses dask configuration overrides to control slicing and fusion behaviour.
+        Open and concatenate monthly-grouped CICE ice-history Zarr data over a date window.
         """
+        import re
         import dask
         sim_name = sim_name or self.sim_name
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
-        D_alt    = D_alt    or self.D_sim
-        self.define_iceh_dirs(D_alt)
-        zarr_root = self.D_iceh_zarr
-        available_groups, available_dt0, available_dtN, consolidated = self._get_zarr_group_index(zarr_root)
-        # Clamp user request to data availability
-        user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
-        user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
+        D_alt    = D_alt if D_alt is not None else self.D_sim
+        self.define_toolbox_paths(D_sim=D_alt)
+        zarr_root = Path(self.D_iceh["zarr"]["daily"])
+        if not zarr_root.exists():
+            raise FileNotFoundError(f"Zarr root does not exist: {zarr_root}")
+        month_re = re.compile(r"^\d{4}-\d{2}$")
+        available_groups = sorted(p.name for p in zarr_root.iterdir()
+                                  if p.is_dir() and month_re.match(p.name))
+        if not available_groups:
+            raise FileNotFoundError(f"No monthly groups found under {zarr_root}")
+        available_dt0 = pd.to_datetime(f"{available_groups[0]}-01")
+        available_dtN = pd.to_datetime(f"{available_groups[-1]}-01") + pd.offsets.MonthEnd(1)
+        user_dt0      = max(pd.to_datetime(dt0_str), available_dt0)
+        user_dtN      = min(pd.to_datetime(dtN_str), available_dtN)
+        if user_dt0 > user_dtN:
+            raise ValueError(f"Requested window [{dt0_str}, {dtN_str}] does not intersect "
+                             f"available data [{available_dt0.date()}, {available_dtN.date()}]")
         required_groups = [g for g in available_groups
-                           if (pd.to_datetime(f"{g}-01") <= user_dtN) and 
+                           if (pd.to_datetime(f"{g}-01") <= user_dtN) and
                            (pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0)]
-        self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()} ({len(required_groups)} groups)")
-        with dask.config.set({
-            "array.slicing.split_large_chunks": True,
-            "array.chunk-size": "256MiB",
-            # Consider turning fuse back on unless you have a specific reason to disable it:
-            # "optimization.fuse.active": True,
-            "optimization.fuse.active": False}):
-            ds_list = []
-            missing_anywhere = set()
-            selected_anywhere = set()
+
+        self.logger.info(f"Loading grouped Zarr months between {user_dt0.date()} and {user_dtN.date()} "
+                         f"({len(required_groups)} groups)")
+        ds_list           = []
+        missing_anywhere  = set()
+        selected_anywhere = set()
+        with dask.config.set({"array.slicing.split_large_chunks": True,
+                              "array.chunk-size": "256MiB",
+                              "optimization.fuse.active": False}):
             for g in required_groups:
-                self.logger.debug(f"  - opening group {g}")
-                ds = xr.open_zarr(zarr_root, group=g, consolidated=consolidated)
+                self.logger.debug(f"Opening group {g}")
+                ds = xr.open_zarr(zarr_root, group=g, consolidated=False)
                 if variables:
-                    present = [v for v in variables if v in ds.data_vars]  # use data_vars, not coords
+                    present = [v for v in variables if v in ds.data_vars]
                     missing = [v for v in variables if v not in ds.data_vars]
                     if missing:
                         missing_anywhere.update(missing)
-                        self.logger.warning(f"  [{g}] missing requested vars: {missing}")
+                        self.logger.warning(f"[{g}] missing requested vars: {missing}")
                     if not present:
-                        self.logger.warning(f"  > Skipping {g}: none of the requested variables are present.")
+                        self.logger.warning(f"Skipping {g}: none of the requested variables are present.")
                         continue
                     selected_anywhere.update(present)
-                    self.logger.info(f"  [{g}] selecting variables present: {present}")
                     ds = ds[present]
                 ds = ds.sel(time=slice(user_dt0, user_dtN))
+                if ds.sizes.get("time", 0) == 0:
+                    continue
                 ds_list.append(ds)
-            if not ds_list:
-                raise ValueError("No datasets to concatenate after filtering/cropping.")
-            ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
-            # Warn once about variables that never appeared in any group
-            if variables:
-                never_found = [v for v in variables if v not in selected_anywhere]
-                if never_found:
-                    self.logger.warning(f"Requested variables not found in ANY group: {never_found}")
+        if not ds_list:
+            raise ValueError("No datasets to concatenate after filtering/cropping.")
+        ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override", combine_attrs="override")
+        if variables:
+            never_found = [v for v in variables if v not in selected_anywhere]
+            if never_found:
+                self.logger.warning(f"Requested variables not found in ANY group: {never_found}")
         if slice_hem:
-            self.logger.info("  slicing hemisphere")
+            self.logger.info("Slicing hemisphere")
             ds_all = self.slice_hemisphere(ds_all)
         return ds_all
+
+    # def load_cice_zarr(self,
+    #                     sim_name  = None,
+    #                     dt0_str   = None,
+    #                     dtN_str   = None,
+    #                     D_alt     = None,
+    #                     variables = None,
+    #                     slice_hem = False):
+    #     """
+    #     Open and concatenate monthly-grouped CICE ice history Zarr data over a date window.
+
+    #     This method loads only those monthly Zarr groups that intersect the requested
+    #     date window, optionally subselects variables, crops each group to the requested
+    #     time range, and concatenates along time.
+
+    #     Parameters
+    #     ----------
+    #     sim_name : str, optional
+    #         Simulation name. Defaults to `self.sim_name`.
+    #     dt0_str, dtN_str : str, optional
+    #         Requested analysis window in ``YYYY-MM-DD``. Defaults to `self.dt0_str` and
+    #         `self.dtN_str`. Requests are clamped to available data.
+    #     D_alt : str or pathlib.Path, optional
+    #         Alternative simulation directory to use instead of `self.D_sim`.
+    #     variables : list[str], optional
+    #         If provided, select only these variables from each monthly group. Groups
+    #         missing any requested variable are skipped with a warning.
+    #     slice_hem : bool, default False
+    #         If True, apply `self.slice_hemisphere(...)` after concatenation.
+
+    #     Returns
+    #     -------
+    #     xarray.Dataset
+    #         Concatenated dataset cropped to the intersection of requested and available
+    #         times.
+
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If no datasets remain after filtering/cropping (e.g., all groups skipped).
+
+    #     Notes
+    #     -----
+    #     - Expects a grouped Zarr store at `self.D_iceh_zarr` with groups named "YYYY-MM".
+    #     - Uses dask configuration overrides to control slicing and fusion behaviour.
+    #     """
+    #     import dask
+    #     sim_name = sim_name or self.sim_name
+    #     dt0_str  = dt0_str  or self.dt0_str
+    #     dtN_str  = dtN_str  or self.dtN_str
+    #     D_alt    = D_alt    or self.D_sim
+    #     self.define_iceh_dirs(D_alt)
+    #     zarr_root = self.D_iceh_zarr
+    #     available_groups, available_dt0, available_dtN, consolidated = self._get_zarr_group_index(zarr_root)
+    #     # Clamp user request to data availability
+    #     user_dt0 = max(pd.to_datetime(dt0_str), available_dt0)
+    #     user_dtN = min(pd.to_datetime(dtN_str), available_dtN)
+    #     required_groups = [g for g in available_groups
+    #                        if (pd.to_datetime(f"{g}-01") <= user_dtN) and 
+    #                        (pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0)]
+    #     self.logger.info(f"Loading Zarr groups between {user_dt0.date()} and {user_dtN.date()} ({len(required_groups)} groups)")
+    #     with dask.config.set({
+    #         "array.slicing.split_large_chunks": True,
+    #         "array.chunk-size": "256MiB",
+    #         # Consider turning fuse back on unless you have a specific reason to disable it:
+    #         # "optimization.fuse.active": True,
+    #         "optimization.fuse.active": False}):
+    #         ds_list = []
+    #         missing_anywhere = set()
+    #         selected_anywhere = set()
+    #         for g in required_groups:
+    #             self.logger.debug(f"  - opening group {g}")
+    #             ds = xr.open_zarr(zarr_root, group=g, consolidated=consolidated)
+    #             if variables:
+    #                 present = [v for v in variables if v in ds.data_vars]  # use data_vars, not coords
+    #                 missing = [v for v in variables if v not in ds.data_vars]
+    #                 if missing:
+    #                     missing_anywhere.update(missing)
+    #                     self.logger.warning(f"  [{g}] missing requested vars: {missing}")
+    #                 if not present:
+    #                     self.logger.warning(f"  > Skipping {g}: none of the requested variables are present.")
+    #                     continue
+    #                 selected_anywhere.update(present)
+    #                 self.logger.info(f"  [{g}] selecting variables present: {present}")
+    #                 ds = ds[present]
+    #             ds = ds.sel(time=slice(user_dt0, user_dtN))
+    #             ds_list.append(ds)
+    #         if not ds_list:
+    #             raise ValueError("No datasets to concatenate after filtering/cropping.")
+    #         ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override")
+    #         # Warn once about variables that never appeared in any group
+    #         if variables:
+    #             never_found = [v for v in variables if v not in selected_anywhere]
+    #             if never_found:
+    #                 self.logger.warning(f"Requested variables not found in ANY group: {never_found}")
+    #     if slice_hem:
+    #         self.logger.info("  slicing hemisphere")
+    #         ds_all = self.slice_hemisphere(ds_all)
+    #     return ds_all

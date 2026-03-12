@@ -586,24 +586,20 @@ class SeaIceRegridder:
         from pyresample.kd_tree  import resample_nearest
         lon2d = self.normalise_longitudes(lon2d, to="-180-180")  # << key fix: wrap before building the swath
         swath = SwathDefinition(lons=lon2d, lats=lat2d)
-        out2d = resample_nearest(
-            source_geo_def=swath,
-            data=src_da.values,
-            target_geo_def=area_def,
-            radius_of_influence=radius,
-            fill_value=fill_value,
-            nprocs=0,            # set >0 to parallelise
-            reduce_data=True,
-        )
-        x, y = grid_coords_from_area(area_def, pixel_size=pixel_size)
-        da_out = xr.DataArray(
-            out2d,
-            dims=("y", "x"),
-            coords={"x": ("x", x, {"units": "m", "standard_name": "projection_x_coordinate"}),
-                    "y": ("y", y, {"units": "m", "standard_name": "projection_y_coordinate"})},
-            name=src_da.name,
-            attrs={"crs": "EPSG:3031", "grid_mapping": "spstereo", "res": float(pixel_size), **src_da.attrs},
-        )
+        out2d = resample_nearest(source_geo_def     = swath,
+                                 data               = src_da.values,
+                                 target_geo_def     = area_def,
+                                 radius_of_influence= radius,
+                                 fill_value         = fill_value,
+                                 nprocs             = 0,            # set >0 to parallelise
+                                 reduce_data        = True)
+        x, y = self.grid_coords_from_area(area_def, pixel_size=pixel_size)
+        da_out = xr.DataArray(out2d,
+                              dims   = ("y", "x"),
+                              coords = {"x": ("x", x, {"units": "m", "standard_name": "projection_x_coordinate"}),
+                                        "y": ("y", y, {"units": "m", "standard_name": "projection_y_coordinate"})},
+                              name   = src_da.name,
+                              attrs  = {"crs": "EPSG:3031", "grid_mapping": "spstereo", "res": float(pixel_size), **src_da.attrs})
         return da_out
 
     def add_lonlat_from_epsg3031(self, ds, 

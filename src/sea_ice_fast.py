@@ -347,10 +347,13 @@ class SeaIceFast:
         else:
             lats = fip[self.CICE_dict['lat_coord_name']].values
             lons = fip[self.CICE_dict['lon_coord_name']].values
-        return xr.DataArray(fip.astype('float32').values,
+            fip32 = fip.astype("float32")
+        return xr.DataArray(fip32.data,   # keep dask-backed data lazy
                             dims   = self.CICE_dict['spatial_dims'],
-                            coords = {self.CICE_dict['lat_coord_name'] : (self.CICE_dict['spatial_dims'], lats),
-                                    self.CICE_dict['lon_coord_name'] : (self.CICE_dict['spatial_dims'], lons)})
+                            coords = {self.CICE_dict['lat_coord_name']: (self.CICE_dict['spatial_dims'], lats),
+                                      self.CICE_dict['lon_coord_name']: (self.CICE_dict['spatial_dims'], lons)},
+                            attrs  = getattr(fip, "attrs", {}),
+                            name   = getattr(fip, "name", None))
 
     def compute_fip_weight(self,
                            FIP   : xr.Dataset, 

@@ -680,73 +680,115 @@ class SeaIceMetrics:
         # (keeps original values where they overlap)
         ds_out = ds.reindex({time_dim: desired})
         return ds_out
-    
+
+    # def load_computed_metrics(self,
+    #                           class_method   : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
+    #                           BorC2T_type    : str  = None,
+    #                           ice_type       : str  = None,
+    #                           ispd_thresh    : str  = None,
+    #                           bin_min_days   : int  = None,
+    #                           bin_win_days   : int  = None,
+    #                           mean_period    : int  = None,
+    #                           zarr_directory : str  = None,
+    #                           clip_to_self   : bool = True,
+    #                           time_dim       : str  = "time"):
+    #     """
+    #     Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
+
+    #     This method resolves the expected metrics path based on:
+    #       - the requested ice type (FI/PI/SI),
+    #       - the classification method (raw / rolling-mean / binary-days),
+    #       - the staggering→T strategy (BorC2T_type),
+    #       - the speed threshold label (ispd_thresh),
+    #       - the configured directory layout (via `define_classification_dir()` and related helpers).
+
+    #     Parameters
+    #     ----------
+    #     class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
+    #         Classification product to load for FI/PI. Used to build `self.FI_class`.
+    #     BorC2T_type : str, optional
+    #         Velocity staggering token(s) used for classification, e.g. "Tb", "Tx", "Tc".
+    #         Defaults to `self.BorC2T_type`.
+    #     ice_type : str, optional
+    #         Ice type to load ("FI", "PI", or "SI"). Defaults to `self.ice_type`.
+    #     ispd_thresh : str, optional
+    #         Speed threshold label (often embedded in directory naming). Defaults to `self.ispd_thresh`.
+    #     zarr_directory : str, optional
+    #         Root Zarr directory. Defaults to `self.D_zarr`.
+    #     clip_to_self : bool, default True
+    #         If True, reindex to `[self.dt0_str, self.dtN_str]` using `_subset_and_pad_time()`.
+    #     time_dim : str, default "time"
+    #         Name of the time dimension in the stored metrics.
+
+    #     Returns
+    #     -------
+    #     xr.Dataset
+    #         Metrics dataset loaded from disk, optionally reindexed/padded to the current window.
+
+    #     Raises
+    #     ------
+    #     FileNotFoundError
+    #         If the resolved metrics store does not exist.
+    #     Exception
+    #         Propagates errors from path-resolution helpers or xarray open operations.
+
+    #     Notes
+    #     -----
+    #     - This method assumes helper methods exist:
+    #         * define_classification_dir(...)
+    #         * define_fast_ice_class_name(...)
+    #       and that these set `self.D_class` and `self.FI_class` consistently with your on-disk layout.
+    #     """
+    #     BorC2T_type = BorC2T_type    or self.BorC2T_type
+    #     ice_type    = ice_type       or self.ice_type
+    #     ispd_thresh = ispd_thresh    or self.ispd_thresh
+    #     D_zarr      = zarr_directory or self.D_zarr
+    #     # this needs to get changed to use new define_toolbox_paths ... 
+    #     P_mets_zarr = self.define_metrics_zarr(D_zarr       = D_zarr,
+    #                                            ice_type     = ice_type,
+    #                                            ispd_thresh  = ispd_thresh,
+    #                                            BorC2T_type  = BorC2T_type,
+    #                                            class_method = class_method)
+    #     self.logger.info(f"loading metrics file: {P_mets_zarr}")
+    #     ds = xr.open_dataset(P_mets_zarr)
+    #     if clip_to_self:
+    #         self.logger.info("\tsubsetting and padding time")
+    #         ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
+    #     return ds
+
     def load_computed_metrics(self,
-                              class_method   : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
-                              BorC2T_type    : str  = None,
-                              ice_type       : str  = None,
-                              ispd_thresh    : str  = None,
-                              zarr_directory : str  = None,
-                              clip_to_self   : bool = True,
-                              time_dim       : str  = "time"):
+                              class_method   : str   = "binary-days",
+                              BorC2T_type    : str   = None,
+                              ice_type       : str   = None,
+                              ispd_thresh    : float = None,
+                              bin_min_days   : int   = None,
+                              bin_win_days   : int   = None,
+                              mean_period    : int   = None,
+                              zarr_directory : str   = None,
+                              clip_to_self   : bool  = True,
+                              time_dim       : str   = "time"):
         """
         Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
-
-        This method resolves the expected metrics path based on:
-          - the requested ice type (FI/PI/SI),
-          - the classification method (raw / rolling-mean / binary-days),
-          - the staggering→T strategy (BorC2T_type),
-          - the speed threshold label (ispd_thresh),
-          - the configured directory layout (via `define_classification_dir()` and related helpers).
-
-        Parameters
-        ----------
-        class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
-            Classification product to load for FI/PI. Used to build `self.FI_class`.
-        BorC2T_type : str, optional
-            Velocity staggering token(s) used for classification, e.g. "Tb", "Tx", "Tc".
-            Defaults to `self.BorC2T_type`.
-        ice_type : str, optional
-            Ice type to load ("FI", "PI", or "SI"). Defaults to `self.ice_type`.
-        ispd_thresh : str, optional
-            Speed threshold label (often embedded in directory naming). Defaults to `self.ispd_thresh`.
-        zarr_directory : str, optional
-            Root Zarr directory. Defaults to `self.D_zarr`.
-        clip_to_self : bool, default True
-            If True, reindex to `[self.dt0_str, self.dtN_str]` using `_subset_and_pad_time()`.
-        time_dim : str, default "time"
-            Name of the time dimension in the stored metrics.
-
-        Returns
-        -------
-        xr.Dataset
-            Metrics dataset loaded from disk, optionally reindexed/padded to the current window.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the resolved metrics store does not exist.
-        Exception
-            Propagates errors from path-resolution helpers or xarray open operations.
-
-        Notes
-        -----
-        - This method assumes helper methods exist:
-            * define_classification_dir(...)
-            * define_fast_ice_class_name(...)
-          and that these set `self.D_class` and `self.FI_class` consistently with your on-disk layout.
         """
-        BorC2T_type = BorC2T_type    or self.BorC2T_type
-        ice_type    = ice_type       or self.ice_type
-        ispd_thresh = ispd_thresh    or self.ispd_thresh
+        BorC2T_type = BorC2T_type or self.BorC2T_type
+        ice_type    = ice_type or self.ice_type
+        ispd_thresh = self.ispd_thresh if ispd_thresh is None else ispd_thresh
         D_zarr      = zarr_directory or self.D_zarr
-        P_mets_zarr = self.define_metrics_zarr(D_zarr       = D_zarr,
-                                               ice_type     = ice_type,
-                                               ispd_thresh  = ispd_thresh, 
-                                               BorC2T_type  = BorC2T_type,
-                                               class_method = class_method)
-        ds = xr.open_dataset(P_mets_zarr)
+        P_mets_zarr = self._resolve_product_store(ice_type     = ice_type,
+                                                  class_method = class_method,
+                                                  product      = "mets",
+                                                  D_zarr       = D_zarr,
+                                                  BorC2T_type  = BorC2T_type,
+                                                  ispd_thresh  = ispd_thresh,
+                                                  bin_win_days = bin_win_days,
+                                                  bin_min_days = bin_min_days,
+                                                  mean_period  = mean_period)
+        self.logger.info(f"Loading metrics Zarr: {P_mets_zarr}")
+        if not Path(P_mets_zarr).exists():
+            raise FileNotFoundError(f"Metrics Zarr does not exist: {P_mets_zarr}")
+        ds = xr.open_zarr(P_mets_zarr, consolidated=False)
         if clip_to_self:
+            self.logger.info("Subsetting and padding time")
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
         return ds
 

@@ -1544,68 +1544,6 @@ class SeaIceClassification:
                     exclude_polynyas=bool(exclude_polynyas))
         return MIZ_dly, MIZ_bin, MIZ_roll, diag
 
-    def _drop_duplicate_coords(self, ds: xr.Dataset,
-                               dim: str = "ni") -> xr.Dataset:
-        """
-        Drop duplicate coordinate values along `dim` (keeping the first occurrence).
-        Useful when concatenating yearly groups that may contain duplicated x-indices.
-        """
-        if dim in ds.coords:
-            _, index = np.unique(ds[dim], return_index=True)
-            ds = ds.isel({dim: sorted(index)})
-        return ds
-
-    def _normalise_concat_coords(self, ds: xr.Dataset,
-                                 dim: str = "ni",
-                                 drop_coords: list | None = None) -> xr.Dataset:
-        """
-        Normalise non-essential spatial coords before concatenation of yearly groups.
-
-        This protects against cases where some yearly Zarr groups carry auxiliary
-        coordinates (for example NLON/NLAT) and others do not, which causes
-        xarray.concat(..., coords="minimal") to raise:
-
-            ValueError: coordinate 'NLON' not present in all datasets
-
-        Parameters
-        ----------
-        ds : xr.Dataset
-            Dataset for a single year/group.
-        dim : str, default "ni"
-            Optional dimension along which duplicate coordinate values should be
-            removed, keeping first occurrence.
-        drop_coords : list[str], optional
-            Explicit list of coord names to drop before concat. If None, uses a
-            conservative default set of known non-essential geolocation coords.
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset with problematic auxiliary coords removed and duplicate concat
-            coordinates cleaned.
-        """
-        # 1) drop duplicate concat coord values, if present
-        if dim in ds.coords:
-            _, index = np.unique(ds[dim], return_index=True)
-            ds = ds.isel({dim: sorted(index)})
-        # 2) drop auxiliary geolocation coords that are not needed for concat
-        default_drop = ["NLON", "NLAT",
-                        "ULON", "ULAT",
-                        "TLON", "TLAT",
-                        "elon", "elat",
-                        "nlon", "nlat",
-                        "ulat", "ulon",
-                        "tlat", "tlon"]
-        cfg_drop = []
-        if hasattr(self, "CICE_dict") and isinstance(self.CICE_dict, dict):
-            cfg_drop = list(self.CICE_dict.get("drop_coords", []))
-        drop_now = drop_coords or list(dict.fromkeys(default_drop + cfg_drop))
-        present  = [c for c in drop_now if c in ds.coords]
-        if present:
-            self.logger.debug(f"Dropping auxiliary coords before concat: {present}")
-            ds = ds.drop_vars(present, errors="ignore")
-        return ds
-
     def load_classified_ice(self,
                             sim_name     : str   = None,
                             ice_type     : str   = None,
@@ -1617,103 +1555,176 @@ class SeaIceClassification:
                             dtN_str      : str   = None,
                             D_zarr       : str   = None,
                             chunks       : dict  = None,
-                            persist      : bool  = False):
+                            persist      : bool  = False,
+                            bin_win_days : int   = None,
+                            bin_min_days : int   = None,
+                            mean_period  : int   = None):
         """
         Load classified ice products from yearly-grouped Zarr stores.
-
-        Loads fast-ice/pack-ice/sea-ice classification products written as Zarr stores
-        containing per-year groups. Supports daily, rolling-mean, and binary-days
-        products via store naming conventions.
-
-        Parameters
-        ----------
-        sim_name : str, optional
-            Simulation name. Defaults to `self.sim_name`.
-        bin_days : bool, default True
-            If True, load the binary-days product (`*_bin.zarr`).
-        roll_mean : bool, default False
-            If True (and `bin_days` is False), load the rolling-mean product (`*_roll.zarr`).
-        ispd_thresh : float, optional
-            Speed threshold embedded in the Zarr path; defaults to `self.ispd_thresh`.
-        ice_type : str, optional
-            Ice type identifier ('FI', 'PI', or 'SI'). Defaults to `self.ice_type`.
-        BorC2T_type : str, optional
-            Velocity product identifier used in the store name (e.g., 'Ta', 'Tb', 'Tx', 'BT').
-        variables : list[str], optional
-            Variable subset to select after concatenation.
-        dt0_str, dtN_str : str, optional
-            Requested date window. Used here only to select which years to attempt to open.
-        D_zarr : str or pathlib.Path, optional
-            Override base Zarr directory.
-        chunks : dict, optional
-            Chunking mapping applied after concatenation (implementation-dependent).
-        persist : bool, default False
-            If True, Dask persist the concatenated dataset in memory.
-
-        Returns
-        -------
-        xarray.Dataset
-            Concatenated dataset across requested years.
-
-        Raises
-        ------
-        FileNotFoundError
-            If no valid year groups could be opened from the target store.
-
-        Notes
-        -----
-        - Uses `_drop_duplicate_coords` (class-level helper) to avoid coordinate collisions
-        during concat.
-        - This method does not currently crop the returned dataset to dt0/dtN; caller may
-        apply `sel(time=slice(...))` if needed.
         """
         from datetime import datetime
-        sim_name     = sim_name     or self.sim_name
-        ispd_thresh  = ispd_thresh  or self.ispd_thresh
-        ice_type     = ice_type     or self.ice_type
-        BorC2T_type  = BorC2T_type  or f"{''.join(self.BorC2T_type)}"
-        D_zarr       = D_zarr       or self.D_zarr
-        dt0_str      = dt0_str      or self.dt0_str
-        dtN_str      = dtN_str      or self.dtN_str
-        chunks       = chunks       or self.CICE_dict["FI_chunks"]
-        P_class_zarr = self.define_classification_zarr(D_zarr       = D_zarr,
-                                                       ice_type     = ice_type,
-                                                       ispd_thresh  = ispd_thresh,
-                                                       BorC2T_type  = BorC2T_type,
-                                                       class_method = class_method)
-        # === Loop over years, not months ===
-        dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
-        dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
-        years    = list(range(dt0.year, dtN.year + 1))
+        sim_name     = sim_name or self.sim_name
+        ice_type     = ice_type or self.ice_type
+        ispd_thresh  = self.ispd_thresh if ispd_thresh is None else ispd_thresh
+        BorC2T_type  = BorC2T_type or self.BorC2T_type
+        D_zarr       = D_zarr or self.D_zarr
+        dt0_str      = dt0_str or self.dt0_str
+        dtN_str      = dtN_str or self.dtN_str
+        chunks       = chunks or self.CICE_dict["FI_chunks"]
+        P_class_zarr = self._resolve_product_store(ice_type     = ice_type,
+                                                   class_method = class_method,
+                                                   product      = "data",
+                                                   D_zarr       = D_zarr,
+                                                   BorC2T_type  = BorC2T_type,
+                                                   ispd_thresh  = ispd_thresh,
+                                                   bin_win_days = bin_win_days,
+                                                   bin_min_days = bin_min_days,
+                                                   mean_period  = mean_period)
+        P_class_zarr = Path(P_class_zarr)
+        if not P_class_zarr.exists():
+            raise FileNotFoundError(f"Classified Zarr store does not exist: {P_class_zarr}")
+        dt0 = datetime.strptime(dt0_str, "%Y-%m-%d")
+        dtN = datetime.strptime(dtN_str, "%Y-%m-%d")
+        years = list(range(dt0.year, dtN.year + 1))
         datasets = []
         for yr in years:
+            group_path = P_class_zarr / str(yr)
+            if not group_path.exists():
+                self.logger.warning(f"Skipping year {yr}: missing group {group_path}")
+                continue
             try:
                 ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
-                # normalise coords so yearly groups are concat-compatible
                 ds_yr = self._normalise_concat_coords(ds_yr, dim="ni")
+                ds_yr = ds_yr.sel(time=slice(dt0_str, dtN_str))
+                if variables:
+                    present = [v for v in variables if v in ds_yr]
+                    missing = [v for v in variables if v not in ds_yr]
+                    if missing:
+                        self.logger.warning(f"[{yr}] missing variables: {missing}")
+                    if not present:
+                        continue
+                    ds_yr = ds_yr[present]
+                if ds_yr.sizes.get("time", 0) == 0:
+                    continue
                 datasets.append(ds_yr)
             except Exception as e:
                 self.logger.warning(f"Skipping year {yr}: {e}")
         if not datasets:
             raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {P_class_zarr}")
-        ds = xr.concat(datasets,
-                       dim           = "time",
-                       coords        = "minimal",
-                       compat        = "override",
-                       combine_attrs = "override")
-        # datasets = []
-        # for yr in years:
-        #     try:
-        #         ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
-        #         ds_yr = self._drop_duplicate_coords(ds_yr, dim="ni")
-        #         datasets.append(ds_yr)
-        #     except Exception as e:
-        #         self.logger.warning(f"Skipping year {yr}: {e}")
-        # if not datasets:
-        #     raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
-        # ds = xr.concat(datasets, dim="time", coords='minimal')
-        if variables:
-            ds = ds[variables]
+        ds = xr.concat(datasets, dim="time", coords="minimal", compat="override", combine_attrs="override")
+        ds = ds.chunk(chunks)
         if persist:
             ds = ds.persist()
         return ds
+
+    # def load_classified_ice(self,
+    #                         sim_name     : str   = None,
+    #                         ice_type     : str   = None,
+    #                         ispd_thresh  : float = None,
+    #                         class_method : str   = "binary-days",
+    #                         BorC2T_type  : str   = None,
+    #                         variables    : list  = None,
+    #                         dt0_str      : str   = None,
+    #                         dtN_str      : str   = None,
+    #                         D_zarr       : str   = None,
+    #                         chunks       : dict  = None,
+    #                         persist      : bool  = False):
+    #     """
+    #     Load classified ice products from yearly-grouped Zarr stores.
+
+    #     Loads fast-ice/pack-ice/sea-ice classification products written as Zarr stores
+    #     containing per-year groups. Supports daily, rolling-mean, and binary-days
+    #     products via store naming conventions.
+
+    #     Parameters
+    #     ----------
+    #     sim_name : str, optional
+    #         Simulation name. Defaults to `self.sim_name`.
+    #     bin_days : bool, default True
+    #         If True, load the binary-days product (`*_bin.zarr`).
+    #     roll_mean : bool, default False
+    #         If True (and `bin_days` is False), load the rolling-mean product (`*_roll.zarr`).
+    #     ispd_thresh : float, optional
+    #         Speed threshold embedded in the Zarr path; defaults to `self.ispd_thresh`.
+    #     ice_type : str, optional
+    #         Ice type identifier ('FI', 'PI', or 'SI'). Defaults to `self.ice_type`.
+    #     BorC2T_type : str, optional
+    #         Velocity product identifier used in the store name (e.g., 'Ta', 'Tb', 'Tx', 'BT').
+    #     variables : list[str], optional
+    #         Variable subset to select after concatenation.
+    #     dt0_str, dtN_str : str, optional
+    #         Requested date window. Used here only to select which years to attempt to open.
+    #     D_zarr : str or pathlib.Path, optional
+    #         Override base Zarr directory.
+    #     chunks : dict, optional
+    #         Chunking mapping applied after concatenation (implementation-dependent).
+    #     persist : bool, default False
+    #         If True, Dask persist the concatenated dataset in memory.
+
+    #     Returns
+    #     -------
+    #     xarray.Dataset
+    #         Concatenated dataset across requested years.
+
+    #     Raises
+    #     ------
+    #     FileNotFoundError
+    #         If no valid year groups could be opened from the target store.
+
+    #     Notes
+    #     -----
+    #     - Uses `_drop_duplicate_coords` (class-level helper) to avoid coordinate collisions
+    #     during concat.
+    #     - This method does not currently crop the returned dataset to dt0/dtN; caller may
+    #     apply `sel(time=slice(...))` if needed.
+    #     """
+    #     from datetime import datetime
+    #     sim_name     = sim_name     or self.sim_name
+    #     ispd_thresh  = ispd_thresh  or self.ispd_thresh
+    #     ice_type     = ice_type     or self.ice_type
+    #     BorC2T_type  = BorC2T_type  or f"{''.join(self.BorC2T_type)}"
+    #     D_zarr       = D_zarr       or self.D_zarr
+    #     dt0_str      = dt0_str      or self.dt0_str
+    #     dtN_str      = dtN_str      or self.dtN_str
+    #     chunks       = chunks       or self.CICE_dict["FI_chunks"]
+    #     P_class_zarr = self.define_classification_zarr(D_zarr       = D_zarr,
+    #                                                    ice_type     = ice_type,
+    #                                                    ispd_thresh  = ispd_thresh,
+    #                                                    BorC2T_type  = BorC2T_type,
+    #                                                    class_method = class_method)
+    #     # === Loop over years, not months ===
+    #     dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
+    #     dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
+    #     years    = list(range(dt0.year, dtN.year + 1))
+    #     datasets = []
+    #     for yr in years:
+    #         try:
+    #             ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
+    #             # normalise coords so yearly groups are concat-compatible
+    #             ds_yr = self._normalise_concat_coords(ds_yr, dim="ni")
+    #             datasets.append(ds_yr)
+    #         except Exception as e:
+    #             self.logger.warning(f"Skipping year {yr}: {e}")
+    #     if not datasets:
+    #         raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {P_class_zarr}")
+    #     ds = xr.concat(datasets,
+    #                    dim           = "time",
+    #                    coords        = "minimal",
+    #                    compat        = "override",
+    #                    combine_attrs = "override")
+    #     # datasets = []
+    #     # for yr in years:
+    #     #     try:
+    #     #         ds_yr = xr.open_zarr(P_class_zarr, group=str(yr), consolidated=False)
+    #     #         ds_yr = self._drop_duplicate_coords(ds_yr, dim="ni")
+    #     #         datasets.append(ds_yr)
+    #     #     except Exception as e:
+    #     #         self.logger.warning(f"Skipping year {yr}: {e}")
+    #     # if not datasets:
+    #     #     raise FileNotFoundError(f"No valid Zarr groups found for {ice_type} in {zarr_store}")
+    #     # ds = xr.concat(datasets, dim="time", coords='minimal')
+    #     if variables:
+    #         ds = ds[variables]
+    #     if persist:
+    #         ds = ds.persist()
+    #     return ds
