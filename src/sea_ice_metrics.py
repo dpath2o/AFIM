@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re, shutil
 import xarray as xr
 import numpy  as np
 import pandas as pd
@@ -241,520 +242,514 @@ class SeaIceMetrics:
             self.logger.debug(f"metrics_data_dict: cell_measures parsing skipped ({e})")
         return out
 
+    def _is_all_nan(self, da):
+        try:
+            return bool(da.isnull().all().compute())
+        except Exception:
+            try:
+                return bool(np.all(np.isnan(da)))
+            except Exception:
+                return False
+
+    def _is_valid_metric_input(self, obj):
+        if obj is None:
+            return False
+        if isinstance(obj, xr.DataArray):
+            try:
+                return not self._is_all_nan(obj)
+            except Exception:
+                return True
+        return True
+
+    def _check_required_metric_inputs(self, required):
+        """
+        Parameters
+        ----------
+        required : dict[str, Any]
+            Mapping of logical input name -> object
+
+        Returns
+        -------
+        tuple[bool, list[str]]
+            (is_ok, missing_or_invalid_names)
+        """
+        bad = []
+        for name, obj in required.items():
+            if obj is None:
+                bad.append(name)
+            elif isinstance(obj, xr.DataArray) and not self._is_valid_metric_input(obj):
+                bad.append(name)
+        return (len(bad) == 0), bad
+
+    def _compute_named_metric(self, store, tag, out_key, func,
+                              required    = None,
+                              post        = None,
+                              load_result = False, **kwargs):
+        """
+        Safely compute one metric and insert it into `store`.
+        """
+        required = required or {}
+        ok, bad  = self._check_required_metric_inputs(required)
+        if not ok:
+            self.logger.info(f"skipping {tag}: missing/invalid inputs {bad}")
+            return None
+        try:
+            out = func(**kwargs)
+            if post is not None:
+                out = post(out)
+            if load_result and isinstance(out, xr.DataArray):
+                out = out.load()
+            store[out_key] = out
+            return out
+        except Exception as e:
+            self.logger.warning(f"{tag} failed: {e}")
+            return None
+
+    def _parse_area_name_from_cell_measures(self, da):
+        cm = str(da.attrs.get("cell_measures", "") or "")
+        m  = re.search(r"area:\s*([A-Za-z0-9_]+)", cm)
+        return m.group(1) if m else None
+
+    def _get_tau_area(self, tau, da_dict, fallback_area=None):
+        """
+        Prefer explicit edge area from cell_measures, else fallback to tarea.
+        """
+        aname = self._parse_area_name_from_cell_measures(tau)
+        if aname and aname in da_dict and da_dict[aname] is not None:
+            return da_dict[aname], aname
+        if fallback_area is not None:
+            return fallback_area, "tarea"
+        return None, None
+
+    def _get_tau_mask(self, tau, mask):
+        """
+        Align the classification mask to stress field geometry where possible.
+        """
+        if mask is None:
+            return None
+        try:
+            m = (mask > 0)
+            m, tau_al = xr.align(m, tau, join="inner")
+            return m.astype(bool)
+        except Exception:
+            try:
+                return (mask > 0)
+            except Exception:
+                return None
+
+    def _add_stress_aggregate(self, mets, da_dict, tau, base_name, spatial_dim_names,
+                              mask          = None,
+                              fallback_area = None):
+        """
+        Compute area-weighted stress aggregates and append them to `mets`.
+        """
+        if tau is None or not self._is_valid_metric_input(tau):
+            self.logger.info(f"skipping {base_name}: missing or all-NaN")
+            return
+        A_tau, A_name = self._get_tau_area(tau, da_dict, fallback_area=fallback_area)
+        if A_tau is None:
+            self.logger.info(f"skipping {base_name}: no area weights available")
+            return
+        m_tau = self._get_tau_mask(tau, mask)
+        self.logger.info(f"computing lateral-drag stress aggregate: {base_name}")
+        self.logger.debug(f"  using area weights : {A_name}")
+        self.logger.debug(f"  output units       : Pa")
+        try:
+            ds_tau = self.compute_hemisphere_area_weighted_stress(tau               = tau,
+                                                                  A                 = A_tau,
+                                                                  spatial_dim_names = spatial_dim_names,
+                                                                  mask              = m_tau,
+                                                                  out_units         = "Pa",
+                                                                  return_abs        = True,
+                                                                  min_area_m2       = 0.0,
+                                                                  name              = base_name)
+            if "valid_area_m2" in ds_tau:
+                ds_tau = ds_tau.rename({"valid_area_m2": f"{base_name}_valid_area_m2"})
+            for v in ds_tau.data_vars:
+                mets[v] = ds_tau[v]
+        except Exception as e:
+            self.logger.warning(f"{base_name} stress aggregate failed: {e}")
+
+    def _compute_area_skill_and_seasonal(self, IA, ice_type):
+        """
+        Return (IA_skill, IA_seasonal)
+        """
+        IA_skill    = {}
+        IA_seasonal = {}
+        if IA is None or not isinstance(IA, xr.DataArray) or not self._is_valid_metric_input(IA):
+            self.logger.info("skipping skill/seasonal stats: IA not available")
+            return IA_skill, IA_seasonal
+        try:
+            if ice_type == "FI":
+                self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
+                IA_obs = xr.open_dataset(self.AF_FI_dict["P_AF2020_FIA"], engine="netcdf4")["AF2020"]
+            elif ice_type in ("PI", "SI"):
+                NSIDC = self.compute_NSIDC_metrics()
+                IA_obs = NSIDC["SIA"]
+            else:
+                IA_obs = None
+            if IA_obs is not None:
+                IA_obs = IA_obs.load()
+                result = self.compute_skill_statistics(IA, IA_obs)
+                IA_skill = result if isinstance(result, dict) else {}
+        except Exception as e:
+            self.logger.warning(f"compute_skill_statistics failed: {e}")
+            IA_skill = {}
+        try:
+            result = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type}A")
+            if isinstance(result, tuple):
+                IA_seasonal = result[0] if isinstance(result[0], dict) else {}
+            elif isinstance(result, dict):
+                IA_seasonal = result
+            else:
+                IA_seasonal = {}
+        except Exception as e:
+            self.logger.warning(f"compute_seasonal_statistics failed: {e}")
+            IA_seasonal = {}
+        return IA_skill, IA_seasonal
+
+    def _compute_persistence_summaries(self, ice_type, I_mask, A, IP):
+        """
+        Return (IP_stab, IP_dist)
+        """
+        IP_stab = {}
+        IP_dist = {}
+        if ice_type != "FI":
+            return IP_stab, IP_dist
+        if I_mask is not None and A is not None:
+            try:
+                result = self.persistence_stability_index(I_mask, A)
+                IP_stab = result if isinstance(result, dict) else {}
+            except Exception as e:
+                self.logger.warning(f"persistence_stability_index failed: {e}")
+        else:
+            self.logger.info("skipping persistence_stability_index: missing mask or area")
+        if IP is not None:
+            try:
+                result = self.persistence_ice_distance_mean_max(IP)
+                IP_dist = result if isinstance(result, dict) else {}
+            except Exception as e:
+                self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
+        else:
+            self.logger.info("skipping persistence distance: IP not available")
+        return IP_stab, IP_dist
+
+    def _build_metrics_dataset(self, mets, summary_vars=None, attrs=None):
+        """
+        Assemble final metrics dataset from DataArrays and scalar summaries.
+        """
+        summary_vars = summary_vars or {}
+        attrs        = attrs or {}
+        ds           = xr.Dataset()
+        for k, v in mets.items():
+            if v is None:
+                continue
+            if isinstance(v, xr.DataArray):
+                ds[k] = v
+            else:
+                ds[k] = xr.DataArray(v, dims=())
+        for k, v in summary_vars.items():
+            ds[k] = xr.DataArray(v, dims=())
+        for k, v in attrs.items():
+            ds.attrs[k] = v
+        return ds
+
+    def _prepare_dataset_for_zarr(self, ds):
+        """
+        Rechunk final metrics dataset so every variable has uniform chunking
+        acceptable to Zarr.
+
+        For metrics outputs, using one chunk per dimension is usually fine.
+        """
+        if hasattr(ds, "unify_chunks"):
+            ds = ds.unify_chunks()
+        chunk_map = {dim: -1 for dim in ds.dims}
+        if chunk_map:
+            ds = ds.chunk(chunk_map)
+        ds = self._strip_unsafe_zarr_encoding(ds)
+        return ds
+
+    def _write_dataset_zarr(self, ds, store, overwrite=False, consolidated=True):
+        import shutil
+        store = Path(store)
+        if store.exists():
+            if not overwrite:
+                self.logger.info(f"Store already exists, skipping write: {store}")
+                return False
+            shutil.rmtree(store)
+        ds = self._prepare_dataset_for_zarr(ds)
+        ds.to_zarr(store, mode="w", consolidated=consolidated, zarr_format=2)
+        return True
+
     def compute_sea_ice_metrics(self, da_dict, P_mets_zarr,
                                 ice_type       = None,
                                 dt0_str        = None,
                                 dtN_str        = None,
-                                ice_area_scale = None):
-        import re
+                                ice_area_scale = None,
+                                overwrite_zarr = False):
         ice_type = ice_type or self.ice_type
         dt0_str  = dt0_str  or self.dt0_str
         dtN_str  = dtN_str  or self.dtN_str
         self._check_ice_type(ice_type)
         self.define_ice_mask_name(ice_type=ice_type)
-        if ice_type == "FI":
-            ice_area_scale = self.FIC_scale
-        else:
-            ice_area_scale = self.SIC_scale
-        spatial_dim_names = self.CICE_dict["spatial_dims"]  # NEW: used below for stress aggregation
+        if ice_area_scale is None:
+            ice_area_scale = self.FIC_scale if ice_type == "FI" else self.SIC_scale
+        spatial_dim_names = self.CICE_dict["spatial_dims"]
+        time_dim = self.CICE_dict["time_dim"]
+        # Early skip: do this BEFORE several hours of compute
+        if P_mets_zarr and Path(P_mets_zarr).exists() and not overwrite_zarr:
+            self.logger.info(f"metrics store already exists, skipping compute: {P_mets_zarr}")
+            try:
+                return xr.open_zarr(P_mets_zarr, consolidated=True)
+            except Exception:
+                self.logger.warning(f"existing metrics store could not be opened cleanly: {P_mets_zarr}")
+                return xr.Dataset()
         self.logger.info(f"¡¡¡ COMPUTING ICE METRICS for {ice_type} !!!")
         self.logger.info(f"    results to {P_mets_zarr}")
-        I_mask = da_dict[self.mask_name]
-        # --------- Guard helpers ----------
-        def has(*keys):
-            return all(k in da_dict and da_dict[k] is not None for k in keys)
-        def _all_nan(da):
+        # Pull available inputs
+        I_mask = da_dict.get(self.mask_name)
+        I_C    = da_dict.get("aice")
+        I_T    = da_dict.get("hi")
+        I_S    = da_dict.get("strength")
+        I_TVT  = da_dict.get("dvidtt")
+        I_MVT  = da_dict.get("dvidtd")
+        I_TAT  = da_dict.get("daidtt")
+        I_MAT  = da_dict.get("daidtd")
+        A      = da_dict.get("tarea")
+        KuxE   = da_dict.get("KuxE")
+        KuxN   = da_dict.get("KuxN")
+        KuyE   = da_dict.get("KuyE")
+        KuyN   = da_dict.get("KuyN")
+        mets   = {}
+        # --- Core 1D metrics ---
+        IA = self._compute_named_metric(mets, "ice area", f"{ice_type}A", self.compute_hemisphere_ice_area,
+                                        required       = {"aice": I_C, "tarea": A},
+                                        SIC            = I_C,
+                                        A              = A,
+                                        ice_area_scale = ice_area_scale)
+        IV = self._compute_named_metric(mets, "ice volume", f"{ice_type}V", self.compute_hemisphere_ice_volume,
+                                        required = {"aice": I_C, "hi": I_T, "tarea": A},
+                                        SIC      = I_C,
+                                        HI       = I_T,
+                                        A        = A)
+        IT = self._compute_named_metric(mets, "ice thickness", f"{ice_type}T", self.compute_hemisphere_ice_thickness,
+                                        required = {"aice": I_C, "hi": I_T, "tarea": A},
+                                        SIC      = I_C,
+                                        HI       = I_T,
+                                        A        = A)
+        IS = self._compute_named_metric(mets, "ice strength (1D, area-weighted hPa)", f"{ice_type}S", self.compute_area_weighted_strength_hpa,
+                                        required          = {"aice": I_C, "hi": I_T, "strength": I_S, "tarea": A},
+                                        SIC               = I_C,
+                                        HI                = I_T,
+                                        IS                = I_S,
+                                        A                 = A,
+                                        spatial_dim_names = spatial_dim_names,
+                                        sic_threshold     = self.icon_thresh,
+                                        hmin              = 0.05,
+                                        assume_IS_units   = "N/m")
+        ITVR = None
+        if IV is not None and A is not None:
+            ITVR = self._compute_named_metric(mets, "thermo volume rate (1D)", f"{ice_type}TVR", self.compute_hemisphere_ice_volume_rate,
+                                              required  = {"aice": I_C, "dvidtt": I_TVT, "IV": IV, "tarea": A},
+                                              DVT       = I_TVT,
+                                              IV        = IV,
+                                              A         = A,
+                                              SIC       = I_C,
+                                              mode      = "absolute",
+                                              out_units = "per_day")
+        else:
+            self.logger.info("skipping thermo volume rate: requires IV and area")
+        IMVR = None
+        if IV is not None and A is not None:
+            IMVR = self._compute_named_metric(mets, "dynamic volume rate (1D)", f"{ice_type}MVR", self.compute_hemisphere_ice_volume_rate,
+                                              required  = {"aice": I_C, "dvidtd": I_MVT, "IV": IV, "tarea": A},
+                                              DVT       = I_MVT,
+                                              IV        = IV,
+                                              A         = A,
+                                              SIC       = I_C,
+                                              mode      = "absolute",
+                                              out_units = "per_day")
+        else:
+            self.logger.info("skipping dynamic volume rate: requires IV and area")
+        ITAR = None
+        if IA is not None and A is not None:
+            ITAR = self._compute_named_metric(mets, "thermo area rate (1D)", f"{ice_type}TAR", self.compute_hemisphere_ice_area_rate,
+                                              required  = {"daidtt": I_TAT, "IA": IA, "tarea": A},
+                                              DAT       = I_TAT,
+                                              IA        = IA,
+                                              A         = A,
+                                              mode      = "absolute",
+                                              out_units = "per_day")
+        else:
+            self.logger.info("skipping thermo area rate: requires IA and area")
+        IMAR = None
+        if IA is not None and A is not None:
+            IMAR = self._compute_named_metric(mets, "dynamic area rate (1D)", f"{ice_type}MAR", self.compute_hemisphere_ice_area_rate,
+                                              required  = {"daidtd": I_MAT, "IA": IA, "tarea": A},
+                                              DAT       = I_MAT,
+                                              IA        = IA,
+                                              A         = A,
+                                              mode      = "absolute",
+                                              out_units = "per_day")
+        else:
+            self.logger.info("skipping dynamic area rate: requires IA and area")
+        IP = self._compute_named_metric(mets, "persistence aggregate (2D)", f"{ice_type}P", self.compute_hemisphere_variable_aggregate,
+                                        required = {"aice": I_C},
+                                        da       = I_C)
+        # --- Lateral drag stress aggregates ---
+        self._add_stress_aggregate(mets, da_dict, KuxE, f"{ice_type}KuxE",
+                                   spatial_dim_names = spatial_dim_names,
+                                   mask              = I_mask,
+                                   fallback_area     = A)
+        self._add_stress_aggregate(mets, da_dict, KuyE, f"{ice_type}KuyE",
+                                   spatial_dim_names = spatial_dim_names,
+                                   mask              = I_mask,
+                                   fallback_area     = A)
+        self._add_stress_aggregate(mets, da_dict, KuxN, f"{ice_type}KuxN",
+                                   spatial_dim_names = spatial_dim_names,
+                                   mask              = I_mask,
+                                   fallback_area     = A)
+        self._add_stress_aggregate(mets, da_dict, KuyN, f"{ice_type}KuyN",
+                                   spatial_dim_names = spatial_dim_names,
+                                   mask              = I_mask,
+                                   fallback_area     = A)
+        if KuxE is not None and KuyE is not None and self._is_valid_metric_input(KuxE) and self._is_valid_metric_input(KuyE):
             try:
-                return bool(da.isnull().all().compute())
-            except Exception:
-                try:
-                    return bool(np.all(np.isnan(da)))
-                except Exception:
-                    return False
-        def valid(da):
-            if da is None:
-                return False
-            try:
-                return not _all_nan(da)
-            except Exception:
-                return True
-        def maybe_compute(tag, fn, req_keys, *, store, out_key, post=None):
-            if not has(*req_keys):
-                self.logger.info(f"skipping {tag}: missing {set(req_keys) - set(da_dict.keys())}")
-                return None
-            for k in req_keys:
-                if isinstance(da_dict[k], xr.DataArray) and not valid(da_dict[k]):
-                    self.logger.info(f"skipping {tag}: input '{k}' is all-NaN")
-                    return None
-            try:
-                out = fn()
-                if post is not None:
-                    out = post(out)
-                store[out_key] = out.load() if isinstance(out, xr.DataArray) else out
-                return out
-            except Exception as e:
-                self.logger.warning(f"{tag} failed: {e}")
-                return None
-        # --------- Pull what exists (do NOT assume keys) ----------
-        I_C   = da_dict.get("aice")
-        I_T   = da_dict.get("hi")
-        I_S   = da_dict.get("strength")
-        I_TVT = da_dict.get("dvidtt")
-        I_MVT = da_dict.get("dvidtd")
-        I_TAT = da_dict.get("daidtt")
-        I_MAT = da_dict.get("daidtd")
-        A     = da_dict.get("tarea")
-        # NEW: lateral drag stress components (if present)
-        KuxE = da_dict.get("KuxE")
-        KuxN = da_dict.get("KuxN")
-        KuyE = da_dict.get("KuyE")
-        KuyN = da_dict.get("KuyN")
-        METS = {}
-        # --------- Time series metrics (conditional) ----------
-        IA = maybe_compute("ice area",
-                        lambda: self.compute_hemisphere_ice_area(I_C, A, ice_area_scale=ice_area_scale),
-                        req_keys=("aice", "tarea"),
-                        store=METS,
-                        out_key=f"{ice_type}A")
-        IV = maybe_compute("ice volume",
-                        lambda: self.compute_hemisphere_ice_volume(I_C, I_T, A),
-                        req_keys=("aice", "hi", "tarea"),
-                        store=METS,
-                        out_key=f"{ice_type}V")
-        IT = maybe_compute("ice thickness",
-                        lambda: self.compute_hemisphere_ice_thickness(I_C, I_T, A),
-                        req_keys=("aice", "hi", "tarea"),
-                        store=METS,
-                        out_key=f"{ice_type}T")
-        # FIXED: strength call should include IS and A
-        IS = maybe_compute("ice strength (1D, area-weighted hPa)",
-                        lambda: self.compute_area_weighted_strength_hpa(
-                            SIC=I_C, HI=I_T, IS=I_S, A=A,
-                            spatial_dim_names=spatial_dim_names,
-                            sic_threshold=self.icon_thresh,
-                            hmin=0.05,
-                            assume_IS_units="N/m"),
-                        req_keys=("aice", "hi", "strength", "tarea"),
-                        store=METS,
-                        out_key=f"{ice_type}S")
-
-        ITVR = maybe_compute("thermo volume rate (1D)",
-                            lambda: self.compute_hemisphere_ice_volume_rate(DVT=I_TVT, IV=IV, A=A, SIC=I_C,
-                                                                            mode="absolute", out_units="per_day"),
-                            req_keys=("aice", "dvidtt"),
-                            store=METS,
-                            out_key=f"{ice_type}TVR")
-
-        IMVR = maybe_compute("dynamic volume rate (1D)",
-                            lambda: self.compute_hemisphere_ice_volume_rate(DVT=I_MVT, IV=IV, A=A, SIC=I_C,
-                                                                            mode="absolute", out_units="per_day"),
-                            req_keys=("aice", "dvidtd"),
-                            store=METS,
-                            out_key=f"{ice_type}MVR")
-
-        ITAR = maybe_compute("thermo area rate (1D)",
-                            lambda: self.compute_hemisphere_ice_area_rate(DAT=I_TAT, IA=IA, A=A,
-                                                                          mode="absolute", out_units="per_day"),
-                            req_keys=("daidtt", "tarea"),
-                            store=METS,
-                            out_key=f"{ice_type}TAR",
-                            post=lambda x: x) if (I_TAT is not None and IA is not None and A is not None) else None
-        if (I_TAT is not None) and (IA is None):
-            self.logger.info("skipping thermo area rate: requires IA to be computed first")
-
-        IMAR = maybe_compute("dynamic area rate (1D)",
-                            lambda: self.compute_hemisphere_ice_area_rate(DAT=I_MAT, IA=IA, A=A,
-                                                                          mode="absolute", out_units="per_day"),
-                            req_keys=("daidtd", "tarea"),
-                            store=METS,
-                            out_key=f"{ice_type}MAR") if (I_MAT is not None and IA is not None and A is not None) else None
-        if (I_MAT is not None) and (IA is None):
-            self.logger.info("skipping dynamic area rate: requires IA to be computed first")
-
-        IP = maybe_compute("persistence aggregate (2D)",
-                        lambda: self.compute_hemisphere_variable_aggregate(I_C),
-                        req_keys=("aice",),
-                        store=METS,
-                        out_key=f"{ice_type}P")
-
-        # ------------------------------------------------------------------
-        # NEW PATCH: hemispheric aggregates for lateral-drag stress components
-        # ------------------------------------------------------------------
-        def _parse_area_name_from_cell_measures(da: xr.DataArray) -> str | None:
-            cm = str(da.attrs.get("cell_measures", "") or "")
-            m = re.search(r"area:\s*([A-Za-z0-9_]+)", cm)
-            return m.group(1) if m else None
-
-        def _get_area_for_tau(da: xr.DataArray) -> tuple[xr.DataArray | None, str | None]:
-            # prefer explicit cell_measures area variable (earea/narea/etc)
-            aname = _parse_area_name_from_cell_measures(da)
-            if aname and (aname in da_dict) and (da_dict[aname] is not None):
-                return da_dict[aname], aname
-            # fallback to tarea if nothing else available
-            if A is not None:
-                return A, "tarea"
-            return None, None
-
-        def _mask_for_tau(tau: xr.DataArray) -> xr.DataArray | None:
-            # Use the ice-type mask if available; align to tau
-            if I_mask is None:
-                return None
-            try:
-                m = (I_mask > 0)
-                m, tau_al = xr.align(m, tau, join="inner")
-                return m.astype(bool)
-            except Exception:
-                return (I_mask > 0)
-
-        def _add_stress_agg(tau: xr.DataArray, base_name: str):
-            """
-            Compute and store:
-            <base>_mean (signed), <base>_abs_mean, <base>_valid_area_m2
-            using appropriate area weights if available.
-            """
-            if tau is None or not valid(tau):
-                self.logger.info(f"skipping {base_name}: missing or all-NaN")
-                return
-
-            A_tau, A_name = _get_area_for_tau(tau)
-            if A_tau is None:
-                self.logger.info(f"skipping {base_name}: no area weights available (expected earea/narea or tarea)")
-                return
-
-            m_tau = _mask_for_tau(tau)
-
-            self.logger.info(f"computing **LATERAL-DRAG STRESS AGGREGATE**: {base_name}")
-            self.logger.debug(f"  • using area weights : {A_name}")
-            self.logger.debug(f"  • output units       : Pa")
-            self.logger.debug(f"  • masked by          : {self.mask_name} (>0)")
-
-            try:
-                ds_tau = self.compute_hemisphere_area_weighted_stress(
-                    tau=tau,
-                    A=A_tau,
-                    spatial_dim_names=spatial_dim_names,
-                    mask=m_tau,
-                    out_units="Pa",
-                    return_abs=True,
-                    min_area_m2=0.0,
-                    name=base_name,
-                )
-
-                # rename valid area to avoid collisions
-                ds_tau = ds_tau.rename({"valid_area_m2": f"{base_name}_valid_area_m2"})
-
-                # store each 1D series
-                for v in ds_tau.data_vars:
-                    METS[v] = ds_tau[v].load()
-
-            except Exception as e:
-                self.logger.warning(f"{base_name} stress aggregate failed: {e}")
-
-        # component aggregates
-        _add_stress_agg(KuxE, f"{ice_type}KuxE")
-        _add_stress_agg(KuyE, f"{ice_type}KuyE")
-        _add_stress_agg(KuxN, f"{ice_type}KuxN")
-        _add_stress_agg(KuyN, f"{ice_type}KuyN")
-
-        # magnitude aggregates (more interpretable than signed components)
-        if (KuxE is not None) and (KuyE is not None) and valid(KuxE) and valid(KuyE):
-            try:
-                KuE_mag = np.hypot(KuxE, KuyE)
+                KuE_mag = xr.apply_ufunc(np.hypot, KuxE, KuyE, dask="allowed")
                 KuE_mag.name = "KuE_mag"
-                _add_stress_agg(KuE_mag, f"{ice_type}KuE_mag")
+                self._add_stress_aggregate(mets, da_dict, KuE_mag, f"{ice_type}KuE_mag",
+                                           spatial_dim_names = spatial_dim_names,
+                                           mask              = I_mask,
+                                           fallback_area     = A)
             except Exception as e:
                 self.logger.warning(f"{ice_type}KuE_mag failed: {e}")
-        if (KuxN is not None) and (KuyN is not None) and valid(KuxN) and valid(KuyN):
+        if KuxN is not None and KuyN is not None and self._is_valid_metric_input(KuxN) and self._is_valid_metric_input(KuyN):
             try:
-                KuN_mag = np.hypot(KuxN, KuyN)
+                KuN_mag = xr.apply_ufunc(np.hypot, KuxN, KuyN, dask="allowed")
                 KuN_mag.name = "KuN_mag"
-                _add_stress_agg(KuN_mag, f"{ice_type}KuN_mag")
+                self._add_stress_aggregate(mets, da_dict, KuN_mag, f"{ice_type}KuN_mag",
+                                           spatial_dim_names = spatial_dim_names,
+                                           mask              = I_mask,
+                                           fallback_area     = A)
             except Exception as e:
                 self.logger.warning(f"{ice_type}KuN_mag failed: {e}")
-        # --------- Spatial summary diagnostics (conditional) ----------
-        time_dim = self.CICE_dict["time_dim"]
-        if I_T is not None and valid(I_T):
+        # --- Spatial summary diagnostics ---
+        self._compute_named_metric(mets, "ice thickness temporal-mean", f"{ice_type}HI", lambda da: da.mean(dim=time_dim),
+                                   required = {"hi": I_T},
+                                   da       = I_T)
+        if I_S is not None and I_T is not None and self._is_valid_metric_input(I_S) and self._is_valid_metric_input(I_T):
             try:
-                self.logger.info("computing **ICE THICKNESS TEMPORAL-MEAN**")
-                METS[f"{ice_type}HI"] = I_T.mean(dim=time_dim).load()
-            except Exception as e:
-                self.logger.warning(f"mean thickness failed: {e}")
-        if (I_S is not None) and (I_T is not None) and valid(I_S) and valid(I_T):
-            try:
-                self.logger.info("computing **ICE STRENGTH TEMPORAL-SUM**; units mPa")
-                IST = (I_S / I_T.where(I_T > 0)).sum(dim=time_dim) / 1e6
-                METS[f"{ice_type}ST"] = IST.load()
+                self.logger.info("computing ice strength temporal-sum; units mPa")
+                mets[f"{ice_type}ST"] = (I_S / I_T.where(I_T > 0)).sum(dim=time_dim) / 1e6
             except Exception as e:
                 self.logger.warning(f"strength temporal-sum failed: {e}")
-        if I_TVT is not None and valid(I_TVT):
+        if I_TVT is not None and self._is_valid_metric_input(I_TVT):
             try:
-                self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
-                METS[f"{ice_type}TVR_YR"] = ((I_TVT * 1e2).mean(dim=time_dim) / 3.65).load()
+                self.logger.info("computing ice volume tendency spatial rate; units m/yr")
+                mets[f"{ice_type}TVR_YR"] = ((I_TVT * 1e2).mean(dim=time_dim) / 3.65)
             except Exception as e:
                 self.logger.warning(f"TVR_YR failed: {e}")
-        if I_MVT is not None and valid(I_MVT):
+        if I_MVT is not None and self._is_valid_metric_input(I_MVT):
             try:
-                self.logger.info("computing **ICE VOLUME TENDENCY (SPATIAL RATE)**; units m/yr")
-                METS[f"{ice_type}MVR_YR"] = ((I_MVT * 1e2).mean(dim=time_dim) / 3.65).load()
+                self.logger.info("computing ice volume tendency spatial rate; units m/yr")
+                mets[f"{ice_type}MVR_YR"] = ((I_MVT * 1e2).mean(dim=time_dim) / 3.65)
             except Exception as e:
                 self.logger.warning(f"MVR_YR failed: {e}")
-        if (I_TAT is not None) and (A is not None) and valid(I_TAT) and valid(A):
+        if I_TAT is not None and A is not None and self._is_valid_metric_input(I_TAT) and self._is_valid_metric_input(A):
             try:
-                self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
-                METS[f"{ice_type}TAR_YR"] = ((I_TAT * A).mean(dim=time_dim) / 31_536_000).load()
+                self.logger.info("computing ice area tendency spatial rate")
+                mets[f"{ice_type}TAR_YR"] = ((I_TAT * A).mean(dim=time_dim) / 31_536_000)
             except Exception as e:
                 self.logger.warning(f"TAR_YR failed: {e}")
-        if (I_MAT is not None) and (A is not None) and valid(I_MAT) and valid(A):
+        if I_MAT is not None and A is not None and self._is_valid_metric_input(I_MAT) and self._is_valid_metric_input(A):
             try:
-                self.logger.info("computing **ICE AREA TENDENCY (SPATIAL RATE)**; units m/yr")
-                METS[f"{ice_type}MAR_YR"] = ((I_MAT * A).mean(dim=time_dim) / 31_536_000).load()
+                self.logger.info("computing ice area tendency spatial rate")
+                mets[f"{ice_type}MAR_YR"] = ((I_MAT * A).mean(dim=time_dim) / 31_536_000)
             except Exception as e:
                 self.logger.warning(f"MAR_YR failed: {e}")
-        # --------- Skill / seasonal / persistence (conditional) ----------
-        IA_skill = {}
-        IA_seasonal = {}
-        if IA is not None and isinstance(IA, xr.DataArray) and valid(IA):
-            try:
-                if ice_type == "FI":
-                    self.logger.info(f"loading FI obs: {self.AF_FI_dict['P_AF2020_FIA']}")
-                    IA_obs = xr.open_dataset(self.AF_FI_dict["P_AF2020_FIA"], engine="netcdf4")["AF2020"]
-                elif ice_type in ("PI", "SI"):
-                    NSIDC = self.compute_NSIDC_metrics()
-                    IA_obs = NSIDC["SIA"]
-                else:
-                    IA_obs = None
-
-                if IA_obs is not None:
-                    IA_obs = IA_obs.load()
-                    result = self.compute_skill_statistics(IA, IA_obs)
-                    IA_skill = result if isinstance(result, dict) else {}
-            except Exception as e:
-                self.logger.warning(f"compute_skill_statistics failed: {e}")
-                IA_skill = {}
-
-            try:
-                result = self.compute_seasonal_statistics(IA, stat_name=f"{ice_type}A")
-                if isinstance(result, tuple):
-                    IA_seasonal = result[0] if isinstance(result[0], dict) else {}
-                elif isinstance(result, dict):
-                    IA_seasonal = result
-                else:
-                    IA_seasonal = {}
-            except Exception as e:
-                self.logger.warning(f"compute_seasonal_statistics failed: {e}")
-                IA_seasonal = {}
-        else:
-            self.logger.info("skipping skill/seasonal stats: IA not available")
-        IP_stab, IP_dist = {}, {}
-        if ice_type == "FI":
-            if (I_mask is not None) and (A is not None):
-                try:
-                    result = self.persistence_stability_index(I_mask, A)
-                    IP_stab = result if isinstance(result, dict) else {}
-                except Exception as e:
-                    self.logger.warning(f"persistence_stability_index failed: {e}")
-                    IP_stab = {}
-            else:
-                self.logger.info("skipping persistence_stability_index: missing mask or area")
-
-            if IP is not None:
-                try:
-                    result = self.persistence_ice_distance_mean_max(IP)
-                    IP_dist = result if isinstance(result, dict) else {}
-                except Exception as e:
-                    self.logger.warning(f"persistence_ice_distance_mean_max failed: {e}")
-                    IP_dist = {}
-            else:
-                self.logger.info("skipping persistence distance: IP not available")
-        # --------- Build output dataset ----------
-        DS_METS = xr.Dataset()
-        for k, v in METS.items():
-            if isinstance(v, xr.DataArray):
-                DS_METS[k] = v
-            else:
-                DS_METS[k] = xr.DataArray(v, dims=())
-        # --------- Merge metadata / summary dict ----------
-        IA_seasonal = IA_seasonal if isinstance(IA_seasonal, dict) else {}
-        IP_stab     = IP_stab if isinstance(IP_stab, dict) else {}
-        IP_dist     = IP_dist if isinstance(IP_dist, dict) else {}
-        IA_skill    = IA_skill if isinstance(IA_skill, dict) else {}
-        summary     = {**{f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()},
-                       **IP_stab, **IP_dist, **IA_skill, **self.sim_config}
-        for k, v in summary.items():
-            if k in self.sim_config:
-                DS_METS.attrs[k] = v
-            else:
-                DS_METS[k] = xr.DataArray(v, dims=())
-        # --------- Save to Zarr ----------
+        # --- Skill / seasonal / persistence summaries ---
+        IA_skill, IA_seasonal = self._compute_area_skill_and_seasonal(IA, ice_type)
+        IP_stab, IP_dist      = self._compute_persistence_summaries(ice_type, I_mask, A, IP)
+        summary_vars          = {}
+        summary_vars.update({f"{ice_type}A_{k}": v for k, v in IA_seasonal.items()})
+        summary_vars.update(IP_stab)
+        summary_vars.update(IP_dist)
+        summary_vars.update(IA_skill)
+        attrs   = dict(self.sim_config) if hasattr(self, "sim_config") and self.sim_config else {}
+        DS_METS = self._build_metrics_dataset(mets, summary_vars=summary_vars, attrs=attrs)
+        # --- Save to Zarr ---
         if P_mets_zarr:
-            DS_METS = self._clean_zarr_chunks(DS_METS)
-            DS_METS.to_zarr(P_mets_zarr, mode="w", consolidated=True, zarr_format=2)
-            self.logger.info(f"Metrics written to {P_mets_zarr}")
+            written = self._write_dataset_zarr(DS_METS, P_mets_zarr, overwrite=overwrite_zarr, consolidated=True)
+            if written:
+                self.logger.info(f"Metrics written to {P_mets_zarr}")
+            else:
+                self.logger.info(f"Metrics write skipped: {P_mets_zarr}")
         return DS_METS
 
-    def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str, 
-                             time_dim: str = "time") -> xr.Dataset:
+    def _subset_and_pad_time(self, ds: xr.Dataset, dt0_str: str, dtN_str: str,
+                             time_dim: str = "time", drop_conflicting: bool = True) -> xr.Dataset:
         """
         Reindex a dataset to a requested inclusive time axis, padding with NaNs as needed.
-
-        This helper is used when loading metrics computed over a slightly different time span
-        than the current analysis window. It creates a desired time coordinate from `dt0_str`
-        to `dtN_str` (inclusive) using the dataset’s native time type and step, then reindexes
-        onto that coordinate. Missing days are introduced as NaNs.
-
-        Parameters
-        ----------
-        ds : xr.Dataset
-            Dataset to subset/reindex. If `time_dim` is absent, `ds` is returned unchanged.
-        dt0_str, dtN_str : str
-            Start/end dates ("YYYY-MM-DD") for the desired inclusive time axis.
-        time_dim : str, default "time"
-            Name of the time coordinate/dimension.
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset reindexed to the desired time axis. Values are preserved where the
-            original dataset overlaps, and NaNs are inserted where the dataset did not
-            originally contain those times.
-
-        Raises
-        ------
-        ValueError
-            If `dt0_str` is later than `dtN_str`.
-        RuntimeError
-            If the time coordinate appears to be cftime/object and `cftime` is unavailable.
-
-        Notes
-        -----
-        - Supports both numpy datetime64 time coordinates and cftime calendars.
-        - The step is inferred from the first two time points when available; otherwise
-          defaults to one day.
+        Drops variables whose `time_dim` length conflicts with the indexed time coordinate.
         """
-        if time_dim not in ds.dims and time_dim not in ds.coords:
-            # Nothing to do
+        if time_dim not in ds.dims and time_dim not in ds.coords and time_dim not in ds.variables:
             return ds
         if dt0_str is None or dtN_str is None:
             return ds
-        t = ds[time_dim]
-        if t.size == 0:
+        # Require an actual time coordinate/index variable
+        if time_dim not in ds.variables:
+            self.logger.warning(f"{time_dim!r} not present as a variable; skipping reindex")
             return ds
-        # Determine whether we're working with numpy datetime64 or cftime objects
-        t0 = t.values[0]
+        t = ds[time_dim]
+        if t.ndim != 1 or t.size == 0:
+            return ds
+        # Build requested axis
         is_datetime64 = np.issubdtype(t.values.dtype, np.datetime64)
-        # Build start/end in matching type
         if is_datetime64:
             start = np.datetime64(dt0_str)
             end   = np.datetime64(dtN_str)
         else:
-            # cftime (dtype typically object)
             try:
-                import cftime  # noqa: F401
+                import cftime
             except Exception as e:
-                raise RuntimeError("Dataset time coordinate appears to be cftime/object, but cftime is not available.") from e
-            # Try to preserve calendar if present; default to 'standard'
+                raise RuntimeError(
+                    "Dataset time coordinate appears to be cftime/object, but cftime is not available."
+                ) from e
             cal = t.encoding.get("calendar", None) or t.attrs.get("calendar", None) or "standard"
             start = xr.cftime_range(start=dt0_str, periods=1, calendar=cal)[0]
             end   = xr.cftime_range(start=dtN_str, periods=1, calendar=cal)[0]
-        # Sanity
         if start > end:
             raise ValueError(f"Requested start > end: {dt0_str} > {dtN_str}")
-        # Infer step from dataset time (fallback: 1 day)
         if t.size >= 2:
             step = t.values[1] - t.values[0]
         else:
             step = np.timedelta64(1, "D") if is_datetime64 else __import__("datetime").timedelta(days=1)
-        # Build the requested time axis (inclusive)
         if is_datetime64:
-            # ensure inclusive end (np.arange is end-exclusive)
             desired = np.arange(start, end + step, step)
         else:
             desired = []
             cur = start
-            # robust loop for cftime + timedelta
             while cur <= end:
                 desired.append(cur)
                 cur = cur + step
             desired = np.array(desired, dtype=object)
-        # Reindex onto the desired axis -> pads with NaNs where outside original coverage
-        # (keeps original values where they overlap)
-        ds_out = ds.reindex({time_dim: desired})
-        return ds_out
-
-    # def load_computed_metrics(self,
-    #                           class_method   : str  = "binary-days",  # "raw", "rolling-mean", "binary-days"
-    #                           BorC2T_type    : str  = None,
-    #                           ice_type       : str  = None,
-    #                           ispd_thresh    : str  = None,
-    #                           bin_min_days   : int  = None,
-    #                           bin_win_days   : int  = None,
-    #                           mean_period    : int  = None,
-    #                           zarr_directory : str  = None,
-    #                           clip_to_self   : bool = True,
-    #                           time_dim       : str  = "time"):
-    #     """
-    #     Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
-
-    #     This method resolves the expected metrics path based on:
-    #       - the requested ice type (FI/PI/SI),
-    #       - the classification method (raw / rolling-mean / binary-days),
-    #       - the staggering→T strategy (BorC2T_type),
-    #       - the speed threshold label (ispd_thresh),
-    #       - the configured directory layout (via `define_classification_dir()` and related helpers).
-
-    #     Parameters
-    #     ----------
-    #     class_method : {"raw","rolling-mean","binary-days"}, default "binary-days"
-    #         Classification product to load for FI/PI. Used to build `self.FI_class`.
-    #     BorC2T_type : str, optional
-    #         Velocity staggering token(s) used for classification, e.g. "Tb", "Tx", "Tc".
-    #         Defaults to `self.BorC2T_type`.
-    #     ice_type : str, optional
-    #         Ice type to load ("FI", "PI", or "SI"). Defaults to `self.ice_type`.
-    #     ispd_thresh : str, optional
-    #         Speed threshold label (often embedded in directory naming). Defaults to `self.ispd_thresh`.
-    #     zarr_directory : str, optional
-    #         Root Zarr directory. Defaults to `self.D_zarr`.
-    #     clip_to_self : bool, default True
-    #         If True, reindex to `[self.dt0_str, self.dtN_str]` using `_subset_and_pad_time()`.
-    #     time_dim : str, default "time"
-    #         Name of the time dimension in the stored metrics.
-
-    #     Returns
-    #     -------
-    #     xr.Dataset
-    #         Metrics dataset loaded from disk, optionally reindexed/padded to the current window.
-
-    #     Raises
-    #     ------
-    #     FileNotFoundError
-    #         If the resolved metrics store does not exist.
-    #     Exception
-    #         Propagates errors from path-resolution helpers or xarray open operations.
-
-    #     Notes
-    #     -----
-    #     - This method assumes helper methods exist:
-    #         * define_classification_dir(...)
-    #         * define_fast_ice_class_name(...)
-    #       and that these set `self.D_class` and `self.FI_class` consistently with your on-disk layout.
-    #     """
-    #     BorC2T_type = BorC2T_type    or self.BorC2T_type
-    #     ice_type    = ice_type       or self.ice_type
-    #     ispd_thresh = ispd_thresh    or self.ispd_thresh
-    #     D_zarr      = zarr_directory or self.D_zarr
-    #     # this needs to get changed to use new define_toolbox_paths ... 
-    #     P_mets_zarr = self.define_metrics_zarr(D_zarr       = D_zarr,
-    #                                            ice_type     = ice_type,
-    #                                            ispd_thresh  = ispd_thresh,
-    #                                            BorC2T_type  = BorC2T_type,
-    #                                            class_method = class_method)
-    #     self.logger.info(f"loading metrics file: {P_mets_zarr}")
-    #     ds = xr.open_dataset(P_mets_zarr)
-    #     if clip_to_self:
-    #         self.logger.info("\tsubsetting and padding time")
-    #         ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
-    #     return ds
+        # Identify vars that cannot be aligned to this time axis
+        tlen = t.sizes[time_dim]
+        bad_vars = [
+            name for name, var in ds.variables.items()
+            if (time_dim in var.dims and var.sizes[time_dim] != tlen)
+        ]
+        if bad_vars:
+            msg = (
+                f"Found variables with conflicting {time_dim!r} length relative to "
+                f"{time_dim!r} coord ({tlen}): {bad_vars}"
+            )
+            if drop_conflicting:
+                self.logger.warning(msg + " -- dropping them before reindex")
+                ds = ds.drop_vars(bad_vars, errors="ignore")
+            else:
+                raise ValueError(msg)
+        return ds.reindex({time_dim: desired})
 
     def load_computed_metrics(self,
                               class_method   : str   = "binary-days",
@@ -766,30 +761,48 @@ class SeaIceMetrics:
                               mean_period    : int   = None,
                               zarr_directory : str   = None,
                               clip_to_self   : bool  = True,
-                              time_dim       : str   = "time"):
-        """
-        Load a previously computed metrics Zarr store and optionally clip/pad to the current analysis window.
-        """
+                              time_dim       : str   = "time",
+                              vars_keep      : list[str] | None = None,
+                              eager          : bool  = False):
         BorC2T_type = BorC2T_type or self.BorC2T_type
         ice_type    = ice_type or self.ice_type
         ispd_thresh = self.ispd_thresh if ispd_thresh is None else ispd_thresh
         D_zarr      = zarr_directory or self.D_zarr
-        P_mets_zarr = self._resolve_product_store(ice_type     = ice_type,
-                                                  class_method = class_method,
-                                                  product      = "mets",
-                                                  D_zarr       = D_zarr,
-                                                  BorC2T_type  = BorC2T_type,
-                                                  ispd_thresh  = ispd_thresh,
-                                                  bin_win_days = bin_win_days,
-                                                  bin_min_days = bin_min_days,
-                                                  mean_period  = mean_period)
+        P_mets_zarr = self._resolve_product_store(
+            ice_type     = ice_type,
+            class_method = class_method,
+            product      = "mets",
+            D_zarr       = D_zarr,
+            BorC2T_type  = BorC2T_type,
+            ispd_thresh  = ispd_thresh,
+            bin_win_days = bin_win_days,
+            bin_min_days = bin_min_days,
+            mean_period  = mean_period,
+        )
         self.logger.info(f"Loading metrics Zarr: {P_mets_zarr}")
         if not Path(P_mets_zarr).exists():
             raise FileNotFoundError(f"Metrics Zarr does not exist: {P_mets_zarr}")
-        ds = xr.open_zarr(P_mets_zarr, consolidated=False)
+        ds = xr.open_zarr(
+            P_mets_zarr,
+            consolidated=None,
+            chunks=None if eager else "auto",
+            decode_coords=True,
+            create_default_indexes=True,
+        )
+        if vars_keep is not None:
+            missing = [v for v in vars_keep if v not in ds.variables]
+            if missing:
+                self.logger.warning(f"Requested vars not present: {missing}")
+            keep = [v for v in vars_keep if v in ds.variables]
+            if time_dim in ds.variables and time_dim not in keep:
+                keep = [time_dim] + keep
+            ds = ds[keep]
         if clip_to_self:
-            self.logger.info("Subsetting and padding time")
+            self.logger.info(f"Subsetting and padding time to {self.dt0_str} and {self.dtN_str}")
             ds = self._subset_and_pad_time(ds, self.dt0_str, self.dtN_str, time_dim=time_dim)
+        if eager:
+            self.logger.info("Loading selected metrics eagerly into memory")
+            ds = ds.load()
         return ds
 
     def compute_hemisphere_area_weighted_stress(self, tau: xr.DataArray, A: xr.DataArray,
@@ -1588,7 +1601,7 @@ class SeaIceMetrics:
                                     grounded_iceberg_area     = None,
                                     region                    = None):
         """
-        Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally 
+        Compute the total sea ice area (IA) by integrating sea ice concentration (SIC) over the grid area, and optionally
         including the grounded iceberg area (GI_total_area).
 
         This method computes the sea ice area by multiplying the sea ice concentration (SIC) by the grid cell area (GC_area),
@@ -1599,26 +1612,26 @@ class SeaIceMetrics:
         -----------
         SIC : xarray.DataArray
             Sea ice concentration field with dimensions (nj, ni) representing the concentration of sea ice at each grid point.
-            
+
         A : xarray.DataArray
             Grid cell area with the same dimensions (nj, ni) as SIC, representing the area of each grid cell in square meters.
-            
+
         ice_area_scale : float, optional
             A scale factor for the sea ice area calculation. If not provided, the default scale is used from the `FIC_scale` attribute.
-            
+
         spatial_dim_names : list of str, optional
-            The dimension names over which to sum the sea ice area (typically latitude and longitude). If not provided, the default spatial dimensions 
+            The dimension names over which to sum the sea ice area (typically latitude and longitude). If not provided, the default spatial dimensions
             are used from the `CICE_dict` attribute.
 
         sic_threshold : float, optional
             Minimum SIC value to be included in the area calculation. Points with SIC below this threshold are excluded.
             Defaults to `self.icon_thresh`.
-            
+
         add_grounded_iceberg_area : bool, optional
             A flag indicating whether to include the grounded iceberg area in the ice area calculation. Defaults to the class attribute `use_gi`.
-            
+
         grounded_iceberg_area : float, optional
-            The grounded iceberg area in square meters to be added to the sea ice area. If not provided, the grounded iceberg area is computed using 
+            The grounded iceberg area in square meters to be added to the sea ice area. If not provided, the grounded iceberg area is computed using
             `compute_grounded_iceberg_area()`.
 
         Returns:
@@ -1629,7 +1642,7 @@ class SeaIceMetrics:
 
         Notes:
         ------
-        - The grounded iceberg area is added to the sea ice area calculation if `add_grounded_iceberg_area` is `True`. If no grounded iceberg area 
+        - The grounded iceberg area is added to the sea ice area calculation if `add_grounded_iceberg_area` is `True`. If no grounded iceberg area
         is provided, the method will compute it using the `compute_grounded_iceberg_area()` method.
         - The sea ice area is computed as the sum of SIC * GC_area across the specified spatial dimensions, and then scaled by `ice_area_scale`.
         """
@@ -1671,17 +1684,17 @@ class SeaIceMetrics:
 
         This method calculates the total sea ice volume as the sum of the product of sea ice concentration (SIC),
         thickness (HI), and grid cell area (GC_area) across the model domain. A SIC threshold can be applied to exclude
-        grid cells with low concentrations. Optionally includes grounded iceberg volume and applies a scaling factor 
+        grid cells with low concentrations. Optionally includes grounded iceberg volume and applies a scaling factor
         for unit conversion.
 
         Parameters
         ----------
         SIC : xarray.DataArray
             Sea ice concentration (unitless, typically between 0 and 1).
-            
+
         HI : xarray.DataArray
             Sea ice thickness in meters.
-            
+
         A : xarray.DataArray
             Grid cell area in square meters (m²).
 
@@ -2468,10 +2481,6 @@ class SeaIceMetrics:
             transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
             x_all, y_all = transformer.transform(lon, lat)
             self._grid_xy_cache[proj_key] = (x_all, y_all)
-        # lon = np.asarray(Gt[lon_name].values)
-        # lat = np.asarray(Gt[lat_name].values)
-        # transformer = Transformer.from_crs("EPSG:4326", crs_out, always_xy=True)
-        x_all, y_all = transformer.transform(lon, lat)
         iy, ix = np.where(prst)  # spat_dims order (nj, ni)
         x_p = x_all[iy, ix]
         y_p = y_all[iy, ix]

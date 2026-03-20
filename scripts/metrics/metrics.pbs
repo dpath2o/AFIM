@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -P jk72
 #PBS -q normalbw
-#PBS -l walltime=4:00:00
+#PBS -l walltime=10:00:00
 #PBS -l ncpus=24
 #PBS -l mem=190GB
 #PBS -l jobfs=5GB
@@ -63,57 +63,3 @@ CMD=(python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/metrics.py \
 
 echo "Running: ${CMD[*]}"
 "${CMD[@]}"
-
-# #!/bin/bash
-# #PBS -P jk72
-# #PBS -q normalbw
-# #PBS -l walltime=4:00:00
-# #PBS -l ncpus=24
-# #PBS -l mem=190GB
-# #PBS -l jobfs=5GB
-# #PBS -j oe
-# #PBS -l storage=gdata/xp65+gdata/gv90+gdata/ik11+scratch/gv90
-# #PBS -v ENVFILE
-
-# # --- Load environment ---
-# module use /g/data/xp65/public/modules
-# module load conda/analysis3-25.12
-# source activate
-
-# # --- Source environment file ---
-# if [[ -f "$ENVFILE" ]]; then
-#   echo "Sourcing environment from: $ENVFILE"
-#   source "$ENVFILE"
-# else
-#   echo "ENVFILE not found: $ENVFILE"
-#   exit 1
-# fi
-
-# # --- Log inputs ---
-# echo "Simulation       : $sim_name"
-# echo "P_JSON           : $P_JSON"
-# echo "ISPD threshold   : $ispd_thresh"
-# echo "ice type         : $ice_type"
-# echo "BorC2T type      : $borc2t_type"
-# echo "start date       : $start_date"
-# echo "end date         : $end_date"
-# echo "Rolling mean     : $rolling_mean"
-# echo "Overwrite zarr   : $overwrite_zarr"
-# echo "Overwrite png    : $overwrite_png"
-
-# export DASK_TEMPORARY_DIRECTORY="/scratch/gv90/${USER}/dask_tmp/${PBS_JOBID}"
-# export TMPDIR="/scratch/gv90/${USER}/tmp/${PBS_JOBID}"
-# mkdir -p "$DASK_TEMPORARY_DIRECTORY" "$TMPDIR"
-
-# # --- Launch computation ---
-# python /home/581/da1339/AFIM/src/AFIM/scripts/metrics/metrics.py \
-#   --P_JSON "$P_JSON" \
-#   --sim_name "$sim_name" \
-#   --ispd_thresh "$ispd_thresh" \
-#   --ice_type "$ice_type" \
-#   --BorC2T_type "$borc2t_type" \
-#   --start_date "$start_date" \
-#   --end_date "$end_date" \
-#   $( [ "$rolling_mean"   = true ] && echo "--rolling_mean") \
-#   $( [ "$overwrite_zarr" = true ] && echo "--overwrite_zarr" ) \
-#   $( [ "$overwrite_png"  = true ] && echo "--overwrite_png" )

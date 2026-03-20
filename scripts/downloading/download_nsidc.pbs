@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -P gv90
+#PBS -q copyq
+#PBS -l walltime=10:00:00
+#PBS -l mem=4GB
+#PBS -l ncpus=1
+#PBS -l storage=gdata/gv90+scratch/gv90
+#PBS -l wd
+
+set -euo pipefail
+
+D_BASE="/g/data/gv90/da1339/SeaIce/NSIDC"
+VERSION="G02202_V6"
+YR0=1979
+YRN=2024
+WORKDIR="${PBS_JOBFS:-$PWD}"
+
+python3 download_nsidc_g02202.py \
+    --dest-root "${D_BASE}" \
+    --version "${VERSION}" \
+    --start-year "${YR0}" \
+    --end-year "${YRN}" \
+    --hemis north south \
+    --daily aggregate \
+    --monthly aggregate \
+    --ancillary \
+    --workers 4 \
+    --manifest-file "${WORKDIR}/${VERSION}_manifest.tsv"

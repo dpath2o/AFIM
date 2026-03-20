@@ -1,11 +1,12 @@
 #!/bin/bash
 
-U_base="https://noaadata.apps.nsidc.org/NOAA/G02202_V4"
-D_base="/g/data/jk72/da1339/SeaIce/nsidc/G02202_V4"
+U_base="https://noaadata.apps.nsidc.org/NOAA/G02202_V6"
+D_base="/g/data/gv90/da1339/SeaIce/nsidc/G02202_V6"
 hemis=("south" "north")
 freqs=("daily" "monthly" "aggregate")
 YR0=1979
 YRN=2024
+wget_call="wget -nd --no-check-certificate --reject 'index.html*' -np -e robots=off"
 for freq in "${freqs[@]}"; do
     for hemi in "${hemis[@]}"; do
         if [ "${hemi}" = "south" ]; then
@@ -44,7 +45,7 @@ for freq in "${freqs[@]}"; do
                         echo "${F_name} exists. Skipping download."
                     else
                         echo "Downloading ${U_down}/${F_name}"
-                        wget -nc "${U_down}/${F_name}"
+                        $wget_call "${U_down}/${F_name}"
                     fi
                 done
             elif [ "${freq}" = "daily" ]; then
@@ -113,7 +114,7 @@ for freq in "${freqs[@]}"; do
                             echo "${F_name} exists. Skipping download."
                         else
                             echo "Downloading ${U_down}/${F_name}"
-                            wget -nc "${U_down}/${F_name}"
+                            $wget_call "${U_down}/${F_name}"
                         fi
                     done
                 done
@@ -126,7 +127,7 @@ for freq in "${freqs[@]}"; do
                     echo "${F_name} exists. Skipping download."
                 else
                     echo "Downloading ${F_name}"
-                    wget -nc "${U_down}/${F_name}"
+                    $wget_call "${U_down}/${F_name}"
                 fi
             fi
         done

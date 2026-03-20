@@ -112,218 +112,363 @@ class SeaIceObservations:
           onto `self` or inherit from a base class that handles configuration.
         """
         return
-    
+
     ####################################################################################################
-    ##                                              NSIDC         
+    #                                              NSIDC
     ####################################################################################################
-    def load_local_NSIDC(self, dt0_str=None, dtN_str=None, local_directory=None, monthly_files=False):
+    def _get_nsidc_sic_name(self, ds, monthly_files=False):
+        """
+        Return the NSIDC concentration variable present in ds.
+        """
+        cand = []
+        sic_cfg = self.NSIDC_dict.get("SIC_name", "cdr_seaice_conc")
+        if isinstance(sic_cfg, dict):
+            if monthly_files:
+                cand.extend([sic_cfg.get("monthly"), sic_cfg.get("daily")])
+            else:
+                cand.extend([sic_cfg.get("daily"), sic_cfg.get("monthly")])
+        else:
+            cand.append(sic_cfg)
+        # robust fallbacks across V4/V6 raw files
+        cand.extend(["cdr_seaice_conc", "cdr_seaice_conc_monthly"])
+        for name in cand:
+            if name and name in ds.data_vars:
+                return name
+        raise KeyError(f"Could not find an NSIDC sea-ice concentration variable in {list(ds.data_vars)}")
+
+    def load_local_NSIDC(self, dt0_str=None, dtN_str=None, local_directory=None, monthly_files=False, chunks=None, engine="h5netcdf"):
         """
         Load NSIDC sea-ice concentration NetCDF files from a local directory tree.
 
-        The loader constructs expected filenames for each day (or month) between
-        `dt0_str` and `dtN_str`, selects the appropriate file version based on your
-        configured version start dates, and uses `xarray.open_mfdataset` to open all
-        available files in one dataset.
-
-        Parameters
-        ----------
-        dt0_str, dtN_str : str, optional
-            Start/end dates in "YYYY-MM-DD" format. If omitted, defaults to
-            `self.dt0_str` and `self.dtN_str`.
-        local_directory : str or pathlib.Path, optional
-            Root directory containing NSIDC files. If omitted, defaults to
-            `Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)`.
-        monthly_files : bool, default False
-            If True, treat the dataset as monthly and search one file per month.
-            If False, treat the dataset as daily.
-
-        Returns
-        -------
-        xr.Dataset
-            Multi-file dataset combined "by_coords".
-
-        Raises
-        ------
-        FileNotFoundError
-            If no matching files are found within the requested window.
-
-        Notes
-        -----
-        - A small preprocess hook promotes `time` as a coordinate when datasets contain
-          a `tdim` dimension.
-        - Missing files are logged as warnings and skipped.
+        Optimisations relative to the original version:
+          - one directory scan instead of thousands of Path.exists() calls
+          - combine="nested" + concat_dim="time" instead of combine="by_coords"
+          - drop unused variables during open
+          - avoid per-file warning spam
+          - optional manual time assignment after open
         """
         from datetime import datetime
-        def promote_time(ds):
-            ds = ds[["cdr_seaice_conc"]] if "cdr_seaice_conc" in ds else ds
+        def preprocess(ds):
+            # promote time before concatenation
             if "time" in ds.variables and "tdim" in ds.dims:
-                ds = ds.swap_dims({"tdim": "time"})
                 ds = ds.set_coords("time")
+                ds = ds.swap_dims({"tdim": "time"})
+                ds = ds.drop_vars("tdim", errors="ignore")
+            # keep only what is actually needed
+            keep_data = ["cdr_seaice_conc"]
+            drop_data = [v for v in ds.data_vars if v not in keep_data]
+            if drop_data:
+                ds = ds.drop_vars(drop_data)
+            # ensure coords are retained
+            for c in ("time", "xgrid", "ygrid"):
+                if c in ds.variables:
+                    ds = ds.set_coords(c)
             return ds
         f_fmt    = self.NSIDC_dict["G02202_v4_file_format"]
         dt0_str  = dt0_str if dt0_str is not None else self.dt0_str
         dtN_str  = dtN_str if dtN_str is not None else self.dtN_str
-        freq_str = 'monthly'             if monthly_files  else 'daily'
-        D_local  = Path(local_directory) if local_directory else Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)
-        dt0      = datetime.strptime(dt0_str, '%Y-%m-%d')
-        dtN      = datetime.strptime(dtN_str, '%Y-%m-%d')
-        f_vers_parsed = [ (ver, datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.min)
-                          for ver, date_str in self.NSIDC_dict["file_versions"].items() ]
-        f_vers_parsed.sort(key=lambda x: x[1])  # Sort by date
-        date_range = pd.date_range(start=dt0, end=dtN, freq='MS' if monthly_files else 'D')
-        P_NSIDCs   = []
+        freq_str = "monthly" if monthly_files else "daily"
+        D_local  = (Path(local_directory) if local_directory else Path(self.NSIDC_dict["D_original"], self.NSIDC_dict["version"], self.hemisphere, freq_str))
+        dt0      = datetime.strptime(dt0_str, "%Y-%m-%d")
+        dtN      = datetime.strptime(dtN_str, "%Y-%m-%d")
+        f_vers_parsed = [(ver, datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.min)
+                         for ver, date_str in self.NSIDC_dict["file_versions"].items()]
+        f_vers_parsed.sort(key=lambda x: x[1])
+        date_range = pd.date_range(start=dt0, end=dtN, freq="MS" if monthly_files else "D")
+        # one metadata scan instead of N Path.exists() calls
+        with os.scandir(D_local) as it:
+            available = {entry.name: Path(entry.path)
+                         for entry in it
+                         if entry.is_file() and entry.name.endswith(".nc")}
+        P_NSIDCs = []
+        times    = []
+        missing  = []
         for dt_ in date_range:
-            f_version = next( (ver for ver, d in reversed(f_vers_parsed) if dt_ >= d), f_vers_parsed[0][0] )
-            F_        = f_fmt.format(freq = freq_str,
-                                     hem  = self.hemisphere_dict['abbreviation'].lower(),
-                                     date = dt_.strftime('%Y%m%d'),
-                                     ver  = f_version)
-            P_        = Path(D_local,F_)
-            if P_.exists():
-                P_NSIDCs.append(P_)
+            f_version = next((ver for ver, d in reversed(f_vers_parsed) if dt_ >= d), f_vers_parsed[0][0])
+            F_        = f_fmt.format(freq=freq_str,
+                                     hem=self.hemisphere_dict["abbreviation"].lower(),
+                                     date=dt_.strftime("%Y%m%d"),
+                                     ver=f_version)
+            P_        = available.get(F_)
+            if P_ is not None:
+                P_NSIDCs.append(str(P_))
+                times.append(pd.Timestamp(dt_))
             else:
-                self.logger.warning(f"Missing file: {P_}")
+                missing.append(F_)
+        if missing:
+            self.logger.warning("Missing %d NSIDC files in %s; first few missing: %s",
+                                len(missing), D_local, ", ".join(missing[:5]))
         if not P_NSIDCs:
             raise FileNotFoundError(f"No NSIDC files found in {D_local} between {dt0_str} and {dtN_str}")
-        self.logger.info(f"Using xarray to load {len(P_NSIDCs)} files in {D_local}. Last file: {P_NSIDCs[-1].name}")
-        return xr.open_mfdataset(P_NSIDCs,
-                                 combine    = "by_coords",
-                                 parallel   = True,
-                                 preprocess = promote_time)
+        self.logger.info("Opening %d NSIDC files from %s (last file: %s)",
+                         len(P_NSIDCs), D_local, Path(P_NSIDCs[-1]).name)
+        ds = xr.open_mfdataset(P_NSIDCs,
+                               engine         = engine,           # try "h5netcdf"; fall back to "netcdf4" if needed
+                               combine        = "nested",
+                               concat_dim     = "time",
+                               preprocess     = preprocess,
+                               parallel       = False,            # often faster for many small files
+                               decode_times   = False,            # assign known times ourselves below
+                               coords         = "minimal",
+                               data_vars      = "minimal",
+                               compat         = "override",
+                               join           = "override",
+                               combine_attrs  = "override",
+                               drop_variables = ["nsidc_bt_seaice_conc",
+                                                 "nsidc_nt_seaice_conc",
+                                                 "qa_of_cdr_seaice_conc",
+                                                 "spatial_interpolation_flag",
+                                                 "stdev_of_cdr_seaice_conc",
+                                                 "temporal_interpolation_flag",
+                                                 "projection"])
+        # overwrite numeric/cftime-ish time with known timestamps from filenames/date loop
+        ds = ds.assign_coords(time=("time", pd.DatetimeIndex(times)))
+        # rechunk after concatenation; otherwise time chunks often remain size 1
+        if chunks is None:
+            chunks = {"time": 365}
+        return ds.chunk(chunks)
 
     def NSIDC_coordinate_transformation(self, ds):
         """
-        Add geographic longitude/latitude coordinates to an NSIDC grid.
+        Add 2D lon/lat coordinates to an NSIDC dataset from projected x/y coordinates.
+        Works with 1D xgrid/ygrid or 2D projected coordinates.
+        """
+        import numpy as np
+        import xarray as xr
+        from pyproj import CRS, Transformer
+        x_name = "xgrid" if "xgrid" in ds.variables else self.NSIDC_dict.get("x_coord", "xgrid")
+        y_name = "ygrid" if "ygrid" in ds.variables else self.NSIDC_dict.get("y_coord", "ygrid")
+        if x_name not in ds.variables or y_name not in ds.variables:
+            raise KeyError(f"Could not find projected coordinate variables '{x_name}' and '{y_name}'")
+        x = ds[x_name].values
+        y = ds[y_name].values
+        # CRS from file if available, else from config
+        if "projection" in ds.variables and "proj4text" in ds["projection"].attrs:
+            proj4 = ds["projection"].attrs["proj4text"]
+        else:
+            proj_cfg = self.NSIDC_dict["projection_string"]
+            proj4 = proj_cfg[self.hemisphere] if isinstance(proj_cfg, dict) else proj_cfg
+        crs_nsidc = CRS.from_user_input(proj4)
+        crs_geod  = crs_nsidc.geodetic_crs if crs_nsidc.geodetic_crs is not None else CRS.from_epsg(4326)
+        transformer = Transformer.from_crs(crs_nsidc, crs_geod, always_xy=True)
+        if x.ndim == 1 and y.ndim == 1:
+            xx, yy = np.meshgrid(x, y)
+            lon, lat = transformer.transform(xx, yy)
+            ds = ds.assign_coords(
+                lon=(("y", "x"), lon),
+                lat=(("y", "x"), lat),
+            )
+        elif x.ndim == 2 and y.ndim == 2 and x.shape == y.shape:
+            lon, lat = transformer.transform(x, y)
+            ds = ds.assign_coords(
+                lon=(ds[y_name].dims, lon),
+                lat=(ds[y_name].dims, lat),
+            )
+        else:
+            raise ValueError("Unsupported xgrid/ygrid layout; expected 1D xgrid/ygrid or matching 2D arrays.")
+        return ds
 
-        NSIDC concentration products are commonly stored in a Polar Stereographic
-        projection with Cartesian coordinates (e.g., `xgrid`, `ygrid`, in meters).
-        This routine converts the projected coordinates to WGS84 longitude/latitude
-        and attaches them to the dataset.
+    def compute_NSIDC_cell_area_from_grid(self, ds, P_out=None, overwrite=False):
+        """
+        Derive geodetic cell area [m^2] from NSIDC projected x/y grid and file CRS.
 
         Parameters
         ----------
         ds : xr.Dataset
-            Input dataset containing projected coordinate variables. Expected variables:
-            - xgrid : (x) or (y, x) coordinate(s) in meters
-            - ygrid : (y) or (y, x) coordinate(s) in meters
+            NSIDC dataset containing 1D xgrid/ygrid and projection metadata.
+        P_out : str or Path, optional
+            If given, write the derived cell-area field to NetCDF for reuse.
+        overwrite : bool, default False
+            Overwrite existing cached NetCDF if present.
 
         Returns
         -------
-        xr.Dataset
-            Dataset with added variables:
-            - lon : (y, x) longitude in degrees east
-            - lat : (y, x) latitude in degrees north
-
-        Raises
-        ------
-        KeyError
-            If xgrid/ygrid variables are missing.
-        AssertionError
-            If xgrid and ygrid shapes are incompatible for transformation.
-        ImportError
-            If pyproj is not installed.
-
-        Notes
-        -----
-        - Uses `self.NSIDC_dict["projection_string"]` (Proj4) for the source CRS.
-        - Uses EPSG specified in `self.sea_ice_dic["projection_wgs84"]` (typically 4326)
-          for the target CRS.
-        - This method assumes x/y describe the native NSIDC grid in meters.
+        xr.DataArray
+            cell_area(y, x) in m^2
         """
-        from pyproj import CRS, Transformer
-        x = ds['xgrid'].values
-        y = ds['ygrid'].values
-        assert x.shape == y.shape, "xgrid and ygrid must have the same shape"
-        crs_nsidc = CRS.from_proj4(self.NSIDC_dict["projection_string"])
-        crs_wgs84 = CRS.from_epsg(self.sea_ice_dic["projection_wgs84"])
-        trans     = Transformer.from_crs(crs_proj, crs_wgs84, always_xy=True)
-        lon, lat  = transformer.transform(x, y)
-        ds['lat'] = (('y', 'x'), lat)
-        ds['lon'] = (('y', 'x'), lon)
-        return ds
+        from pyproj import CRS, Transformer, Geod
+        if P_out is not None:
+            P_out = Path(P_out)
+            if P_out.exists() and not overwrite:
+                A = xr.open_dataset(P_out)
+                if "cell_area" in A:
+                    return A["cell_area"]
+        x_name = "xgrid" if "xgrid" in ds.variables else self.NSIDC_dict.get("x_coord", "xgrid")
+        y_name = "ygrid" if "ygrid" in ds.variables else self.NSIDC_dict.get("y_coord", "ygrid")
+        if x_name not in ds.variables or y_name not in ds.variables:
+            raise KeyError(f"Dataset must contain '{x_name}' and '{y_name}'")
+        x = ds[x_name].values
+        y = ds[y_name].values
+        if x.ndim != 1 or y.ndim != 1:
+            raise ValueError("This helper currently expects 1D xgrid and ygrid")
+        # CRS from file metadata if available
+        if "projection" in ds.variables and "proj4text" in ds["projection"].attrs:
+            proj4 = ds["projection"].attrs["proj4text"]
+        else:
+            proj_cfg = self.NSIDC_dict["projection_string"]
+            proj4 = proj_cfg[self.hemisphere] if isinstance(proj_cfg, dict) else proj_cfg
+        crs_nsidc = CRS.from_user_input(proj4)
+        crs_geod  = crs_nsidc.geodetic_crs if crs_nsidc.geodetic_crs is not None else CRS.from_epsg(4326)
+        transformer = Transformer.from_crs(crs_nsidc, crs_geod, always_xy=True)
+        # Use native ellipsoid if present
+        if "projection" in ds.variables:
+            a = ds["projection"].attrs.get("semimajor_radius", None)
+            b = ds["projection"].attrs.get("semiminor_radius", None)
+        else:
+            a = b = None
+        if a is None or b is None:
+            # fall back to CRS ellipsoid
+            ellps = crs_nsidc.ellipsoid
+            a = ellps.semi_major_metre
+            b = ellps.semi_minor_metre
+        geod = Geod(a=a, b=b)
+        def centers_to_edges(c):
+            c = np.asarray(c, dtype=np.float64)
+            if c.size < 2:
+                raise ValueError("Need at least two coordinates to infer edges")
+            dc = np.diff(c)
+            edges = np.empty(c.size + 1, dtype=np.float64)
+            edges[1:-1] = 0.5 * (c[:-1] + c[1:])
+            edges[0] = c[0] - 0.5 * dc[0]
+            edges[-1] = c[-1] + 0.5 * dc[-1]
+            return edges
+        x_edge = centers_to_edges(x)
+        y_edge = centers_to_edges(y)
+        # Corner mesh
+        xx_edge, yy_edge = np.meshgrid(x_edge, y_edge)
+        lon_edge, lat_edge = transformer.transform(xx_edge, yy_edge)
+        ny = y.size
+        nx = x.size
+        area = np.empty((ny, nx), dtype=np.float64)
+        # Geodesic polygon area per cell
+        for j in range(ny):
+            for i in range(nx):
+                lons = [
+                    lon_edge[j,   i],
+                    lon_edge[j,   i+1],
+                    lon_edge[j+1, i+1],
+                    lon_edge[j+1, i],
+                ]
+                lats = [
+                    lat_edge[j,   i],
+                    lat_edge[j,   i+1],
+                    lat_edge[j+1, i+1],
+                    lat_edge[j+1, i],
+                ]
+                poly_area, _ = geod.polygon_area_perimeter(lons, lats)
+                area[j, i] = abs(poly_area)
+        area_da = xr.DataArray(
+            area,
+            dims=("y", "x"),
+            coords={
+                "y": ds["y"] if "y" in ds.coords else np.arange(ny),
+                "x": ds["x"] if "x" in ds.coords else np.arange(nx),
+                x_name: ("x", x),
+                y_name: ("y", y),
+            },
+            name="cell_area",
+            attrs={
+                "long_name": "NSIDC grid-cell geodetic area derived from projection and x/y grid",
+                "units": "m2",
+                "source": "derived from xgrid/ygrid + polar stereographic CRS",
+            },
+        )
+        if P_out is not None:
+            P_out.parent.mkdir(parents=True, exist_ok=True)
+            area_da.to_dataset().to_netcdf(P_out)
+        return area_da
+
+    def get_NSIDC_cell_area(self, ds=None, P_cell_area=None, P_fallback=None, overwrite=False):
+        """
+        Return NSIDC cell area [m^2].
+
+        Priority:
+          1. official cell-area file if present
+          2. cached derived file if present
+          3. derive from ds x/y grid + projection and optionally cache
+        """
+        if P_cell_area is None:
+            P_cfg = self.NSIDC_dict.get("P_cell_area", None)
+            if isinstance(P_cfg, dict):
+                P_cell_area = P_cfg.get(self.hemisphere, None)
+            else:
+                P_cell_area = P_cfg
+        if P_cell_area and os.path.exists(P_cell_area):
+            A = xr.open_dataset(P_cell_area)
+            if "cell_area" in A:
+                return A["cell_area"]
+            # mild fallback if variable name differs
+            for v in A.data_vars:
+                if "area" in v.lower():
+                    return A[v]
+            raise KeyError(f"No cell-area variable found in {P_cell_area}")
+        if ds is None:
+            raise FileNotFoundError("Official NSIDC cell-area file not found and no dataset supplied for fallback derivation.")
+        return self.compute_NSIDC_cell_area_from_grid(ds, P_out=P_fallback, overwrite=overwrite)
 
     def compute_NSIDC_metrics(self,
-                              dt0_str         = None,
-                              dtN_str         = None,
-                              local_load_dir  = None,
-                              monthly_files   = False,
-                              P_zarr          = None,
-                              overwrite       = False):
+                              dt0_str        = None,
+                              dtN_str        = None,
+                              local_load_dir = None,
+                              monthly_files  = False,
+                              P_zarr         = None,
+                              overwrite      = False,
+                              P_cell_area    = None,
+                              derive_area_if_missing = True,
+                              P_area_fallback = None):
         """
         Compute and persist NSIDC hemispheric sea-ice area (SIA) and extent (SIE).
 
-        This routine loads NSIDC concentration for the specified window, masks out
-        flagged concentration values, applies a concentration threshold to define
-        "ice-covered" cells, and then computes hemispheric aggregates using the NSIDC
-        cell-area product.
-
-        Parameters
-        ----------
-        dt0_str, dtN_str : str, optional
-            Start/end dates in "YYYY-MM-DD" format. Defaults to `self.dt0_str` and
-            `self.dtN_str`.
-        local_load_dir : str or pathlib.Path, optional
-            Directory containing the NSIDC source NetCDFs. If omitted, uses your
-            configured `self.NSIDC_dict["D_original"]` hemisphere sub-tree.
-        monthly_files : bool, default False
-            If True, compute metrics using monthly inputs; otherwise daily inputs.
-        P_zarr : str or pathlib.Path, optional
-            Output Zarr path. Defaults to `<local_load_dir>/zarr`.
-        overwrite : bool, default False
-            If True, recompute even if the Zarr store already exists.
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset with time series:
-            - SIA(time) : sea-ice area (units determined by your scaling)
-            - SIE(time) : sea-ice extent (same area units)
-            plus a time coordinate.
-
-        Raises
-        ------
-        FileNotFoundError
-            If no NSIDC source files are found for the requested window.
-        KeyError
-            If required variables/paths are missing from your NSIDC configuration.
-
-        Notes
-        -----
-        - Flags are defined in `self.NSIDC_dict["cdr_seaice_conc_flags"]` and removed
-          by setting affected concentrations to NaN before aggregation.
-        - Area is loaded from `self.NSIDC_dict["P_cell_area"]`.
-        - Extent mask is `aice > self.icon_thresh`.
+        If the official NSIDC cell-area ancillary is unavailable, optionally derive
+        grid-cell area from xgrid/ygrid and the native projection.
         """
-        flags    = self.NSIDC_dict["cdr_seaice_conc_flags"]
-        SIC_name = self.NSIDC_dict["SIC_name"]
         dt0_str  = dt0_str if dt0_str is not None else self.dt0_str
         dtN_str  = dtN_str if dtN_str is not None else self.dtN_str
-        if monthly_files:
-            freq_str = 'monthly'
-        else:
-            freq_str = 'daily'
-        D_local = local_load_dir if local_load_dir is not None else Path(self.NSIDC_dict["D_original"], self.hemisphere, freq_str)
-        P_zarr  = P_zarr         if P_zarr         is not None else Path(D_local, "zarr" )
-        if not os.path.exists(P_zarr) or overwrite:
-            NSIDC = self.load_local_NSIDC(dt0_str         = dt0_str,
-                                          dtN_str         = dtN_str,
-                                          local_directory = D_local)
-            aice  = NSIDC[SIC_name]
-            for flag in flags:
-                aice = xr.where(aice==flag/100, np.nan, aice)
-            area     = xr.open_dataset(self.NSIDC_dict["P_cell_area"]).cell_area / self.SIC_scale
-            mask     = aice > self.icon_thresh
-            SIA      = (aice * area).where(mask.notnull()).sum(dim=['y', 'x'], skipna=True)
-            SIE      = (mask * area).sum(dim=['y', 'x'], skipna=True)
-            NSIDC_ts = xr.Dataset({'SIA' : (('time'),SIA.values),
-                                   'SIE' : (('time'),SIE.values)},
-                                  coords = {'time' : (('time'), SIA.time.values)})
-            self.logger.info(f"**writing** NSIDC time series zarr file {P_zarr}")
-            NSIDC_ts.to_zarr(P_zarr)
-            return NSIDC_ts
-        else:
+        freq_str = "monthly" if monthly_files else "daily"
+        D_local  = Path(local_load_dir) if local_load_dir is not None else Path(self.NSIDC_dict["D_original"], self.NSIDC_dict["version"], self.hemisphere, freq_str)
+        P_zarr   = Path(P_zarr) if P_zarr is not None else Path(D_local, "zarr")
+        if os.path.exists(P_zarr) and not overwrite:
             self.logger.info(f"**loading** previously created NSIDC time series zarr file {P_zarr}")
             return xr.open_zarr(P_zarr, consolidated=True)
+        NSIDC    = self.load_local_NSIDC(dt0_str         = dt0_str,
+                                         dtN_str         = dtN_str,
+                                         local_directory = D_local,
+                                         monthly_files   = monthly_files)
+        SIC_name = self._get_nsidc_sic_name(NSIDC, monthly_files=monthly_files)
+        aice     = NSIDC[SIC_name]
+        # Robust masking after CF decoding:
+        # valid concentration should lie in [0, 1]; flags become > 1 after scale_factor
+        aice = aice.where((aice >= 0.0) & (aice <= 1.0))
+        if P_area_fallback is None:
+            P_area_fallback = Path(D_local, f"NSIDC_cell_area_{self.hemisphere}_derived.nc")
+        if derive_area_if_missing:
+            area = self.get_NSIDC_cell_area(ds=NSIDC,
+                                            P_cell_area = P_cell_area,
+                                            P_fallback  = P_area_fallback,
+                                            overwrite   = overwrite)
+        else:
+            if P_cell_area is None:
+                P_cfg       = self.NSIDC_dict.get("P_cell_area", None)
+                P_cell_area = P_cfg.get(self.hemisphere, None) if isinstance(P_cfg, dict) else P_cfg
+            if P_cell_area is None or not os.path.exists(P_cell_area):
+                raise FileNotFoundError("NSIDC cell-area file not found and derive_area_if_missing=False")
+            area = xr.open_dataset(P_cell_area)["cell_area"]
+        # convert to your preferred scale
+        area = area / self.SIC_scale
+        # 15% threshold mask for extent and thresholded area
+        mask = aice > self.icon_thresh
+        SIA  = (aice.where(mask) * area).sum(dim=["y", "x"], skipna=True)
+        SIE  = area.where(mask).sum(dim=["y", "x"], skipna=True)
+        NSIDC_ts = xr.Dataset(data_vars = {"SIA": ("time", SIA.values),
+                                         "SIE": ("time", SIE.values)},
+                              coords    = {"time": ("time", SIA.time.values)},
+                              attrs     = {"source": "NSIDC G02202",
+                                           "hemisphere": self.hemisphere,
+                                           "area_method": "official ancillary" if (P_cell_area and os.path.exists(P_cell_area)) else "derived from xgrid/ygrid + projection",
+                                           "ice_threshold": float(self.icon_thresh)})
+        self.logger.info(f"**writing** NSIDC time series zarr file {P_zarr}")
+        NSIDC_ts.to_zarr(P_zarr, mode="w")
+        return NSIDC_ts
 
     ####################################################################################################
     ##                                              AF2020         

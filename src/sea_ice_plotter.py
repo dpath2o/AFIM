@@ -1752,7 +1752,9 @@ class SeaIcePlotter:
                          GI_marker           = "s",
                          GI_size             = "0.01",
                          GI_pt_unit          = "c",
-                         plot_bathymetry     = False):
+                         plot_bathymetry     = False,
+                         lon_coord_name      = 'lon',
+                         lat_coord_name      = 'lat'):
         """
         expressly for plotting a map of fast ice persistence that is either a
         difference (model - observations), or a fast ice persistence map of either
@@ -1782,8 +1784,8 @@ class SeaIcePlotter:
             cpt_path, z2d, t2d = self.tricolor_cpt_and_alpha(P_tricolor_cpt, obs2.values, mod2.values, **tricolor_kwargs)
             z_da = xr.DataArray(z2d, dims=obs2.dims, coords=obs2.coords, name="FIP_diff")
             prep = self.pygmt_da_prep(z_da,
-                                      lon_coord_name="lon",
-                                      lat_coord_name="lat",
+                                      lon_coord_name=lon_coord_name,
+                                      lat_coord_name=lat_coord_name,
                                       region=region,
                                       mask_zero=False,
                                       return_mask=True,
@@ -1801,8 +1803,8 @@ class SeaIcePlotter:
             if not isinstance(plot_data, xr.DataArray):
                 raise TypeError("plot_data must be an xarray.DataArray.")
             prep = self.pygmt_da_prep(plot_data,
-                                      lon_coord_name="lon",
-                                      lat_coord_name="lat",
+                                      lon_coord_name=lon_coord_name,
+                                      lat_coord_name=lat_coord_name,
                                       region=region,
                                       mask_zero=False,
                                       return_mask=True,
@@ -1860,7 +1862,7 @@ class SeaIcePlotter:
                     fig.coast(region=region, projection=projection, land=land_color, water=water_color)
                 style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}"
                 if t is None:
-                    fig.plot(x=x, y=y, style=style, fill=z, cmap=cmap_use)
+                    fig.plot(x=x, y=y, style=style, zvalue=z, fill="+z", cmap=cmap_use, pen="none")
                 else:
                     t              = np.asarray(t, dtype=float)
                     good           = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(t)
@@ -1875,7 +1877,7 @@ class SeaIcePlotter:
                         if not np.any(sel):
                             continue
                         tau = float(0.5 * (edges[b] + edges[b + 1]))
-                        fig.plot(x=xg[sel], y=yg[sel], style=style, fill=zg[sel], cmap=cmap_use, transparency=tau)
+                        fig.plot(x=xg[sel], y=yg[sel], style=style, zvalue=zg[sel], fill="+z", cmap=cmap_use, pen="none", transparency=tau)
                 if plot_GI:
                     fig.plot(x     = self.G_GI["lon"].values.ravel(),
                              y     = self.G_GI["lat"].values.ravel(),
