@@ -1224,6 +1224,331 @@ class SeaIcePlotter:
             out["flat_idx"] = np.flatnonzero(m.ravel())
         return out
 
+    def _format_projection(self, proj_str, reg, fig_size, fig_width):
+        if proj_str is None:
+            # sensible default if no projection provided
+            if reg[3] <= 0:
+                mc = self.get_meridian_center_from_geographic_extent(reg)
+                return f"S{mc}/-90/{fig_size}c"
+            elif reg[2] >= 0:
+                mc = self.get_meridian_center_from_geographic_extent(reg)
+                return f"S{mc}/90/{fig_size}c"
+            else:
+                return f"M{fig_width}c"
+        fmt = {"MC": self.get_meridian_center_from_geographic_extent(reg),
+               "fig_size": fig_size,
+               "fig_width": fig_width}
+        try:
+            return proj_str.format(**fmt)
+        except Exception:
+            return proj_str
+
+    def _resolve_plot_region_projection(self, *,
+                                        regions_dict : dict | None = None,
+                                        region_name  : str  | None = None,
+                                        region       : tuple | list | None = None,
+                                        projection   : str  | None = None,
+                                        fig_size     : float = 20.0,
+                                        fig_width    : float | None = None,
+                                        default_hemisphere : str = "south"):
+        """
+        Resolve a plotting region and projection string.
+
+        Priority
+        --------
+        1. Explicit `region` + explicit/derived `projection`
+        2. `regions_dict[region_name]`
+        3. Search built-in region dictionaries on `self`
+        4. Default to pan-Antarctic south polar stereographic
+
+        Supported placeholders in projection strings
+        --------------------------------------------
+        {MC}       : meridian centre inferred from plot_region
+        {fig_size} : nominal figure size
+        {fig_width}: nominal figure width
+        """
+        fig_width = fig_size if fig_width is None else fig_width
+        # ----------------------------------------------------------
+        # 1. Explicit region supplied
+        # ----------------------------------------------------------
+        if region is not None:
+            reg = tuple(region)
+            proj = self._format_projection(projection, reg, fig_size, fig_width)
+            return reg, proj
+        # ----------------------------------------------------------
+        # 2/3. Search provided and built-in dictionaries
+        # ----------------------------------------------------------
+        search_dicts = []
+        if isinstance(regions_dict, dict):
+            search_dicts.append(regions_dict)
+        for attr in ("specific_regions", "Ant_8sectors", "Ant_2sectors", "hemispheres_dict"):
+            d = getattr(self, attr, None)
+            if isinstance(d, dict):
+                search_dicts.append(d)
+        spec = None
+        if region_name is not None:
+            for d in search_dicts:
+                if region_name in d:
+                    spec = d[region_name]
+                    break
+            if spec is None:
+                raise KeyError(f"Region name {region_name!r} not found in supplied/built-in region dictionaries.")
+        else:
+            # ------------------------------------------------------
+            # 4. Default hemisphere
+            # ------------------------------------------------------
+            default_name = default_hemisphere
+            if default_name not in ("south", "north"):
+                default_name = "south"
+            # try built-in hemispheres_dict first
+            hemi_dict = getattr(self, "hemispheres_dict", {})
+            if isinstance(hemi_dict, dict) and default_name in hemi_dict:
+                spec = hemi_dict[default_name]
+            else:
+                # fallback hard-coded pan-Antarctic default
+                if default_name == "south":
+                    spec = {
+                        "plot_region": [-180, 180, -90, -55],
+                        "projection": "S0.0/-90.0/50/{fig_size}c",
+                    }
+                else:
+                    spec = {
+                        "plot_region": [-180, 180, 55, 90],
+                        "projection": "S0.0/90.0/50/{fig_size}c",
+                    }
+        if "plot_region" not in spec:
+            raise KeyError("Resolved region spec does not contain 'plot_region'.")
+        reg = tuple(spec["plot_region"])
+        proj = self._format_projection(projection or spec.get("projection", None), reg, fig_size, fig_width)
+        return reg, proj
+
+    def pygmt_2D_array(self, da: xr.DataArray, *,
+                       fig                 = None,
+                       panel               = None,
+                       panel_title         = None,
+                       show_fig            = False,
+                       P_png               = None,
+                       return_cmap         = False,
+                       # region / projection handling
+                       regions_dict        : dict | None = None,
+                       region_name         : str  | None = None,
+                       region              : tuple | list | None = None,
+                       projection          : str  | None = None,
+                       default_hemisphere  : str         = "south",
+                       fig_size            : float       = 20.0,
+                       fig_width           : float | None = None,
+                       # coordinates
+                       lon_coord_name      : str | None = None,
+                       lat_coord_name      : str | None = None,
+                       bcoords             : bool       = False,
+                       tcoords             : bool       = True,
+                       infer_coords        : bool       = True,
+                       lon_wrap            : str        = "auto",
+                       # data prep
+                       mask_zero           : bool | None = None,
+                       extra_mask          = None,
+                       z_clip              : tuple[float, float] | None = None,
+                       z_range_mask        : tuple[float, float] | None = None,
+                       dtype               : str        = "float32",
+                       # colour / CPT
+                       cmap                : str | None = None,
+                       series              = "auto",   # "auto" or [min,max] or [min,max,inc] or None
+                       reverse_cmap        : bool      = False,
+                       background          : bool      = True,
+                       P_cpt               : str | Path | None = None,
+                       add_colorbar        : bool      = True,
+                       cbar_pos            : str       = "JBC+w15c/0.45c+mc+h",
+                       cbar_frame          = ("af",),
+                       # plot appearance
+                       basemap_frame       = ("af",),
+                       land_color          : str       = "#666666",
+                       water_color         : str       = "#BABCDE",
+                       shoreline_pen       : str       = "1/0.25p",
+                       plot_bathymetry     : bool      = False,
+                       bath_cmap           : str       = "geo",
+                       point_marker        : str       = "c",
+                       point_size          : str       = "0.05",
+                       point_unit          : str       = "c",
+                       point_pen           : str       = "none",
+                       transparency        : float | None = None,
+                       # extras
+                       plot_GI             : bool      = False,
+                       GI_color            : str       = "#E349D0",
+                       GI_marker           : str       = "s",
+                       GI_size             : str       = "0.01",
+                       GI_pt_unit          : str       = "c"):
+        """
+        General 2D PyGMT map for curvilinear sea-ice style grids.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            2D field to plot. After squeeze, it must be 2D.
+        regions_dict : dict, optional
+            Dictionary of the form:
+                {
+                  "REGION_NAME": {
+                    "plot_region": [lon_min, lon_max, lat_min, lat_max],
+                    "projection": "PyGMT projection string"
+                  }
+                }
+        region_name : str, optional
+            Key into `regions_dict` or into built-in dictionaries on `self`
+            (`hemispheres_dict`, `Ant_8sectors`, `Ant_2sectors`, `specific_regions`).
+        region, projection : optional
+            Explicit overrides.
+        series : "auto", sequence, or None
+            If "auto", infer the CPT bounds from the plotted data.
+            If sequence, use [zmin, zmax] or [zmin, zmax, dz].
+            If None, use `cmap` as-is without rebuilding a CPT.
+        """
+        import pygmt
+        from contextlib import nullcontext
+        if not isinstance(da, xr.DataArray):
+            raise TypeError("da must be an xarray.DataArray.")
+        da2 = da.squeeze(drop=True)
+        if da2.ndim != 2:
+            raise ValueError(f"Expected a 2D DataArray after squeeze; got dims={da2.dims}, shape={da2.shape}")
+        # --------------------------------------------------------------
+        # resolve region / projection
+        # --------------------------------------------------------------
+        region_use, projection_use = self._resolve_plot_region_projection(regions_dict       = regions_dict,
+                                                                          region_name        = region_name,
+                                                                          region             = region,
+                                                                          projection         = projection,
+                                                                          fig_size           = fig_size,
+                                                                          fig_width          = fig_width,
+                                                                          default_hemisphere = default_hemisphere)
+        # --------------------------------------------------------------
+        # optional ancillary data
+        # --------------------------------------------------------------
+        if plot_GI:
+            self.load_cice_grid(slice_hem=True)
+        SO_BATH = None
+        if plot_bathymetry:
+            SO_BATH = self.load_IBCSO_bath()
+        # --------------------------------------------------------------
+        # prepare lon / lat / z for plotting
+        # --------------------------------------------------------------
+        prep = self.pygmt_da_prep(da2,
+                                  bcoords           = bcoords,
+                                  tcoords           = tcoords,
+                                  lon_coord_name    = lon_coord_name,
+                                  lat_coord_name    = lat_coord_name,
+                                  region            = region_use,
+                                  lon_wrap          = lon_wrap,
+                                  extra_mask        = extra_mask,
+                                  mask_zero         = mask_zero,
+                                  z_clip            = z_clip,
+                                  z_range_mask      = z_range_mask,
+                                  dtype             = dtype,
+                                  infer_coords      = infer_coords,
+                                  return_mask       = True,
+                                  return_flat_index = True)
+        x = prep["lon"]
+        y = prep["lat"]
+        z = prep["z"]
+        if z.size == 0:
+            raise ValueError("No plottable points remain after masking / regional subsetting.")
+        # --------------------------------------------------------------
+        # build CPT if requested
+        # --------------------------------------------------------------
+        cmap_use = cmap or getattr(self, "pygmt_dict", {}).get("default_cmap", "viridis")
+        if series == "auto":
+            zmin = float(np.nanmin(z))
+            zmax = float(np.nanmax(z))
+            if not np.isfinite(zmin) or not np.isfinite(zmax):
+                raise ValueError("Plotted data contain no finite values.")
+            if np.isclose(zmin, zmax):
+                pad = 1.0 if np.isclose(zmin, 0.0) else abs(zmin) * 0.01
+                zmin -= pad
+                zmax += pad
+            series_use = [zmin, zmax]
+        else:
+            series_use = series
+        if series_use is not None:
+            P_cpt = Path(P_cpt) if P_cpt is not None else ( Path(self.D_graph) / "CPTs" / f"{(da2.name or 'map').replace(' ', '_')}_auto.cpt" )
+            P_cpt.parent.mkdir(parents=True, exist_ok=True)
+            pygmt.makecpt(cmap       = cmap_use,
+                          series     = series_use,
+                          reverse    = reverse_cmap,
+                          background = background,
+                          output     = str(P_cpt))
+            cmap_use = str(P_cpt)
+        # --------------------------------------------------------------
+        # figure setup
+        # --------------------------------------------------------------
+        created_here = fig is None
+        if created_here:
+            fig = pygmt.Figure()
+        frame = list(basemap_frame)
+        if panel_title is not None:
+            frame = frame + [f"+t{panel_title}"]
+        panel_ctx = fig.set_panel(panel=panel) if panel is not None else nullcontext()
+        self.logger.info(f"pygmt_2D_map: name={da2.name}, shape={da2.shape}, "
+                         f"npts={z.size}, zmin={float(np.nanmin(z)):.4g}, zmax={float(np.nanmax(z)):.4g}, "
+                         f"region={region_use}, projection={projection_use}")
+        style = f"{point_marker}{point_size}{point_unit}"
+        with pygmt.config(FONT_TITLE           = "18p,Bookman-Demi",
+                          FONT_ANNOT_PRIMARY   = "16p,NewCenturySchlbk-Roman",
+                          FONT_ANNOT_SECONDARY = "16p,NewCenturySchlbk-Bold",
+                          FONT_LABEL           = "16p,NewCenturySchlbk-Bold",
+                          COLOR_FOREGROUND     = "black"):
+            with panel_ctx:
+                fig.basemap(region=region_use, projection=projection_use, frame=frame)
+                if plot_bathymetry:
+                    fig.grdimage(grid=SO_BATH, cmap=bath_cmap)
+                else:
+                    fig.coast(
+                        region     = region_use,
+                        projection = projection_use,
+                        land       = land_color,
+                        water      = water_color,
+                    )
+                # IMPORTANT: use zvalue + fill="+z" so symbols are coloured by CPT
+                fig.plot(
+                    x            = x,
+                    y            = y,
+                    fill         = z,
+                    style        = style,
+                    cmap         = cmap_use,
+                    #transparency = transparency,
+                )
+
+                if plot_GI:
+                    fig.plot(
+                        x     = self.G_GI["lon"].values.ravel(),
+                        y     = self.G_GI["lat"].values.ravel(),
+                        fill  = GI_color,
+                        style = f"{GI_marker}{GI_size}{GI_pt_unit}",
+                        pen   = "none",
+                    )
+
+                fig.coast(
+                    region     = region_use,
+                    projection = projection_use,
+                    shorelines = shoreline_pen,
+                )
+
+                if add_colorbar:
+                    fig.colorbar(
+                        position = cbar_pos,
+                        frame    = list(cbar_frame),
+                        cmap     = cmap_use,
+                    )
+
+        if created_here and P_png is not None:
+            P_png = Path(P_png)
+            P_png.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(P_png)
+
+        if created_here and show_fig:
+            fig.show()
+
+        if return_cmap:
+            return fig, cmap_use
+        return fig
+
     def pygmt_map_plot_one_var(self, da, var_name,
                                aux_ds         = None,
                                sim_name       = None,
