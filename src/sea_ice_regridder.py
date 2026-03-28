@@ -3,7 +3,13 @@ import os
 import xarray as xr
 import numpy  as np
 import pandas as pd
+from pathlib       import Path
+from scipy.spatial import cKDTree
+from scipy         import sparse
+from scipy.sparse  import save_npz, load_npz
+
 __all__ = ["SeaIceRegridder"]
+
 class SeaIceRegridder:
     """
     Regridding and geometric utilities for Antarctic sea-ice analysis workflows.
@@ -741,3 +747,227 @@ class SeaIceRegridder:
                 i0, i1 = i_idx.min(), i_idx.max() + 1
                 out    = out.isel({jdim: slice(j0, j1), idim: slice(i0, i1)})
         return out
+
+    #------------------------------------------------------------------------------------
+    #                                        CAWCR
+    #------------------------------------------------------------------------------------
+    def _lonlat_to_unit_sphere_xyz(self, lon, lat):
+        """
+        Convert lon/lat in degrees to unit-sphere Cartesian coordinates.
+        """
+        lon  = np.asarray(lon, dtype=float)
+        lat  = np.asarray(lat, dtype=float)
+        lonr = np.deg2rad(((lon + 180.0) % 360.0) - 180.0)
+        latr = np.deg2rad(lat)
+        x    = np.cos(latr) * np.cos(lonr)
+        y    = np.cos(latr) * np.sin(lonr)
+        z    = np.sin(latr)
+        return np.column_stack([x.ravel(), y.ravel(), z.ravel()])
+
+    def _angular_radius_to_chord(self, radius_km, earth_radius_km=6371.0):
+        """
+        Convert great-circle radius in km to chord distance on the unit sphere.
+        """
+        if radius_km is None:
+            return None
+        ang = radius_km / earth_radius_km
+        return 2.0 * np.sin(0.5 * ang)
+
+    def build_station_to_curvilinear_sparse_weights(self, src_lon, src_lat, tgt_lon, tgt_lat, p_weights,
+                                                    target_mask = None,
+                                                    k           = 1,
+                                                    power       = 1.0,
+                                                    radius_km   = None,
+                                                    overwrite   = False,
+                                                    chunk_size  = 100_000):
+        """
+        Build or load a sparse IDW remapping operator from station points to a
+        curvilinear target grid.
+
+        Parameters
+        ----------
+        src_lon, src_lat : 1D arrays
+            Station coordinates.
+        tgt_lon, tgt_lat : 2D arrays
+            Target grid coordinates on (nj, ni).
+        p_weights : str or Path
+            Path to a sparse .npz weight matrix.
+        target_mask : 2D array-like, optional
+            1 for valid ocean points, 0 for masked points.
+        k : int, default 8
+            Number of nearest stations used in IDW.
+        power : float, default 2.0
+            IDW exponent.
+        radius_km : float, optional
+            Optional cutoff radius; if no station lies within radius, the nearest
+            station is still used as fallback.
+        overwrite : bool, default False
+            Rebuild even if weight file already exists.
+        chunk_size : int, default 100000
+            Number of target points per KDTree query chunk.
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix
+            Sparse interpolation matrix of shape (n_target, n_station).
+        """
+        p_weights = Path(p_weights)
+        p_weights.parent.mkdir(parents=True, exist_ok=True)
+        if p_weights.exists() and not overwrite:
+            self.logger.info(f"Reusing wave sparse weights: {p_weights}")
+            return load_npz(p_weights)
+        self.logger.info(f"Creating wave sparse weights: {p_weights}")
+        src_xyz      = self._lonlat_to_unit_sphere_xyz(src_lon, src_lat)
+        tgt_xyz      = self._lonlat_to_unit_sphere_xyz(tgt_lon, tgt_lat)
+        n_station    = src_xyz.shape[0]
+        n_target     = tgt_xyz.shape[0]
+        k            = int(min(k, n_station))
+        radius_chord = self._angular_radius_to_chord(radius_km)
+        tree         = cKDTree(src_xyz)
+        if target_mask is None:
+            active = np.ones(n_target, dtype=bool)
+        else:
+            active = np.asarray(target_mask).ravel().astype(bool)
+        row_parts  = []
+        col_parts  = []
+        data_parts = []
+        active_idx = np.where(active)[0]
+        chunk_size = int(chunk_size)
+        n_chunks   = (active_idx.size + chunk_size - 1) // chunk_size
+        for ichunk, i0 in enumerate(range(0, active_idx.size, chunk_size), start=1):
+            ii = active_idx[i0:i0 + chunk_size]
+            self.logger.info(f"Wave weight chunk {ichunk}/{n_chunks}: {ii.size} target cells")
+            d, ind = tree.query(tgt_xyz[ii], k=k)
+            d, ind = tree.query(tgt_xyz[ii], k=k)
+            if k == 1:
+                d   = d[:, None]
+                ind = ind[:, None]
+            # Optional cutoff radius
+            if radius_chord is not None:
+                within = d <= radius_chord
+            else:
+                within = np.ones_like(d, dtype=bool)
+            # Ensure at least nearest neighbour is used
+            no_valid            = ~within.any(axis=1)
+            within[no_valid, 0] = True
+            # Inverse-distance weights
+            d_safe = np.maximum(d, 1.0e-12)
+            w      = np.where(within, d_safe ** (-power), 0.0)
+            # Exact hit -> give full weight to nearest station
+            exact  = d[:, 0] < 1.0e-12
+            if np.any(exact):
+                w[exact, :] = 0.0
+                w[exact, 0] = 1.0
+            wsum = w.sum(axis=1, keepdims=True)
+            w    = np.where(wsum > 0.0, w / wsum, 0.0)
+            rr   = np.repeat(ii, k)
+            cc   = ind.reshape(-1)
+            vv   = w.reshape(-1)
+            keep = vv > 0.0
+            row_parts.append(rr[keep])
+            col_parts.append(cc[keep])
+            data_parts.append(vv[keep])
+        rows = np.concatenate(row_parts) if row_parts else np.array([], dtype=np.int64)
+        cols = np.concatenate(col_parts) if col_parts else np.array([], dtype=np.int64)
+        vals = np.concatenate(data_parts) if data_parts else np.array([], dtype=float)
+        vals = vals.astype(np.float32, copy=False)
+        W    = sparse.csr_matrix((vals, (rows, cols)), shape=(n_target, n_station), dtype=np.float32)
+        save_npz(p_weights, W)
+        self.logger.info(f"weight file saved to {p_weights}")
+        return W
+
+    def build_or_load_station_to_curvilinear_sparse_weights(self, src_lon, src_lat, tgt_lon, tgt_lat, p_weights,
+                                                            target_mask = None,
+                                                            k           = 8,
+                                                            power       = 2.0,
+                                                            radius_km   = None,
+                                                            overwrite   = False,
+                                                            chunk_size  = 100_000):
+        """
+        Thin wrapper for a more readable calling path from SeaIceWaves.
+        """
+        return self.build_station_to_curvilinear_sparse_weights(src_lon     = src_lon,
+                                                                src_lat     = src_lat,
+                                                                tgt_lon     = tgt_lon,
+                                                                tgt_lat     = tgt_lat,
+                                                                p_weights   = p_weights,
+                                                                target_mask = target_mask,
+                                                                k           = k,
+                                                                power       = power,
+                                                                radius_km   = radius_km,
+                                                                overwrite   = overwrite,
+                                                                chunk_size  = chunk_size)
+
+    def apply_sparse_station_regridder(
+        self,
+        values,
+        weights,
+        target_shape,
+        fill_value=np.nan,
+        time_chunk=24,
+    ):
+        """
+        Apply a sparse station->grid operator to values with shape:
+
+            (time, station, frequency)
+
+        Works with NumPy, xarray, or dask-backed arrays.
+        Processes in time chunks to avoid forcing a full remote/lazy load.
+        """
+        import numpy as np
+        import xarray as xr
+
+        # Normalize input
+        if isinstance(values, xr.DataArray):
+            da = values.transpose("time", "station", "frequency")
+            arr = da.data
+            time_coord = da["time"].values
+        else:
+            arr = values
+            time_coord = None
+
+        shape = getattr(arr, "shape", None)
+        if shape is None or len(shape) != 3:
+            raise ValueError(f"Expected values with ndim=3 (time,station,frequency), got {shape}")
+
+        n_time, n_station, n_freq = shape
+        n_target = target_shape[0] * target_shape[1]
+
+        if weights.shape != (n_target, n_station):
+            raise ValueError(
+                f"Weight matrix shape {weights.shape} incompatible with "
+                f"target/station sizes {(n_target, n_station)}"
+            )
+
+        self.logger.info(
+            f"Applying sparse station regridder in time chunks: "
+            f"n_time={n_time}, n_station={n_station}, n_freq={n_freq}, "
+            f"time_chunk={time_chunk}"
+        )
+
+        out_chunks = []
+
+        for t0 in range(0, n_time, time_chunk):
+            t1 = min(n_time, t0 + time_chunk)
+            self.logger.info(f"Regridding wave spectra time chunk {t0}:{t1}")
+
+            # This is where the remote/lazy load happens, but only for one chunk
+            block = np.asarray(arr[t0:t1, :, :], dtype=np.float32)   # (tb, station, freq)
+
+            tb = block.shape[0]
+
+            # Recast to (station, tb*freq)
+            vals2 = np.moveaxis(block, 1, 0).reshape(n_station, tb * n_freq)
+
+            # Sparse apply
+            out2 = weights @ vals2                                   # (n_target, tb*freq)
+
+            # Reshape back to (tb, nj, ni, freq)
+            out = out2.reshape(n_target, tb, n_freq)
+            out = out.reshape(target_shape[0], target_shape[1], tb, n_freq)
+            out = np.moveaxis(out, 2, 0)
+
+            out = np.where(np.isfinite(out), out, fill_value).astype(np.float32, copy=False)
+            out_chunks.append(out)
+
+        return np.concatenate(out_chunks, axis=0)

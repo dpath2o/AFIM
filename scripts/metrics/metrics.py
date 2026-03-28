@@ -70,7 +70,7 @@ def main(P_JSON, sim_name, ispd_thresh, ice_type, BorC2T_type,
         tb.logger.info("All requested metric stores already exist; nothing to do.")
         return
     CICE_SO = tb.load_cice_zarr(slice_hem=True, variables=load_vars)
-    A       = CICE_SO["tarea"].isel(time=0) if "time" in CICE_SO.dims else CICE_SO['tarea']
+    A       = CICE_SO["tarea"]#.isel(time=0) if "time" in CICE_SO.dims else CICE_SO['tarea']
     I_day   = None
     I_bin   = None
     I_rol   = None

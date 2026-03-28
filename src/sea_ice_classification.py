@@ -1,7 +1,9 @@
 import xarray    as xr
 import pandas    as pd
 import numpy     as np
+
 __all__ = ["SeaIceClassification"]
+
 class SeaIceClassification:
     """
     Classify Antarctic landfast ice, pack ice, and total sea ice from CICE output.
@@ -1139,6 +1141,14 @@ class SeaIceClassification:
             ispd_out['rolly'] = ispd_T_roll
         return FI_dly, FI_bin, FI_roll, ispd_out
 
+    def _drop_known_aux_names(self, da: xr.DataArray) -> xr.DataArray:
+        drop_names = self.CICE_dict.get("drop_coords", [])
+        ds_tmp = da.to_dataset(name=da.name or "_tmp")
+        present = [n for n in drop_names if n in ds_tmp.variables or n in ds_tmp.coords]
+        if present:
+            da = da.drop_vars(present, errors="ignore")
+        return da
+
     def classify_ice(self,
                      ice_type              : str  = None,
                      dt0_str               : str  = None,
@@ -1230,18 +1240,25 @@ class SeaIceClassification:
                                        dt0_str   = f"{dt0_ext:%Y-%m-%d}",
                                        dtN_str   = f"{dtN_ext:%Y-%m-%d}")
         # ---- Compact coords & types ----
-        aice = CICE_all["aice"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+        # aice = CICE_all["aice"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+        aice = self._drop_known_aux_names(CICE_all["aice"]).astype(np.float32)
         if is_Tc:
             missing = [v for v in ("uvelE", "uvelN", "vvelE", "vvelN") if v not in CICE_all]
             if missing:
                 raise ValueError(f"Tc selected but missing required C-grid velocity fields: {missing}")
-            uvelE = CICE_all["uvelE"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
-            uvelN = CICE_all["uvelN"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
-            vvelE = CICE_all["vvelE"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
-            vvelN = CICE_all["vvelN"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # uvelE = CICE_all["uvelE"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # uvelN = CICE_all["uvelN"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # vvelE = CICE_all["vvelE"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # vvelN = CICE_all["vvelN"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            uvelE = self._drop_known_aux_names(CICE_all["uvelE"]).astype(np.float32)
+            uvelN = self._drop_known_aux_names(CICE_all["uvelN"]).astype(np.float32)
+            vvelE = self._drop_known_aux_names(CICE_all["vvelE"]).astype(np.float32)
+            vvelN = self._drop_known_aux_names(CICE_all["vvelN"]).astype(np.float32)
         else:
-            uvel  = CICE_all["uvel"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
-            vvel  = CICE_all["vvel"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # uvel  = CICE_all["uvel"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            # vvel  = CICE_all["vvel"].drop_vars(self.CICE_dict["drop_coords"]).astype(np.float32)
+            uvel = self._drop_known_aux_names(CICE_all["uvel"]).astype(np.float32)
+            vvel = self._drop_known_aux_names(CICE_all["vvel"]).astype(np.float32)
         # ---- Chunking (same “art form” as FI) ----
         yck    = self.CICE_dict.get("y_chunk", 540)
         xck    = self.CICE_dict.get("x_chunk", 1440)

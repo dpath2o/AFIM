@@ -18,6 +18,7 @@ from sea_ice_gridwork       import SeaIceGridWork
 from sea_ice_regridder      import SeaIceRegridder
 from sea_ice_fast           import SeaIceFast
 from sea_ice_cice           import SeaIceCICE
+from sea_ice_waves          import SeaIceWaves
 
 __all__ = ["SeaIceToolbox", "SeaIceToolboxManager"]
 
@@ -165,7 +166,8 @@ class SeaIceToolboxManager:
 
 class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                     SeaIceIcebergs, SeaIceObservations, SeaIceACCESS,
-                    SeaIceGridWork, SeaIceRegridder, SeaIceFast, SeaIceCICE):
+                    SeaIceGridWork, SeaIceRegridder, SeaIceFast, SeaIceCICE,
+                    SeaIceWaves):
     """
     Unified AFIM toolbox for processing and analysing Antarctic sea ice from CICE.
 
@@ -452,6 +454,7 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
         self.class_types_dict     = self.config.get("class_types_dict"  , {})
         self.CICE_dict            = self.config.get("CICE_dict"         , {})
         self.GI_dict              = self.config.get('GI_dict'           , {})
+        self.Waves_dict           = self.config.get('Waves_dict'        , {})
         self.NSIDC_dict           = self.config.get('NSIDC_dict'        , {})
         self.BAS_dict             = self.config.get('BAS_dict'          , {})
         self.AF_FI_dict           = self.config.get("AF_FI_dict"        , {})
@@ -854,7 +857,8 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
                                     val = Path(val).name
                                 result[key] = val
         except Exception:
-            return None
+            self.sim_config = None
+            return False
         # Additional derived metadata
         kmt_name = result["kmt_file"]
         if "kmt_mod_thinned-" in kmt_name:
@@ -1414,13 +1418,21 @@ class SeaIceToolbox(SeaIceClassification, SeaIceMetrics, SeaIcePlotter,
             self.logger.debug(f"write-sanitize Dataset: dropping coords {present}")
             ds = ds.drop_vars(present, errors="ignore")
         # Optional float downcast for storage consistency
+        ds = ds.drop_vars("time_bounds", errors="ignore")
+        if "time" in ds.coords:
+            ds["time"].attrs.pop("bounds", None)
         if cast_float32:
-            cast_map = {}
+            ds = ds.copy()
             for v in ds.data_vars:
                 if np.issubdtype(ds[v].dtype, np.floating) and ds[v].dtype != np.float32:
-                    cast_map[v] = np.float32
-            if cast_map:
-                ds = ds.astype(cast_map)
+                    ds[v] = ds[v].astype(np.float32)
+        # if cast_float32:
+        #     cast_map = {}
+        #     for v in ds.data_vars:
+        #         if np.issubdtype(ds[v].dtype, np.floating) and ds[v].dtype != np.float32:
+        #             cast_map[v] = np.float32
+        #     if cast_map:
+        #         ds = ds.astype(cast_map)
         return ds
 
     def _clean_var_encoding(self, da: xr.DataArray,
