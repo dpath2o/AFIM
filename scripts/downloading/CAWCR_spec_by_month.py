@@ -22,7 +22,12 @@ def main(year: int, month: int):
                                  list_of_BorC2T = BorC2T,
                                  ice_type       = ice_type,
                                  hemisphere     = hemisphere)
-    p_out      = tb.prepare_cawcr_wave_month(year, month, overwrite=False, overwrite_weights=False)
+    p_out      = tb.prepare_cawcr_wave_month(year, month,
+                                             overwrite         = False,
+                                             overwrite_weights = False,
+                                             k                 = 4,
+                                             power             = 2.5,
+                                             radius_km         = 1000)
     print(p_out)
 
 if __name__ == "__main__":

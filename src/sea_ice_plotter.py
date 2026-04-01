@@ -4,7 +4,9 @@ import pandas as pd
 import numpy  as np
 from pathlib  import Path
 from contextlib import nullcontext
+
 __all__ = ["SeaIcePlotter"]
+
 class SeaIcePlotter:
     """
     Plotting utilities for AFIM / CICE sea-ice diagnostics.
@@ -268,115 +270,151 @@ class SeaIcePlotter:
         #print(f"meridian center computed as {center:.2f}°")
         self.plot_meridian_center = center
         return center
-    
-    def generate_regional_annotation_stats(self, da,
-        region,
-        lon_coord_name,
-        lat_coord_name,
-        var_name,           # decimals for lat/lon in min/max
-        *, aice_da=None, u_da=None, v_da=None,
-        area_unit="1e6km2", # "km2" or "1e6km2"
-        vol_unit="1e3km3",
-        vel_unit="cm/s",
-        loc_ndp=3):
-        def _area_scale(area_m2):
-            if area_unit == "km2":
-                return area_m2 / 1e6, "km^2"
-            elif area_unit == "1e6km2":
-                return area_m2 / 1e12, "10^6 km^2"
-            else:
-                return area_m2, "m^2"
 
-        def _vol_scale(vol_m3):
-            if vol_unit == "km3":
-                return vol_m3 / 1e9, "km^3"
-            elif vol_unit == "1e3km3":
-                return vol_m3 / 1e12, "10^3 km^3"
-            else:
-                return vol_m3, "m^3"
+    def ensure_spatial_index_coords(self, da: xr.DataArray) -> xr.DataArray:
+        """
+        Ensure integer nj/ni coordinates exist when dims are present.
+        This is important when plotting data that must subset a larger static grid.
+        """
+        da = da.squeeze(drop=True)
+        if "nj" in da.dims and "nj" not in da.coords:
+            da = da.assign_coords(nj=np.arange(da.sizes["nj"], dtype=np.int32))
+        if "ni" in da.dims and "ni" not in da.coords:
+            da = da.assign_coords(ni=np.arange(da.sizes["ni"], dtype=np.int32))
+        return da
 
-        def _fmt_loc(latv, lonv):
-            return f"({latv:.{loc_ndp}f}, {lonv:.{loc_ndp}f})"
+    def new_map_figure(self, *,
+                       fig=None,
+                       region=None,
+                       projection=None,
+                       region_name=None,
+                       fig_size=15.0,
+                       fig_width=None,
+                       default_hemisphere="south",
+                       frame=("af",),
+                       panel=None,
+                       title=None,
+                       coast=True,
+                       land_color="#C9D3D9",
+                       water_color="#EAF3F8",
+                       shoreline_pen="0.35p,black",
+                       plot_bathymetry=False,
+                       bath_cmap="geo"):
+        """
+        Create or reuse a PyGMT figure, resolve region/projection, and draw the base map.
+        """
+        import pygmt
+        from contextlib import nullcontext
+        region_use, projection_use = self._resolve_plot_region_projection(region=region,
+                                                                          projection=projection,
+                                                                          region_name=region_name,
+                                                                          fig_size=fig_size,
+                                                                          fig_width=fig_width,
+                                                                          default_hemisphere=default_hemisphere)
+        created_here = fig is None
+        if created_here:
+            fig = pygmt.Figure()
+        panel_ctx = fig.set_panel(panel=panel) if panel is not None else nullcontext()
+        frame_use = list(frame)
+        if title is not None:
+            frame_use = frame_use + [f"+t{title}"]
+        with panel_ctx:
+            fig.basemap(region=region_use, projection=projection_use, frame=frame_use)
+            if plot_bathymetry:
+                bath = self.load_IBCSO_bath()
+                fig.grdimage(grid=bath, cmap=bath_cmap)
+            elif coast:
+                fig.coast(region=region_use,
+                          projection=projection_use,
+                          land=land_color,
+                          water=water_color,
+                          shorelines=shoreline_pen)
+        return fig, region_use, projection_use
 
+    def _area_scale(self, area_m2):
+        if area_unit == "km2":
+            return area_m2 / 1e6, "km^2"
+        elif area_unit == "1e6km2":
+            return area_m2 / 1e12, "10^6 km^2"
+        else:
+            return area_m2, "m^2"
+
+    def _vol_scale(self, vol_m3):
+        if vol_unit == "km3":
+            return vol_m3 / 1e9, "km^3"
+        elif vol_unit == "1e3km3":
+            return vol_m3 / 1e12, "10^3 km^3"
+        else:
+            return vol_m3, "m^3"
+
+    def _fmt_loc(self, latv, lonv):
+        return f"({latv:.{loc_ndp}f}, {lonv:.{loc_ndp}f})"
+
+    def generate_regional_annotation_stats(self, da, region, lon_coord_name, lat_coord_name, var_name, *, aice_da=None, u_da=None, v_da=None,
+                                           area_unit="1e6km2", # "km2" or "1e6km2"
+                                           vol_unit="1e3km3",
+                                           vel_unit="cm/s",
+                                           loc_ndp=3):
         lon = da[lon_coord_name]
         lat = da[lat_coord_name]
-
         # Basic coordinate sanity
         if (not np.isfinite(lon).any()) or (not np.isfinite(lat).any()):
             return ["(no valid lon/lat coords)"]
-
         lon0, lon1, lat0, lat1 = region
-
         # Dateline-safe lon mask
         if lon0 <= lon1:
             m_lon = (lon >= lon0) & (lon <= lon1)
         else:
             m_lon = (lon >= lon0) | (lon <= lon1)
-
         m_reg = m_lon & (lat >= lat0) & (lat <= lat1)
-
         # Ensure grid area available
         if not hasattr(self, "G_t") or ("area" not in self.G_t):
             self.load_cice_grid()
         area = self.G_t["area"]
-
         # Align core fields
         da2, lon2, lat2, area2, m_reg2 = xr.align(da, lon, lat, area, m_reg, join="inner")
-
         # -------------------------
         # aice special case (unchanged logic)
         # -------------------------
         if var_name == "aice":
-            da_reg = da2.where(m_reg2)
-
-            thr = float(self.icon_thresh)
+            da_reg    = da2.where(m_reg2)
+            thr       = float(self.icon_thresh)
             ice_cells = da_reg > thr
-
             if int(ice_cells.sum().values) == 0:
-                sie_val, sie_unit = _area_scale(0.0)
-                sia_val, sia_unit = _area_scale(0.0)
+                sie_val, sie_unit = self._area_scale(0.0)
+                sia_val, sia_unit = self._area_scale(0.0)
                 return [f"SIE: {sie_val:.2f} {sie_unit}",
                         f"SIA: {sia_val:.2f} {sia_unit}",
                         "Mean aice (ice cells): NaN",
                         "Std aice (ice cells): NaN",
                         f"Cells (aice>{thr:g}): 0"]
-
-            sie_m2 = area2.where(ice_cells).sum(skipna=True)
-            sia_m2 = (da_reg.clip(0, 1) * area2).sum(skipna=True)
-
-            aice_mean = da_reg.where(ice_cells).mean(skipna=True)
-            aice_std  = da_reg.where(ice_cells).std(skipna=True)
-            n_cells   = int(ice_cells.sum().values)
-
-            sie_val, sie_unit = _area_scale(float(sie_m2.values))
-            sia_val, sia_unit = _area_scale(float(sia_m2.values))
-
-            return [
-                f"SIE: {sie_val:.2f} {sie_unit}",
-                f"SIA: {sia_val:.2f} {sia_unit}",
-                f"Mean aice (ice cells): {float(aice_mean.values):.2f}",
-                f"Std aice (ice cells): {float(aice_std.values):.2f}",
-                f"Cells (aice>{float(self.icon_thresh):g}): {n_cells}",
-            ]
-
+            sie_m2            = area2.where(ice_cells).sum(skipna=True)
+            sia_m2            = (da_reg.clip(0, 1) * area2).sum(skipna=True)
+            aice_mean         = da_reg.where(ice_cells).mean(skipna=True)
+            aice_std          = da_reg.where(ice_cells).std(skipna=True)
+            n_cells           = int(ice_cells.sum().values)
+            sie_val, sie_unit = self._area_scale(float(sie_m2.values))
+            sia_val, sia_unit = self._area_scale(float(sia_m2.values))
+            return [f"SIE: {sie_val:.2f} {sie_unit}",
+                    f"SIA: {sia_val:.2f} {sia_unit}",
+                    f"Mean aice (ice cells): {float(aice_mean.values):.2f}",
+                    f"Std aice (ice cells): {float(aice_std.values):.2f}",
+                    f"Cells (aice>{float(self.icon_thresh):g}): {n_cells}"]
         # -------------------------
         # hi special case
         # -------------------------
         if var_name == "hi":
             hi_reg = da2.where(m_reg2)
-
             # Prefer defining "ice cells" using aice>icon_thresh for consistency with SIE/SIA/SIV
             if aice_da is not None:
-                aice2, = xr.align(aice_da, hi_reg, join="inner")[:1]  # align to same grid/time
-                aice_reg = aice2.where(m_reg2)
-
-                thr = float(self.icon_thresh)
+                aice2,    = xr.align(aice_da, hi_reg, join="inner")[:1]  # align to same grid/time
+                aice_reg  = aice2.where(m_reg2)
+                thr       = float(self.icon_thresh)
                 ice_cells = aice_reg > thr
-
                 if int(ice_cells.sum().values) == 0:
-                    sie_val, sie_unit = _area_scale(0.0)
-                    sia_val, sia_unit = _area_scale(0.0)
-                    siv_val, siv_unit = _vol_scale(0.0)
+                    sie_val, sie_unit = self._area_scale(0.0)
+                    sia_val, sia_unit = self._area_scale(0.0)
+                    siv_val, siv_unit = self._vol_scale(0.0)
                     return [f"SIE: {sie_val:.2f} {sie_unit}",
                             f"SIA: {sia_val:.2f} {sia_unit}",
                             f"SIV: {siv_val:.2f} {siv_unit}",
@@ -384,109 +422,81 @@ class SeaIcePlotter:
                             "Median hi (ice cells): NaN",
                             "P90 hi (ice cells): NaN",
                             "Max hi: NaN at (NaN, NaN)"]
-
                 sie_m2 = area2.where(ice_cells).sum(skipna=True)
                 sia_m2 = (aice_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
-
                 # Ice volume: hi * aice * area (most defensible for CICE aggregate hi)
                 siv_m3 = (hi_reg.clip(min=0) * aice_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
-
-                sie_val, sie_unit = _area_scale(float(sie_m2.values))
-                sia_val, sia_unit = _area_scale(float(sia_m2.values))
-                siv_val, siv_unit = _vol_scale(float(siv_m3.values))
-
+                sie_val, sie_unit = self._area_scale(float(sie_m2.values))
+                sia_val, sia_unit = self._area_scale(float(sia_m2.values))
+                siv_val, siv_unit = self._vol_scale(float(siv_m3.values))
                 mean_sit = float((siv_m3 / (sia_m2 * 1.0)).values)  # m (since siv: m^3, sia: m^2)
-
                 # Distribution over ice cells (unweighted)
                 v = hi_reg.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
                 med = float(v.quantile(0.50).values)
                 p90 = float(v.quantile(0.90).values)
-
                 # Max thickness + location
                 zmax = v.idxmax("z").values
                 lon_s = lon2.stack(z=("nj", "ni"))
                 lat_s = lat2.stack(z=("nj", "ni"))
                 vmax  = float(v.sel(z=zmax).values)
                 max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
-
-                return [
-                    f"SIE: {sie_val:.2f} {sie_unit}",
-                    f"SIA: {sia_val:.2f} {sia_unit}",
-                    f"SIV: {siv_val:.2f} {siv_unit}",
-                    f"Mean SIT (SIV/SIA): {mean_sit:.2f} m",
-                    f"Median hi (ice cells): {med:.2f} m",
-                    f"P90 hi (ice cells): {p90:.2f} m",
-                    f"Max hi: {vmax:.2f} m at {_fmt_loc(*max_loc)}",
-                ]
+                return [f"SIE: {sie_val:.2f} {sie_unit}",
+                        f"SIA: {sia_val:.2f} {sia_unit}",
+                        f"SIV: {siv_val:.2f} {siv_unit}",
+                        f"Mean SIT (SIV/SIA): {mean_sit:.2f} m",
+                        f"Median hi (ice cells): {med:.2f} m",
+                        f"P90 hi (ice cells): {p90:.2f} m",
+                        f"Max hi: {vmax:.2f} m at {self._fmt_loc(*max_loc)}"]
             # -------------------------
             # Special case: ice speed magnitude (ispd)
             # -------------------------
             if var_name == "ispd":
                 if aice_da is None:
                     return ["(need aice_da for ispd stats: mask ice cells)"]
-
                 # Ensure grid area available
                 if not hasattr(self, "G_t") or ("area" not in self.G_t):
                     self.load_cice_grid()
                 area = self.G_t["area"]
-
                 lon = da[lon_coord_name]
                 lat = da[lat_coord_name]
-
                 lon0, lon1, lat0, lat1 = region
                 if lon0 <= lon1:
                     m_lon = (lon >= lon0) & (lon <= lon1)
                 else:
                     m_lon = (lon >= lon0) | (lon <= lon1)
                 m_reg = m_lon & (lat >= lat0) & (lat <= lat1)
-
                 # Align da (speed), aice, area, and region mask
                 da2, a2, area2, m2 = xr.align(da, aice_da, area, m_reg, join="inner")
-
                 da_reg = da2.where(m2)
                 a_reg  = a2.where(m2)
-
                 thr = float(self.icon_thresh)
                 ice_cells = (a_reg > thr) & np.isfinite(da_reg)
-
                 n_cells = int(ice_cells.sum().values)
                 if n_cells == 0:
                     return [f"Cells (aice>{thr:g}): 0"]
-
                 # area metrics
                 sie_m2 = area2.where(ice_cells).sum(skipna=True)
                 sia_m2 = (a_reg.clip(0, 1) * area2).where(ice_cells).sum(skipna=True)
-
-                sie_val, sie_unit = _area_scale(float(sie_m2.values))
-                sia_val, sia_unit = _area_scale(float(sia_m2.values))
-
+                sie_val, sie_unit = self._area_scale(float(sie_m2.values))
+                sia_val, sia_unit = self._area_scale(float(sia_m2.values))
                 # speed stats (m/s)
                 mean_spd = float(da_reg.where(ice_cells).mean(skipna=True).values)
                 med_spd  = float(da_reg.where(ice_cells).quantile(0.5, skipna=True).values)
                 p90_spd  = float(da_reg.where(ice_cells).quantile(0.9, skipna=True).values)
-
                 # max speed + location
                 v = da_reg.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
                 zmax = v.idxmax("z").values
-
                 lon_s = lon.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
                 lat_s = lat.where(ice_cells).stack(z=("nj", "ni")).dropna("z")
-
                 vmax = float(v.sel(z=zmax).values)
                 max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
-
-                def _fmt_loc(latv, lonv):
-                    return f"({latv:.{loc_ndp}f}, {lonv:.{loc_ndp}f})"
-
-                return [
-                    f"SIE: {sie_val:.2f} {sie_unit}",
-                    f"SIA: {sia_val:.2f} {sia_unit}",
-                    f"Mean speed (ice): {mean_spd:.2f} m/s",
-                    f"Median speed (ice): {med_spd:.2f} m/s",
-                    f"P90 speed (ice): {p90_spd:.2f} m/s",
-                    f"Max speed (ice): {vmax:.2f} m/s at {_fmt_loc(*max_loc)}",
-                    f"Cells (aice>{thr:g}): {n_cells}",
-                ]
+                return [f"SIE: {sie_val:.2f} {sie_unit}",
+                        f"SIA: {sia_val:.2f} {sia_unit}",
+                        f"Mean speed (ice): {mean_spd:.2f} m/s",
+                        f"Median speed (ice): {med_spd:.2f} m/s",
+                        f"P90 speed (ice): {p90_spd:.2f} m/s",
+                        f"Max speed (ice): {vmax:.2f} m/s at {self._fmt_loc(*max_loc)}",
+                        f"Cells (aice>{thr:g}): {n_cells}"]
         # -------------------------
         # Default (other vars): your existing min/max logic is fine
         # -------------------------
@@ -494,30 +504,22 @@ class SeaIcePlotter:
         v = da_reg.stack(z=("nj", "ni")).dropna("z")
         if v.size == 0:
             return ["(no valid data in region)"]
-
-        mean_v = float(v.mean().values)
-        std_v  = float(v.std().values)
-        n      = int(v.size)
-
-        zmin = v.idxmin("z").values
-        zmax = v.idxmax("z").values
-
-        lon_s = lon2.stack(z=("nj", "ni"))
-        lat_s = lat2.stack(z=("nj", "ni"))
-
-        vmin = float(v.sel(z=zmin).values)
-        vmax = float(v.sel(z=zmax).values)
-
+        mean_v  = float(v.mean().values)
+        std_v   = float(v.std().values)
+        n       = int(v.size)
+        zmin    = v.idxmin("z").values
+        zmax    = v.idxmax("z").values
+        lon_s   = lon2.stack(z=("nj", "ni"))
+        lat_s   = lat2.stack(z=("nj", "ni"))
+        vmin    = float(v.sel(z=zmin).values)
+        vmax    = float(v.sel(z=zmax).values)
         min_loc = (float(lat_s.sel(z=zmin).values), float(lon_s.sel(z=zmin).values))
         max_loc = (float(lat_s.sel(z=zmax).values), float(lon_s.sel(z=zmax).values))
-
-        return [
-            f"Mean: {mean_v:.2f}",
-            f"Std: {std_v:.2f}",
-            f"Cells: {n}",
-            f"Min: {vmin:.2f} at {_fmt_loc(*min_loc)}",
-            f"Max: {vmax:.2f} at {_fmt_loc(*max_loc)}",
-        ]
+        return [f"Mean: {mean_v:.2f}",
+                f"Std: {std_v:.2f}",
+                f"Cells: {n}",
+                f"Min: {vmin:.2f} at {self._fmt_loc(*min_loc)}",
+                f"Max: {vmax:.2f} at {self._fmt_loc(*max_loc)}"]
 
     def extract_min_max_dates(self, ts_dict, keys2plot=None, primary_key='FIA', time_coord='time'):
         """
@@ -580,23 +582,247 @@ class SeaIcePlotter:
         all_times = df_all["time"]
         return all_times.min(), all_times.max()
 
+    def _build_cpt(self, *,
+                   da_name    = "layer",
+                   cmap       = "viridis",
+                   series     = "auto",
+                   reverse    = False,
+                   background = True,
+                   P_cpt      = None,
+                   z          = None):
+        """
+        Build a CPT and return the cmap path/string.
+        """
+        import pygmt
+        cmap_use   = cmap
+        series_use = series
+        if series == "auto":
+            zmin = float(np.nanmin(z))
+            zmax = float(np.nanmax(z))
+            if np.isclose(zmin, zmax):
+                pad = 1.0 if np.isclose(zmin, 0.0) else max(abs(zmin) * 0.01, 1e-6)
+                zmin -= pad
+                zmax += pad
+            series_use = [zmin, zmax]
+        if series_use is None:
+            return cmap_use
+        P_cpt = Path(P_cpt) if P_cpt is not None else Path(self.D_graph) / "CPTs" / f"{da_name}_auto.cpt"
+        P_cpt.parent.mkdir(parents=True, exist_ok=True)
+        pygmt.makecpt(cmap       = cmap_use,
+                      series     = series_use,
+                      reverse    = reverse,
+                      background = background,
+                      output     = str(P_cpt))
+        return str(P_cpt)
+
+    def add_scalar_layer(self, fig, da: xr.DataArray, *, region, projection,
+                         lon_coord_name = None,
+                         lat_coord_name = None,
+                         bcoords        = False,
+                         tcoords        = True,
+                         infer_coords   = True,
+                         lon_wrap       = "auto",
+                         mask_zero      = False,
+                         extra_mask     = None,
+                         z_clip         = None,
+                         z_range_mask   = None,
+                         dtype          = "float32",
+                         # plotting style
+                         plot_type      = "points",     # "points" | "grdimage"
+                         symbol         = "s",
+                         size           = "0.06c",
+                         pen            = "none",
+                         transparency   = None,
+                         # colour
+                         cmap           = "viridis",
+                         series         = "auto",
+                         reverse_cmap   = False,
+                         background     = True,
+                         P_cpt          = None,
+                         # colourbar
+                         add_colorbar   = False,
+                         cbar_pos       = "JBC+w12c/0.4c+mc+h",
+                         cbar_frame     = ("af",),
+                         cbar_label     = None,
+                         cbar_units     = None,
+                         return_cmap    = False):
+        """
+        Add a scalar field as a map layer and optionally add a colorbar.
+        """
+        import pygmt
+        da2 = self.ensure_spatial_index_coords(da)
+        if plot_type == "grdimage":
+            # Best reserved for true rectilinear grids with native lon/lat coords.
+            fig.grdimage(grid=da2, region=region, projection=projection, cmap=cmap)
+            return (fig, cmap) if return_cmap else fig
+        prep = self.pygmt_da_prep(da2,
+                                  bcoords           = bcoords,
+                                  tcoords           = tcoords,
+                                  lon_coord_name    = lon_coord_name,
+                                  lat_coord_name    = lat_coord_name,
+                                  region            = region,
+                                  lon_wrap          = lon_wrap,
+                                  extra_mask        = extra_mask,
+                                  mask_zero         = mask_zero,
+                                  z_clip            = z_clip,
+                                  z_range_mask      = z_range_mask,
+                                  dtype             = dtype,
+                                  infer_coords      = infer_coords,
+                                  return_mask       = False,
+                                  return_flat_index = False)
+        cmap_use = self._build_cpt(da_name    = (da2.name or "layer"),
+                                   cmap       = cmap,
+                                   series     = series,
+                                   reverse    = reverse_cmap,
+                                   background = background,
+                                   P_cpt      = P_cpt,
+                                   z          = prep["z"])
+        fig.plot(x=prep["lon"], y=prep["lat"], fill=prep["z"], style=f"{symbol}{size}", cmap=cmap_use)
+        if add_colorbar:
+            frame_use = list(cbar_frame)
+            if cbar_label is not None:
+                frame_use = self.create_cbar_frame(series = [float(np.nanmin(prep["z"])), float(np.nanmax(prep["z"]))],
+                                                   label  = cbar_label,
+                                                   units  = cbar_units)
+            fig.colorbar(position=cbar_pos, cmap=cmap_use, frame=frame_use)
+        return (fig, cmap_use) if return_cmap else fig
+
+    def add_quiver_layer(self, fig, u: xr.DataArray, v: xr.DataArray, *, region, projection,
+                         lon_coord_name = None,
+                         lat_coord_name = None,
+                         bcoords        = False,
+                         tcoords        = True,
+                         infer_coords   = True,
+                         lon_wrap       = "auto",
+                         stride         = (10, 10),
+                         mask           = None,
+                         scale          = 1.0,
+                         length_clip    = None,
+                         vector_style   = "v0.12c+e",
+                         pen            = "0.4p,black",
+                         fill           = "black",
+                         transparency   = None):
+        """
+        Add vectors from u/v components.
+        Uses cartesian vector style; for most AFIM map overlays this is adequate.
+        """
+        u2 = self.ensure_spatial_index_coords(u)
+        v2 = self.ensure_spatial_index_coords(v)
+        if u2.shape != v2.shape:
+            raise ValueError(f"u and v must have the same shape, got {u2.shape} and {v2.shape}")
+        lon2d, lat2d = self._resolve_lonlat_2d(u2,
+                                               bcoords          = bcoords,
+                                               tcoords          = tcoords,
+                                               lon_coord_name   = lon_coord_name,
+                                               lat_coord_name   = lat_coord_name,
+                                               infer_if_missing = infer_coords)
+        z_u = np.asarray(u2.values, dtype="float32")
+        z_v = np.asarray(v2.values, dtype="float32")
+        # Optional geographic subsetting
+        lonp = np.asarray(lon2d, dtype="float32")
+        latp = np.asarray(lat2d, dtype="float32")
+        if lon_wrap == "0-360":
+            lonp = self.normalise_longitudes(lonp, target="0-360")
+        elif lon_wrap == "-180-180":
+            lonp = self.normalise_longitudes(lonp, target="-180-180")
+        m = np.isfinite(z_u) & np.isfinite(z_v) & np.isfinite(lonp) & np.isfinite(latp)
+        xmin, xmax, ymin, ymax = region
+        lat_ok = (latp >= ymin) & (latp <= ymax)
+        if xmin <= xmax:
+            lon_ok = (lonp >= xmin) & (lonp <= xmax)
+        else:
+            lon_ok = (lonp >= xmin) | (lonp <= xmax)
+        m &= lon_ok & lat_ok
+        if mask is not None:
+            m &= np.asarray(mask, dtype=bool)
+        js    = slice(None, None, stride[0])
+        is_   = slice(None, None, stride[1])
+        lonv  = lonp[js, is_]
+        latv  = latp[js, is_]
+        uv    = z_u[js, is_]
+        vv    = z_v[js, is_]
+        mv    = m[js, is_]
+        speed = np.hypot(uv, vv)
+        angle = np.degrees(np.arctan2(vv, uv))   # CCW from +x
+        if length_clip is not None:
+            speed = np.clip(speed, length_clip[0], length_clip[1])
+        length = speed * scale
+        fig.plot(x=lonv[mv], y=latv[mv], style=vector_style, direction=[angle[mv], length[mv]], fill=fill)
+        return fig
+
+    def plot_map(self, da: xr.DataArray, *,
+                 fig=None,
+                 region=None,
+                 projection=None,
+                 region_name=None,
+                 title=None,
+                 frame=("af",),
+                 plot_bathymetry=False,
+                 coast=True,
+                 # scalar layer args
+                 lon_coord_name=None,
+                 lat_coord_name=None,
+                 bcoords=False,
+                 tcoords=True,
+                 infer_coords=True,
+                 lon_wrap="auto",
+                 mask_zero=False,
+                 cmap="viridis",
+                 series="auto",
+                 symbol="s",
+                 size="0.06c",
+                 add_colorbar=True,
+                 cbar_pos="JBC+w12c/0.4c+mc+h",
+                 cbar_frame=("af",),
+                 cbar_label=None,
+                 cbar_units=None,
+                 return_cmap=False):
+        """
+        One-call single-map plotter.
+        """
+        fig, region_use, projection_use = self.new_map_figure(fig=fig,
+                                                              region=region,
+                                                              projection=projection,
+                                                              region_name=region_name,
+                                                              title=title,
+                                                              frame=frame,
+                                                              plot_bathymetry=plot_bathymetry,
+                                                              coast=coast,)
+        return self.add_scalar_layer(fig, da,
+                                     region=region_use,
+                                     projection=projection_use,
+                                     lon_coord_name=lon_coord_name,
+                                     lat_coord_name=lat_coord_name,
+                                     bcoords=bcoords,
+                                     tcoords=tcoords,
+                                     infer_coords=infer_coords,
+                                     lon_wrap=lon_wrap,
+                                     mask_zero=mask_zero,
+                                     cmap=cmap,
+                                     series=series,
+                                     symbol=symbol,
+                                     size=size,
+                                     add_colorbar=add_colorbar,
+                                     cbar_pos=cbar_pos,
+                                     cbar_frame=cbar_frame,
+                                     cbar_label=cbar_label,
+                                     cbar_units=cbar_units,
+                                     return_cmap=return_cmap)
+
     def _hex_to_rgb(self, hexstr: str) -> tuple[int, int, int]:
         h = hexstr.lstrip("#")
         return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
-    def write_tricolour_cpt(
-        self,
-        P_cpt,
-        *,
-        vmin: float = -1.0,
-        vmid: float =  0.0,
-        vmax: float =  1.0,
-        cmin: str = "#2CA25F",  # green
-        cmid: str = "#FDAE61",  # orange
-        cmax: str = "#2171B5",  # blue
-        background_rgb: str = "255/255/255",
-        foreground_rgb: str = "0/0/0",
-        nan_rgb: str = "255/255/255") -> str:
+    def write_tricolour_cpt(self, P_cpt, *,
+                            vmin           : float = -1.0,
+                            vmid           : float =  0.0,
+                            vmax           : float =  1.0,
+                            cmin           : str   = "#2CA25F",  # green
+                            cmid           : str   = "#FDAE61",  # orange
+                            cmax           : str   = "#2171B5",  # blue
+                            background_rgb : str   = "255/255/255",
+                            foreground_rgb : str   = "0/0/0",
+                            nan_rgb        : str   = "255/255/255") -> str:
         """
         Create and write a 3-colour continuous CPT file for difference fields.
 
@@ -641,40 +867,31 @@ class SeaIcePlotter:
         r1, g1, b1 = self._hex_to_rgb(cmin)
         r2, g2, b2 = self._hex_to_rgb(cmid)
         r3, g3, b3 = self._hex_to_rgb(cmax)
-
-        cpt_text = (
-            f"{vmin} {r1}/{g1}/{b1} {vmid} {r2}/{g2}/{b2}\n"
-            f"{vmid} {r2}/{g2}/{b2} {vmax} {r3}/{g3}/{b3}\n"
-            f"B {background_rgb}\n"
-            f"F {foreground_rgb}\n"
-            f"N {nan_rgb}\n"
-        )
-
+        cpt_text = (f"{vmin} {r1}/{g1}/{b1} {vmid} {r2}/{g2}/{b2}\n"
+                    f"{vmid} {r2}/{g2}/{b2} {vmax} {r3}/{g3}/{b3}\n"
+                    f"B {background_rgb}\n"
+                    f"F {foreground_rgb}\n"
+                    f"N {nan_rgb}\n")
         P_cpt = Path(P_cpt)
         P_cpt.parent.mkdir(parents=True, exist_ok=True)
         P_cpt.write_text(cpt_text)
         return str(P_cpt)
 
-    def tricolor_cpt_and_alpha(
-        self,
-        P_cpt,
-        obs,
-        mod,
-        *,
-        # CPT
-        vmin: float = -1.0,
-        vmid: float =  0.0,
-        vmax: float =  1.0,
-        cmin: str = "#2CA25F",
-        cmid: str = "#FDAE61",
-        cmax: str = "#2171B5",
-        # difference sign
-        diff_mode: str = "obs-mod",   # recommended for green=model-dom, blue=obs-dom
-        # alpha rule
-        alpha_mode: str = "max",      # "max" or "mean"
-        alpha_power: float = 1.0,
-        alpha_floor: float = 0.0,
-        nan_transparency: float = 100.0):  # percent (0 opaque, 100 transparent)
+    def tricolor_cpt_and_alpha(self, P_cpt, obs, mod, *,
+                               # CPT
+                               vmin             : float = -1.0,
+                               vmid             : float =  0.0,
+                               vmax             : float =  1.0,
+                               cmin             : str = "#2CA25F",
+                               cmid             : str = "#FDAE61",
+                               cmax             : str = "#2171B5",
+                               # difference sign
+                               diff_mode        : str = "obs-mod",   # recommended for green=model-dom, blue=obs-dom
+                               # alpha rule
+                               alpha_mode       : str = "max",      # "max" or "mean"
+                               alpha_power      : float = 1.0,
+                               alpha_floor      : float = 0.0,
+                               nan_transparency : float = 100.0):  # percent (0 opaque, 100 transparent)
         """
         Build a tricolour CPT plus a transparency (alpha) layer from obs/model fields.
 
@@ -752,23 +969,17 @@ class SeaIcePlotter:
         - This method does not attempt to regrid or align obs/model; inputs must already
           be on a common grid and comparable.
         """
-        cpt_path = self.write_tricolour_cpt(
-            P_cpt, vmin=vmin, vmid=vmid, vmax=vmax, cmin=cmin, cmid=cmid, cmax=cmax
-        )
-
-        obs = np.asarray(obs, dtype=float)
-        mod = np.asarray(mod, dtype=float)
-
-        dm = diff_mode.lower()
+        cpt_path = self.write_tricolour_cpt(P_cpt, vmin=vmin, vmid=vmid, vmax=vmax, cmin=cmin, cmid=cmid, cmax=cmax)
+        obs      = np.asarray(obs, dtype=float)
+        mod      = np.asarray(mod, dtype=float)
+        dm       = diff_mode.lower()
         if dm in ("obs-mod", "obs_minus_mod"):
             z = obs - mod
         elif dm in ("mod-obs", "mod_minus_obs"):
             z = mod - obs
         else:
             raise ValueError("diff_mode must be 'obs-mod' or 'mod-obs'.")
-
-        z = np.clip(z, vmin, vmax)
-
+        z  = np.clip(z, vmin, vmax)
         am = alpha_mode.lower()
         if am == "max":
             a = np.maximum(obs, mod)
@@ -776,32 +987,28 @@ class SeaIcePlotter:
             a = 0.5 * (obs + mod)
         else:
             raise ValueError("alpha_mode must be 'max' or 'mean'.")
-
         a = np.clip(a, 0.0, 1.0)
         if alpha_power != 1.0:
             a = a ** alpha_power
         if alpha_floor > 0.0:
             a = alpha_floor + (1.0 - alpha_floor) * a
-
-        t = (1.0 - a) * 100.0
-
+        t   = (1.0 - a) * 100.0
         bad = ~np.isfinite(z) | ~np.isfinite(t)
         if np.any(bad):
             t = np.where(bad, nan_transparency, t)
             z = np.where(bad, np.nan, z)
-
         return cpt_path, z, t
 
     def write_tricolor_category_cpt(self, P_cpt, *, # codes: 0=agreement, 1=model-dom, 2=obs-dom
-                                    int0=(0.0, 1.0),
-                                    int1=(1.0, 2.0),
-                                    int2=(2.0, 3.0),
-                                    hex0="#FDAE61",  # agreement = orange
-                                    hex1="#2CA25F",  # model-dom = green
-                                    hex2="#2171B5",  # obs-dom   = blue
-                                    background_rgb="255/255/255",
-                                    foreground_rgb="0/0/0",
-                                    nan_rgb="255/255/255") -> str:
+                                    int0           = (0.0, 1.0),
+                                    int1           = (1.0, 2.0),
+                                    int2           = (2.0, 3.0),
+                                    hex0           = "#FDAE61",  # agreement = orange
+                                    hex1           = "#2CA25F",  # model-dom = green
+                                    hex2           = "#2171B5",  # obs-dom   = blue
+                                    background_rgb = "255/255/255",
+                                    foreground_rgb = "0/0/0",
+                                    nan_rgb        = "255/255/255") -> str:
         """
         Create and write a 3-class categorical CPT file.
 
@@ -848,14 +1055,12 @@ class SeaIcePlotter:
         r0, g0, b0 = self._hex_to_rgb(hex0)
         r1, g1, b1 = self._hex_to_rgb(hex1)
         r2, g2, b2 = self._hex_to_rgb(hex2)
-        cpt_text = (
-            f"{int0[0]} {r0}/{g0}/{b0} {int0[1]} {r0}/{g0}/{b0}\n"
-            f"{int1[0]} {r1}/{g1}/{b1} {int1[1]} {r1}/{g1}/{b1}\n"
-            f"{int2[0]} {r2}/{g2}/{b2} {int2[1]} {r2}/{g2}/{b2}\n"
-            f"B {background_rgb}\n"
-            f"F {foreground_rgb}\n"
-            f"N {nan_rgb}\n"
-        )
+        cpt_text   = (f"{int0[0]} {r0}/{g0}/{b0} {int0[1]} {r0}/{g0}/{b0}\n"
+                      f"{int1[0]} {r1}/{g1}/{b1} {int1[1]} {r1}/{g1}/{b1}\n"
+                      f"{int2[0]} {r2}/{g2}/{b2} {int2[1]} {r2}/{g2}/{b2}\n"
+                      f"B {background_rgb}\n"
+                      f"F {foreground_rgb}\n"
+                      f"N {nan_rgb}\n")
         P_cpt = Path(P_cpt)
         P_cpt.parent.mkdir(parents=True, exist_ok=True)
         P_cpt.write_text(cpt_text)
@@ -1025,7 +1230,7 @@ class SeaIcePlotter:
             raise ValueError("Must set bcoords or tcoords, or provide lon/lat coords on da.")
         # Only load grid if we need it
         # (adjust to your class: load_bgrid may load both; otherwise add load_tgrid, etc.)
-        self.load_bgrid(slice_hem=True)
+        self.load_cice_grid(slice_hem=True)
         if bcoords:
             lon2d_full = np.asarray(self.G_u["lon"].values)
             lat2d_full = np.asarray(self.G_u["lat"].values)
@@ -1793,13 +1998,13 @@ class SeaIcePlotter:
                 else:
                     fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30", land=land_color, water=water_color)
                 pygmt.makecpt(cmap=cmap, reverse=reverse, series=series)
-                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['z'], style=f"s{var_sq_size}c", cmap=True)           
+                fig.plot(x=plot_data_dict['lon'], y=plot_data_dict['lat'], fill=plot_data_dict['z'], style=f"s{var_sq_size}c", cmap=True)
                 if plot_bathymetry:
                     fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
                 if plot_GI:
                     fig.plot(x=plot_GI_dict['lon'], y=plot_GI_dict['lat'], fill=GI_fill_color, style=f"c{GI_sq_size}c")
                 if plot_iceshelves:
-                    fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
+                    fig.plot(data=ANT_IS, fill="lightgray")
                 if add_stat_annot:
                     annot_text = self.generate_regional_annotation_stats(
                         da, region, lon_name, lat_name, var_name,
@@ -1991,7 +2196,7 @@ class SeaIcePlotter:
                              fill  = GI_fill_color,
                              style = GI_plot_style)
                 fig.coast(land=land_clr, shorelines=coast_pen)
-                fig.plot(data=ANT_IS, pen=ANT_IS_pen, fill=ANT_IS_color)
+                fig.plot(data=ANT_IS, fill=ANT_IS_color)
             fig.colorbar(position=cbar_pos, frame=cbar_frame)
         # Save / Show
         if save_fig:
@@ -2187,7 +2392,7 @@ class SeaIcePlotter:
                     fig.coast(region=region, projection=projection, land=land_color, water=water_color)
                 style = f"{G_pt_marker}{G_pt_size}{G_pt_unit}"
                 if t is None:
-                    fig.plot(x=x, y=y, style=style, zvalue=z, fill="+z", cmap=cmap_use, pen="none")
+                    fig.plot(x=x, y=y, style=style, zvalue=z, fill="+z", cmap=cmap_use)
                 else:
                     t              = np.asarray(t, dtype=float)
                     good           = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(t)
@@ -2202,7 +2407,7 @@ class SeaIcePlotter:
                         if not np.any(sel):
                             continue
                         tau = float(0.5 * (edges[b] + edges[b + 1]))
-                        fig.plot(x=xg[sel], y=yg[sel], style=style, zvalue=zg[sel], fill="+z", cmap=cmap_use, pen="none", transparency=tau)
+                        fig.plot(x=xg[sel], y=yg[sel], style=style, zvalue=zg[sel], fill="+z", cmap=cmap_use)
                 if plot_GI:
                     fig.plot(x     = self.G_GI["lon"].values.ravel(),
                              y     = self.G_GI["lat"].values.ravel(),
@@ -2587,40 +2792,37 @@ class SeaIcePlotter:
         if show_fig:
             fig.show()
 
-    def pygmt_map_plot_multi_var_8sectors(
-        self,
-        das,
-        var_names,
-        sim_name        = None,
-        time_stamp      = None,
-        tit_str         = None,
-        panel_titles    = None,
-        plot_GI         = False,
-        diff_plots      = None,
-        cmaps           = None,
-        series_list     = None,
-        reverse_list    = None,
-        cbar_labels     = None,
-        cbar_units_list = None,
-        extend_cbars    = False,
-        cbar_positions  = None,
-        lon_coord_names = None,
-        lat_coord_names = None,
-        use_bcoords     = False,
-        use_tcoords     = False,
-        fig_size        = None,
-        var_sq_size     = 0.2,
-        GI_sq_size      = 0.1,
-        GI_fill_color   = "red",
-        plot_iceshelves = True,
-        plot_bathymetry = True,
-        land_color      = None,
-        water_color     = None,
-        P_png           = None,
-        var_out         = None,
-        overwrite_fig   = None,
-        show_fig        = None,
-        xshift          = "w+1c"):
+    def pygmt_map_plot_multi_var_8sectors(self, das, var_names,
+                                          sim_name        = None,
+                                          time_stamp      = None,
+                                          tit_str         = None,
+                                          panel_titles    = None,
+                                          plot_GI         = False,
+                                          diff_plots      = None,
+                                          cmaps           = None,
+                                          series_list     = None,
+                                          reverse_list    = None,
+                                          cbar_labels     = None,
+                                          cbar_units_list = None,
+                                          extend_cbars    = False,
+                                          cbar_positions  = None,
+                                          lon_coord_names = None,
+                                          lat_coord_names = None,
+                                          use_bcoords     = False,
+                                          use_tcoords     = False,
+                                          fig_size        = None,
+                                          var_sq_size     = 0.2,
+                                          GI_sq_size      = 0.1,
+                                          GI_fill_color   = "red",
+                                          plot_iceshelves = True,
+                                          plot_bathymetry = True,
+                                          land_color      = None,
+                                          water_color     = None,
+                                          P_png           = None,
+                                          var_out         = None,
+                                          overwrite_fig   = None,
+                                          show_fig        = None,
+                                          xshift          = "w+1c"):
         """
         8-sector plot with 2–3 panels laid out left-to-right using shift_origin.
 
@@ -2666,7 +2868,6 @@ class SeaIcePlotter:
             else:
                 # crosses dateline
                 return (lon >= lon_min) | (lon <= lon_max)
-
         # --- validate ---
         if not isinstance(das, (list, tuple)) or not isinstance(var_names, (list, tuple)):
             raise TypeError("das and var_names must be lists/tuples")
@@ -2678,7 +2879,6 @@ class SeaIcePlotter:
         for j, da in enumerate(das):
             if hasattr(da, "dims") and "time" in da.dims:
                 raise ValueError(f"das[{j}] has 'time' dim; pass a 2D time-slice.")
-
         # --- defaults ---
         sim_name    = sim_name      if sim_name      is not None else self.sim_name
         show_fig    = show_fig      if show_fig      is not None else self.show_fig
@@ -2687,10 +2887,8 @@ class SeaIcePlotter:
         fig_size    = fig_size      if fig_size      is not None else self.pygmt_dict["fig_size"]
         land_color  = land_color    if land_color    is not None else self.pygmt_dict["land_color"]
         water_color = water_color   if water_color   is not None else self.pygmt_dict["water_color"]
-
         if panel_titles is None:
             panel_titles = list(var_names)
-
         diff_plots_l      = _as_bool_list(diff_plots, n_pan, "diff_plots")
         cmaps_l           = _as_list(cmaps, n_pan, "cmaps")
         series_l          = _as_list(series_list, n_pan, "series_list")
@@ -2703,7 +2901,6 @@ class SeaIcePlotter:
         lat_names_l       = _as_list(lat_coord_names, n_pan, "lat_coord_names")
         use_bcoords_l     = _as_bool_list(use_bcoords, n_pan, "use_bcoords")
         use_tcoords_l     = _as_bool_list(use_tcoords, n_pan, "use_tcoords")
-
         # overlays loaded once
         if plot_iceshelves:
             ANT_IS = self.load_ice_shelves()
@@ -2711,122 +2908,89 @@ class SeaIcePlotter:
             SO_BATH = self.load_IBCSO_bath()
         if plot_GI:
             plot_GI_dict = self.load_GI_lon_lats()
-
         # ensure grid loaded (for tcoords/bcoords path in pygmt_da_prep)
         self.load_cice_grid(slice_hem=True)
-
         reg_dict = self.Ant_8sectors
         if var_out is None:
             var_out = "_".join(var_names)
-
         # --- BIG SPEED WIN: compute plot point clouds ONCE per panel ---
         self.logger.info("precomputing plot point clouds (once per panel) ...")
         pdicts = []
         for j in range(n_pan):
             if (lon_names_l[j] is not None) and (lat_names_l[j] is not None):
-                pd = self.pygmt_da_prep(
-                    das[j],
-                    bcoords=False,
-                    tcoords=False,
-                    lon_coord_name=lon_names_l[j],
-                    lat_coord_name=lat_names_l[j],
-                    diff_plot=diff_plots_l[j],
-                )
+                pd = self.pygmt_da_prep(das[j],
+                                        bcoords=False,
+                                        tcoords=False,
+                                        lon_coord_name=lon_names_l[j],
+                                        lat_coord_name=lat_names_l[j],
+                                        diff_plot=diff_plots_l[j])
             else:
                 if use_bcoords_l[j] and use_tcoords_l[j]:
                     raise ValueError("Cannot set both use_bcoords and use_tcoords True")
-                pd = self.pygmt_da_prep(
-                    das[j],
-                    bcoords=use_bcoords_l[j],
-                    tcoords=use_tcoords_l[j] if (use_bcoords_l[j] is False) else False,
-                    diff_plot=diff_plots_l[j],
-                )
+                pd = self.pygmt_da_prep(das[j],
+                                        bcoords=use_bcoords_l[j],
+                                        tcoords=use_tcoords_l[j] if (use_bcoords_l[j] is False) else False,
+                                        diff_plot=diff_plots_l[j])
             pdicts.append(pd)
-
         # Precompute sector masks ONCE using lon/lat from panel 0 (assumes common grid)
         lon0 = pdicts[0]["lon"]
         lat0 = pdicts[0]["lat"]
-
         if not hasattr(self, "_sector_point_idx_cache"):
             self._sector_point_idx_cache = {}
-
         sector_idx = {}
         for reg_name, reg_vals in reg_dict.items():
-            region = reg_vals["plot_region"]  # [lonmin, lonmax, latmin, latmax]
+            region                         = reg_vals["plot_region"]  # [lonmin, lonmax, latmin, latmax]
             lonmin, lonmax, latmin, latmax = region
-            m = _lon_in_range_1d(lon0, lonmin, lonmax) & (lat0 >= latmin) & (lat0 <= latmax)
-            idx = np.flatnonzero(m)
-            sector_idx[reg_name] = idx
-
+            m                              = _lon_in_range_1d(lon0, lonmin, lonmax) & (lat0 >= latmin) & (lat0 <= latmax)
+            idx                            = np.flatnonzero(m)
+            sector_idx[reg_name]           = idx
         # --- plot ---
         for reg_name, reg_vals in reg_dict.items():
-
             idx = sector_idx.get(reg_name, None)
             if idx is None or idx.size == 0:
                 self.logger.warning(f"{reg_name}: no points in this sector after masking; skipping.")
                 continue
-
             # output path per sector
             P_png_reg = _sector_png_path(P_png, reg_name)
             if P_png_reg is None and self.save_fig:
                 P_png_reg = Path(self.D_graph, sim_name, reg_name, var_out,
                                 f"{time_stamp}_{sim_name}_{reg_name}_{var_out}.png")
-
             region     = reg_vals["plot_region"]
             MC         = self.get_meridian_center_from_geographic_extent(region)
             projection = reg_vals["projection"].format(MC=MC, fig_size=fig_size)
-
-            fig = pygmt.Figure()
-
-            with pygmt.config(
-                FONT_TITLE="16p,Courier-Bold",
-                FONT_ANNOT_PRIMARY="14p,Helvetica",
-                COLOR_FOREGROUND="black",
-            ):
+            fig        = pygmt.Figure()
+            with pygmt.config(FONT_TITLE         = "16p,Courier-Bold",
+                              FONT_ANNOT_PRIMARY = "14p,Helvetica",
+                              COLOR_FOREGROUND   = "black"):
                 for j in range(n_pan):
-
                     if j > 0:
                         fig.shift_origin(xshift=xshift, yshift="0c")
-
                     vn = var_names[j]
-
                     # per-panel defaults
                     cmap_j   = cmaps_l[j]       if cmaps_l[j]       is not None else self.plot_var_dict[vn]["cmap"]
                     series_j = series_l[j]      if series_l[j]      is not None else self.plot_var_dict[vn]["series"]
                     rev_j    = reverse_l[j]     if reverse_l[j]     is not None else self.plot_var_dict[vn]["reverse"]
                     lab_j    = cbar_labels_l[j] if cbar_labels_l[j] is not None else self.plot_var_dict[vn]["name"]
                     unit_j   = cbar_units_l[j]  if cbar_units_l[j]  is not None else self.plot_var_dict[vn]["units"]
-
                     cbar_pos_j = cbar_positions_l[j]
                     if cbar_pos_j is None:
                         cbar_pos_j = self.pygmt_dict["cbar_pos"].format(width=fig_size * 0.8, height=0.75)
-
                     # basemap frame
                     title_here = panel_titles[j] if panel_titles is not None else vn
                     if (j == 0) and (tit_str is not None):
                         frame = ["af", f"+t{tit_str}"]
                     else:
                         frame = ["af", f"+t{title_here}"]
-
                     fig.basemap(region=region, projection=projection, frame=frame)
-
                     if plot_bathymetry:
                         fig.grdimage(grid=SO_BATH, cmap="geo")
                     else:
                         fig.coast(region=region, projection=projection,
                                 shorelines="1/0.5p,gray30", land=land_color, water=water_color)
-
                     # Plot points for this sector
                     pd = pdicts[j]
                     pygmt.makecpt(cmap=cmap_j, reverse=rev_j, series=series_j)
-                    fig.plot(
-                        x=pd["lon"][idx],
-                        y=pd["lat"][idx],
-                        fill=pd["data"][idx],
-                        style=f"s{var_sq_size}c",
-                        cmap=True,
-                    )
-
+                    fig.plot(x=pd["lon"][idx], y=pd["lat"][idx], fill=pd["data"][idx], style=f"s{var_sq_size}c", cmap=True)
                     # overlays
                     if plot_bathymetry:
                         fig.coast(region=region, projection=projection, shorelines="1/0.5p,gray30")
@@ -2834,12 +2998,10 @@ class SeaIcePlotter:
                         fig.plot(x=plot_GI_dict["lon"], y=plot_GI_dict["lat"],
                                 fill=GI_fill_color, style=f"c{GI_sq_size}c")
                     if plot_iceshelves:
-                        fig.plot(data=ANT_IS, pen="0.2p,gray", fill="lightgray")
-
+                        fig.plot(data=ANT_IS, fill="lightgray")
                     # colorbar
                     cbar_frame = self.create_cbar_frame(series_j, lab_j, units=unit_j, extend_cbar=extend_cbars_l[j])
                     fig.colorbar(position=cbar_pos_j, frame=cbar_frame)
-
             # save/show
             if P_png_reg:
                 P_png_reg.parent.mkdir(parents=True, exist_ok=True)
@@ -2848,6 +3010,5 @@ class SeaIcePlotter:
                     self.logger.info(f"Saved figure to {P_png_reg}")
                 else:
                     self.logger.info(f"{P_png_reg} already exists and not overwriting")
-
             if show_fig:
                 fig.show()

@@ -70,6 +70,7 @@ def run_loop(sim_name,
             tb._write_grouped_zarr(I_bin_yr, store=P_zarr_bin, group=yr_str, overwrite_group=overwrite_zarr, consolidated=False)
         if I_roll_yr is not None:
             tb._write_grouped_zarr(I_roll_yr, store=P_zarr_roll, group=yr_str, overwrite_group=overwrite_zarr, consolidated=False)
+        return True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run ice classification loop over time.")
@@ -116,3 +117,4 @@ if __name__ == "__main__":
              overwrite_zarr       = args.overwrite_zarr,
              delete_original_iceh = args.delete_original_iceh,
              enable_rolling       = args.rolling_mean)
+    exit

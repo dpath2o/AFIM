@@ -209,7 +209,7 @@ class SeaIceCICE:
             return
         # 2) verify open/read works (basic sanity)
         try:
-            ds = xr.open_zarr(P_iceh_zarr, group=m_str, consolidated=True)
+            ds = xr.open_zarr(P_iceh_zarr, group=m_str, consolidated=False)
             ntime = ds.sizes.get("time", 0)
             ds.close()
         except Exception as e:
@@ -596,73 +596,6 @@ class SeaIceCICE:
 
         return summary
 
-    # def daily_iceh_to_monthly_zarr(self,
-    #                                sim_name        = None,
-    #                                dt0_str         = None,
-    #                                dtN_str         = None,
-    #                                D_iceh          = None,
-    #                                netcdf_engine   = "scipy",
-    #                                overwrite       = None,
-    #                                delete_original = None):
-    #     """
-    #     Convert daily CICE iceh.YYYY-MM-DD.nc files into a grouped monthly Zarr store.
-    #     """
-    #     import re
-    #     from datetime import datetime
-    #     from collections import defaultdict
-    #     date_re   = re.compile(r"(\d{4}-\d{2}-\d{2})\.nc$")
-    #     sim_name  = sim_name        if sim_name        is not None else self.sim_name
-    #     dt0_str   = dt0_str         if dt0_str         is not None else self.dt0_str
-    #     dtN_str   = dtN_str         if dtN_str         is not None else self.dtN_str
-    #     overwrite = overwrite       if overwrite       is not None else self.overwrite_zarr_group
-    #     delete_nc = delete_original if delete_original is not None else self.del_org_cice_iceh_nc
-    #     self.define_toolbox_paths()
-    #     D_iceh      = Path(D_iceh) if D_iceh is not None else Path(self.D_iceh["nc"]["daily"])
-    #     P_iceh_zarr = Path(self.D_iceh["zarr"]["daily"])
-    #     P_iceh_zarr.mkdir(parents=True, exist_ok=True)
-    #     m_grps = defaultdict(list)
-    #     P_orgs = self.get_cice_files_between_dates(D_iceh, dt0_str, dtN_str)
-    #     if not P_orgs:
-    #         self.logger.info("No CICE files found. Nothing further to do here.")
-    #         return
-    #     for f in P_orgs:
-    #         m = date_re.search(f.name)
-    #         if not m:
-    #             self.logger.warning(f"Skipping unrecognized filename: {f.name}")
-    #             continue
-    #         dt = datetime.strptime(m.group(1), "%Y-%m-%d")
-    #         m_str = dt.strftime("%Y-%m")
-    #         m_grps[m_str].append(f)
-    #     for m_str, P_ in sorted(m_grps.items()):
-    #         P_ = sorted(P_)
-    #         group_path = P_iceh_zarr / m_str
-    #         if group_path.exists() and not overwrite:
-    #             self.logger.info(f"Skipping existing group {group_path}")
-    #             if delete_nc:
-    #                 self.delete_original_cice(P_, P_iceh_zarr, m_str)
-    #             continue
-    #         self.logger.info(f"Loading NetCDF files for {m_str} with xarray.open_mfdataset(...)")
-    #         CICE_all = xr.open_mfdataset(P_,
-    #                                      engine     = netcdf_engine,
-    #                                      parallel   = True,
-    #                                      combine    = "nested",
-    #                                      concat_dim = "time",
-    #                                      coords     = "minimal",
-    #                                      data_vars  = "minimal",
-    #                                      compat     = "override",
-    #                                      join       = "override",
-    #                                      cache      = False,
-    #                                      chunks     = self.CICE_dict["FI_chunks"])
-    #         CICE_all = CICE_all.chunk(self.CICE_dict["FI_chunks"])
-    #         self.logger.info("Shifting time coordinate back by 1 day (CICE daily-average convention)")
-    #         CICE_all["time"] = CICE_all["time"] - np.timedelta64(1, "D")
-    #         self.logger.info(f"Writing group {m_str} into {P_iceh_zarr}")
-    #         self._write_grouped_zarr(CICE_all, store=P_iceh_zarr, group=m_str, overwrite_group=overwrite, consolidated=False)
-    #         self.get_dir_size(group_path)
-    #         self.count_zarr_files(group_path)
-    #         if delete_nc:
-    #             self.delete_original_cice(P_, P_iceh_zarr, m_str)
-
     def daily_iceh_to_monthly_zarr(self,
                                    sim_name        = None,
                                    dt0_str         = None,
@@ -921,79 +854,62 @@ class SeaIceCICE:
                          f"bounds={available_dt0.date()}..{available_dtN.date()}, consolidated={consolidated})")
         return self._zarr_group_index[key]
 
-    # def load_cice_zarr(self,
-    #                    sim_name  = None,
-    #                    dt0_str   = None,
-    #                    dtN_str   = None,
-    #                    D_alt     = None,
-    #                    variables = None,
-    #                    slice_hem = False):
-    #     """
-    #     Open and concatenate monthly-grouped CICE ice-history Zarr data over a date window.
-    #     """
-    #     import re
-    #     import dask
-    #     sim_name = sim_name or self.sim_name
-    #     dt0_str  = dt0_str  or self.dt0_str
-    #     dtN_str  = dtN_str  or self.dtN_str
-    #     D_alt    = D_alt if D_alt is not None else self.D_sim
-    #     self.define_toolbox_paths(D_sim=D_alt)
-    #     zarr_root = Path(self.D_iceh["zarr"]["daily"])
-    #     if not zarr_root.exists():
-    #         raise FileNotFoundError(f"Zarr root does not exist: {zarr_root}")
-    #     month_re = re.compile(r"^\d{4}-\d{2}$")
-    #     available_groups = sorted(p.name for p in zarr_root.iterdir()
-    #                               if p.is_dir() and month_re.match(p.name))
-    #     if not available_groups:
-    #         raise FileNotFoundError(f"No monthly groups found under {zarr_root}")
-    #     available_dt0 = pd.to_datetime(f"{available_groups[0]}-01")
-    #     available_dtN = pd.to_datetime(f"{available_groups[-1]}-01") + pd.offsets.MonthEnd(1)
-    #     user_dt0      = max(pd.to_datetime(dt0_str), available_dt0)
-    #     user_dtN      = min(pd.to_datetime(dtN_str), available_dtN)
-    #     if user_dt0 > user_dtN:
-    #         raise ValueError(f"Requested window [{dt0_str}, {dtN_str}] does not intersect "
-    #                          f"available data [{available_dt0.date()}, {available_dtN.date()}]")
-    #     required_groups = [g for g in available_groups
-    #                        if (pd.to_datetime(f"{g}-01") <= user_dtN) and
-    #                        (pd.to_datetime(f"{g}-01") + pd.offsets.MonthEnd(1) >= user_dt0)]
+    def load_static(self,
+                    D_alt         = None,
+                    variables     = None,
+                    slice_hem     = False,
+                    store_on_self = True):
+        """
+        Load static CICE fields/coords for the current experiment from iceh_static.zarr.
 
-    #     self.logger.info(f"Loading grouped Zarr months between {user_dt0.date()} and {user_dtN.date()} "
-    #                      f"({len(required_groups)} groups)")
-    #     ds_list           = []
-    #     missing_anywhere  = set()
-    #     selected_anywhere = set()
-    #     with dask.config.set({"array.slicing.split_large_chunks": True,
-    #                           "array.chunk-size": "256MiB",
-    #                           "optimization.fuse.active": False}):
-    #         for g in required_groups:
-    #             self.logger.debug(f"Opening group {g}")
-    #             ds = xr.open_zarr(zarr_root, group=g, consolidated=False)
-    #             if variables:
-    #                 present = [v for v in variables if v in ds.data_vars]
-    #                 missing = [v for v in variables if v not in ds.data_vars]
-    #                 if missing:
-    #                     missing_anywhere.update(missing)
-    #                     self.logger.warning(f"[{g}] missing requested vars: {missing}")
-    #                 if not present:
-    #                     self.logger.warning(f"Skipping {g}: none of the requested variables are present.")
-    #                     continue
-    #                 selected_anywhere.update(present)
-    #                 ds = ds[present]
-    #             ds = ds.sel(time=slice(user_dt0, user_dtN))
-    #             if ds.sizes.get("time", 0) == 0:
-    #                 continue
-    #             ds_list.append(ds)
-    #     if not ds_list:
-    #         raise ValueError("No datasets to concatenate after filtering/cropping.")
-    #     ds_all = xr.concat(ds_list, dim="time", coords="minimal", compat="override", combine_attrs="override")
-    #     if variables:
-    #         never_found = [v for v in variables if v not in selected_anywhere]
-    #         if never_found:
-    #             self.logger.warning(f"Requested variables not found in ANY group: {never_found}")
-    #     if slice_hem:
-    #         self.logger.info("Slicing hemisphere")
-    #         ds_all = self.slice_hemisphere(ds_all)
-    #     return ds_all
+        Parameters
+        ----------
+        D_alt : str or Path, optional
+            Alternate simulation directory. If None, uses self.D_sim.
+        variables : list[str] or None, optional
+            If provided, return only this subset from the static store. Names may be
+            data variables or coordinates.
+        slice_hem : bool, default False
+            If True, slice to the configured hemisphere after loading.
+        store_on_self : bool, default True
+            If True, cache the loaded dataset and metadata on self.
+
+        Returns
+        -------
+        xr.Dataset
+            Static dataset (possibly subset).
+        """
+        D_alt = D_alt if D_alt is not None else self.D_sim
+        self.define_toolbox_paths(D_sim=D_alt)
+        P_iceh_static = Path(self.D_zarr, "iceh_static.zarr")
+        if not P_iceh_static.exists():
+            raise FileNotFoundError(f"Static iceh store does not exist: {P_iceh_static}")
+        ds_static_all   = xr.open_zarr(P_iceh_static, consolidated=False)
+        static_name_set = set(ds_static_all.data_vars) | set(ds_static_all.coords)
+        static_name_set.discard("time")
+        static_name_set.discard("time_bounds")
+        if variables is None:
+            ds_static_use = ds_static_all
+        else:
+            variables = list(dict.fromkeys(variables))  # preserve order, remove duplicates
+            missing_static = [v for v in variables if v not in static_name_set]
+            if missing_static:
+                self.logger.warning(f"Requested static variables not found in iceh_static.zarr: {missing_static}")
+            ds_static_use = xr.Dataset()
+            for v in variables:
+                if v in ds_static_all.data_vars:
+                    ds_static_use[v] = ds_static_all[v]
+                elif v in ds_static_all.coords:
+                    ds_static_use = ds_static_use.assign_coords({v: ds_static_all.coords[v]})
+        if slice_hem:
+            self.logger.info("Slicing hemisphere for static dataset")
+            ds_static_use = self.slice_hemisphere(ds_static_use)
+        if store_on_self:
+            self.DS_static = ds_static_use
+            self.static_name_set = static_name_set
+            self.P_iceh_static = P_iceh_static
+        self.logger.info(f"Loaded static iceh store: {P_iceh_static}")
+        return ds_static_use
 
     def load_cice_zarr(self,
                        sim_name  = None,
@@ -1049,28 +965,27 @@ class SeaIceCICE:
         self.logger.info(f"Loading grouped Zarr months between {user_dt0.date()} and {user_dtN.date()} "
                          f"({len(required_groups)} groups)")
         # ------------------------------------------------------------------
-        # Open static store (if present) and determine which requested names
-        # belong there rather than in the monthly groups.
+        # Load static store metadata once and determine which requested names
+        
+# belong there rather than in the monthly groups.
         # ------------------------------------------------------------------
         ds_static_all    = None
         static_name_set  = set()
         static_requested = []
         dynamic_requested = None
-        if P_iceh_static.exists():
-            try:
-                ds_static_all = xr.open_zarr(P_iceh_static, consolidated=False)
-                static_name_set = set(ds_static_all.data_vars) | set(ds_static_all.coords)
-                static_name_set.discard("time")
-                static_name_set.discard("time_bounds")
-                self.logger.info(f"Found static iceh store: {P_iceh_static}")
-            except Exception as e:
-                self.logger.warning(f"Could not open iceh_static.zarr at {P_iceh_static}: {e}")
-                ds_static_all   = None
-                static_name_set = set()
-        else:
-            self.logger.info(f"No static iceh store found at {P_iceh_static}; loading monthly groups only")
+        try:
+            ds_static_all = self.load_static(D_alt=D_alt, variables=None, slice_hem=False, store_on_self=True)
+            static_name_set = set(ds_static_all.data_vars) | set(ds_static_all.coords)
+            static_name_set.discard("time")
+            static_name_set.discard("time_bounds")
+        except FileNotFoundError:
+            self.logger.info("No static iceh store found; loading monthly groups only")
+        except Exception as e:
+            self.logger.warning(f"Could not open iceh_static.zarr: {e}")
+            ds_static_all   = None
+            static_name_set = set()
         if variables is not None:
-            variables = list(dict.fromkeys(variables))  # preserve order, remove duplicates
+            variables = list(dict.fromkeys(variables))
             static_requested  = [v for v in variables if v in static_name_set]
             dynamic_requested = [v for v in variables if v not in static_name_set]
         # ------------------------------------------------------------------
@@ -1119,21 +1034,12 @@ class SeaIceCICE:
             if variables is None:
                 ds_static_use = ds_static_all
             else:
-                missing_static = [v for v in static_requested
-                                  if (v not in ds_static_all.data_vars and v not in ds_static_all.coords)]
-                if missing_static:
-                    self.logger.warning(f"Requested static variables not found in iceh_static.zarr: {missing_static}")
-
-                ds_static_use = xr.Dataset()
-                for v in static_requested:
-                    if v in ds_static_all.data_vars:
-                        ds_static_use[v] = ds_static_all[v]
-                    elif v in ds_static_all.coords:
-                        ds_static_use = ds_static_use.assign_coords({v: ds_static_all.coords[v]})
+                ds_static_use = self.load_static(D_alt         = D_alt,
+                                                 variables     = static_requested,
+                                                 slice_hem     = False,
+                                                 store_on_self = False)
             if len(ds_static_use.data_vars) > 0 or len(ds_static_use.coords) > 0:
-                ds_all = xr.merge([ds_all, ds_static_use],
-                                  compat        = "override",
-                                  combine_attrs = "override")
+                ds_all = xr.merge([ds_all, ds_static_use], compat="override", combine_attrs="override")
         # ------------------------------------------------------------------
         # Final reporting
         # ------------------------------------------------------------------

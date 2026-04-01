@@ -43,25 +43,27 @@ class SeaIceWaves:
     def _require_waves_dict(self):
         if not hasattr(self, "Waves_dict"):
             raise AttributeError("Missing Waves_dict in configuration JSON.")
-        required = [
-            "cawcr_spec_url_fmt",
-            "D_processed",
-            "wave_file_fmt",
-            "P_reG_cawcr2cice_weights",
-            "time_dim",
-            "station_dim",
-            "freq_dim",
-            "dir_dim",
-            "station_lon_name",
-            "station_lat_name",
-            "variance_density_name",
-            "k_nearest",
-            "idw_power",
-            "radius_km",
-        ]
+        required = ["D_processed",
+                    "wave_file_fmt",
+                    "P_reG_cawcr2cice_weights",
+                    "time_dim",
+                    "station_dim",
+                    "freq_dim",
+                    "dir_dim",
+                    "station_lon_name",
+                    "station_lat_name",
+                    "variance_density_name",
+                    "k_nearest",
+                    "idw_power",
+                    "radius_km"]
         missing = [k for k in required if k not in self.Waves_dict]
         if missing:
             raise KeyError(f"Waves_dict missing required keys: {missing}")
+        has_local  = ("D_org" in self.Waves_dict and "org_file_fmt" in self.Waves_dict)
+        has_remote = ("cawcr_spec_url_fmt" in self.Waves_dict)
+        if not (has_local or has_remote):
+            raise KeyError("Waves_dict must define either local input keys "
+                           "('D_org' and 'org_file_fmt') or remote key ('cawcr_spec_url_fmt').")
 
     def _month_bounds(self, year: int, month: int) -> Tuple[pd.Timestamp, pd.Timestamp]:
         ndays = calendar.monthrange(year, month)[1]
@@ -69,25 +71,30 @@ class SeaIceWaves:
         t1 = pd.Timestamp(year=year, month=month, day=ndays, hour=23, minute=59, second=59)
         return t0, t1
 
+    def _cawcr_local_path(self, year: int, month: int) -> Path:
+        self._require_waves_dict()
+        yyyymm = f"{year:04d}{month:02d}"
+        d_org = Path(self.Waves_dict["D_org"])
+        fname = self.Waves_dict["org_file_fmt"].format(year=year,
+                                                       month=f"{month:02d}",
+                                                       yyyymm=yyyymm)
+        return d_org / fname
+
     def _cawcr_url(self, year: int, month: int) -> str:
         self._require_waves_dict()
         yyyymm = f"{year:04d}{month:02d}"
-        return self.Waves_dict["cawcr_spec_url_fmt"].format(
-            year=year,
-            month=f"{month:02d}",
-            yyyymm=yyyymm,
-        )
+        return self.Waves_dict["cawcr_spec_url_fmt"].format(year=year,
+                                                            month=f"{month:02d}",
+                                                            yyyymm=yyyymm)
 
     def _processed_wave_path(self, year: int, month: int) -> Path:
         self._require_waves_dict()
         yyyymm = f"{year:04d}{month:02d}"
         d_out = Path(self.Waves_dict["D_processed"])
         d_out.mkdir(parents=True, exist_ok=True)
-        fname = self.Waves_dict["wave_file_fmt"].format(
-            year=year,
-            month=f"{month:02d}",
-            yyyymm=yyyymm,
-        )
+        fname = self.Waves_dict["wave_file_fmt"].format(year=year,
+                                                        month=f"{month:02d}",
+                                                        yyyymm=yyyymm)
         return d_out / fname
 
     # ------------------------------------------------------------------
@@ -95,15 +102,25 @@ class SeaIceWaves:
     # ------------------------------------------------------------------
     def open_cawcr_month(self, year: int, month: int, chunks: Optional[dict] = None) -> xr.Dataset:
         """
-        Open a monthly CAWCR station-spectrum file via OPeNDAP/THREDDS.
+        Open a monthly CAWCR station-spectrum file from local disk if available,
+        otherwise optionally fall back to OPeNDAP/THREDDS.
         """
-        url = self._cawcr_url(year, month)
+        self._require_waves_dict()
         chunks = chunks if chunks is not None else self.Waves_dict.get("chunks", {})
-        engine = self.Waves_dict.get("thredds_engine", "netcdf4")
-
-        self.logger.info(f"Opening CAWCR spectra: {url}")
-        ds = xr.open_dataset(url, engine=engine, chunks=chunks)
-        return ds
+        prefer_local = bool(self.Waves_dict.get("prefer_local", True))
+        if prefer_local:
+            p_local = self._cawcr_local_path(year, month)
+            if p_local.exists():
+                self.logger.info(f"Opening local CAWCR spectra: {p_local}")
+                return xr.open_dataset(p_local, chunks=chunks)
+        # optional remote fallback
+        if self.Waves_dict.get("allow_opendap_fallback", False):
+            url = self._cawcr_url(year, month)
+            engine = self.Waves_dict.get("thredds_engine", "netcdf4")
+            self.logger.info(f"Opening CAWCR spectra via OPeNDAP: {url}")
+            return xr.open_dataset(url, engine=engine, chunks=chunks)
+        raise FileNotFoundError(f"CAWCR file not found locally for {year:04d}-{month:02d}: "
+                                f"{self._cawcr_local_path(year, month)}")
 
     def _find_first_present(self, ds: xr.Dataset, candidates, kind: str) -> str:
         for name in candidates:
@@ -276,14 +293,17 @@ class SeaIceWaves:
     # ------------------------------------------------------------------
     def build_or_load_cawcr_to_cice_weights(self, src_lon: np.ndarray, src_lat: np.ndarray, tgt_lon: xr.DataArray, tgt_lat: xr.DataArray,
                                             target_mask : Optional[xr.DataArray] = None,
-                                            overwrite   : bool                   = False):
+                                            overwrite   : bool                   = False,
+                                            k           : int                    = None,
+                                            power       : float                  = None,
+                                            radius_km   : float                  = None):
         """
         Build or load sparse IDW weights from CAWCR stations to the native CICE T grid.
         """
         p_weights = self.Waves_dict["P_reG_cawcr2cice_weights"]
-        k         = int(self.Waves_dict["k_nearest"])
-        power     = float(self.Waves_dict["idw_power"])
-        radius_km = float(self.Waves_dict["radius_km"])
+        k         = k if k is not None else int(self.Waves_dict["k_nearest"])
+        power     = power if power is not None else float(self.Waves_dict["idw_power"])
+        radius_km = radius_km if radius_km is not None else float(self.Waves_dict["radius_km"])
         return self.build_or_load_station_to_curvilinear_sparse_weights(src_lon=src_lon, src_lat=src_lat, tgt_lon=tgt_lon.values, tgt_lat=tgt_lat.values,
                                                                         p_weights   = p_weights,
                                                                         target_mask = None if target_mask is None else target_mask.values,
@@ -292,7 +312,11 @@ class SeaIceWaves:
                                                                         radius_km   = radius_km,
                                                                         overwrite   = overwrite)
 
-    def regrid_station_spectra_to_cice(self, efreq_station: xr.DataArray, overwrite_weights: bool = False) -> xr.DataArray:
+    def regrid_station_spectra_to_cice(self, efreq_station: xr.DataArray,
+                                       overwrite_weights : bool  = False,
+                                       k                 : int   = None,
+                                       power             : float = None,
+                                       radius_km         : float = None) -> xr.DataArray:
         """
         Regrid station-based 1D spectra to the native CICE T grid.
 
@@ -334,7 +358,10 @@ class SeaIceWaves:
         self.logger.info(f"station_lat dims: {efreq_station['station_lat'].dims}, {efreq_station['station_lat'].shape}")
         W = self.build_or_load_cawcr_to_cice_weights(src_lon=src_lon, src_lat=src_lat, tgt_lon=tgt_lon, tgt_lat=tgt_lat,
                                                      target_mask = xr.DataArray(tgt_active, dims=tgt_lon.dims, coords=tgt_lon.coords),
-                                                     overwrite   = overwrite_weights)
+                                                     overwrite   = overwrite_weights,
+                                                     k           = k,
+                                                     power       = power,
+                                                     radius_km   = radius_km)
         self.logger.info(f"efreq_station shape  = {efreq_station.shape}")
         self.logger.info(f"efreq_station chunks = {getattr(efreq_station.data, 'chunks', None)}")
         out = self.apply_sparse_station_regridder(values       = efreq_station,                                   # (time, station, frequency)
@@ -569,17 +596,22 @@ class SeaIceWaves:
     # ------------------------------------------------------------------
     # APIs
     # ------------------------------------------------------------------
-    def prepare_cawcr_wave_month(self,
-                                 year             : int,
-                                 month            : int,
-                                 overwrite        : bool = False,
-                                 overwrite_weights: bool = False) -> Path:
+    def prepare_cawcr_wave_month(self, year : int, month : int,
+                                 overwrite         : bool  = False,
+                                 overwrite_weights : bool  = False,
+                                 k                 : int   = None,
+                                 power             : float = None,
+                                 radius_km         : float = None) -> Path:
         """
         End-to-end monthly CAWCR -> native CICE spectral forcing pipeline.
         """
         ds_raw        = self.open_cawcr_month(year, month)
         efreq_station = self.collapse_directional_spectrum(ds_raw)
-        efreq_grid    = self.regrid_station_spectra_to_cice(efreq_station, overwrite_weights=overwrite_weights)
+        efreq_grid    = self.regrid_station_spectra_to_cice(efreq_station,
+                                                            overwrite_weights = overwrite_weights,
+                                                            k                 = k,
+                                                            power             = power,
+                                                            radius_km         = radius_km)
         ds_out        = self.build_cice_wave_dataset(efreq_grid)
         return self.write_cice_wave_netcdf(ds_out, year, month, overwrite=overwrite)
 
