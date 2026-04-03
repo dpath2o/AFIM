@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -P gv90
+#PBS -q hugemembw
+#PBS -l ncpus=7
+#PBS -l mem=750GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/gv90+gdata/xp65+gdata/ik11+gdata/vk83
+#PBS -l wd
+#PBS -j oe
+#PBS -r y
+#PBS -N cawcr_spec_reG
+
+set -euo pipefail
+
+YEAR="${YEAR:?YEAR not set}"
+MONTH="${MONTH:?MONTH not set}"
+OW_NC="${OW_NC:-false}"
+OW_WGT="${OW_WGT:-false}"
+
+PY_SCRIPT="/home/581/da1339/AFIM/src/AFIM/scripts/waves/CAWCR_spec_reG.py"
+OUTDIR="/g/data/gv90/da1339/afim_input/CAWCR"
+OUTFILE="${OUTDIR}/CAWCR_efreq_for_CICE6_${YEAR}${MONTH}.nc"
+
+echo "YEAR=${YEAR}"
+echo "MONTH=${MONTH}"
+echo "OW_NC=${OW_NC}"
+echo "OW_WGT=${OW_WGT}"
+echo "HOST=$(hostname)"
+echo "START=$(date)"
+
+if [[ "${OW_NC}" != "true" && -s "${OUTFILE}" ]]; then
+    echo "Output exists, skipping: ${OUTFILE}"
+    exit 0
+fi
+
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.12
+
+PY_ARGS=("${YEAR}" "${MONTH}")
+if [[ "${OW_NC:-false}" == "true" ]]; then
+    PY_ARGS+=("--ow_nc")
+fi
+if [[ "${OW_WGT:-false}" == "true" ]]; then
+    PY_ARGS+=("--ow_wgt")
+fi
+python "${PY_SCRIPT}" "${PY_ARGS[@]}"
+
+echo "END=$(date)"
+
