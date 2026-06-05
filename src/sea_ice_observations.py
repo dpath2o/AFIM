@@ -1370,7 +1370,7 @@ class SeaIceObservations:
                                      gaussian_sigma_km : Optional[float] = None,
                                      lat_cut           : Optional[float] = None,
                                      time_at_noon      : bool = True) -> xr.Dataset:
-        """     
+        """
         Resample ESA/AWI **L2P swath** files to a **daily gridded** product on an
         equal-area polar grid using pyresample nearest-neighbour sets.
 

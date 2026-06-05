@@ -14,18 +14,42 @@ set -euo pipefail
 
 D_BASE="/g/data/gv90/da1339/SeaIce/NSIDC"
 VERSION="G02202_V6"
-YR0=1993
-YRN=1994
+YR0=1980
+YRN=1993
 WORKDIR="${PBS_JOBFS:-$PWD}"
 
 python3 download_nsidc.py \
-    --dest-root "${D_BASE}" \
-    --version "${VERSION}" \
-    --start-year "${YR0}" \
-    --end-year "${YRN}" \
-    --hemis north south \
-    --daily aggregate \
-    --monthly aggregate \
-    --ancillary \
-    --workers 4  \
-    --manifest-file "${WORKDIR}/${VERSION}_manifest.tsv"
+        --dest-root "${D_BASE}" \
+        --version "${VERSION}" \
+        --start-year "${YR0}" \
+        --end-year "${YRN}" \
+        --hemis north \
+        --daily individual \
+        --monthly none \
+        --ancillary \
+        --workers 4 \
+        --manifest-file "${WORKDIR}/${VERSION}_manifest.tsv"
+
+python3 download_nsidc.py \
+        --dest-root "${D_BASE}" \
+        --version "${VERSION}" \
+        --start-year "${YR0}" \
+        --end-year "${YRN}" \
+        --hemis south \
+        --daily individual \
+        --monthly none \
+        --ancillary \
+        --workers 4 \
+        --manifest-file "${WORKDIR}/${VERSION}_manifest.tsv"
+
+python3 download_nsidc.py \
+        --dest-root "${D_BASE}" \
+        --version "${VERSION}" \
+        --start-year "${YR0}" \
+        --end-year "${YRN}" \
+        --hemis north south \
+        --daily aggregate \
+        --monthly aggregate \
+        --ancillary \
+        --workers 4  \
+        --manifest-file "${WORKDIR}/${VERSION}_manifest.tsv"
